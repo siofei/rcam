@@ -104,6 +104,9 @@
       "status": "未执行",
       "required_platforms": [
         "shared"
+      ],
+      "scope_extension_scenarios": [
+        "SC-GATE"
       ]
     },
     {
@@ -136,6 +139,9 @@
       "status": "未执行",
       "required_platforms": [
         "shared"
+      ],
+      "scope_extension_scenarios": [
+        "SC-GATE"
       ]
     },
     {
@@ -197,6 +203,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-COORD"
       ]
     },
     {
@@ -228,6 +237,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-LEGACY"
       ]
     },
     {
@@ -257,6 +269,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-COORD"
       ]
     },
     {
@@ -289,6 +304,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-COORD"
       ]
     },
     {
@@ -318,6 +336,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-AM"
       ]
     },
     {
@@ -348,6 +369,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-AM"
       ]
     },
     {
@@ -378,6 +402,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-RECT"
       ]
     },
     {
@@ -409,6 +436,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-G74"
       ]
     },
     {
@@ -534,6 +564,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-AM"
       ]
     },
     {
@@ -585,7 +618,7 @@
         "分别把 AM、AB、SR、G74、旧图像变换、非圆 D01、Excellon、外置光圈样本放在文件前段和后段。",
         "尝试打开和另存为。"
       ],
-      "expected": "默认 V1 全部得到明确能力错误，不显示不完整正常画布，不允许加工文件导出。已正式升级支持的特征必须有新增完整用例，不能简单跳过本项。",
+      "expected": "未纳入DESIGN_V1第4.4节的特征和未验证输入明确拒绝，不显示不完整正常画布，不允许加工文件导出。限定目标子集只有关联S0-C完整追加场景及原用例通过后才能授予能力；当前原型仍拒绝未实现语义。",
       "evidence": [
         "每类诊断",
         "导出禁用截图",
@@ -595,6 +628,12 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-AM",
+        "SC-G74",
+        "SC-RECT",
+        "SC-LEGACY"
       ]
     },
     {
@@ -1639,6 +1678,13 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-AM",
+        "SC-G74",
+        "SC-COORD",
+        "SC-RECT",
+        "SC-LEGACY"
       ]
     },
     {
@@ -1703,6 +1749,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-G74"
       ]
     },
     {
@@ -1766,6 +1815,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-LEGACY"
       ]
     },
     {
@@ -2448,6 +2500,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-GATE"
       ]
     },
     {
@@ -2483,6 +2538,10 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-RECT",
+        "SC-GATE"
       ]
     },
     {
@@ -2954,6 +3013,9 @@
       "required_platforms": [
         "windows-x64",
         "macos-arm64"
+      ],
+      "scope_extension_scenarios": [
+        "SC-GATE"
       ]
     },
     {
@@ -3056,5 +3118,112 @@
     }
   ],
   "active_case_count": 96,
-  "retired_case_count": 1
+  "retired_case_count": 1,
+  "scope_revision": "1.1-s0c-1",
+  "s0c_scope_extension": {
+    "status": "required_target_not_results",
+    "decision": "docs/adr/0005-s0-c-editable-core.md",
+    "fixture_manifest": "fixtures/synthetic/s0c/manifest.json",
+    "scenarios": [
+      {
+        "id": "SC-AM",
+        "related_cases": [
+          "AT-010",
+          "AT-011",
+          "AT-017",
+          "AT-019",
+          "AT-053"
+        ],
+        "steps": [
+          "AM primitive 1/4/21、变量赋值、乘除减、旋转、局部Clear覆盖与未使用宏定义；用 am_* 输入及冻结真实使用实例",
+          "分别打开、查询、移动目标、Undo/Redo、另存新路径、重开，独立核对尺寸/孔洞/曝光顺序和未修改对象",
+          "注入非法primitive、除零、未知变量语法、非法轮廓/复杂度超限；完整拒绝且内容/历史/文件不变"
+        ],
+        "expected": "全部追加步骤及原用例同时满足；核心容差/文件安全/独立真值/平台门槛不变",
+        "status": "未执行"
+      },
+      {
+        "id": "SC-G74",
+        "related_cases": [
+          "AT-013",
+          "AT-019",
+          "AT-053",
+          "AT-055"
+        ],
+        "steps": [
+          "G74/G75 方向、圆心候选、跨轴、零角/整圆分别断言，保留真实圆弧",
+          "移动/镜像并往返；独立核对圆心半径和量化合法性，不从Mesh重建",
+          "歧义/非法圆心/跨越限定角度不允许漏画导出"
+        ],
+        "expected": "全部追加步骤及原用例同时满足；核心容差/文件安全/独立真值/平台门槛不变",
+        "status": "未执行"
+      },
+      {
+        "id": "SC-COORD",
+        "related_cases": [
+          "AT-006",
+          "AT-008",
+          "AT-009",
+          "AT-053"
+        ],
+        "steps": [
+          "覆盖 CORE 的 4.5/4.4/3.4/2.6/3.5/2.5/4.3，L/T 和全宽 D、FS I/G91",
+          "两次增量 Flash 结果为(1,1)/(2,1)mm，省略轴零增量；G74 I/J 不被当作绝对点或再次累计",
+          "执行移动/撤销/重做/安全输出/重开，独立检查绝对毫米几何；格式缺失、位数不符和冲突声明拒绝"
+        ],
+        "expected": "全部追加步骤及原用例同时满足；核心容差/文件安全/独立真值/平台门槛不变",
+        "status": "未执行"
+      },
+      {
+        "id": "SC-RECT",
+        "related_cases": [
+          "AT-012",
+          "AT-019",
+          "AT-053",
+          "AT-081"
+        ],
+        "steps": [
+          "无孔未变换 R 光圈水平/垂直 G01 真实矩形扫掠；公开样本边界[-1,-0.5,4,2.5]mm，检查四角不被圆端帽削除",
+          "CORE-04 6192条依赖不得遗漏；移动/撤销/另存/重开后独立核对几何与曝光",
+          "斜线、矩形圆弧、有孔/未验证变换组合拒绝；零修改及不输出"
+        ],
+        "expected": "全部追加步骤及原用例同时满足；核心容差/文件安全/独立真值/平台门槛不变",
+        "status": "未执行"
+      },
+      {
+        "id": "SC-LEGACY",
+        "related_cases": [
+          "AT-007",
+          "AT-019",
+          "AT-053",
+          "AT-057"
+        ],
+        "steps": [
+          "SR X1Y1I0J0和合法结束；IR0/IPPOS/OF0/MI0/SF1，仅按合法作用域规范化",
+          "G54光圈关联/G71单位一致、IN/LN元数据保存报告、ICAS与实际ASCII编码核对",
+          "前置显式单位IO偏移应用一次；独立mm/in对照及CORE-04真实坐标核验；保存后不得双重偏移",
+          "其他重复/编码/变换组合及非法作用域保持拒绝；正常路径执行Move/Undo/Redo/另存/重开"
+        ],
+        "expected": "全部追加步骤及原用例同时满足；核心容差/文件安全/独立真值/平台门槛不变",
+        "status": "未执行"
+      },
+      {
+        "id": "SC-GATE",
+        "related_cases": [
+          "AT-003",
+          "AT-004",
+          "AT-080",
+          "AT-081",
+          "AT-095"
+        ],
+        "steps": [
+          "每项关联公开fixture哈希和冻结CORE10身份；未实现/缺独立真值的能力不对外宣称可编辑",
+          "全文件能力扫描，包括前后段范围外内容；服务失败不留下文档/历史/文件",
+          "CORE10不能更换失败样本，最终10/10仍须完整V1流程；逐平台证据缺失不能通过"
+        ],
+        "expected": "全部追加步骤及原用例同时满足；核心容差/文件安全/独立真值/平台门槛不变",
+        "status": "未执行"
+      }
+    ]
+  }
 }

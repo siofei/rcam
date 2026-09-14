@@ -1,0 +1,438 @@
+{
+  "schema_version": 2,
+  "kind": "s0c_scope_fixtures_not_semantic_results",
+  "source": "Project-authored synthetic inputs; no private sample text or coordinates copied",
+  "license": "Project-authored test data; usable with project source",
+  "fixtures": [
+    {
+      "path": "fixtures/synthetic/s0c/am_1.gbr",
+      "sha256": "3c50e57dceeac36b4de4599e005981a2f4617abf492258193f89f53eb57dbc84",
+      "features": [
+        "AM-1"
+      ],
+      "related_cases": [
+        "AT-010",
+        "AT-011",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "used_macros": [
+          "ROUND"
+        ],
+        "imaging_by_operation_shape": {
+          "D03:AM": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/am_4.gbr",
+      "sha256": "fabf5129cc1e70ba7d1d484ad52c9ca160a791b9182a6380729f9d31b1696083",
+      "features": [
+        "AM-4"
+      ],
+      "related_cases": [
+        "AT-010",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "used_macros": [
+          "OUTLINE"
+        ]
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/am_21_variables.gbr",
+      "sha256": "005b23463c5962989e5a14bf25dcbf0b0010337d85c316412946b68a548dd22b",
+      "features": [
+        "AM-21",
+        "AM-expressions",
+        "AM-local-clear"
+      ],
+      "related_cases": [
+        "AT-010",
+        "AT-011",
+        "AT-017",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "used_macros": [
+          "BOX"
+        ]
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/g74.gbr",
+      "sha256": "5720e1cc17018a799a4fa525ca6e0fe94c19626e543cfd80d54e95447d997a18",
+      "features": [
+        "G74"
+      ],
+      "related_cases": [
+        "AT-013",
+        "AT-055"
+      ],
+      "expected_audit": {
+        "arc_operations_by_quadrant": {
+          "G74": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/g75.gbr",
+      "sha256": "b8004ef3c045ea1d57abbc82b6def79b76a095ad61b07b41ff9fe0eb8b861534",
+      "features": [
+        "G75"
+      ],
+      "related_cases": [
+        "AT-013",
+        "AT-055"
+      ],
+      "expected_audit": {
+        "arc_operations_by_quadrant": {
+          "G75": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/region.gbr",
+      "sha256": "ebc34153a1ff2df3b545496d2996f1f758d64cacd91db33b723e09360b6c6382",
+      "features": [
+        "Region"
+      ],
+      "related_cases": [
+        "AT-014",
+        "AT-015"
+      ],
+      "expected_audit": {
+        "region_draw_operations": 4
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/sr_identity.gbr",
+      "sha256": "d1bc302cc0935095999db275b0ac51fb088e474818d30ffd9307ed2f0a6dbd2d",
+      "features": [
+        "SR-identity"
+      ],
+      "related_cases": [
+        "AT-019",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_operation_shape": {
+          "D03:C": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/legacy_identity.gbr",
+      "sha256": "83cf19d3f96ada21c9e7e808cbe179a280a50010fc64a599ceb0af3d71aefadd",
+      "features": [
+        "IR0",
+        "IPPOS",
+        "OF0",
+        "MI0",
+        "SF1",
+        "IN",
+        "LN",
+        "G71",
+        "G54"
+      ],
+      "related_cases": [
+        "AT-007",
+        "AT-019",
+        "AT-057"
+      ],
+      "expected_audit": {
+        "imaging_by_operation_shape": {
+          "D03:C": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/io_nonzero.gbr",
+      "sha256": "1bb4a6adb2bc398348f823340822006519904c2c9ebf499ee16c8ebf5b0b353d",
+      "features": [
+        "IO"
+      ],
+      "related_cases": [
+        "AT-019",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_operation_shape": {
+          "D03:C": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/ic_ascii.gbr",
+      "sha256": "ae97c47ca74dfdf3adf12a66bf672d3c82107e39ea9f67a3ad43d48de86f4742",
+      "features": [
+        "ICAS"
+      ],
+      "related_cases": [
+        "AT-019"
+      ],
+      "expected_audit": {
+        "imaging_by_operation_shape": {
+          "D03:C": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/fs_lax45y45.gbr",
+      "sha256": "ab38a0a7da69f8273f48977c967847c3490918cb1d0667ff41c58527eabb44bf",
+      "features": [
+        "old-FS"
+      ],
+      "related_cases": [
+        "AT-006",
+        "AT-008",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_coordinate_mode": {
+          "A": 2
+        }
+      },
+      "current_product": "check_existing_subset",
+      "semantic_validation": "not_run",
+      "future_expected_centres_mm": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "path": "fixtures/synthetic/s0c/fs_lax44y44.gbr",
+      "sha256": "24806f3906cf57d6d5bc7c31bf0ecd694c116aa254755f6feea17890b2cd5f1f",
+      "features": [
+        "old-FS"
+      ],
+      "related_cases": [
+        "AT-006",
+        "AT-008",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_coordinate_mode": {
+          "A": 2
+        }
+      },
+      "current_product": "check_existing_subset",
+      "semantic_validation": "not_run",
+      "future_expected_centres_mm": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "path": "fixtures/synthetic/s0c/fs_lax34y34.gbr",
+      "sha256": "1be19664a832c25ee6dde808f67c4f98c205816911289a92d9acb0236a70bb83",
+      "features": [
+        "old-FS"
+      ],
+      "related_cases": [
+        "AT-006",
+        "AT-008",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_coordinate_mode": {
+          "A": 2
+        }
+      },
+      "current_product": "check_existing_subset",
+      "semantic_validation": "not_run",
+      "future_expected_centres_mm": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "path": "fixtures/synthetic/s0c/fs_lax35y35.gbr",
+      "sha256": "c2667c8f10b33da651681b59e691d61d7a292106139c3c0890f93a8826e43804",
+      "features": [
+        "old-FS"
+      ],
+      "related_cases": [
+        "AT-006",
+        "AT-008",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_coordinate_mode": {
+          "A": 2
+        }
+      },
+      "current_product": "check_existing_subset",
+      "semantic_validation": "not_run",
+      "future_expected_centres_mm": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "path": "fixtures/synthetic/s0c/fs_lax25y25.gbr",
+      "sha256": "bc93937690574cb6a26a60bf06b0705c6a9291564d419352cccbdea5495f9eaa",
+      "features": [
+        "old-FS"
+      ],
+      "related_cases": [
+        "AT-006",
+        "AT-008",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_coordinate_mode": {
+          "A": 2
+        }
+      },
+      "current_product": "check_existing_subset",
+      "semantic_validation": "not_run",
+      "future_expected_centres_mm": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "path": "fixtures/synthetic/s0c/fs_lax43y43.gbr",
+      "sha256": "09ccbb3c6cf9e1a7a1c2c04c5a49761235d3d0f9144c15c9a018523097a4ad0c",
+      "features": [
+        "old-FS"
+      ],
+      "related_cases": [
+        "AT-006",
+        "AT-008",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_coordinate_mode": {
+          "A": 2
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run",
+      "future_expected_centres_mm": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "implementation_gap": "S0 scanner only accepts decimal digits 4 through 6; target 4.3 remains required"
+    },
+    {
+      "path": "fixtures/synthetic/s0c/fs_dix34y34.gbr",
+      "sha256": "359bde66ee6a953c662e47c63855015bc4a93dfc2a0f38152db8925b49c1ebac",
+      "features": [
+        "old-FS",
+        "G91",
+        "FSD"
+      ],
+      "related_cases": [
+        "AT-006",
+        "AT-008",
+        "AT-053"
+      ],
+      "expected_audit": {
+        "imaging_by_coordinate_mode": {
+          "I": 2
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run",
+      "future_expected_centres_mm": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "path": "fixtures/synthetic/s0c/rectangular_draw.gbr",
+      "sha256": "75d874d01e92f85394fc1070b2266d3a138f9c315e932fc97ff7371f42090501",
+      "features": [
+        "R-axis-aligned-D01"
+      ],
+      "related_cases": [
+        "AT-012",
+        "AT-019",
+        "AT-053",
+        "AT-081"
+      ],
+      "expected_audit": {
+        "imaging_by_operation_shape": {
+          "D01:R": 2
+        },
+        "rectangular_draw_directions": {
+          "G01:horizontal": 1,
+          "G01:vertical": 1
+        }
+      },
+      "current_product": "must_reject",
+      "semantic_validation": "not_run",
+      "future_expected_bounds_mm": [
+        -1,
+        -0.5,
+        4,
+        2.5
+      ]
+    }
+  ]
+}
