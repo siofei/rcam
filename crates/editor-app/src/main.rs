@@ -97,10 +97,7 @@ impl eframe::App for S0App {
         egui::CentralPanel::default().show(ctx, |ui| {
             let available = ui.available_size();
             let (response, painter) = ui.allocate_painter(available, egui::Sense::drag());
-            if response.dragged() {
-                self.origin += response.drag_delta();
-                ctx.request_repaint();
-            }
+            self.origin += canvas_pan_delta(&response);
             let rect = response.rect;
             painter.rect_stroke(
                 rect,
@@ -144,6 +141,15 @@ impl eframe::App for S0App {
     }
 }
 
+fn canvas_pan_delta(response: &egui::Response) -> Vec2 {
+    if response.dragged() || response.drag_stopped() {
+        // drag_delta() becomes zero on release, even if that frame also moved.
+        response.ctx.input(|input| input.pointer.delta())
+    } else {
+        Vec2::ZERO
+    }
+}
+
 struct ClipCallback {
     zoom: f32,
     pan: Vec2,
@@ -167,6 +173,25 @@ struct CanvasUniforms {
     objects: [[f32; 4]; 48],
 }
 
+// S0 has no floating origin yet. Refuse an unrepresentable preview while
+// preserving the f64 document. This is not an import/manufacturing size limit.
+fn checked_gpu_mm(value: f64, feature: f64) -> Result<f32, String> {
+    let converted = value as f32;
+    let tolerance = editor_core::EPSILON_MM.min(feature / 16.0);
+    if !value.is_finite()
+        || !feature.is_finite()
+        || feature < f64::from(f32::MIN_POSITIVE).sqrt() * 16.0
+        || !converted.is_finite()
+        || converted.abs() > 1e18
+        || (value != 0.0 && !converted.is_normal())
+        || (f64::from(converted) - value).abs() > tolerance
+        || f64::from(converted.abs()) * f64::from(f32::EPSILON) > feature / 16.0
+    {
+        return Err("S0 GPU precision cannot preserve geometry; preview refused".into());
+    }
+    Ok(converted)
+}
+
 fn gpu_objects(snapshot: &DocumentSnapshot) -> Result<([[f32; 4]; 48], u32), String> {
     let mut objects = [[0.0; 4]; 48];
     let mut count = 0_usize;
@@ -180,32 +205,62 @@ fn gpu_objects(snapshot: &DocumentSnapshot) -> Result<([[f32; 4]; 48], u32), Str
             }
             match object.geometry {
                 Geometry::CircleFlash { center, aperture } => {
-                    objects[count] = [
-                        center.x_mm as f32,
-                        center.y_mm as f32,
-                        0.0,
-                        layer_index as f32,
-                    ];
-                    objects[count + 1] = [
-                        (aperture.diameter_mm / 2.0) as f32,
-                        aperture.hole_diameter_mm.unwrap_or(0.0) as f32 / 2.0,
-                        0.0,
-                        0.0,
-                    ];
+                    editor_core::CircleAperture::new(
+                        aperture.diameter_mm,
+                        aperture.hole_diameter_mm,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let radius = aperture.diameter_mm / 2.0;
+                    let hole = aperture.hole_diameter_mm.unwrap_or(0.0) / 2.0;
+                    let feature = if hole > 0.0 {
+                        hole.min(radius - hole)
+                    } else {
+                        radius
+                    };
+                    let x = checked_gpu_mm(center.x_mm, feature)?;
+                    let y = checked_gpu_mm(center.y_mm, feature)?;
+                    let radius = checked_gpu_mm(radius, feature)?;
+                    let hole = checked_gpu_mm(hole, feature)?;
+                    if aperture.hole_diameter_mm.is_some() && (hole <= 0.0 || hole >= radius) {
+                        return Err(
+                            "S0 GPU preview cannot preserve aperture hole; preview refused".into(),
+                        );
+                    }
+                    objects[count] = [x, y, 0.0, layer_index as f32];
+                    objects[count + 1] = [radius, hole, 0.0, 0.0];
                 }
                 Geometry::Line {
                     start,
                     end,
                     width_mm,
                 } => {
-                    objects[count] = [
-                        start.x_mm as f32,
-                        start.y_mm as f32,
-                        1.0,
-                        layer_index as f32,
-                    ];
-                    objects[count + 1] =
-                        [end.x_mm as f32, end.y_mm as f32, width_mm as f32 / 2.0, 0.0];
+                    if !width_mm.is_finite()
+                        || width_mm <= 0.0
+                        || !start.is_finite()
+                        || !end.is_finite()
+                    {
+                        return Err("S0 GPU preview requires finite valid line geometry".into());
+                    }
+                    let length = start.distance_mm(end);
+                    let feature = if length > editor_core::EPSILON_MM {
+                        (width_mm / 2.0).min(length)
+                    } else {
+                        width_mm / 2.0
+                    };
+                    let start_x = checked_gpu_mm(start.x_mm, feature)?;
+                    let start_y = checked_gpu_mm(start.y_mm, feature)?;
+                    let end_x = checked_gpu_mm(end.x_mm, feature)?;
+                    let end_y = checked_gpu_mm(end.y_mm, feature)?;
+                    let radius = checked_gpu_mm(width_mm / 2.0, feature)?;
+                    let dx = end_x - start_x;
+                    let dy = end_y - start_y;
+                    if ((dx * dx + dy * dy) <= 1e-12) != (length <= editor_core::EPSILON_MM) {
+                        return Err(
+                            "S0 GPU rounding changes line degeneracy; preview refused".into()
+                        );
+                    }
+                    objects[count] = [start_x, start_y, 1.0, layer_index as f32];
+                    objects[count + 1] = [end_x, end_y, radius, 0.0];
                 }
             }
             objects[count + 2][0] = match object.exposure {
@@ -238,75 +293,7 @@ impl egui_wgpu::CallbackTrait for ClipCallback {
         if callback_resources.get::<CanvasGpu>().is_none() {
             let shader = device.create_shader_module(egui_wgpu::wgpu::ShaderModuleDescriptor {
                 label: Some("s0-canvas-shader"),
-                source: egui_wgpu::wgpu::ShaderSource::Wgsl(
-                    r#"
-struct Uniforms {
-    canvas_px: vec2<f32>,
-    viewport_min_px: vec2<f32>,
-    pixels_per_point: f32,
-    zoom: f32,
-    pan: vec2<f32>,
-    object_count: u32,
-    _padding: u32,
-    _padding2: vec2<u32>,
-    objects: array<vec4<f32>, 48>,
-};
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-
-@vertex
-fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
-    var positions = array<vec2<f32>, 3>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(3.0, -1.0),
-        vec2<f32>(-1.0, 3.0),
-    );
-    return vec4<f32>(positions[index], 0.0, 1.0);
-}
-
-fn object_coverage(index: u32, point: vec2<f32>) -> bool {
-    let a = uniforms.objects[index * 3u];
-    let b = uniforms.objects[index * 3u + 1u];
-    if (a.z < 0.5) {
-        let radius = distance(point, a.xy);
-        return radius <= b.x && (b.y == 0.0 || radius >= b.y);
-    }
-    let direction = b.xy - a.xy;
-    let length_squared = dot(direction, direction);
-    let amount = clamp(dot(point - a.xy, direction) / max(length_squared, 0.000001), 0.0, 1.0);
-    let nearest = a.xy + amount * direction;
-    return distance(point, nearest) <= b.z;
-}
-
-@fragment
-fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let local_px = position.xy - uniforms.viewport_min_px;
-    let point = vec2<f32>(
-        (local_px.x / uniforms.pixels_per_point - uniforms.canvas_px.x / uniforms.pixels_per_point / 2.0 - uniforms.pan.x) / uniforms.zoom,
-        -(local_px.y / uniforms.pixels_per_point - uniforms.canvas_px.y / uniforms.pixels_per_point / 2.0 - uniforms.pan.y) / uniforms.zoom,
-    );
-    var layers = array<bool, 4>(false, false, false, false);
-    var index = 0u;
-    loop {
-        if (index >= uniforms.object_count) { break; }
-        let base = index * 3u;
-        let header = uniforms.objects[base];
-        let exposure = uniforms.objects[base + 2u].x > 0.5;
-        let covered = object_coverage(index, point);
-        let layer = u32(header.w);
-        if (layer < 4u && covered) {
-            layers[layer] = exposure;
-        }
-        index = index + 1u;
-    }
-    // Each layer was composed independently above. Combining their results
-    // cannot let a Clear operation erase a different layer.
-    let covered = layers[0] || layers[1] || layers[2] || layers[3];
-    if (covered) { return vec4<f32>(0.18, 0.72, 1.0, 1.0); }
-    return vec4<f32>(0.10, 0.12, 0.16, 1.0);
-}
-"#
-                    .into(),
-                ),
+                source: egui_wgpu::wgpu::ShaderSource::Wgsl(include_str!("canvas.wgsl").into()),
             });
             let uniform_buffer =
                 device.create_buffer_init(&egui_wgpu::wgpu::util::BufferInitDescriptor {
@@ -448,3 +435,9 @@ fn main() -> eframe::Result {
         }),
     )
 }
+
+#[cfg(test)]
+mod gpu_tests;
+
+#[cfg(test)]
+mod navigation_tests;

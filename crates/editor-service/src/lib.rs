@@ -23,6 +23,13 @@ pub struct Capabilities {
     pub supported_gerber_subset: Vec<String>,
     pub unsupported_gerber_features: Vec<String>,
     pub precision: PrecisionCapabilities,
+    pub resource_limits: ResourceLimits,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceLimits {
+    pub max_source_bytes: usize,
+    pub max_objects: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,6 +67,7 @@ pub struct AnalysisResult {
 pub struct ServiceError {
     pub code: String,
     pub message: String,
+    pub details: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -70,6 +78,13 @@ struct RequestEnvelope {
     op: String,
     document_id: Option<String>,
     params: Value,
+}
+
+// Separate decode retains only an unambiguous string request ID on invalid
+// envelopes. Duplicate request_id fields and malformed JSON still fail.
+#[derive(Deserialize)]
+struct RequestIdentity {
+    request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -139,6 +154,10 @@ impl ApplicationService {
                 "deprecated image transforms".into(),
                 "production export".into(),
             ],
+            resource_limits: ResourceLimits {
+                max_source_bytes: gerber_io::MAX_SOURCE_BYTES,
+                max_objects: gerber_io::MAX_OBJECTS,
+            },
             precision: PrecisionCapabilities {
                 coordinate_unit: "mm".into(),
                 coordinate_type: "f64".into(),
@@ -160,6 +179,7 @@ impl ApplicationService {
             return Err(ServiceError {
                 code: "ALREADY_EXISTS".into(),
                 message: format!("document {document_id:?} is already open"),
+                details: serde_json::json!({"document_id": document_id}),
             });
         }
         let scene = parse_s0(bytes, &document_id).map_err(map_parse_error)?;
@@ -203,14 +223,46 @@ impl ApplicationService {
         Ok(result)
     }
 
-    /// Strict JSON boundary for the four read-only S0 operations.
-    pub fn execute_json(&mut self, raw: &str) -> Result<Value, ServiceError> {
-        let request: RequestEnvelope = serde_json::from_str(raw)
-            .map_err(|error| ServiceError::invalid(format!("invalid request: {error}")))?;
+    /// Every JSON call, including rejection, returns the same response shape.
+    pub fn execute_json(&mut self, raw: &str) -> Value {
+        let request: RequestEnvelope = match serde_json::from_str(raw) {
+            Ok(request) => request,
+            Err(error) => {
+                let identity = serde_json::from_str::<RequestIdentity>(raw).ok();
+                return response(
+                    identity
+                        .as_ref()
+                        .and_then(|value| value.request_id.as_deref()),
+                    None,
+                    None,
+                    Err(ServiceError {
+                        code: "INVALID_ARGUMENT".into(),
+                        message: format!("invalid request: {error}"),
+                        details: serde_json::json!({"field": "request", "line": error.line(), "column": error.column(), "diagnostic": error.to_string()}),
+                    }),
+                );
+            }
+        };
+        let result = self.dispatch(&request);
+        let revision = request
+            .document_id
+            .as_ref()
+            .filter(|id| self.scenes.contains_key(*id))
+            .map(|_| "0");
+        response(
+            Some(&request.request_id),
+            request.document_id.as_deref(),
+            revision,
+            result,
+        )
+    }
+
+    fn dispatch(&mut self, request: &RequestEnvelope) -> Result<Value, ServiceError> {
         if request.api_version != API_VERSION {
             return Err(ServiceError {
                 code: "UNSUPPORTED_API_VERSION".into(),
                 message: format!("api_version {} is not supported", request.api_version),
+                details: serde_json::json!({"requested": request.api_version, "supported": API_VERSION}),
             });
         }
         if request.request_id.trim().is_empty() {
@@ -219,6 +271,13 @@ impl ApplicationService {
         let result = match request.op.as_str() {
             "system.capabilities" => {
                 parse_empty_params(&request.params)?;
+                if request.document_id.is_some() {
+                    return Err(ServiceError {
+                        code: "INVALID_ARGUMENT".into(),
+                        message: "system.capabilities does not accept document_id".into(),
+                        details: serde_json::json!({"field": "document_id"}),
+                    });
+                }
                 serde_json::to_value(self.capabilities()).map_err(serialize_error)?
             }
             "document.open_s0" => {
@@ -249,21 +308,12 @@ impl ApplicationService {
             _ => {
                 return Err(ServiceError {
                     code: "UNSUPPORTED_OPERATION".into(),
-                    message: request.op,
+                    message: format!("unsupported operation: {}", request.op),
+                    details: serde_json::json!({"op": request.op}),
                 });
             }
         };
-        Ok(serde_json::json!({
-            "api_version": API_VERSION,
-            "request_id": request.request_id,
-            "status": "completed",
-            "document_id": request.document_id,
-            "revision": "0",
-            "result": result,
-            "warnings": [],
-            "error": null,
-            "job_id": null
-        }))
+        Ok(result)
     }
 
     pub fn snapshot(&self, document_id: &str) -> Result<DocumentSnapshot, ServiceError> {
@@ -310,6 +360,7 @@ impl ServiceError {
         Self {
             code: "INVALID_ARGUMENT".into(),
             message: message.into(),
+            details: serde_json::json!({"field": "request"}),
         }
     }
 
@@ -317,6 +368,7 @@ impl ServiceError {
         Self {
             code: "NOT_FOUND".into(),
             message: format!("document {document_id:?} is not open"),
+            details: serde_json::json!({"document_id": document_id}),
         }
     }
 }
@@ -329,13 +381,46 @@ fn map_parse_error(error: S0Error) -> ServiceError {
         | S0Error::MissingModal(_)
         | S0Error::Parser(_)
         | S0Error::ParserCommand(_) => "VALIDATION_FAILED",
-        S0Error::InvalidGeometry(message) if message.contains("limit") => "RESOURCE_LIMIT",
+        S0Error::ResourceLimit { .. } => "RESOURCE_LIMIT",
         S0Error::InvalidGeometry(_) | S0Error::InvalidUtf8 | S0Error::Empty => "INVALID_ARGUMENT",
     };
     ServiceError {
         code: code.into(),
         message: error.to_string(),
+        details: match error {
+            S0Error::ResourceLimit {
+                resource,
+                limit,
+                actual,
+            } => serde_json::json!({"resource": resource, "limit": limit, "actual": actual}),
+            S0Error::Unsupported { line, source } => {
+                serde_json::json!({"line": line, "diagnostic": source})
+            }
+            S0Error::DuplicateModal { kind, line } => {
+                serde_json::json!({"line": line, "kind": kind})
+            }
+            S0Error::ContentAfterEnd { line } => serde_json::json!({"line": line}),
+            S0Error::MissingModal(kind) => serde_json::json!({"missing_modal": kind}),
+            _ => serde_json::json!({"field": "params.source"}),
+        },
     }
+}
+
+fn response(
+    request_id: Option<&str>,
+    document_id: Option<&str>,
+    revision: Option<&str>,
+    outcome: Result<Value, ServiceError>,
+) -> Value {
+    let (status, result, error) = match outcome {
+        Ok(value) => ("completed", Some(value), None),
+        Err(error) => ("error", None, Some(error)),
+    };
+    serde_json::json!({
+        "api_version": API_VERSION, "request_id": request_id, "status": status,
+        "document_id": document_id, "revision": revision, "result": result,
+        "warnings": [], "error": error, "job_id": null
+    })
 }
 
 fn add_s0_risk_layers(scene: &mut S0Scene) {
@@ -391,8 +476,11 @@ fn parse_empty_params(value: &Value) -> Result<(), ServiceError> {
 }
 
 fn parse_params<T: for<'de> Deserialize<'de>>(value: &Value) -> Result<T, ServiceError> {
-    serde_json::from_value(value.clone())
-        .map_err(|error| ServiceError::invalid(format!("invalid params: {error}")))
+    serde_json::from_value(value.clone()).map_err(|error| ServiceError {
+        code: "INVALID_ARGUMENT".into(),
+        message: format!("invalid params: {error}"),
+        details: serde_json::json!({"field": "params", "diagnostic": error.to_string()}),
+    })
 }
 
 fn serialize_error(error: serde_json::Error) -> ServiceError {
@@ -459,7 +547,7 @@ M02*
             "op": "system.capabilities",
             "params": {}
         });
-        let response = service.execute_json(&request.to_string()).unwrap();
+        let response = service.execute_json(&request.to_string());
         assert_eq!(response["request_id"], "cap-1");
         assert_eq!(response["status"], "completed");
 
@@ -471,7 +559,7 @@ M02*
             "extra": true
         });
         assert_eq!(
-            service.execute_json(&unknown.to_string()).unwrap_err().code,
+            service.execute_json(&unknown.to_string())["error"]["code"],
             "INVALID_ARGUMENT"
         );
 
@@ -482,7 +570,7 @@ M02*
             "params": {}
         });
         assert_eq!(
-            service.execute_json(&op.to_string()).unwrap_err().code,
+            service.execute_json(&op.to_string())["error"]["code"],
             "UNSUPPORTED_OPERATION"
         );
     }

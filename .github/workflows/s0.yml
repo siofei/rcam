@@ -29,7 +29,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Audit service dependency tree
-        run: cargo tree --locked -p editor-service --edges normal
+        run: cargo test --locked -p editor-service --test dependency_boundary -- --nocapture
       - name: Automation contract
         run: cargo test --locked -p editor-service --test automation_contract
       - name: Test

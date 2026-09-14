@@ -12,7 +12,7 @@ fn s0_json_contract_uses_real_parser_and_read_only_snapshot() {
         "document_id": "fixture",
         "params": {"source": SAMPLE}
     });
-    let response = service.execute_json(&open.to_string()).unwrap();
+    let response = service.execute_json(&open.to_string());
     assert_eq!(response["status"], "completed");
     assert_eq!(response["result"]["revision"], "0");
     assert_eq!(response["result"]["layer_ids"].as_array().unwrap().len(), 1);
@@ -24,7 +24,7 @@ fn s0_json_contract_uses_real_parser_and_read_only_snapshot() {
         "document_id": "fixture",
         "params": {}
     });
-    let response = service.execute_json(&snapshot.to_string()).unwrap();
+    let response = service.execute_json(&snapshot.to_string());
     assert_eq!(
         response["result"]["layers"][0]["objects"]
             .as_array()
@@ -41,7 +41,7 @@ fn s0_json_contract_uses_real_parser_and_read_only_snapshot() {
         "document_id": "fixture",
         "params": {}
     });
-    let response = service.execute_json(&analysis.to_string()).unwrap();
+    let response = service.execute_json(&analysis.to_string());
     let covered: Vec<_> = response["result"]["samples"]
         .as_array()
         .unwrap()
@@ -61,10 +61,7 @@ fn s0_json_contract_rejects_unknown_fields_and_unimplemented_edits() {
         "params": {"future": true}
     });
     assert_eq!(
-        service
-            .execute_json(&unknown_field.to_string())
-            .unwrap_err()
-            .code,
+        service.execute_json(&unknown_field.to_string())["error"]["code"],
         "INVALID_ARGUMENT"
     );
     let edit = serde_json::json!({
@@ -74,7 +71,7 @@ fn s0_json_contract_rejects_unknown_fields_and_unimplemented_edits() {
         "params": {}
     });
     assert_eq!(
-        service.execute_json(&edit.to_string()).unwrap_err().code,
+        service.execute_json(&edit.to_string())["error"]["code"],
         "UNSUPPORTED_OPERATION"
     );
 }

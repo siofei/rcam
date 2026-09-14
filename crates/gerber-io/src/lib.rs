@@ -19,8 +19,8 @@ pub struct S0Scene {
     pub diagnostics: Vec<String>,
 }
 
-const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_OBJECTS: usize = 100_000;
+pub const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_OBJECTS: usize = 100_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoordinateFormatInfo {
@@ -34,13 +34,26 @@ pub struct CoordinateFormatInfo {
 pub enum S0Error {
     InvalidUtf8,
     Empty,
-    Unsupported { line: usize, source: String },
-    DuplicateModal { kind: &'static str, line: usize },
-    ContentAfterEnd { line: usize },
+    Unsupported {
+        line: usize,
+        source: String,
+    },
+    DuplicateModal {
+        kind: &'static str,
+        line: usize,
+    },
+    ContentAfterEnd {
+        line: usize,
+    },
     MissingModal(&'static str),
     Parser(String),
     ParserCommand(String),
     InvalidGeometry(String),
+    ResourceLimit {
+        resource: &'static str,
+        limit: usize,
+        actual: usize,
+    },
 }
 
 impl std::fmt::Display for S0Error {
@@ -54,7 +67,11 @@ impl std::error::Error for S0Error {}
 /// Parse the deliberately small S0 subset using `gerber_parser` 0.5.0.
 pub fn parse_s0(bytes: &[u8], document_id: &str) -> Result<S0Scene, S0Error> {
     if bytes.len() > MAX_SOURCE_BYTES {
-        return Err(S0Error::InvalidGeometry("S0 source exceeds 2 MiB".into()));
+        return Err(S0Error::ResourceLimit {
+            resource: "source_bytes",
+            limit: MAX_SOURCE_BYTES,
+            actual: bytes.len(),
+        });
     }
     let source = std::str::from_utf8(bytes).map_err(|_| S0Error::InvalidUtf8)?;
     let lines: Vec<(usize, &str)> = source
@@ -230,7 +247,11 @@ fn scan_strict_lines(lines: &[(usize, &str)]) -> Result<(), S0Error> {
             has_coordinate |= line != "D03*";
             object_count += 1;
             if object_count > MAX_OBJECTS {
-                return Err(S0Error::InvalidGeometry("S0 object limit exceeded".into()));
+                return Err(S0Error::ResourceLimit {
+                    resource: "objects",
+                    limit: MAX_OBJECTS,
+                    actual: object_count,
+                });
             }
             continue;
         }
@@ -333,8 +354,11 @@ fn is_aperture_select(line: &str) -> bool {
 
 fn is_flash_command(line: &str) -> bool {
     let Some(body) = line.strip_suffix("D03*") else {
-        return line == "D03*";
+        return false;
     };
+    if body.is_empty() {
+        return true;
+    }
     let mut seen_coordinate = false;
     let mut seen_x = false;
     let mut seen_y = false;

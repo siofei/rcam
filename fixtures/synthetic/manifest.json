@@ -11,10 +11,62 @@
       "expected_units": "mm",
       "expected_format": "FSLAX24Y24",
       "expected_objects": 3,
-      "expected_exposure_order": ["Dark", "Clear", "Dark"],
-      "expected_coverage_points_mm": [0.0, 2.0, 4.0, 6.0],
-      "expected_coverage": [true, false, true, false],
-      "private_data": false
+      "expected_exposure_order": [
+        "Dark",
+        "Clear",
+        "Dark"
+      ],
+      "expected_coverage_points_mm": [
+        0.0,
+        2.0,
+        4.0,
+        6.0
+      ],
+      "expected_coverage": [
+        true,
+        false,
+        true,
+        false
+      ],
+      "private_data": false,
+      "source": "Project-authored S0-A synthetic fixture; no private Gerber data"
+    }
+  ],
+  "regression_sources": [
+    {
+      "path": "crates/gerber-io/tests/review_parser_regressions.rs",
+      "sha256": "2953ee742011b0e78716282a55477b5c7f8da38b526281bfbbf507f8fcc4bf2f",
+      "source": "Project-authored deterministic regression inputs; no private Gerber data"
+    },
+    {
+      "path": "crates/editor-core/tests/review_geometry_regressions.rs",
+      "sha256": "a574203b7fac690b7d959d23f5987d7613810c934779a9ea800a18ffea4bcf91",
+      "source": "Project-authored deterministic regression inputs; no private Gerber data"
+    },
+    {
+      "path": "crates/editor-service/tests/review_service_regressions.rs",
+      "sha256": "3d19cea71058c00921dda22082e835b0db0d586df5131af33a7646183205227b",
+      "source": "Project-authored deterministic regression inputs; no private Gerber data"
+    },
+    {
+      "path": "crates/editor-service/tests/historical_audit.rs",
+      "sha256": "1fb7d0b505788a27d9611990ac2bbde1a80d554a08e3a66787dc5d738b880d8c",
+      "source": "Project-authored deterministic regression inputs; no private Gerber data"
+    },
+    {
+      "path": "crates/editor-app/src/gpu_tests.rs",
+      "sha256": "91cbb5439520e03766ad930ff13419332f7d66fd018f392648008a27b4864846",
+      "source": "Project-authored deterministic regression inputs; no private Gerber data"
+    },
+    {
+      "path": "scripts/test_audit_core10.py",
+      "sha256": "9890a79d848d5f15414633056bfb5beec2c55b6767f193397da1bdf4335eb587",
+      "source": "Project-authored deterministic regression inputs; no private Gerber data"
+    },
+    {
+      "path": "crates/editor-app/src/navigation_tests.rs",
+      "sha256": "30da55a042ca6c2db9712412c3827baaea67248aaf631bc4c0a40d7ef2b23406",
+      "source": "Project-authored deterministic egui input frames; no private Gerber data"
     }
   ]
 }

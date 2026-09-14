@@ -42,13 +42,13 @@ pub struct CircleAperture {
 
 impl CircleAperture {
     pub fn new(diameter_mm: f64, hole_diameter_mm: Option<f64>) -> Result<Self, CoreError> {
-        if !diameter_mm.is_finite() || diameter_mm <= 0.0 {
+        if !diameter_mm.is_finite() || diameter_mm / 2.0 <= 0.0 {
             return Err(CoreError::InvalidGeometry(
                 "circle diameter must be positive",
             ));
         }
         if hole_diameter_mm
-            .is_some_and(|hole| !hole.is_finite() || hole <= 0.0 || hole >= diameter_mm)
+            .is_some_and(|hole| !hole.is_finite() || hole / 2.0 <= 0.0 || hole >= diameter_mm)
         {
             return Err(CoreError::InvalidGeometry(
                 "circle hole must be positive and smaller than the outer diameter",
@@ -65,7 +65,7 @@ impl CircleAperture {
         let outer = radius <= self.diameter_mm / 2.0 + EPSILON_MM;
         let inner = self
             .hole_diameter_mm
-            .is_some_and(|hole| radius < hole / 2.0 - EPSILON_MM);
+            .is_some_and(|hole| radius < hole / 2.0);
         outer && !inner
     }
 }

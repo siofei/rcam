@@ -33,17 +33,12 @@ THIRD_PARTY_NOTICES.md    direct dependency source and licence notices
 evidence/                 local verification logs and review evidence
 ```
 
-The local reproducible toolchain is pinned by `rust-toolchain.toml`. For the
-development machine used for this S0 run, Rustup, Cargo's registry/cache, and
-the build target were explicitly directed below `.tools/`; these environment
-variables are not implicit Cargo defaults. On a machine with the pinned
-toolchain available:
+The toolchain is pinned by `rust-toolchain.toml`. Use an existing installation
+of Rust 1.89.0 with rustfmt and clippy; do not switch RUSTUP_HOME to an empty
+folder. The original machine has its existing toolchain and caches in
+`.tools/`; those paths are local evidence, not prerequisites for other hosts.
 
-```bash
-export RUSTUP_HOME="$PWD/.tools/rustup"
-export CARGO_HOME="$PWD/.tools/cargo"
-export CARGO_TARGET_DIR="$PWD/.tools/target"
-export PATH="$PWD/.tools/bin:$PWD/.tools/cargo/bin:$PATH"
+```text
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -58,3 +53,28 @@ workflow is not claimed because editing and export are not implemented.
 
 Read `AGENTS.md`, `docs/DESIGN_V1.md`, `docs/ACCEPTANCE_V1.md`, and
 `docs/AUTOMATION_API.md` for the governing design and acceptance boundaries.
+
+## S0-B regression and evidence
+
+```
+cargo test --locked -p gerber-io --test review_parser_regressions
+cargo test --locked -p editor-core --test review_geometry_regressions
+cargo test --locked -p editor-service --test review_service_regressions
+cargo test --locked -p editor-service --test historical_audit -- --nocapture
+cargo test --locked -p editor-service --test dependency_boundary -- --nocapture
+cargo test --locked -p editor-app native_gpu_coverage_regressions -- --ignored --nocapture
+python3 -m unittest discover -s scripts -p test_audit_core10.py
+python3 scripts/source_manifest.py --check
+```
+
+The GPU check requires native Metal or DX12 hardware; it fails if no adapter
+is available. It is explicitly ignored in ordinary workspace tests, not counted
+as passed. Windows can use `python` for the dependency-free audit/hash scripts.
+The original review attachment and its three regression files were absent;
+new regressions are project-authored and do not claim to reproduce that attachment.
+See `docs/S0_B_REVIEW.md` for actual runs, failures, platform gaps and file hashes.
+Current source hashes are in `MANIFEST.sha256`; the old design-package manifest
+is preserved under `docs/archive/`. Binaries have separate per-run hashes.
+
+The S0 canvas release-frame drag fix and its regression/runtime evidence are
+recorded in `docs/DRAG_FIX_REVIEW.md`.
