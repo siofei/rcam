@@ -1,0 +1,13 @@
+[package]
+name = "editor-app"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+editor-core.workspace = true
+editor-service.workspace = true
+eframe.workspace = true
+egui-wgpu.workspace = true
+bytemuck.workspace = true

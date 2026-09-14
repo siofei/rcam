@@ -1,0 +1,137 @@
+{
+  "document_version": "1.1",
+  "api_version": 1,
+  "kind": "design_examples_not_executable_workflow",
+  "notice": "以下仅为拟定DTO的请求／结果形状，不是脚本或已执行证据。doc-demo等ID与revision是示例；实际测试必须从服务响应绑定真实值。全部状态未执行。",
+  "target_platforms": [
+    "windows-x64",
+    "macos-arm64"
+  ],
+  "examples": [
+    {
+      "name": "查询已实现能力",
+      "status": "未执行",
+      "request": {
+        "api_version": 1,
+        "request_id": "cap-001",
+        "op": "system.capabilities",
+        "params": {}
+      }
+    },
+    {
+      "name": "打开本地文件",
+      "status": "未执行",
+      "request": {
+        "api_version": 1,
+        "request_id": "open-001",
+        "op": "document.open",
+        "params": {
+          "path": "inputs/钢网 #1.gbr"
+        }
+      }
+    },
+    {
+      "name": "按明确图层与几何条件查询",
+      "status": "未执行",
+      "request": {
+        "api_version": 1,
+        "request_id": "query-001",
+        "op": "objects.query",
+        "document_id": "doc-demo",
+        "params": {
+          "layer_id": "layer-demo",
+          "geometry_type": "flash",
+          "region_mm": {
+            "min_x_mm": 0.0,
+            "min_y_mm": 0.0,
+            "max_x_mm": 100.0,
+            "max_y_mm": 100.0
+          },
+          "relation": "intersects",
+          "limit": 100,
+          "cursor": null
+        }
+      }
+    },
+    {
+      "name": "明确毫米偏移",
+      "status": "未执行",
+      "request": {
+        "api_version": 1,
+        "request_id": "move-001",
+        "op": "objects.move",
+        "document_id": "doc-demo",
+        "expected_revision": "12",
+        "params": {
+          "layer_id": "layer-demo",
+          "object_ids": [
+            "object-a",
+            "object-b"
+          ],
+          "dx_mm": 5.0,
+          "dy_mm": -3.0
+        }
+      },
+      "response_shape": {
+        "api_version": 1,
+        "request_id": "move-001",
+        "status": "completed",
+        "document_id": "doc-demo",
+        "revision": "13",
+        "result": {
+          "changed_object_ids": [
+            "object-a",
+            "object-b"
+          ],
+          "undo_entries_added": 1
+        },
+        "warnings": [],
+        "error": null,
+        "job_id": null
+      }
+    },
+    {
+      "name": "无界面安全导出到新路径",
+      "status": "未执行",
+      "request": {
+        "api_version": 1,
+        "request_id": "export-001",
+        "op": "gerber.export_layer",
+        "document_id": "doc-demo",
+        "expected_revision": "13",
+        "params": {
+          "layer_id": "layer-demo",
+          "path": "outputs/钢网_修改版.gbr",
+          "overwrite": {
+            "mode": "deny"
+          },
+          "metadata_policy": {
+            "mode": "require_confirmation"
+          }
+        }
+      }
+    },
+    {
+      "name": "过期revision错误形状",
+      "status": "未执行",
+      "response_shape": {
+        "api_version": 1,
+        "request_id": "stale-001",
+        "status": "error",
+        "document_id": "doc-demo",
+        "revision": "14",
+        "result": null,
+        "warnings": [],
+        "error": {
+          "code": "REVISION_CONFLICT",
+          "message": "文档已修改，请重新查询后提交。",
+          "details": {
+            "expected_revision": "12",
+            "actual_revision": "14"
+          }
+        },
+        "job_id": null
+      }
+    }
+  ]
+}

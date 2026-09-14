@@ -1,0 +1,35 @@
+# 实施计划与职责
+
+基线：DESIGN_V1 1.1，acceptance_cases schema 2；2026-09-14 开始。
+主代理负责规划、独立审查、测试与验收结论；Luna 负责全部产品代码。每轮仅交付一个阶段内的小闭环。
+
+## 当前任务 S0-A：技术风险验证
+
+需求：R01/R03/R04/R05/R06/R08/R17/R18/R19/R20/R21/R22。
+关联验收：AT-001–004、AT-006–011、AT-017–019、AT-085–086、AT-088 的前置检查；不是上述完整用例的通过声明。
+
+允许 Luna 修改：工作区 Cargo 文件与工具链、.gitignore、crates/editor-core、gerber-io、editor-service、editor-app、fixtures/synthetic、阶段 manifest、README、THIRD_PARTY_NOTICES、docs/DEPENDENCIES、双平台 CI、自己的 evidence 运行目录。
+主代理维护：本计划、BASELINE、CAPABILITIES、ADR、只读真实样本清单和独立审核证据。
+不得改变设计/验收原文或阈值，不引入脚本运行时或生产导出。
+
+交付闭环：真实 parser → 自有 f64 毫米小样模型 → ApplicationService 只读 DTO → eframe 管理的 wgpu Callback 画布；独立验证曝光顺序、局部孔洞、跨层隔离、缩放/裁剪。S0 仅暴露实际完成能力；不使用 EditableV1 或 ReadOnlyExact 名称暗示完整文件安全能力。
+
+技术门禁：fmt/check/clippy/test/release；服务正常依赖无 GPU/窗口；API 严格拒绝未知字段/版本/操作；小样坐标与点覆盖有独立断言；启动与 GPU 证据按平台分别记录。缺失的 headless_workflow 必须写未实现，不能放空测试充数。
+S0 整体退出还要求：REAL30/CORE10 预先冻结、规范差异审查、许可证归档、Windows/macOS 最小画布证据。缺口未清零不得宣布 S0 或 V1 完成。
+
+## 后续阶段与门禁
+
+| 阶段 | 小闭环与主要需求 | 验收范围 | 模块 |
+|---|---|---|---|
+| S1 | 标准语义与安全写回，R02–R06/R14–R16/R21–R22 | AT-005–020、053、055–059、086、088、092–094 | core/io/service，真实 headless_workflow |
+| S2 | 图层、导航、精确选择，R07–R09/R17/R21 | AT-021–030、062、067–068、089 | app/render，core 查询/service DTO |
+| S3 | 原子编辑与撤销、数值/网格/测距，R10–R11/R13/R22 | AT-031–045、090–091 | core/service/app |
+| S4 | 矢量文字与完整保存，R12/R14–R16/R21–R22 | AT-046–061、063–065、087、092–096 | text/io/service/app |
+| S5 | 固定样本性能与双平台实测，R16–R19/R21–R22 | AT-025、043、046、063–078、086–097 | render/app/验收工具 |
+| S6 | 发行、CORE10、最终证据，R01–R22 | 全部96个有效用例按 required_platforms | 打包/文档/验收报告 |
+
+表格为阶段分配，正式判定以每条原始用例为准，不改变其完整要求。失败先定位、由 Luna 修复、主代理重新验证；不替换失败样本。Windows 实机缺失不能用交叉编译替代。
+
+## 样本处理
+
+用户于 2026-09-14 授权只读使用 /Volumes/硬盘盒/0727SMT。仅在本地分析，不上传、不修改源文件。先盘点已展开文件，压缩档不自动解包到源目录。私有清单和路径保存在 fixtures/private 与 evidence（Git 忽略）。CORE10 选择须覆盖业务文件并在语义测试前固定，不能按最终成功率事后挑选。

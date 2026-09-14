@@ -1,0 +1,20 @@
+{
+  "schema_version": 2,
+  "kind": "s0_synthetic_fixture_manifest",
+  "fixtures": [
+    {
+      "id": "S0-POLARITY-001",
+      "path": "fixtures/synthetic/s0_polarity.gbr",
+      "sha256": "fe00fd9ab0668d3d31ac8fe15344854f27d0ddd778ffc26a465036b03f13b43c",
+      "bytes": 173,
+      "purpose": "strict finite circle-flash Dark/Clear/Dark parser and local-hole analysis",
+      "expected_units": "mm",
+      "expected_format": "FSLAX24Y24",
+      "expected_objects": 3,
+      "expected_exposure_order": ["Dark", "Clear", "Dark"],
+      "expected_coverage_points_mm": [0.0, 2.0, 4.0, 6.0],
+      "expected_coverage": [true, false, true, false],
+      "private_data": false
+    }
+  ]
+}

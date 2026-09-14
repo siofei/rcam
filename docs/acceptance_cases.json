@@ -1,0 +1,3060 @@
+{
+  "schema_version": 2,
+  "kind": "acceptance_spec_not_results",
+  "document_version": "1.1",
+  "date": "2026-09-14",
+  "scope": "Gerber编辑器V1；仅Windows x64和macOS Apple Silicon；预留可验收的脚本自动化业务接口，不交付脚本引擎或网络服务；所有有效用例未执行。",
+  "status_values": [
+    "未执行",
+    "通过",
+    "失败",
+    "阻塞",
+    "不适用"
+  ],
+  "pass_rule": "cases中的所有适用必测项在required_platforms要求范围内均有通过结果和证据；CORE10为10/10；Windows与macOS真机门禁通过；B0/B1未关闭为0；retired_cases不计入通过数或执行分母。",
+  "cases": [
+    {
+      "id": "AT-001",
+      "group": "A 基线与可复现构建",
+      "title": "从干净环境构建并运行",
+      "requirements": [
+        "R01",
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "BASELINE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在 Windows MSVC x64 和 macOS arm64 分别获取同一提交，不复用已有 target。",
+        "执行设计第 18 节的格式、check、clippy、test 与 release build；Windows／macOS 启动程序。"
+      ],
+      "expected": "依赖锁定且两平台适用构建检查成功；两平台启动不依赖开发机绝对路径。仅构建通过不能替代原生 GUI／GPU 证据。",
+      "evidence": [
+        "commit与lockfile哈希",
+        "完整构建日志",
+        "Windows／macOS启动截图"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-002",
+      "group": "A 基线与可复现构建",
+      "title": "依赖、字体和样板许可归档",
+      "requirements": [
+        "R01",
+        "R20"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "人工审计",
+      "fixtures": [
+        "BASELINE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "核对实际 Cargo.lock 与分发目录。",
+        "检查所有直接／间接依赖、复制代码、字体及样板的版本、来源、LICENSE 和 notices。"
+      ],
+      "expected": "无来源不明依赖；未审查的 lib_gerber_edit／字体不进入正式分发。MakerPnP 主程序和独立库许可证不混用。",
+      "evidence": [
+        "依赖清单",
+        "THIRD_PARTY_NOTICES.md",
+        "实际分发文件清单"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "shared"
+      ]
+    },
+    {
+      "id": "AT-003",
+      "group": "A 基线与可复现构建",
+      "title": "规范、硬件和能力矩阵冻结",
+      "requirements": [
+        "R01",
+        "R06",
+        "R17",
+        "R19"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "人工审计",
+      "fixtures": [
+        "BASELINE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在 S0 记录规范版本、库版本、GPU 后端、OS、驱动、内存、DPI 和测试画布。",
+        "审查 2024.05 参考与 2026.05 官方规范的相关差异；冻结 EditableV1 范围和性能阈值。"
+      ],
+      "expected": "BASELINE.md、CAPABILITIES.md 与设计一致；任何待确认能力明确标未验证，验收前不得临时放宽阈值。",
+      "evidence": [
+        "BASELINE.md",
+        "能力矩阵",
+        "S0决策记录"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "shared"
+      ]
+    },
+    {
+      "id": "AT-004",
+      "group": "A 基线与可复现构建",
+      "title": "真实样本清单与核心业务集合",
+      "requirements": [
+        "R06",
+        "R19",
+        "R20"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "人工审计",
+      "fixtures": [
+        "REAL30",
+        "CORE10"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "收集至少 30 份经授权的实际 Gerber，记录生成来源／年代、哈希及能力分类。",
+        "预先选定至少 10 份业务必须可编辑的文件；不得在最终验收时替换失败样本。"
+      ],
+      "expected": "样本来源、哈希、授权齐全；CORE10 不能全部由人为简化的小样替代。若核心样本依赖范围外命令，先调整范围。",
+      "evidence": [
+        "样本manifest",
+        "授权／本地存储说明",
+        "CORE10冻结记录"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "shared"
+      ]
+    },
+    {
+      "id": "AT-005",
+      "group": "B 导入与几何语义",
+      "title": "中文、空格、井号路径与扩展名识别",
+      "requirements": [
+        "R02",
+        "R20"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F01"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "将同一有效文件分别放入中文目录、含空格／# 的路径，并使用 .gbr、.gbx 和自定义扩展名。",
+        "分别通过打开对话框和拖放导入；比较源文件前后 SHA-256。"
+      ],
+      "expected": "内容识别一致、路径正常、无乱码；源文件零修改。不凭扩展名把 Excellon 或任意文本当 Gerber。",
+      "evidence": [
+        "源文件前后哈希",
+        "拖放录像",
+        "导入诊断"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-006",
+      "group": "B 导入与几何语义",
+      "title": "不同格式的小数位与零处理",
+      "requirements": [
+        "R03"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F01"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入表达相同几何的不同 FS 格式、规范允许的前导／尾随零样本。",
+        "检查已知点 (12.3456, -7.8901) mm 及省略零的坐标。"
+      ],
+      "expected": "规范化坐标符合独立预期，误差不超过核心容差；缺失关键格式时拒绝或要求明确指定，不得默认猜测。",
+      "evidence": [
+        "坐标断言",
+        "样本原文",
+        "错误提示"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-007",
+      "group": "B 导入与几何语义",
+      "title": "英寸与毫米一致",
+      "requirements": [
+        "R03",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F01"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入两个物理几何相同的英寸／毫米文件，比较 1 inch 和 25.4 mm 的已知边。",
+        "切换界面单位，再保存和重新打开。"
+      ],
+      "expected": "几何和物理尺寸相同；界面单位变化不改变制造坐标；导出毫米不存在二次乘除 25.4。",
+      "evidence": [
+        "数值断言",
+        "输出文件",
+        "往返报告"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-008",
+      "group": "B 导入与几何语义",
+      "title": "省略坐标与当前 DCode 状态",
+      "requirements": [
+        "R03"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F02"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "使用先设 X/Y、后只给 X、再只给 Y 的连续 D02/D01/D03 指令。",
+        "检查每一步规范化位置以及光圈切换后的线宽。"
+      ],
+      "expected": "省略轴继承上一值，D 操作与光圈选择不混淆；图形与独立逐步状态表一致。",
+      "evidence": [
+        "状态表",
+        "单元测试日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-009",
+      "group": "B 导入与几何语义",
+      "title": "未定义光圈与非法状态拒绝",
+      "requirements": [
+        "R03",
+        "R06",
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_BAD"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入未定义 DCode、非法光圈尺寸、未闭合 Region、缺失必要状态的样本。",
+        "在已打开有效文档时再次导入上述文件。"
+      ],
+      "expected": "错误有文件与命令位置／定位范围；不进入可编辑状态；原文档和源文件不变。",
+      "evidence": [
+        "错误报告",
+        "原文档摘要",
+        "源文件哈希"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-010",
+      "group": "B 导入与几何语义",
+      "title": "C／R／O／P 标准 Flash",
+      "requirements": [
+        "R04"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入圆、矩形、长圆及正多边形光圈，包含旋转多边形与非正方形矩形。",
+        "检查尺寸、中心、已知覆盖点和外接边界，放大后对照独立查看器。"
+      ],
+      "expected": "尺寸、方向和覆盖点全部正确；不是只画一个近似外接矩形。",
+      "evidence": [
+        "几何断言",
+        "独立对照图"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-011",
+      "group": "B 导入与几何语义",
+      "title": "标准光圈孔洞的局部透明语义",
+      "requirements": [
+        "R04",
+        "R05"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_HOLE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "先画穿过原点的正片线，再在原点放外径 4 mm、内孔 2 mm 的环形 Flash。",
+        "检查圆心、内孔空白区域和圆环覆盖。"
+      ],
+      "expected": "圆心处原有线保留；没有原有几何的孔内仍为空；孔洞不能作为全层 Clear 擦除背景。",
+      "evidence": [
+        "指定点覆盖断言",
+        "原始和导出对照"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-012",
+      "group": "B 导入与几何语义",
+      "title": "线段扫掠、端帽和边界",
+      "requirements": [
+        "R04",
+        "R09"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F02"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "使用直径 0.2 mm 的无孔圆光圈绘制 (0,0)→(10,0)，再测试水平、垂直、斜线及相连段。",
+        "检查边界和连接处覆盖；独立确认退化零长度绘制的规范处理。"
+      ],
+      "expected": "水平线边界为 x∈[-0.1,10.1]、y∈[-0.1,0.1] mm；不会因错误接头产生额外尖角或缺口。",
+      "evidence": [
+        "边界断言",
+        "连接处放大图"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-013",
+      "group": "B 导入与几何语义",
+      "title": "顺逆圆弧、跨象限与边界",
+      "requirements": [
+        "R04",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F04"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入以 (0,0) 为圆心、半径 10 mm 的顺／逆时针圆弧，覆盖超过 180° 和跨零角度情形。",
+        "比较端点、方向、弧中点、圆心和边界，导出重新打开。"
+      ],
+      "expected": "圆弧不走错长短弧，不丢失极值；保留 G02/G03 等价圆弧而非使用屏幕细分结果。",
+      "evidence": [
+        "解析断言",
+        "输出Gerber",
+        "对照图"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-014",
+      "group": "B 导入与几何语义",
+      "title": "全圆不被当成零长度",
+      "requirements": [
+        "R04",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F04"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入起点等于终点、I/J 定义有效半径的 G75 全圆。",
+        "旋转、镜像、保存并重新导入。"
+      ],
+      "expected": "完整圆保持，方向与轮廓正确，不能消失或变成一个 Flash。",
+      "evidence": [
+        "全圆断言",
+        "输出文件"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-015",
+      "group": "B 导入与几何语义",
+      "title": "Region 的凹轮廓、多轮廓和合法孔洞",
+      "requirements": [
+        "R04",
+        "R05",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F05"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "使用先由规范审查和独立查看器确认的凹多边形、多轮廓、合法含孔／cut-in 样本，以及带圆弧边的 Region。",
+        "检查覆盖点与孔洞，移动后另存为并复核。"
+      ],
+      "expected": "填充与 Gerber 语义一致；不能未经验证直接套用 SVG even-odd／nonzero 规则。合法孔洞不擦除其他已有图形。",
+      "evidence": [
+        "独立确认记录",
+        "覆盖点真值",
+        "输出与对照图"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-016",
+      "group": "B 导入与几何语义",
+      "title": "LM／LR／LS 作用域正确",
+      "requirements": [
+        "R03",
+        "R04",
+        "R10"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F06"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "对非圆 Flash 使用光圈镜像、旋转和统一缩放；中心坐标保持固定。",
+        "在变换状态切换前后绘制其他对象，检查状态是否泄漏。"
+      ],
+      "expected": "局部形状变换正确；光圈旋转不会误把全图坐标绕原点旋转，恢复状态后新对象正常。",
+      "evidence": [
+        "逐对象坐标和方向断言",
+        "独立对照"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-017",
+      "group": "B 导入与几何语义",
+      "title": "Dark→Clear→Dark 顺序合成",
+      "requirements": [
+        "R05",
+        "R14",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_POL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在原点依次画直径 10 mm Dark 圆、直径 6 mm Clear 圆、直径 2 mm Dark 圆。",
+        "检查半径 0、2、4、6 mm 处的覆盖；修改附近对象触发缓存刷新后重复检查。"
+      ],
+      "expected": "r=0 为实、r=2 为空、r=4 为实、r=6 为空；导出相同；不能全 Dark 合并后统一减 Clear。",
+      "evidence": [
+        "点覆盖断言",
+        "缓存刷新前后图",
+        "输出Gerber"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-018",
+      "group": "B 导入与几何语义",
+      "title": "图层之间的 Clear 不相互擦除",
+      "requirements": [
+        "R05",
+        "R07"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_LAYERS"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "底层绘制实体矩形，上层绘制含 Clear 的圆图形。",
+        "分别显隐各层并更改颜色／透明度。"
+      ],
+      "expected": "上层 Clear 只清理上层；下层从空白处可见；颜色和透明度不改变底层制造几何。",
+      "evidence": [
+        "多层对照截图",
+        "图层摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-019",
+      "group": "B 导入与几何语义",
+      "title": "范围外特征全文件检测",
+      "requirements": [
+        "R06",
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_UNSUPPORTED"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "分别把 AM、AB、SR、G74、旧图像变换、非圆 D01、Excellon、外置光圈样本放在文件前段和后段。",
+        "尝试打开和另存为。"
+      ],
+      "expected": "默认 V1 全部得到明确能力错误，不显示不完整正常画布，不允许加工文件导出。已正式升级支持的特征必须有新增完整用例，不能简单跳过本项。",
+      "evidence": [
+        "每类诊断",
+        "导出禁用截图",
+        "能力矩阵"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-020",
+      "group": "B 导入与几何语义",
+      "title": "损坏、截断、超大数与恶意复杂输入",
+      "requirements": [
+        "R02",
+        "R06",
+        "R16"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_BAD"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入乱码／截断文本、超大数值、极长命令、异常重复、超限顶点文件。",
+        "在资源上限开启状态观察内存、错误提示及原文档。"
+      ],
+      "expected": "有界失败且无程序崩溃、死循环和部分覆盖；输入不能绕过资源限制。",
+      "evidence": [
+        "错误日志",
+        "内存记录",
+        "原文档摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-021",
+      "group": "C 图层、画布与选择",
+      "title": "同类型图层独立存在",
+      "requirements": [
+        "R07"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_LAYERS"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "打开两个都声明为 PasteTop 或均无角色的不同文件。",
+        "分别改名、切换活动层、修改其中一层。"
+      ],
+      "expected": "两个独立 LayerId，不自动合并；保存路径、脏状态和对象互不污染。",
+      "evidence": [
+        "图层ID日志",
+        "双层截图",
+        "输出文件"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-022",
+      "group": "C 图层、画布与选择",
+      "title": "显隐和锁定",
+      "requirements": [
+        "R07",
+        "R09",
+        "R10"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_LAYERS"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "隐藏一层并锁定另一层，再进行点击、框选、删除和数值修改。",
+        "解锁并恢复显示后重试。"
+      ],
+      "expected": "隐藏／锁定层不能被普通选择修改；状态恢复后可按规则编辑；锁定不会改变制造内容。",
+      "evidence": [
+        "操作录像",
+        "文档摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-023",
+      "group": "C 图层、画布与选择",
+      "title": "平移与适合窗口",
+      "requirements": [
+        "R08"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在鼠标中键／约定方式下平移；改变窗口尺寸，执行适合窗口。",
+        "核对实际坐标、中心和边界是否仍可定位。"
+      ],
+      "expected": "画布不跳变、不裁错图形；Fit 包含实际线宽和光圈边界，而不是只包围中心点。",
+      "evidence": [
+        "导航录像",
+        "相机与包围盒日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-024",
+      "group": "C 图层、画布与选择",
+      "title": "以鼠标位置为中心缩放",
+      "requirements": [
+        "R08"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "将鼠标置于一个已知 Flash 中心，连续放大和缩小 20 次。",
+        "记录每次变换前后鼠标下的世界坐标；同时测试触控板。"
+      ],
+      "expected": "锚点漂移≤1个物理像素，制造坐标不变；触控板操作没有方向翻转或过度加速。",
+      "evidence": [
+        "世界／屏幕坐标日志",
+        "鼠标与触控板录像"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-025",
+      "group": "C 图层、画布与选择",
+      "title": "DPI、面板裁剪与显示器切换",
+      "requirements": [
+        "R08",
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "Windows 测试 100%／150%／200%；macOS 测试 Retina；有条件时跨不同缩放显示器移动窗口。",
+        "点击已知位置，并在面板展开／收起、窗口缩放后框选。"
+      ],
+      "expected": "绘制、命中、选择框与鼠标一致；画布不越过 UI 面板，不能重复乘以 DPI。",
+      "evidence": [
+        "各DPI截图",
+        "点击坐标记录"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-026",
+      "group": "C 图层、画布与选择",
+      "title": "精确点选不只看 AABB",
+      "requirements": [
+        "R09"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_HIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "点击环形孔洞中心、凹多边形凹口、细斜线包围盒内但远离线条的位置。",
+        "再点击各对象真实覆盖和容差边界。"
+      ],
+      "expected": "孔洞和凹口不误中，真实覆盖正确命中；点选容差按冻结规则处理。",
+      "evidence": [
+        "点位和预期ID表",
+        "自动断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-027",
+      "group": "C 图层、画布与选择",
+      "title": "清除对象与遮挡后的选择语义",
+      "requirements": [
+        "R05",
+        "R09"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_POL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在最终为空的 Clear 区域普通点选。",
+        "开启几何／清除对象选择模式，并选择该 Clear 对象。"
+      ],
+      "expected": "普通模式不会选中已被完全擦掉的实体；几何模式能以清晰轮廓选择 Clear，属性明确标明极性。",
+      "evidence": [
+        "两种模式录像",
+        "选中ID／极性日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-028",
+      "group": "C 图层、画布与选择",
+      "title": "重叠对象选择顺序稳定",
+      "requirements": [
+        "R09"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_HIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在多个完全或部分重叠对象处循环选择。",
+        "重新打开相同文件后重复操作。"
+      ],
+      "expected": "候选列表／循环顺序稳定、可解释，来源于确定规则而不是哈希遍历；能返回指定对象。",
+      "evidence": [
+        "候选顺序日志",
+        "操作录像"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-029",
+      "group": "C 图层、画布与选择",
+      "title": "左向右包含框选与右向左交叉框选",
+      "requirements": [
+        "R09"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_HIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "对同一矩形分别按两个方向框选，覆盖完整对象、穿过边界对象及完全位于孔洞的框。",
+        "使用 Shift 及约定切换键增减选择。"
+      ],
+      "expected": "包含／相交语义符合设计；孔洞中的框不误选环形实体；选择集与独立预期 ID 完全一致。",
+      "evidence": [
+        "预期ID集合",
+        "实际选择日志",
+        "录像"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-030",
+      "group": "C 图层、画布与选择",
+      "title": "编辑后空间索引不滞后",
+      "requirements": [
+        "R09",
+        "R10",
+        "R11"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "移动、删除、Undo、Redo 同一对象。",
+        "在旧位置和新位置分别点选并测试框选。"
+      ],
+      "expected": "索引、模型与显示一致；没有旧位置幽灵命中或已恢复对象无法选中。",
+      "evidence": [
+        "每次索引候选与选择结果",
+        "测试日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-031",
+      "group": "D 编辑、事务与测量",
+      "title": "数值移动及异常数值拒绝",
+      "requirements": [
+        "R10"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "选择中心 (10,20) mm 的对象，输入位移 (+5,-3) mm。",
+        "再次输入空值、非法字符、NaN、Inf 和越界数值。"
+      ],
+      "expected": "有效结果是 (15,17) mm；非法值不提交、不产生 Undo，不改其他对象。",
+      "evidence": [
+        "坐标断言",
+        "输入错误截图"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-032",
+      "group": "D 编辑、事务与测量",
+      "title": "拖动预览、Esc 取消与失去捕获",
+      "requirements": [
+        "R10",
+        "R11"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "拖动一个对象但按 Esc；再次拖动时切换窗口导致失去捕获。",
+        "第三次正常释放鼠标。"
+      ],
+      "expected": "前两次按固定取消策略还原且历史不增长；第三次只产生一个事务，画面与最终坐标一致。",
+      "evidence": [
+        "事务数量",
+        "操作录像",
+        "前后摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-033",
+      "group": "D 编辑、事务与测量",
+      "title": "任意角旋转和旋转中心",
+      "requirements": [
+        "R10",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F04"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "将点 (10,0) 围绕原点逆时针旋转 90°；再围绕非原点测试 37°。",
+        "旋转矩形 Flash、线、弧、Region，并输出。"
+      ],
+      "expected": "90°已知点变为(0,10)，其他对象按独立矩阵计算一致；光圈方向和圆弧同步变化。",
+      "evidence": [
+        "独立计算结果",
+        "导出复核"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-034",
+      "group": "D 编辑、事务与测量",
+      "title": "镜像圆弧及重复变换",
+      "requirements": [
+        "R10",
+        "R11",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F04"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "对圆弧关于 X 轴镜像，验证点 (10,20)→(10,-20) 且顺逆方向切换。",
+        "两次相同镜像、四次90°旋转，并分别 Undo。"
+      ],
+      "expected": "变换后几何正确；复合变换恢复到容差内，Undo 精确恢复存储状态；全圆不消失。",
+      "evidence": [
+        "方向与端点断言",
+        "Undo摘要",
+        "输出文件"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-035",
+      "group": "D 编辑、事务与测量",
+      "title": "复制粘贴和独立对象身份",
+      "requirements": [
+        "R10",
+        "R11"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "复制一组不同光圈对象，粘贴到指定偏移位置，再移动副本。",
+        "撤销和重做粘贴。"
+      ],
+      "expected": "原对象不变，副本ID独立；数量、偏移和内部曝光相对顺序正确；粘贴作为一个事务。",
+      "evidence": [
+        "对象ID／顺序列表",
+        "数量断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-036",
+      "group": "D 编辑、事务与测量",
+      "title": "包含 Clear 的复制不暗中重排",
+      "requirements": [
+        "R05",
+        "R10",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_POL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "选择一个包含 Dark/Clear/Dark 的序列并复制到空白处及已有几何处。",
+        "检查复制对象按原相对顺序追加后的实时效果，再保存。"
+      ],
+      "expected": "复制的是明确的有序绘图操作，预览和保存结果相同；不为合批改变顺序或声称复制的是隔离图像。",
+      "evidence": [
+        "操作顺序日志",
+        "覆盖点断言",
+        "输出对照"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-037",
+      "group": "D 编辑、事务与测量",
+      "title": "光圈写时复制与 DCode 冲突",
+      "requirements": [
+        "R04",
+        "R10",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_APERTURE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "10个 Flash 共用同一光圈，只修改其中1个的直径／尺寸。",
+        "另打开包含同名D10但不同定义的图层，并分别输出。"
+      ],
+      "expected": "只有目标实例变化；其余9个不变；输出定义和引用不冲突、不串用。",
+      "evidence": [
+        "光圈引用表",
+        "9个不变断言",
+        "导出文件"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-038",
+      "group": "D 编辑、事务与测量",
+      "title": "删除及撤销恢复完整状态",
+      "requirements": [
+        "R10",
+        "R11"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_POL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "选中包含 Region、Flash 与 Clear 的对象集后删除。",
+        "Undo、Redo，检查图形、选择、极性和顺序。"
+      ],
+      "expected": "对象数量和合成结果与各阶段预期一致；Undo恢复原ID／光圈引用和曝光顺序。",
+      "evidence": [
+        "前中后状态摘要",
+        "覆盖断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-039",
+      "group": "D 编辑、事务与测量",
+      "title": "批量操作的原子性",
+      "requirements": [
+        "R10",
+        "R11",
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "对多个对象执行合法批量变换。",
+        "构造其中一个对象会越界或超过历史预算的批量变换。"
+      ],
+      "expected": "合法操作一次提交；非法操作一个对象也不改变，不得出现部分成功。",
+      "evidence": [
+        "事务记录",
+        "前后摘要",
+        "错误诊断"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-040",
+      "group": "D 编辑、事务与测量",
+      "title": "Undo/Redo 分支",
+      "requirements": [
+        "R11"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "连续执行移动A、删除B、复制C。",
+        "Undo两次，再执行新操作D，尝试Redo。"
+      ],
+      "expected": "新操作后旧Redo分支被清除；历史顺序、对象身份和图形状态正确。",
+      "evidence": [
+        "历史栈日志",
+        "模型摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-041",
+      "group": "D 编辑、事务与测量",
+      "title": "保存基线与脏标记",
+      "requirements": [
+        "R11",
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "保存当前状态后做移动；Undo回保存状态，再Redo。",
+        "确认保存本身不清空已有Undo。"
+      ],
+      "expected": "修改时脏、回到保存状态时不脏、Redo重新脏；不能用历史栈长度代替内容基线。",
+      "evidence": [
+        "标题／图层标记截图",
+        "保存基线摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-042",
+      "group": "D 编辑、事务与测量",
+      "title": "Undo 内存预算",
+      "requirements": [
+        "R11",
+        "R16"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "P100K"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "以受控测试配置降低历史预算，执行多次大选择集编辑。",
+        "触发旧事务淘汰，再尝试超过单事务预算的动作。"
+      ],
+      "expected": "按完整事务淘汰并提示；超大动作在修改前拒绝；内存受控，现有文档不受损。",
+      "evidence": [
+        "历史内存指标",
+        "拒绝提示",
+        "文档摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-043",
+      "group": "D 编辑、事务与测量",
+      "title": "文本输入焦点不误触画布操作",
+      "requirements": [
+        "R09",
+        "R10",
+        "R12",
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在名称／数值／文字输入框选中文本，使用Delete、Backspace、复制、粘贴和Undo。",
+        "离开输入框，再执行画布快捷键。"
+      ],
+      "expected": "输入框焦点期间只编辑文本，不删除／粘贴画布图形；退出后快捷键作用正确。",
+      "evidence": [
+        "Windows／macOS录像",
+        "对象数量日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-044",
+      "group": "D 编辑、事务与测量",
+      "title": "网格与吸附的物理一致性",
+      "requirements": [
+        "R13"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_HIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "网格设0.1 mm，测试网格、端点、圆心吸附及临时关闭。",
+        "在多级缩放和DPI下重复，并切换毫米／英寸显示。"
+      ],
+      "expected": "吸附坐标精确；搜索半径保持逻辑点体验；单位切换不改真实网格和对象位置。",
+      "evidence": [
+        "吸附坐标表",
+        "各缩放录像"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-045",
+      "group": "D 编辑、事务与测量",
+      "title": "测距与坐标显示",
+      "requirements": [
+        "R08",
+        "R13"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_MEASURE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "量取 (0,0) 到 (3,4) mm 的两点距离。",
+        "切换英寸并对照结果，重复缩放和平移后再测。"
+      ],
+      "expected": "距离是5 mm；英寸显示为5/25.4并按显示精度舍入；不声称测的是边到边距离或弧长。",
+      "evidence": [
+        "数值截图",
+        "自动断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-046",
+      "group": "E 中文与矢量文字",
+      "title": "中文 UI、目录名和输入法",
+      "requirements": [
+        "R02",
+        "R12",
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_TEXT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "Windows和macOS中文输入法分别输入文件名／图层名和文字。",
+        "测试组合输入候选状态下的Enter、Esc、方向键。"
+      ],
+      "expected": "中文不显示方框；IME候选确认不误触提交、取消或画布移动；用户路径正确。",
+      "evidence": [
+        "双平台输入法录像",
+        "错误日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-047",
+      "group": "E 中文与矢量文字",
+      "title": "ASCII 字符生成并写入 Gerber",
+      "requirements": [
+        "R12",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_TEXT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "创建 W1234567 与 8B，设置字高3 mm、字距和锚点。",
+        "移动、旋转后另存为，在独立查看器中打开。"
+      ],
+      "expected": "文字是实际矢量对象而非UI标签；字洞、位置、尺寸和朝向正确。",
+      "evidence": [
+        "输出Gerber",
+        "独立对照",
+        "几何尺寸断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-048",
+      "group": "E 中文与矢量文字",
+      "title": "中文字形轮廓与字洞",
+      "requirements": [
+        "R12",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_TEXT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "使用冻结且获准的测试字体生成“钢网测试口回”。",
+        "放大检查字洞，移动／镜像／Undo后保存并独立复核。"
+      ],
+      "expected": "所需字符均有真实轮廓，字洞和笔画不丢失；不能以ASCII库接口存在替代本项实现。",
+      "evidence": [
+        "字体标识和SHA-256",
+        "输出文件",
+        "独立对照"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-049",
+      "group": "E 中文与矢量文字",
+      "title": "缺字、字体错误和空白输入",
+      "requirements": [
+        "R12",
+        "R16"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_TEXT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "选择缺少目标字形的字体、损坏字体、仅位图支持字形、全空格字符串。",
+        "观察预览和提交状态。"
+      ],
+      "expected": "按支持策略明确拒绝并列出原因；不替换成问号后假报成功；不产生半个文字事务。",
+      "evidence": [
+        "错误提示",
+        "事务数量",
+        "输入样本"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-050",
+      "group": "E 中文与矢量文字",
+      "title": "字高、对齐和制造曲线误差",
+      "requirements": [
+        "R12",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_TEXT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "创建3 mm可见轮廓高的非空字符串，测试左／中／右及垂直锚点。",
+        "在不同缩放级别导出相同文字，与原字体轮廓独立比较。"
+      ],
+      "expected": "可见总轮廓高误差≤0.001 mm；曲线最大偏差≤0.001 mm；导出几何不随屏幕缩放改变。",
+      "evidence": [
+        "字体轮廓对照",
+        "偏差报告",
+        "不同缩放输出摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-051",
+      "group": "E 中文与矢量文字",
+      "title": "文字孔洞不会擦除原有图形",
+      "requirements": [
+        "R05",
+        "R12",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_TEXT_HOLE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "先放置一条细线，再叠放孔洞经过该线的“口”或“8”。",
+        "比较字洞中原有线条在预览和导出后是否保留。"
+      ],
+      "expected": "字体的透明孔洞不作为全图层Clear；已有线保持；与无字背景的几何关系正确。",
+      "evidence": [
+        "指定点覆盖断言",
+        "输出对照"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-052",
+      "group": "E 中文与矢量文字",
+      "title": "文字分组与未包含能力说明",
+      "requirements": [
+        "R11",
+        "R12",
+        "R20"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_TEXT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "创建文字后整体移动、删除和Undo。",
+        "查看生成提示及重新打开普通Gerber后的文字对象状态。"
+      ],
+      "expected": "一个文字创建是一个Undo事务；会话内可整体操作；明确普通Gerber不保留文字原文编辑组、V1不自动搭桥。",
+      "evidence": [
+        "操作录像",
+        "界面与说明文档"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-053",
+      "group": "F 导出、往返与文件安全",
+      "title": "未修改文件的规范化往返",
+      "requirements": [
+        "R03",
+        "R04",
+        "R05",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F_POL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "对每份支持样本执行导入→规范化输出→重新导入，不能仅复制原文件来完成测试。",
+        "比较单位、关键坐标、尺寸、圆弧、覆盖点及光圈引用。"
+      ],
+      "expected": "量化误差满足q/2每轴加浮点余量；几何语义一致；不能只比文本或对象数量。",
+      "evidence": [
+        "规范化输出",
+        "解析摘要",
+        "独立真值断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-054",
+      "group": "F 导出、往返与文件安全",
+      "title": "编辑后的完整保存闭环",
+      "requirements": [
+        "R10",
+        "R12",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_EDIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "执行移动、复制、删除、旋转、镜像与中英文加字，再另存为。",
+        "关闭程序，重新打开输出，用本软件与独立查看器复核。"
+      ],
+      "expected": "所有已提交修改都在输出中；无遗漏对象、位置漂移、孔洞损坏；源文件保持原样。",
+      "evidence": [
+        "操作录像",
+        "源／输出哈希",
+        "新会话及独立对照"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-055",
+      "group": "F 导出、往返与文件安全",
+      "title": "量化后的圆弧和坐标边界检查",
+      "requirements": [
+        "R03",
+        "R04",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_ROUND"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "使用接近输出舍入边界的坐标与圆弧；加入超出冻结整数位或I/J范围的对象。",
+        "分别导出并检查量化后圆心半径与终点。"
+      ],
+      "expected": "合法结果满足导出容差；超范围或量化后非法圆弧明确阻止，不能截断或悄悄改成折线。",
+      "evidence": [
+        "导出前后数值",
+        "校验错误",
+        "临时文件检查"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-056",
+      "group": "F 导出、往返与文件安全",
+      "title": "Writer 的定义、状态和结束标记",
+      "requirements": [
+        "R03",
+        "R04",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_APERTURE",
+        "F_POL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导出含多光圈、状态切换、Region及圆弧的修改结果。",
+        "用独立语法／语义校验检查定义先于引用、状态闭合和M02。"
+      ],
+      "expected": "无未定义或错误引用、未闭合Region、极性泄漏、无效参数；序列化成功不是唯一判据。",
+      "evidence": [
+        "独立校验输出",
+        "Gerber文件"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-057",
+      "group": "F 导出、往返与文件安全",
+      "title": "属性与校验元数据处理",
+      "requirements": [
+        "R14",
+        "R20"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_ATTR"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入含文件／光圈／对象属性和校验元数据的文件，复制或移动相关对象后导出。",
+        "先取消属性移除确认，再确认导出。"
+      ],
+      "expected": "取消不写文件；确认后仅按声明的几何模式处理，列出移除类别；不留下错误元件／网络关联或过期校验。",
+      "evidence": [
+        "导出警告",
+        "属性差异",
+        "输出文件"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-058",
+      "group": "F 导出、往返与文件安全",
+      "title": "写失败时不损坏已有文件",
+      "requirements": [
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_EDIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "准备已有目标文件，记录哈希；分别模拟只读目录、目标占用、写入失败、替换失败。",
+        "在失败后检查目标、临时文件、脏状态和重新打开结果。"
+      ],
+      "expected": "已有文件完整且哈希不变；失败不清除脏标记；无半成品伪装成功。建议用测试注入模拟磁盘满，不人为占满真实磁盘。",
+      "evidence": [
+        "各故障注入日志",
+        "前后哈希",
+        "界面状态"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-059",
+      "group": "F 导出、往返与文件安全",
+      "title": "同路径覆盖与外部修改冲突",
+      "requirements": [
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_EDIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入文件后用外部工具修改同一路径文件。",
+        "从编辑器尝试覆盖；分别取消和选择另存为。"
+      ],
+      "expected": "检测内容冲突并停止自动覆盖；用户取消时两份内容均不被破坏；另存为写入新位置。",
+      "evidence": [
+        "外部修改哈希",
+        "冲突提示",
+        "输出哈希"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-060",
+      "group": "F 导出、往返与文件安全",
+      "title": "关闭、取消保存与多层脏状态",
+      "requirements": [
+        "R07",
+        "R11",
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_LAYERS"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "修改两个图层，关闭窗口；先取消关闭，再只保存其中一层，再尝试退出。",
+        "取消保存对话框并观察其余脏层。"
+      ],
+      "expected": "关闭被正确中止；只保存的层更新基线；其他层仍被提示，不出现未确认的丢失。",
+      "evidence": [
+        "多层退出录像",
+        "脏状态日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-061",
+      "group": "F 导出、往返与文件安全",
+      "title": "一个图层一个文件，不暗中合并",
+      "requirements": [
+        "R07",
+        "R14",
+        "R15"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_LAYERS"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "打开多层，选择其中一层另存为，检查输出。",
+        "在另一层操作并保存到不同位置。"
+      ],
+      "expected": "各输出只包含对应图层的制造几何和适用属性；不混入隐藏层或选择高亮。",
+      "evidence": [
+        "两个输出文件",
+        "对象／覆盖摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-062",
+      "group": "F 导出、往返与文件安全",
+      "title": "不同缩放与显示状态不影响导出",
+      "requirements": [
+        "R08",
+        "R14"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_EDIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "保持同一文档，在不同zoom、颜色、选择和网格状态下导出。",
+        "忽略允许的生成时间等非几何元数据后比较规范化结果。"
+      ],
+      "expected": "制造几何摘要一致；不能从屏幕Mesh或像素掩膜反推输出。",
+      "evidence": [
+        "多个输出",
+        "规范化差异报告"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-063",
+      "group": "G 异步、GPU 与资源",
+      "title": "加载和几何生成不阻塞 UI",
+      "requirements": [
+        "R16"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "PMIX"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "加载PMIX、生成复杂文字或执行大批量导出时移动窗口、展开菜单和取消任务。",
+        "记录UI线程耗时并检查任务线程。"
+      ],
+      "expected": "耗时工作不在UI线程执行；界面可响应，进度代表实际状态；任务失败不留下半个文档。",
+      "evidence": [
+        "线程与时序日志",
+        "录像"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-064",
+      "group": "G 异步、GPU 与资源",
+      "title": "取消任务与临时资源释放",
+      "requirements": [
+        "R16"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "PMIX",
+        "PSTRESS"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "导入／细分任务进行中点击取消；重复三次。",
+        "监控取消反馈、工作结束时间与临时内存。"
+      ],
+      "expected": "≤500ms可见反馈，受控任务≤2s终止；旧文档不变，主要临时资源回收；没有后台继续提交。",
+      "evidence": [
+        "取消时间日志",
+        "内存曲线",
+        "文档摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-065",
+      "group": "G 异步、GPU 与资源",
+      "title": "旧异步结果不会污染新文档",
+      "requirements": [
+        "R16"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "PMIX",
+        "F03"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "启动慢导入，立即关闭该文档并打开另一个文件。",
+        "等待旧任务完成；重复切换不同文档版本。"
+      ],
+      "expected": "旧结果按DocumentVersion／取消令牌丢弃；新画面、选择和保存内容不被覆盖。",
+      "evidence": [
+        "任务版本日志",
+        "新文档摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-066",
+      "group": "G 异步、GPU 与资源",
+      "title": "Surface和设备异常不丢编辑",
+      "requirements": [
+        "R16",
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_EDIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "执行窗口最小化、恢复、连续resize、零尺寸视口、睡眠唤醒。",
+        "通过测试钩子触发设备／缓存重建，检查未保存修改。"
+      ],
+      "expected": "恢复后正确重绘，文档和Undo不丢；真实无可用适配器时给出诊断，不能直接panic退出。",
+      "evidence": [
+        "双平台录像",
+        "错误／重建日志",
+        "前后摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-067",
+      "group": "G 异步、GPU 与资源",
+      "title": "缓存失效范围与曝光顺序",
+      "requirements": [
+        "R05",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "P100K",
+        "F_POL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "记录Pan、同LOD缩放、点选和单对象移动时的解析次数、Mesh重建和GPU上传量。",
+        "对极性样本触发相关优化后重新检查覆盖点。"
+      ],
+      "expected": "普通导航不重解析，不全量生成制造几何；选择只影响叠加层；缓存优化不重排或漏画。",
+      "evidence": [
+        "缓存计数器",
+        "上传和draw统计",
+        "极性断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-068",
+      "group": "G 异步、GPU 与资源",
+      "title": "闲置重绘与后台唤醒",
+      "requirements": [
+        "R16",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "P10K"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "打开文件后无操作静置60秒；记录重绘次数和CPU。",
+        "启动任务，任务结束后观察结果能否自动显示。"
+      ],
+      "expected": "无动画和任务时不持续60FPS重绘；结果完成能触发一次有效重绘；不能靠一直刷新掩盖状态问题。",
+      "evidence": [
+        "60秒重绘计数",
+        "CPU采样",
+        "任务唤醒日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-069",
+      "group": "G 异步、GPU 与资源",
+      "title": "内存和缓存长期稳定",
+      "requirements": [
+        "R16",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "P100K"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "连续打开／关闭同一文件20次，按冻结方案静置采样。",
+        "再执行多级缩放触发LOD缓存并回到起始视图。"
+      ],
+      "expected": "第20次与第5次静置后内存差≤100MiB，无持续线性增长；缓存符合预算；峰值符合A/B冻结基线。",
+      "evidence": [
+        "每轮内存CSV或JSON",
+        "显式GPU分配统计",
+        "峰值记录"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-070",
+      "group": "G 异步、GPU 与资源",
+      "title": "极大输入可控失败而非 OOM",
+      "requirements": [
+        "R06",
+        "R16",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "PSTRESS"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "输入50万／100万Flash及超过资源限制的文件。",
+        "测试受控拒绝、取消、文档保留，关闭后再次打开小文件。"
+      ],
+      "expected": "不要求百万图元固定帧率，但必须有界成功或明确拒绝；不能系统OOM、死循环或导致后续小文件不可用。",
+      "evidence": [
+        "资源上限配置",
+        "错误／完成记录",
+        "内存与恢复日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-071",
+      "group": "H 固定场景性能",
+      "title": "首次完整加载耗时",
+      "requirements": [
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "P10K",
+        "P100K"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在A/B参考机用release构建，按冻结冷热启动口径各执行3次。",
+        "从开始读文件到首次完整可操作画面计时。"
+      ],
+      "expected": "P10K每次≤3s；P100K每次≤10s；记录所有测量，不只取最好一次；不可把后台未完成当已完成。",
+      "evidence": [
+        "全部原始时间",
+        "样本哈希",
+        "环境清单"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-072",
+      "group": "H 固定场景性能",
+      "title": "P100K 连续导航帧间隔",
+      "requirements": [
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "P100K"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "1600×900物理画布、60Hz基准，预热10秒后执行固定60秒Pan/Zoom轨迹。",
+        "A/B各独立重复3次，记录实际采集口径和全部帧数据。"
+      ],
+      "expected": "每次p95≤33.3ms、p99≤66.7ms，持续交互无>200ms停顿；没有实际呈现数据时不得称为实测显示FPS。",
+      "evidence": [
+        "逐帧数据",
+        "轨迹",
+        "录像",
+        "环境清单"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-073",
+      "group": "H 固定场景性能",
+      "title": "混合图元和有序极性性能",
+      "requirements": [
+        "R05",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "PMIX",
+        "PPOL"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "对PMIX和PPOL执行同样固定轨迹，各3次。",
+        "抽查关键几何和极性覆盖点，核对总图元与三角形统计。"
+      ],
+      "expected": "每次p95≤50ms、p99≤100ms；显示完整、精度未降低；不能把简单Flash成绩冒充混合场景。",
+      "evidence": [
+        "逐帧数据",
+        "几何统计",
+        "覆盖断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-074",
+      "group": "H 固定场景性能",
+      "title": "点选和框选响应",
+      "requirements": [
+        "R09",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "P100K"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "使用固定200个点位测量CPU查询和可见高亮延迟。",
+        "执行固定的全视图框选，验证选中数量和耗时。"
+      ],
+      "expected": "CPU点选p95≤20ms，可见高亮端到端p95≤100ms；框选≤300ms且结果ID集合正确。",
+      "evidence": [
+        "全部查询延迟",
+        "端到端录像或追踪",
+        "选择集摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-075",
+      "group": "H 固定场景性能",
+      "title": "一千对象拖动与提交性能",
+      "requirements": [
+        "R10",
+        "R11",
+        "R17"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "PMIX"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "固定选择1000个对象，拖动10秒并释放，重复3次。",
+        "检查预览帧间隔、提交耗时以及Undo条数。"
+      ],
+      "expected": "p95帧间隔≤50ms，释放后提交≤300ms；每次仅一个Undo，结果坐标正确。",
+      "evidence": [
+        "帧数据",
+        "提交时序",
+        "事务和坐标断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-076",
+      "group": "I 平台发行与最终证据",
+      "title": "Windows 干净发行环境",
+      "requirements": [
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "人工真机",
+      "fixtures": [
+        "RELEASE",
+        "F_EDIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在没有Rust和源码目录的Windows普通用户环境解压／安装构建。",
+        "在声明支持的Windows OS构建分别完成打开→编辑→加字→保存→重开。"
+      ],
+      "expected": "无缺少资源／动态库错误，无需管理员常驻；真实GPU后端写入日志；只宣称实测通过的OS版本。",
+      "evidence": [
+        "发行包SHA-256",
+        "OS／GPU日志",
+        "操作录像"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64"
+      ]
+    },
+    {
+      "id": "AT-077",
+      "group": "I 平台发行与最终证据",
+      "title": "macOS Apple Silicon 干净发行环境",
+      "requirements": [
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "人工真机",
+      "fixtures": [
+        "RELEASE",
+        "F_EDIT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在macOS 15 Apple Silicon普通用户环境运行无源码依赖的构建。",
+        "验证Metal、Retina、文件拖放、触控板及编辑保存闭环。"
+      ],
+      "expected": "流程全部正确；未签名／未公证状态如实声明，不以要求关闭系统安全防护作为解决办法。",
+      "evidence": [
+        "发行包SHA-256",
+        "OS／Metal日志",
+        "操作录像"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-078",
+      "group": "I 平台发行与最终证据",
+      "title": "跨平台快捷键和中文输入法",
+      "requirements": [
+        "R12",
+        "R18"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "人工真机",
+      "fixtures": [
+        "F_TEXT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "Windows使用Ctrl，macOS使用Command完成复制／粘贴／撤销与文件操作。",
+        "两平台分别验证IME候选、菜单快捷键显示和焦点行为。"
+      ],
+      "expected": "平台约定正确，组合输入不被截断，不发生重复触发或画布误操作。",
+      "evidence": [
+        "双平台录像",
+        "快捷键说明"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-080",
+      "group": "I 平台发行与最终证据",
+      "title": "全部核心生产样本完成闭环",
+      "requirements": [
+        "R02",
+        "R04",
+        "R05",
+        "R10",
+        "R12",
+        "R14",
+        "R19"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工真机",
+      "fixtures": [
+        "CORE10"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "逐一对冻结的10份核心样本执行规定位置移动／复制／删除和中英文加字，另存为。",
+        "关闭重开，并由独立本地工具及人工复核关键尺寸和开孔。"
+      ],
+      "expected": "10/10成功；不存在因为AM／SR等被拒绝却仍计为业务通过。每份输出均关联源样本、操作记录和复核证据。",
+      "evidence": [
+        "10份操作记录",
+        "源输出哈希",
+        "关键尺寸／独立对照"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-081",
+      "group": "I 平台发行与最终证据",
+      "title": "独立真值与小特征缺失检查",
+      "requirements": [
+        "R05",
+        "R14",
+        "R19"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_POL",
+        "F_HOLE",
+        "F05",
+        "CORE10"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "对固定覆盖点、孔洞、细缝、最小开孔进行逐项比对。",
+        "在同一物理视口生成栅格对照，审查容差带和关键连通区域。"
+      ],
+      "expected": "不存在遗漏小开孔、孔洞被填或局部误擦除；不能仅凭全图差异比例很小就通过。独立工具有分歧则保留缺陷。",
+      "evidence": [
+        "点覆盖真值",
+        "关键区域对照",
+        "差异处理记录"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-082",
+      "group": "I 平台发行与最终证据",
+      "title": "用户数据默认不外传",
+      "requirements": [
+        "R20"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "CORE10"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "在断网状态完成核心本地工作流。",
+        "审查网络调用和在线查看器入口：使用真实Gerber前是否明确获得授权。"
+      ],
+      "expected": "导入、编辑、保存不依赖云端；无自动上传生产数据、字体或日志内容。在线工具只用于获准样本。",
+      "evidence": [
+        "离线运行记录",
+        "网络调用审计",
+        "隐私说明"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-083",
+      "group": "I 平台发行与最终证据",
+      "title": "验收报告不伪造、不跳过门禁",
+      "requirements": [
+        "R19"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "REPORT"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "汇总每个用例在所需平台的实际状态和证据。",
+        "故意移除一项必测证据／使一项测试失败，运行报告工具。"
+      ],
+      "expected": "缺证据标未完成或阻塞，失败返回非零退出码；所有必测项完整前不能生成“V1通过”。",
+      "evidence": [
+        "最终报告",
+        "缺证据／失败注入日志",
+        "缺陷台账"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "shared"
+      ]
+    },
+    {
+      "id": "AT-084",
+      "group": "I 平台发行与最终证据",
+      "title": "未实现功能和限制对用户可见",
+      "requirements": [
+        "R06",
+        "R12",
+        "R18",
+        "R19"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "人工审计",
+      "fixtures": [
+        "RELEASE"
+      ],
+      "precondition": "使用冻结的构建、样本和对应平台；以下样本须在实施阶段创建并核准。",
+      "steps": [
+        "检查菜单、帮助和发布说明的宏、拼板、Excellon、PDF/SVG/PNG、自动拟弧、工程保存、文字搭桥等状态。",
+        "抽查被延期功能按钮和文档描述。"
+      ],
+      "expected": "范围外功能不以空实现显示成功；不可用状态明确。发行支持、元数据损失、普通Gerber不保存文字工程信息均有说明。",
+      "evidence": [
+        "发布说明",
+        "菜单截图",
+        "能力矩阵"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-085",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "仅Windows／macOS的支持、CI与发行范围",
+      "requirements": [
+        "R01",
+        "R18",
+        "R19"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "人工审计",
+      "fixtures": [
+        "BASELINE",
+        "RELEASE",
+        "REPORT"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "检查构建文档、CI工作流、分阶段任务、发行矩阵与验收报告。",
+        "检查旧AT-079仅保留退役信息，报告工具不将其算通过或要求补交Linux证据。"
+      ],
+      "expected": "产品仅维护Windows x64和macOS Apple Silicon；不要求Linux／WSL2构建、测试、兼容或安装包；双平台本机门槛保留，不把个人辅助终端变成产品依赖。",
+      "evidence": [
+        "CI与平台矩阵",
+        "发行说明",
+        "AT-079迁移记录与报告工具输出"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "shared"
+      ]
+    },
+    {
+      "id": "AT-086",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "服务无窗口／GPU依赖且完成真实编辑往返",
+      "requirements": [
+        "R02",
+        "R10",
+        "R14",
+        "R18",
+        "R21"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋依赖审计",
+      "fixtures": [
+        "F_API",
+        "F_EDIT"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "仅构建editor-service并审查正常依赖闭包；不初始化eframe、winit、GPU或文件对话框。",
+        "通过公开服务打开真实Gerber小样、查询对象ID、移动／复制、导出到临时新文件，等待任务终态后重新解析和执行独立几何断言。"
+      ],
+      "expected": "Windows／macOS均能无窗口完成闭环；使用真实parser、命令和writer，服务依赖不含窗口／GPU。只返回mock成功或仅创建空trait不通过。",
+      "evidence": [
+        "两平台服务依赖树",
+        "headless_workflow原始日志",
+        "输入输出SHA-256与几何断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-087",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "GUI与服务共用业务实现并产生一致几何",
+      "requirements": [
+        "R10",
+        "R12",
+        "R14",
+        "R21"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_API",
+        "F_EDIT",
+        "F_TEXT"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "GUI完成冻结的移动、旋转、镜像、复制、属性修改、删除及中文加字；记录实际参数和固定字体哈希。",
+        "对相同输入用无界面服务执行相同业务操作；审查UI回调只分派命令、不直接写文档。",
+        "比较两路导出的几何、曝光、孔洞、尺寸及撤销恢复结果，而不是比较临时ID或时间戳。"
+      ],
+      "expected": "两种入口复用同一校验／事务／writer并保持制造语义一致；GUI的焦点、缩放、选择和文件对话框不成为服务依赖。",
+      "evidence": [
+        "命令调用链审查",
+        "GUI录像与请求参数",
+        "两路输出和独立对照报告"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-088",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "版本化DTO与JSON参数往返无损",
+      "requirements": [
+        "R03",
+        "R21",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动",
+      "fixtures": [
+        "F_API"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "对请求／结果／错误DTO执行JSON序列化和反序列化，覆盖中文路径、带#路径、有限f64、对象ID以及超过2^53的十进制revision字符串。",
+        "测试不同区域设置及UTF-8输入；注入未知字段、空request_id、数值溢出、非有限浮点和非法参数组合。"
+      ],
+      "expected": "合法DTO的值及单位保持；非法字段／数字明确拒绝并定位，不改文档。无第三方AST、指针、窗口或GPU类型进入公共DTO。",
+      "evidence": [
+        "automation_contract日志",
+        "序列化样本",
+        "错误code与details断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-089",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "明确对象查询、稳定ID和分页修订约束",
+      "requirements": [
+        "R09",
+        "R21",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_API",
+        "F_HIT",
+        "F_LAYERS"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "指定layer_id和物理矩形查询对象；切换GUI活动层、显隐、选择集与缩放后按同一显式条件再次查询。",
+        "验证contains／intersects精确结果、固定曝光顺序及分页；翻页之间修改文档，检查旧游标。",
+        "删除后撤销并验证ID恢复；关闭重开后重新查询，不假设原ID永远存在。"
+      ],
+      "expected": "查询不暗中绑定UI状态或只返回AABB候选；ID在会话内稳定且不复用；revision变化使旧分页游标返回冲突，不漏选／重复处理。",
+      "evidence": [
+        "查询请求和排序断言",
+        "分页冲突结果",
+        "ID生命周期测试"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-090",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "接口校验与GUI一致且失败零修改",
+      "requirements": [
+        "R06",
+        "R10",
+        "R15",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动",
+      "fixtures": [
+        "F_API",
+        "F_APERTURE",
+        "F_BAD",
+        "F_UNSUPPORTED"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "通过服务分别提交不存在／跨文档ID、锁定层编辑、NaN／Inf、非法尺寸、超限批量操作和不支持的Gerber能力。",
+        "比较调用前后的内容摘要、revision、Undo长度、对象顺序和光圈引用。"
+      ],
+      "expected": "错误有稳定code与字段／对象定位；没有部分修改、历史变化或文件输出；脚本入口不能绕过既有能力、光圈写时复制和资源限制。",
+      "evidence": [
+        "参数错误覆盖表",
+        "前后状态断言",
+        "结构化错误日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-091",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "修订冲突与Undo后的旧请求不会重新有效",
+      "requirements": [
+        "R11",
+        "R16",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动",
+      "fixtures": [
+        "F_API",
+        "F_EDIT"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "以revision=N取得两个编辑请求；提交第一个后再提交第二个。",
+        "执行Undo恢复原内容，再提交最初expected_revision=N的旧请求；同时模拟耗时任务准备后文档被修改。"
+      ],
+      "expected": "第二请求及旧后台写入均返回REVISION_CONFLICT；Undo恢复内容但revision继续递增；失败不产生修改和Undo。脏标记仍按内容基线正确恢复。",
+      "evidence": [
+        "版本和历史时序日志",
+        "并发提交测试",
+        "冲突与脏状态断言"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-092",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "多命令批次原子提交、回滚与单次撤销",
+      "requirements": [
+        "R10",
+        "R11",
+        "R15",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动",
+      "fixtures": [
+        "F_API",
+        "F_EDIT",
+        "F_APERTURE"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "执行同文档移动＋旋转＋属性修改的edit.batch，确认成功后Undo一次恢复。",
+        "使批次中间步骤失败／提交前取消／预算不足，比较全部对象、顺序、定义、revision和历史。",
+        "尝试把导出、打开／关闭文档或其他外部I/O步骤混入批次。"
+      ],
+      "expected": "成功批次只推进一次revision及一条Undo；失败或取消整体不变；外部I/O被预检拒绝且没有文件副作用，不承诺跨文件事务。",
+      "evidence": [
+        "成功与故障注入日志",
+        "完整状态差异断言",
+        "外部I/O拒绝证据"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-093",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "无界面保存不弹窗且明确处理授权和冲突",
+      "requirements": [
+        "R14",
+        "R15",
+        "R20",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动",
+      "fixtures": [
+        "F_API",
+        "F_ATTR"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "无窗口导出到已存在目标，使用默认策略；对含需移除元数据的样本也使用默认策略。",
+        "取得confirmation_required后，仅对特定目标哈希和指定元数据类别给予明确授权，再导出。",
+        "授权后外部修改目标，或注入写入失败、权限拒绝及新出现的未授权元数据类别。"
+      ],
+      "expected": "默认不覆盖／不静默丢元数据，不弹窗、不读stdin、不无限等待；明确授权成功后走相同安全writer；冲突／失败保留原文件与脏状态，返回结构化结果。",
+      "evidence": [
+        "确认与重试请求／结果",
+        "目标前后哈希",
+        "故障和待确认路径日志"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-094",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "任务查询取消、过期提交与快照保存状态",
+      "requirements": [
+        "R15",
+        "R16",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动",
+      "fixtures": [
+        "F_API",
+        "P100K",
+        "F_TEXT"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "无窗口启动耗时任务，验证accepted、job_id、查询和终态事件；在安全点取消并测量反馈／释放时间。",
+        "任务准备中关闭文档或提交更新，确认过期编辑不能回写；另测试导出冻结快照期间继续编辑。",
+        "在修改已提交或文件替换已完成后请求取消。"
+      ],
+      "expected": "排队不等于完成；取消满足设计门槛，过期修改不提交；快照输出报告exported_revision且不把新内容标已保存；取消太晚时报告实际完成，不伪称没有副作用。",
+      "evidence": [
+        "JobInfo与事件时序",
+        "取消性能数据",
+        "revision／脏状态与输出哈希"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-095",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "能力发现与未知版本／操作受控拒绝",
+      "requirements": [
+        "R06",
+        "R21",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动",
+      "fixtures": [
+        "F_API",
+        "F_UNSUPPORTED"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "查询system.capabilities，逐项对应实际操作处理器、支持矩阵、资源上限与测试。",
+        "提交未知api_version、未知op以及未支持AM／SR等能力；验证请求关联和错误结果。"
+      ],
+      "expected": "仅公布已实现能力；未知版本／操作／特征分别明确拒绝，不降级猜测或返回成功；没有副作用，返回原request_id。",
+      "evidence": [
+        "能力报告与处理器映射",
+        "错误码测试",
+        "前后内容／文件摘要"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-096",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "主机权限边界与未提前引入脚本运行时",
+      "requirements": [
+        "R01",
+        "R20",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B0",
+      "method": "自动＋人工审计",
+      "fixtures": [
+        "F_API",
+        "BASELINE",
+        "RELEASE"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "检查V1依赖、启动行为与实际监听端口，不应为接口预留加载脚本解释器或开启HTTP／RPC控制服务。",
+        "无界面主机只授权临时输入／输出目录；提交未授权路径及通过符号链接／平台等价重解析路径越界的请求。",
+        "检查操作白名单和日志，确认没有任意shell执行、网络上传或私有文件内容泄漏。"
+      ],
+      "expected": "权限由主机而非请求自授；越界拒绝且不先读写目标；V1只保留业务接口，不交付脚本运行时或远程控制。此访问控制不宣称为不可信本地代码的完整OS沙箱。",
+      "evidence": [
+        "依赖／发行和端口审计",
+        "文件访问故障注入日志",
+        "隐私及白名单检查"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    },
+    {
+      "id": "AT-097",
+      "group": "J 平台范围与脚本扩展接口",
+      "title": "接口样例与双平台无界面流程可追溯",
+      "requirements": [
+        "R12",
+        "R14",
+        "R18",
+        "R19",
+        "R21",
+        "R22"
+      ],
+      "gate": "必测",
+      "severity": "B1",
+      "method": "自动＋人工",
+      "fixtures": [
+        "F_API",
+        "F_EDIT",
+        "F_TEXT",
+        "REPORT"
+      ],
+      "precondition": "使用1.1冻结基线和对应平台；接口与测试程序须在开发阶段实现，使用真实核心实现，未创建或未运行不得写通过。",
+      "steps": [
+        "按AUTOMATION_API.md与样例文件建立真实测试，用响应中的ID和revision代替示例标识，固定合法字体哈希。",
+        "Windows和macOS分别完成打开、查询、批量编辑／文字、Undo／Redo、导出、重开与独立语义比较。",
+        "汇总AT-086—AT-097证据，并故意移除一个平台或关键接口结果验证报告门禁。"
+      ],
+      "expected": "样例、实现和契约一致；两平台实际无界面闭环证据齐全；缺证据无法通过；不得把示例JSON当可执行脚本或宣称V1已发布脚本引擎。",
+      "evidence": [
+        "双平台接口测试原始报告",
+        "实际请求与输出几何证据",
+        "缺证据时的报告阻塞结果"
+      ],
+      "status": "未执行",
+      "required_platforms": [
+        "windows-x64",
+        "macos-arm64"
+      ]
+    }
+  ],
+  "supported_platforms": [
+    "windows-x64",
+    "macos-arm64"
+  ],
+  "excluded_platforms": [
+    "Linux",
+    "WSL2",
+    "macOS Intel",
+    "Windows ARM",
+    "移动端",
+    "Web"
+  ],
+  "platform_result_rule": "required_platforms中的windows-x64和macos-arm64分别提供原生平台证据；shared仅适用于共用文档审计，不替代任一平台的实际运行。",
+  "retired_cases": [
+    {
+      "id": "AT-079",
+      "title": "Linux 构建与能力声明",
+      "retired_in_document_version": "1.1",
+      "reason": "用户明确取消Linux支持；删除核心构建／测试、GUI兼容、CI和发行义务。属于需求范围修订，不是测试通过或失败豁免。",
+      "previous_document_version": "1.0",
+      "replacement_scope_check": "AT-085",
+      "id_reuse_allowed": false
+    }
+  ],
+  "active_case_count": 96,
+  "retired_case_count": 1
+}

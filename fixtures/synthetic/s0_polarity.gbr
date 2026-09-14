@@ -1,0 +1,16 @@
+G04 S0 Dark-Clear-Dark circle flash sample*
+%FSLAX24Y24*%
+%MOMM*%
+%ADD10C,10X4*%
+%ADD11C,6*%
+%ADD12C,2*%
+%LPD*%
+D10*
+X0Y0D03*
+%LPC*%
+D11*
+X0Y0D03*
+%LPD*%
+D12*
+X0Y0D03*
+M02*
