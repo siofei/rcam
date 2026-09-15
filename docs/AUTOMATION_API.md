@@ -339,7 +339,7 @@ G74 零弧导出可规范化为同位置/同圆光圈宽度的 G01 零长度 str
 同调用的对象按曝光顺序一起提交。空集、重复 ID、非有限/越界位移拒绝；未知目标 NOT_FOUND，
 锁定层 LAYER_LOCKED，预算超限 RESOURCE_LIMIT，旧版本 REVISION_CONFLICT，无历史 INVALID_ARGUMENT。
 失败不变更内容/revision/历史，也不清除 Redo。关闭移除该会话历史，新打开分配新身份。
-当前未开放 layer.update，但真实模型锁定位在编辑入口检查，不能由请求绕过。
+S1-B1 当时未开放 layer.update；S1-B2c 已迁移到 service workspace，见文末 ADR 0012 契约。
 
 上限为每次 10000 对象、100 条历史、64 MiB 保守历史内存计费（含提交峰值/Redo）；超限整体拒绝。
 Flash、Line、轴向 RectangularSweep、Arc 和完整 Region 可平移，光圈定义不变。
@@ -394,4 +394,20 @@ horizontal 表示 y=c，vertical 表示 x=c；斜轴和未知嵌套字段拒绝�
 Flash 同时变换中心和局部方向、保留光圈/scale；Arc 镜像翻转方向并保留原始圆弧语义；
 Region 保持全部边序/轮廓。RectangularSweep 只支持精确 90° 整数倍旋转及上述轴镜像，
 不支持的混合选择整批 UNSUPPORTED_FEATURE。capabilities 明确该限制，不宣称任意对象任意角支持。
-当前仍单文件/单服务文档；无 GUI 编辑、layer.update、edit.batch、文字或脚本引擎。
+S1-B2b 当时仍单文件/单服务文档；layer.update 于 S1-B2c 实施，其他未实施项不变。
+
+## S1-B2c 已实现：工作区设置
+
+详见 [ADR 0012](adr/0012-s1-b2c-workspace-state.md)。`layer.update` 使用标准信封和必填制造
+expected_revision；params 必填 layer_id、expected_workspace_revision（十进制字符串），可选
+ display_name（非空白，≤1024 UTF-8字节）、visible、locked。省略/null保持原值，未知字段拒绝。
+实际设置变化仅 workspace_revision +1；no-op 成功但两种版本/历史/dirty均不变。
+返回 DocumentInfo（新增 workspace_revision）；信封 revision 仍是制造版本。
+`layers.list` 的 name 改为 display_name，并新增 visible。状态仅在当前会话保留。
+锁定层拒绝新制造编辑；Undo/Redo不受锁定阻断。查询/导出不按 visible 过滤。
+
+```json
+{"api_version":1,"request_id":"workspace-1","op":"layer.update","document_id":"从打开结果取得","expected_revision":"0","params":{"layer_id":"从查询取得","expected_workspace_revision":"0","locked":true,"visible":false,"display_name":"顶层钢网"}}
+```
+
+示例ID必须换成真实查询结果；并非已运行脚本。专项入口 `s1b2c_workspace_workflow` 实际验证服务调用。

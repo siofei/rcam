@@ -680,30 +680,14 @@ fn strict_transform_dtos_and_finite_checks_preserve_redo() {
     r.history("history.redo", "2");
 }
 #[test]
-fn core_locked_and_history_limits_are_atomic() {
+fn core_history_limits_are_atomic() {
     let mut doc = gerber_io::parse_s1(RECT.as_bytes(), "limits")
         .unwrap()
         .document;
     let layer = doc.layers[0].id.clone();
     let ids = vec![doc.layers[0].objects[0].object_id.clone()];
     let mut h = EditHistory::default();
-    doc.layers[0].locked = true;
-    let old = doc.clone();
-    assert!(matches!(
-        h.rotate_objects(&mut doc, &layer, &ids, 37., MmPoint::new(0., 0.)),
-        Err(EditError::LayerLocked(_))
-    ));
-    assert!(matches!(
-        h.mirror_objects(
-            &mut doc,
-            &layer,
-            &ids,
-            MirrorAxis::Horizontal { coordinate_mm: 0. }
-        ),
-        Err(EditError::LayerLocked(_))
-    ));
-    assert_eq!(doc, old);
-    doc.layers[0].locked = false;
+    // Workspace locks are checked through the public service in S1-B2c.
     for _ in 0..100 {
         h.rotate_objects(&mut doc, &layer, &ids, 90., MmPoint::new(0., 0.))
             .unwrap();

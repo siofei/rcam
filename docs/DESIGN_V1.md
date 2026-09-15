@@ -868,3 +868,9 @@ S1-B2a 删除至空图层：允许合法完整 Gerber 文档含零图元，继�
 刚性变换和表示限制依 ADR 0010 实施，局部验收不等同完整 V1。Region 两边闭合共享端点、
 平行 cut-in 的旋转不变性修复见该 ADR，未提高几何容差。GUI 前状态/文档边界及结构历史债务
 按 ADR 0011 单独实施；当前仍无 GUI 编辑和 layer.update。
+
+### S1-B2c workspace 收口
+
+ADR 0012 实施 ADR 0011 的模型边界：图层显示名/显隐/锁定属于服务 workspace，独立 workspace_revision，
+不进入制造 hash、writer 或历史；新编辑检查锁，Undo/Redo 恢复制造事务不受当前锁阻断。
+S2 hit-test/bounds 仅冻结精确 f64 边界，本轮不开放；其余 V1 门槛不变。

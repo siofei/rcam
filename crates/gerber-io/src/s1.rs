@@ -972,13 +972,7 @@ fn interpret_s1(
         unit: "mm".into(),
         format: semantic_format,
         layers: vec![SemanticLayer {
-            locked: false,
             id: "layer-1".into(),
-            name: metadata
-                .layer_name
-                .clone()
-                .or_else(|| doc.image_name.clone())
-                .unwrap_or_else(|| "Gerber layer".into()),
             objects: Vec::new(),
         }],
         apertures,

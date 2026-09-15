@@ -533,10 +533,7 @@ pub struct SemanticObject {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SemanticLayer {
-    #[serde(default)]
-    pub locked: bool,
     pub id: String,
-    pub name: String,
     pub objects: Vec<SemanticObject>,
 }
 

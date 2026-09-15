@@ -22,7 +22,6 @@ pub enum EditError {
     InvalidArgument,
     UnsupportedTransform,
     NotFound { entity: &'static str, id: String },
-    LayerLocked(String),
     ResourceLimit,
     EmptyHistory,
     InvalidGeometry(SemanticError),
@@ -108,9 +107,6 @@ impl EditHistory {
                 id: layer_id.into(),
             })?;
         let layer = &document.layers[layer_index];
-        if layer.locked {
-            return Err(EditError::LayerLocked(layer_id.into()));
-        }
         let selected: Vec<_> = layer
             .objects
             .iter()
@@ -434,9 +430,6 @@ fn check_transaction(
         .get(tx.layer)
         .filter(|l| l.id == tx.layer_id)
         .ok_or(EditError::InvalidArgument)?;
-    if layer.locked {
-        return Err(EditError::LayerLocked(layer.id.clone()));
-    }
     match &tx.operation {
         Operation::Modify(changes) => {
             for c in changes {

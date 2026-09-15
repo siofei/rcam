@@ -23,9 +23,7 @@ fn document(shape: Option<ApertureShape>, geometry: SemanticGeometry) -> Semanti
             })
             .collect(),
         layers: vec![SemanticLayer {
-            locked: false,
             id: "layer".into(),
-            name: "truth".into(),
             objects: vec![SemanticObject {
                 object_id: "object".into(),
                 exposure: Exposure::Dark,

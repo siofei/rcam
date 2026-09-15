@@ -195,6 +195,7 @@ fn is_under_any(path: &Path, roots: &[PathBuf]) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DocumentInfo {
+    pub workspace_revision: String,
     pub api_version: u32,
     pub document_id: String,
     pub revision: String,
@@ -211,9 +212,28 @@ pub struct DocumentInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayerInfo {
     pub layer_id: String,
-    pub name: String,
+    pub display_name: String,
+    pub visible: bool,
     pub object_count: usize,
     pub locked: bool,
+}
+
+/// Session-only state, never serialized into the manufacturing document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayerWorkspaceState {
+    pub display_name: String,
+    pub visible: bool,
+    pub locked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayerUpdateParams {
+    pub layer_id: String,
+    pub expected_workspace_revision: String,
+    pub display_name: Option<String>,
+    pub visible: Option<bool>,
+    pub locked: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -271,6 +291,8 @@ pub struct ExportResult {
 
 #[derive(Debug, Clone)]
 struct S1DocumentRecord {
+    workspace_revision: u64,
+    workspace: HashMap<String, LayerWorkspaceState>,
     document: SemanticDocument,
     source_path: PathBuf,
     source_sha256: String,
@@ -507,7 +529,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S1-B2b move/duplicate/delete/rotate/mirror/undo/redo/export/reopen".into(),
+            stage: "S1-B2c workspace state and manufacturing history".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -525,6 +547,7 @@ impl ApplicationService {
                 "history.undo".into(),
                 "history.redo".into(),
                 "layers.list".into(),
+                "layer.update".into(),
                 "objects.query".into(),
                 "objects.get".into(),
                 "document.validate".into(),
@@ -648,7 +671,35 @@ impl ApplicationService {
             .ok_or_else(|| ServiceError::resource("document_ids", u64::MAX as usize, usize::MAX))?;
         let scene: S1Scene = parse_s1(&bytes, &document_id).map_err(map_s1_error)?;
         let metadata = serde_json::to_value(&scene.metadata).map_err(serialize_error)?;
+        let workspace = scene
+            .document
+            .layers
+            .iter()
+            .map(|layer| {
+                (
+                    layer.id.clone(),
+                    LayerWorkspaceState {
+                        display_name: scene
+                            .metadata
+                            .layer_name
+                            .clone()
+                            .or_else(|| scene.metadata.image_name.clone())
+                            .unwrap_or_else(|| {
+                                canonical
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .into_owned()
+                            }),
+                        visible: true,
+                        locked: false,
+                    },
+                )
+            })
+            .collect();
         let record = S1DocumentRecord {
+            workspace,
+            workspace_revision: 0,
             saved_content_hash: content_hash(&scene.document),
             last_saved_path: None,
             document: scene.document,
@@ -682,11 +733,66 @@ impl ApplicationService {
             .iter()
             .map(|layer| LayerInfo {
                 layer_id: layer.id.clone(),
-                name: layer.name.clone(),
+                display_name: record.workspace[&layer.id].display_name.clone(),
+                visible: record.workspace[&layer.id].visible,
                 object_count: layer.objects.len(),
-                locked: layer.locked,
+                locked: record.workspace[&layer.id].locked,
             })
             .collect())
+    }
+
+    pub fn layer_update(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: LayerUpdateParams,
+    ) -> Result<DocumentInfo, ServiceError> {
+        let record = self
+            .documents
+            .get_mut(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        check_revision(record.revision, expected_revision)?;
+        check_revision(
+            record.workspace_revision,
+            &params.expected_workspace_revision,
+        )
+        .map_err(|mut error| {
+            error.details["field"] = serde_json::json!("params.expected_workspace_revision");
+            error
+        })?;
+        if params.layer_id.trim().is_empty() {
+            return Err(ServiceError::invalid_field(
+                "params.layer_id",
+                "layer_id is required",
+            ));
+        }
+        let state = record
+            .workspace
+            .get_mut(&params.layer_id)
+            .ok_or_else(|| ServiceError::not_found("layer", &params.layer_id))?;
+        if let Some(name) = &params.display_name
+            && (name.trim().is_empty() || name.len() > 1024)
+        {
+            return Err(ServiceError::invalid_field(
+                "params.display_name",
+                "name must be nonempty and at most 1024 UTF-8 bytes",
+            ));
+        }
+        let next = LayerWorkspaceState {
+            display_name: params
+                .display_name
+                .unwrap_or_else(|| state.display_name.clone()),
+            visible: params.visible.unwrap_or(state.visible),
+            locked: params.locked.unwrap_or(state.locked),
+        };
+        if next != *state {
+            let revision = record.workspace_revision.checked_add(1).ok_or_else(|| {
+                ServiceError::resource("workspace_revision", usize::MAX, usize::MAX)
+            })?;
+            *state = next;
+            record.workspace_revision = revision;
+        }
+        Ok(document_info(document_id, record))
     }
 
     pub fn objects_get(
@@ -789,6 +895,7 @@ impl ApplicationService {
         params: MoveParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id)?;
         let ids = record
             .history
             .move_objects(
@@ -810,6 +917,7 @@ impl ApplicationService {
         params: RotateParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id)?;
         let ids = record
             .history
             .rotate_objects(
@@ -831,6 +939,7 @@ impl ApplicationService {
         params: MirrorParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id)?;
         let ids = record
             .history
             .mirror_objects(
@@ -851,6 +960,7 @@ impl ApplicationService {
         params: DuplicateParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id)?;
         let ids = record
             .history
             .duplicate_objects(
@@ -872,6 +982,7 @@ impl ApplicationService {
         params: DeleteParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id)?;
         let ids = record
             .history
             .delete_objects(&mut record.document, &params.layer_id, &params.object_ids)
@@ -1143,6 +1254,21 @@ impl ApplicationService {
                 let layers = self.layers_list(document_id)?;
                 serde_json::to_value(layers).map_err(serialize_error)?
             }
+            "layer.update" if self.file_access.is_some() => {
+                let id = required_document_id(request)?;
+                let revision = request.expected_revision.as_deref().ok_or_else(|| {
+                    ServiceError::invalid_field(
+                        "expected_revision",
+                        "expected_revision is required",
+                    )
+                })?;
+                serde_json::to_value(self.layer_update(
+                    id,
+                    revision,
+                    parse_params(&request.params)?,
+                )?)
+                .map_err(serialize_error)?
+            }
             "objects.query" => {
                 if request.expected_revision.is_some() {
                     return Err(ServiceError::invalid_field(
@@ -1384,8 +1510,24 @@ fn required_document_id(request: &RequestEnvelope) -> Result<&str, ServiceError>
         .ok_or_else(|| ServiceError::invalid_field("document_id", "document_id is required"))
 }
 
+fn check_workspace_edit(record: &S1DocumentRecord, layer_id: &str) -> Result<(), ServiceError> {
+    let state = record
+        .workspace
+        .get(layer_id)
+        .ok_or_else(|| ServiceError::not_found("layer", layer_id))?;
+    if state.locked {
+        return Err(ServiceError {
+            code: "LAYER_LOCKED".into(),
+            message: "图层已锁定。".into(),
+            details: serde_json::json!({"entity":"layer", "id":layer_id}),
+        });
+    }
+    Ok(())
+}
+
 fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
     DocumentInfo {
+        workspace_revision: record.workspace_revision.to_string(),
         api_version: API_VERSION,
         document_id: document_id.into(),
         revision: record.revision.to_string(),
@@ -1427,11 +1569,6 @@ fn map_edit_error(error: EditError) -> ServiceError {
             code: "UNSUPPORTED_FEATURE".into(),
             message: "矩形扫掠仅支持整数 90° 旋转及水平／垂直镜像。".into(),
             details: serde_json::json!({"geometry": "RectangularSweep", "rotation_step_deg": 90}),
-        },
-        EditError::LayerLocked(id) => ServiceError {
-            code: "LAYER_LOCKED".into(),
-            message: "图层已锁定。".into(),
-            details: serde_json::json!({"layer_id": id}),
         },
         EditError::ResourceLimit => ServiceError {
             code: "RESOURCE_LIMIT".into(),
@@ -2442,7 +2579,19 @@ mod s1b_guards {
     #[test]
     fn locked_layer_is_rejected_by_real_json_entry_without_history_changes() {
         let (mut service, id, layer, object) = service();
-        service.documents.get_mut(&id).unwrap().document.layers[0].locked = true;
+        service
+            .layer_update(
+                &id,
+                "0",
+                LayerUpdateParams {
+                    layer_id: layer.clone(),
+                    expected_workspace_revision: "0".into(),
+                    display_name: None,
+                    visible: None,
+                    locked: Some(true),
+                },
+            )
+            .unwrap();
         let before = service.documents[&id].document.clone();
         let info = service.document_get(&id).unwrap();
         for op in ["objects.move", "objects.duplicate", "objects.delete"] {

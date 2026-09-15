@@ -516,7 +516,7 @@ fn deleted_and_undone_ids_are_never_reallocated() {
     assert!(new[0].ends_with("-3"));
 }
 #[test]
-fn core_locked_and_budget_edits_are_atomic() {
+fn core_budget_edits_are_atomic() {
     let mut scene = gerber_io::parse_s1(POL.as_bytes(), "locked").unwrap();
     let layer = scene.document.layers[0].id.clone();
     let ids: Vec<_> = scene.document.layers[0]
@@ -525,19 +525,7 @@ fn core_locked_and_budget_edits_are_atomic() {
         .map(|o| o.object_id.clone())
         .collect();
     let mut h = EditHistory::default();
-    scene.document.layers[0].locked = true;
-    let before = scene.document.clone();
-    assert!(matches!(
-        h.duplicate_objects(&mut scene.document, &layer, &ids, 1., 0.),
-        Err(EditError::LayerLocked(_))
-    ));
-    assert!(matches!(
-        h.delete_objects(&mut scene.document, &layer, &ids),
-        Err(EditError::LayerLocked(_))
-    ));
-    assert_eq!(scene.document, before);
-    assert_eq!(h.undo_len(), 0);
-    scene.document.layers[0].locked = false;
+    // Workspace lock coverage moved to s1b2c_workspace_workflow public service tests.
     for _ in 0..100 {
         h.move_objects(&mut scene.document, &layer, &ids, 1., 0.)
             .unwrap();
@@ -805,7 +793,7 @@ fn writer_obeys_current_order_not_import_provenance() {
 }
 
 #[test]
-fn history_guards_reject_changed_order_and_locked_replay() {
+fn history_guards_reject_changed_order_and_allow_valid_replay() {
     let mut scene = gerber_io::parse_s1(POL.as_bytes(), "guard").unwrap();
     let layer = scene.document.layers[0].id.clone();
     let ids = vec![scene.document.layers[0].objects[0].object_id.clone()];
@@ -818,13 +806,8 @@ fn history_guards_reject_changed_order_and_locked_replay() {
     assert_eq!(scene.document, before);
     assert_eq!(h.undo_len(), 1);
     scene.document.layers[0].objects.swap(0, 2);
-    scene.document.layers[0].locked = true;
-    let before = scene.document.clone();
-    assert!(matches!(
-        h.undo(&mut scene.document),
-        Err(EditError::LayerLocked(_))
-    ));
-    assert_eq!(scene.document, before);
+    h.undo(&mut scene.document).unwrap();
+    assert_eq!(h.redo_len(), 1);
 }
 
 #[test]

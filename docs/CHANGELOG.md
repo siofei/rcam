@@ -90,3 +90,8 @@ ADR 0007 澄清 arc deviation、G74 least-deviation/0°、旧 metadata/FS 严格
 - 将来源与曝光顺序分离，增加同层 Duplicate/Delete、原子结构历史和稳定 ID 契约（ADR 0009）。
 - 新增局部验收场景、真实 JSON 编辑往返测试、阶段原始日志脱敏打包。
 - 冻结后续旋转／镜像表示能力（ADR 0010），本轮未实现；96 个用例、required_platforms、CORE10 门槛不变。
+
+## 2026-09-15 S1-B2c
+
+ADR 0012：移除 SemanticLayer UI字段；新增 layer.update 和独立 workspace_revision；服务统一锁定新编辑，
+历史不受锁定阻断。追加局部验收，不改96有效用例、CORE10或双平台门槛。无新增依赖。

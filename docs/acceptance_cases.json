@@ -3323,5 +3323,31 @@
     ],
     "status": "未执行",
     "platform_note": "macOS local stage evidence separately recorded; Windows deferred; required_platforms unchanged"
+  },
+  "s1b2c_local_checks": {
+    "stage": "S1-B2c",
+    "case_ids": [
+      "AT-022",
+      "AT-039",
+      "AT-040",
+      "AT-041",
+      "AT-060",
+      "AT-062",
+      "AT-086",
+      "AT-088",
+      "AT-090",
+      "AT-091",
+      "AT-095",
+      "AT-097"
+    ],
+    "checks": [
+      "Workspace name/visibility/lock independent of manufacturing dirty/revision/history",
+      "New edits reject locked layers atomically; Undo/Redo ignore workspace lock",
+      "Strict layer.update DTO, dual revision conflicts, no-op and name budget",
+      "Workspace-only close and byte-identical export/reopen defaults",
+      "Previous geometry/order/budget regression retained; core lock assertions migrated to service"
+    ],
+    "status": "未执行",
+    "platform_note": "macOS local evidence separately recorded; Windows deferred; required_platforms unchanged"
   }
 }

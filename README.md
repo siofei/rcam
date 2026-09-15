@@ -1,4 +1,4 @@
-# RCam Gerber editor — Mac-first S1-B2b
+# RCam Gerber editor — Mac-first S1-B2c
 
 The headless application service now supports authorized Gerber open/query,
 atomic multi-object Move/Duplicate/Delete/Rotate/Mirror, Undo/Redo, validation, safe export to a new path and
@@ -19,14 +19,16 @@ support are deferred to the planned S4 scope.
 Rotate preserves true manufacturing geometry; mirrored arcs reverse direction.
 Rectangular sweeps support exact multiples of 90 degrees only (odd turns swap aperture dimensions);
 mirror axes are world horizontal/vertical. Unsupported mixed selections reject atomically.
-Pre-GUI state and structural-history work is recorded in ADR 0011.
+Workspace display name/visibility/lock now live in the service, independently of manufacturing dirty and history.
+`layer.update` checks both manufacturing and workspace revisions. New edits respect locks; Undo/Redo remain available.
+See ADR 0012 and `docs/S1_B2C_REVIEW.md` for scope and evidence. The next stage is S2-A Mac GUI, not implemented here.
 
 ## Workspace
 
 ```text
 crates/editor-core/       f64/mm geometry and layer coverage
 crates/gerber-io/         strict finite parser adapter
-crates/editor-service/    UI-free S0/S1-B2b service and JSON request envelope
+crates/editor-service/    UI-free S0/S1-B2c service and JSON request envelope
 crates/editor-app/        eframe + egui-wgpu S0 demonstration window
 fixtures/synthetic/       immutable S0-C inputs and independent S1-A truth
 docs/DEPENDENCIES.md      locked dependency and alternative record
@@ -51,7 +53,7 @@ cargo run --release --locked -p editor-app
 The real parser/service contracts live in `automation_contract.rs` and
 `headless_workflow.rs` under `crates/editor-service/tests/`. They exercise
 open/query/validate/export/reopen without a window. This is an unchanged
-document baseline; the S1-B1 Move workflow and S1-B2b Duplicate/Delete workflows are implemented; the full V1 headless automation workflow remains incomplete.
+document baseline; the S1-B1 Move workflow and S1-B2a Duplicate/Delete and S1-B2b Rotate/Mirror workflows are implemented; the full V1 headless automation workflow remains incomplete.
 
 ```text
 cargo test --locked -p editor-service --test automation_contract
