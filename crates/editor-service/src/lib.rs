@@ -1,8 +1,11 @@
-//! UI-free application boundary used by both the S0 app and future commands.
+//! UI-free application boundary retained by the app and headless callers.
 //!
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
-//! semantic queries, validation, and safe new-path export.
+//! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+use editor_core::edit::{
+    EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
+};
 use editor_core::{
     ApertureShape, CircleAperture, DocumentSnapshot, DrawObject, Exposure, Geometry, Layer,
     MmPoint, SemanticDocument, SemanticGeometry, SemanticObject,
@@ -39,6 +42,9 @@ pub struct ResourceLimits {
     pub max_source_bytes: usize,
     pub max_objects: usize,
     pub max_query_results: usize,
+    pub max_move_objects: usize,
+    pub max_history_entries: usize,
+    pub max_history_bytes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +198,9 @@ pub struct DocumentInfo {
     pub revision: String,
     pub source_path: String,
     pub source_sha256: String,
+    pub dirty: bool,
+    pub undo_entries: usize,
+    pub redo_entries: usize,
     pub layer_ids: Vec<String>,
     pub diagnostics: Vec<String>,
 }
@@ -201,6 +210,7 @@ pub struct LayerInfo {
     pub layer_id: String,
     pub name: String,
     pub object_count: usize,
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -264,6 +274,8 @@ struct S1DocumentRecord {
     metadata: Value,
     diagnostics: Vec<String>,
     revision: u64,
+    history: EditHistory,
+    saved_content_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -316,6 +328,33 @@ pub struct QueryParams {
 pub struct ObjectParams {
     pub layer_id: String,
     pub object_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveParams {
+    pub layer_id: String,
+    pub object_ids: Vec<String>,
+    pub dx_mm: f64,
+    pub dy_mm: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EditResult {
+    pub document_id: String,
+    pub revision: String,
+    pub changed_object_ids: Vec<String>,
+    pub undo_entries_added: usize,
+    pub undo_entries: usize,
+    pub redo_entries: usize,
+    pub dirty: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CloseParams {
+    #[serde(default)]
+    discard_changes: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -416,6 +455,9 @@ impl ApplicationService {
                     max_source_bytes: gerber_io::MAX_SOURCE_BYTES,
                     max_objects: gerber_io::MAX_OBJECTS,
                     max_query_results: 0,
+                    max_move_objects: 0,
+                    max_history_entries: 0,
+                    max_history_bytes: 0,
                 },
                 precision: PrecisionCapabilities {
                     coordinate_unit: "mm".into(),
@@ -426,8 +468,8 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S1-A semantic open/query/validate/export".into(),
-            read_only: true,
+            stage: "S1-B1 move/undo/redo/export/reopen".into(),
+            read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
                 "document.open_s0".into(),
@@ -435,6 +477,10 @@ impl ApplicationService {
                 "document.analyze_s0".into(),
                 "document.open".into(),
                 "document.get".into(),
+                "document.close".into(),
+                "objects.move".into(),
+                "history.undo".into(),
+                "history.redo".into(),
                 "layers.list".into(),
                 "objects.query".into(),
                 "objects.get".into(),
@@ -442,10 +488,8 @@ impl ApplicationService {
                 "gerber.export_layer".into(),
             ],
             unsupported_operations: vec![
-                "objects.move".into(),
                 "objects.duplicate".into(),
                 "objects.delete".into(),
-                "history.undo".into(),
                 "text.create".into(),
             ],
             supported_gerber_subset: vec![
@@ -477,6 +521,9 @@ impl ApplicationService {
                 max_source_bytes: gerber_io::S1_MAX_SOURCE_BYTES,
                 max_objects: gerber_io::S1_MAX_OBJECTS,
                 max_query_results: 1000,
+                max_move_objects: MAX_MOVE_OBJECTS,
+                max_history_entries: MAX_HISTORY_ENTRIES,
+                max_history_bytes: MAX_HISTORY_BYTES,
             },
             precision: PrecisionCapabilities {
                 coordinate_unit: "mm".into(),
@@ -559,12 +606,14 @@ impl ApplicationService {
         let scene: S1Scene = parse_s1(&bytes, &document_id).map_err(map_s1_error)?;
         let metadata = serde_json::to_value(&scene.metadata).map_err(serialize_error)?;
         let record = S1DocumentRecord {
+            saved_content_hash: content_hash(&scene.document),
             document: scene.document,
             source_path: canonical,
             source_sha256,
             metadata,
             diagnostics: scene.diagnostics,
             revision: 0,
+            history: EditHistory::default(),
         };
         let info = document_info(&document_id, &record);
         self.documents.insert(document_id, record);
@@ -591,6 +640,7 @@ impl ApplicationService {
                 layer_id: layer.id.clone(),
                 name: layer.name.clone(),
                 object_count: layer.objects.len(),
+                locked: layer.locked,
             })
             .collect())
     }
@@ -688,6 +738,93 @@ impl ApplicationService {
         })
     }
 
+    pub fn objects_move(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: MoveParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        let ids = record
+            .history
+            .move_objects(
+                &mut record.document,
+                &params.layer_id,
+                &params.object_ids,
+                params.dx_mm,
+                params.dy_mm,
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
+    pub fn history_undo(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        let ids = record
+            .history
+            .undo(&mut record.document)
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 0))
+    }
+
+    pub fn history_redo(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        let ids = record
+            .history
+            .redo(&mut record.document)
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 0))
+    }
+
+    fn edit_record(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+    ) -> Result<&mut S1DocumentRecord, ServiceError> {
+        let record = self
+            .documents
+            .get_mut(document_id)
+            .ok_or_else(|| ServiceError::not_found(document_id))?;
+        check_revision(record.revision, expected_revision)?;
+        if record.revision == u64::MAX {
+            return Err(ServiceError::resource("revision", usize::MAX, usize::MAX));
+        }
+        Ok(record)
+    }
+
+    pub fn close(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        discard_changes: bool,
+    ) -> Result<(), ServiceError> {
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found(document_id))?;
+        check_revision(record.revision, expected_revision)?;
+        if !discard_changes && content_hash(&record.document) != record.saved_content_hash {
+            return Err(ServiceError {
+                code: "CONFIRMATION_REQUIRED".into(),
+                message: "文档有未保存修改，需要明确放弃。".into(),
+                details: serde_json::json!({"field": "params.discard_changes"}),
+            });
+        }
+        self.documents.remove(document_id);
+        Ok(())
+    }
+
     pub fn validate(&self, document_id: &str) -> Result<ValidationResult, ServiceError> {
         let record = self
             .documents
@@ -704,7 +841,7 @@ impl ApplicationService {
     }
 
     pub fn export_layer(
-        &self,
+        &mut self,
         document_id: &str,
         expected_revision: &str,
         params: ExportParams,
@@ -761,7 +898,8 @@ impl ApplicationService {
                 error,
             ));
         }
-        Ok(ExportResult {
+        let saved_content_hash = content_hash(&record.document);
+        let result = ExportResult {
             api_version: API_VERSION,
             document_id: document_id.into(),
             layer_id: params.layer_id,
@@ -770,7 +908,12 @@ impl ApplicationService {
             path: target.to_string_lossy().into_owned(),
             sha256: sha256_hex(&bytes),
             bytes: bytes.len(),
-        })
+        };
+        self.documents
+            .get_mut(document_id)
+            .unwrap()
+            .saved_content_hash = saved_content_hash;
+        Ok(result)
     }
 
     /// Every JSON call, including rejection, returns the same response shape.
@@ -903,6 +1046,39 @@ impl ApplicationService {
                 let params: ObjectParams = parse_params(&request.params)?;
                 serde_json::to_value(self.objects_get(document_id, params)?)
                     .map_err(serialize_error)?
+            }
+            "objects.move" | "history.undo" | "history.redo" | "document.close"
+                if self.file_access.is_some() =>
+            {
+                let id = required_document_id(request)?;
+                let revision = request.expected_revision.as_deref().ok_or_else(|| {
+                    ServiceError::invalid_field(
+                        "expected_revision",
+                        "expected_revision is required",
+                    )
+                })?;
+                match request.op.as_str() {
+                    "objects.move" => serde_json::to_value(self.objects_move(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "document.close" => {
+                        let params: CloseParams = parse_params(&request.params)?;
+                        self.close(id, revision, params.discard_changes)?;
+                        serde_json::json!({"closed": true})
+                    }
+                    _ => {
+                        parse_empty_params(&request.params)?;
+                        let result = if request.op == "history.undo" {
+                            self.history_undo(id, revision)?
+                        } else {
+                            self.history_redo(id, revision)?
+                        };
+                        serde_json::to_value(result).map_err(serialize_error)?
+                    }
+                }
             }
             "document.validate" => {
                 parse_empty_params(&request.params)?;
@@ -1070,6 +1246,9 @@ fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
         revision: record.revision.to_string(),
         source_path: record.source_path.to_string_lossy().into_owned(),
         source_sha256: record.source_sha256.clone(),
+        dirty: content_hash(&record.document) != record.saved_content_hash,
+        undo_entries: record.history.undo_len(),
+        redo_entries: record.history.redo_len(),
         layer_ids: record
             .document
             .layers
@@ -1078,6 +1257,58 @@ fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
             .collect(),
         diagnostics: record.diagnostics.clone(),
     }
+}
+
+fn edit_result(id: &str, record: &S1DocumentRecord, ids: Vec<String>, added: usize) -> EditResult {
+    EditResult {
+        document_id: id.into(),
+        revision: record.revision.to_string(),
+        changed_object_ids: ids,
+        undo_entries_added: added,
+        undo_entries: record.history.undo_len(),
+        redo_entries: record.history.redo_len(),
+        dirty: content_hash(&record.document) != record.saved_content_hash,
+    }
+}
+
+fn map_edit_error(error: EditError) -> ServiceError {
+    match error {
+        EditError::NotFound(id) => ServiceError::not_found(&id),
+        EditError::InvalidArgument => {
+            ServiceError::invalid_field("params", "目标集合或移动距离无效，不能提交。")
+        }
+        EditError::LayerLocked(id) => ServiceError {
+            code: "LAYER_LOCKED".into(),
+            message: "图层已锁定。".into(),
+            details: serde_json::json!({"layer_id": id}),
+        },
+        EditError::ResourceLimit => ServiceError {
+            code: "RESOURCE_LIMIT".into(),
+            message: "移动对象数量或撤销历史超过预算。".into(),
+            details: serde_json::json!({"max_move_objects": MAX_MOVE_OBJECTS, "max_history_entries": MAX_HISTORY_ENTRIES, "max_history_bytes": MAX_HISTORY_BYTES}),
+        },
+        EditError::EmptyHistory => ServiceError::invalid_field("op", "没有可撤销或重做的事务。"),
+        EditError::InvalidGeometry(error) => map_semantic_error(error),
+    }
+}
+
+// Stream the stable owned model into the existing SHA-256 implementation;
+// no document-sized serialization buffer or revision-derived dirty flag.
+fn content_hash(document: &SemanticDocument) -> String {
+    struct HashWriter(Sha256);
+    impl io::Write for HashWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut writer = HashWriter(Sha256::new());
+    serde_json::to_writer(&mut writer, document)
+        .expect("validated finite model and infallible hash writer");
+    writer.0.finish()
 }
 
 fn check_revision(actual: u64, expected: &str) -> Result<(), ServiceError> {
@@ -2031,5 +2262,79 @@ M02*
             sha256_hex(&vec![b'a'; 1_000_000]),
             "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
         );
+    }
+}
+
+#[cfg(test)]
+mod s1b_guards {
+    use super::*;
+
+    fn service() -> (ApplicationService, String, String, String) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic")
+            .canonicalize()
+            .unwrap();
+        let mut service = ApplicationService::with_file_access(FileAccessPolicy::new(
+            &root,
+            [root.clone()],
+            [std::env::temp_dir()],
+        ));
+        let opened = service.open("s1a1/g75_exact.gbr").unwrap();
+        let id = opened.document_id;
+        let layer = opened.layer_ids[0].clone();
+        let object = service.documents[&id].document.layers[0].objects[0]
+            .object_id
+            .clone();
+        (service, id, layer, object)
+    }
+
+    #[test]
+    fn locked_layer_is_rejected_by_real_json_entry_without_history_changes() {
+        let (mut service, id, layer, object) = service();
+        service.documents.get_mut(&id).unwrap().document.layers[0].locked = true;
+        let before = service.documents[&id].document.clone();
+        let info = service.document_get(&id).unwrap();
+        let result=service.execute_json(&serde_json::json!({"api_version":1,"request_id":"locked","document_id":id,"expected_revision":"0","op":"objects.move","params":{"layer_id":layer,"object_ids":[object],"dx_mm":5,"dy_mm":-3}}).to_string());
+        assert_eq!(result["error"]["code"], "LAYER_LOCKED");
+        assert_eq!(service.documents[&id].document, before);
+        assert_eq!(service.document_get(&id).unwrap(), info);
+    }
+
+    #[test]
+    fn revision_overflow_and_large_revision_are_safe() {
+        let (mut service, id, layer, object) = service();
+        service.documents.get_mut(&id).unwrap().revision = 9_007_199_254_740_993;
+        let params = MoveParams {
+            layer_id: layer,
+            object_ids: vec![object],
+            dx_mm: 5.0,
+            dy_mm: -3.0,
+        };
+        assert_eq!(
+            service
+                .objects_move(&id, "9007199254740993", params.clone())
+                .unwrap()
+                .revision,
+            "9007199254740994"
+        );
+        service.documents.get_mut(&id).unwrap().revision = u64::MAX;
+        let info = service.document_get(&id).unwrap();
+        let geometry = service.documents[&id].document.clone();
+        assert_eq!(
+            service
+                .objects_move(&id, &u64::MAX.to_string(), params)
+                .unwrap_err()
+                .code,
+            "RESOURCE_LIMIT"
+        );
+        assert_eq!(
+            service
+                .history_undo(&id, &u64::MAX.to_string())
+                .unwrap_err()
+                .code,
+            "RESOURCE_LIMIT"
+        );
+        assert_eq!(service.document_get(&id).unwrap(), info);
+        assert_eq!(service.documents[&id].document, geometry);
     }
 }

@@ -1,24 +1,16 @@
-# RCam Gerber editor — S1-A.1 arc validation
+# RCam Gerber editor — Mac-first S1-B1
 
-This workspace contains the S0 demonstration window and the S1-A semantic
-parser, model, validation, and new-path writer. It is not EditableV1 or a
-production Gerber editor. The S0-C Windows platform gate remains blocked.
+The headless application service now supports authorized Gerber open/query,
+atomic multi-object Move, Undo/Redo, validation, safe export to a new path and
+reopen. Geometry stays in the shared f64 manufacturing model; history stores
+only changed objects. The window remains the S0 demonstration and now retains
+its application service for its lifetime.
 
-The slice proves one deliberately small path: a real `gerber_parser` parser
-reads a finite circle-flash subset, `gerber-io` rejects everything outside that
-subset, `editor-core` evaluates f64 millimetre coverage with local aperture
-holes and per-layer Dark/Clear order, and `editor-service` exposes the result
-through a versioned JSON DTO boundary. `editor-app` displays the same service
-snapshot through an eframe-managed wgpu callback. The demo also includes the
-fixed line/ring and cross-layer Clear checks used by the S0 risk review.
-
-The S1-A headless service opens explicitly authorized files, queries owned
-geometry DTOs, validates them, and exports an unchanged layer to a new path.
-Its supported subset is frozen by ADR 0005. The existing window still uses
-the S0 demonstration path; full GUI integration, object editing, Undo/Redo,
-and source overwrite remain unimplemented. See `docs/S1_A_REVIEW.md` for
-historical evidence. The current arc/legacy review is `docs/S1_A1_REVIEW.md`;
-redacted, distributable logs are in `evidence-public/s1-a1/`. CORE10 editing round trips are not claimed.
+Current stage checks target macOS arm64. Windows is deferred, not passed.
+This is not EditableV1, full CORE10 acceptance or a production release.
+CORE-03/07/08 compatibility gaps and independent arc reference differences
+remain recorded. See `docs/S1_B1_REVIEW.md` and `docs/adr/0008-mac-first-s1b1.md`.
+Historical S1-A.1 evidence remains in `evidence-public/s1-a1/`.
 
 The S0 window uses English labels so the default eframe font remains legible
 on a clean installation; no user font is bundled. Chinese UI and vector text
@@ -29,7 +21,7 @@ support are deferred to the planned S4 scope.
 ```text
 crates/editor-core/       f64/mm geometry and layer coverage
 crates/gerber-io/         strict finite parser adapter
-crates/editor-service/    UI-free S0/S1-A service and JSON request envelope
+crates/editor-service/    UI-free S0/S1-B1 service and JSON request envelope
 crates/editor-app/        eframe + egui-wgpu S0 demonstration window
 fixtures/synthetic/       immutable S0-C inputs and independent S1-A truth
 docs/DEPENDENCIES.md      locked dependency and alternative record

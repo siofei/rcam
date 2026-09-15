@@ -3244,5 +3244,11 @@
       "Fail closed for Region topology not proven across the allowed annular interpretations"
     ],
     "status": "implementation checks are not full AT acceptance"
+  },
+  "s1b1_execution_scope": {
+    "decision": "adr/0008-mac-first-s1b1.md",
+    "platform": "macos-arm64",
+    "windows": "deferred / not executed",
+    "case_status": "partial checks only; required_platforms unchanged"
   }
 }

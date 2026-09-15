@@ -972,6 +972,7 @@ fn interpret_s1(
         unit: "mm".into(),
         format: semantic_format,
         layers: vec![SemanticLayer {
+            locked: false,
             id: "layer-1".into(),
             name: metadata
                 .layer_name

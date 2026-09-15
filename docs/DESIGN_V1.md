@@ -845,3 +845,9 @@ cargo test --locked -p editor-service --test headless_workflow
 G74 按最小 deviation 选择中心，相同端点按 0° 解释；原始字段与显示/覆盖曲线分离。
 Region 中非零 deviation 仅在圆形解释位于原始环带、角度单调且不确定环扇区拓扑检查通过时接受；其余明确拒绝并公开限制。
 此边界不删除 V1 要求、不改变 96 个验收身份、双平台证据或 CORE10 门槛。
+
+### S1-B1 当前平台与编辑实施范围
+
+按用户指定任务及 [ADR 0008](adr/0008-mac-first-s1b1.md)，当前开发/阶段验收采用 macOS arm64，
+Windows 延后但最终双平台门槛不变。S1-B1 仅 Move、Undo/Redo、编辑后安全往返与服务生命周期。
+CORE-03/07/08 和独立圆弧参考差异继续保留；不扩展 Gerber 兼容范围。

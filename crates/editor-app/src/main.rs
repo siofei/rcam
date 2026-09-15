@@ -1,11 +1,11 @@
 use editor_core::{DocumentSnapshot, Geometry};
-use editor_service::{AnalysisResult, ApplicationService, Capabilities};
+use editor_service::{AnalysisResult, ApplicationService};
 use eframe::egui::{self, Color32, Rect, Stroke, Vec2};
 
 const SAMPLE: &[u8] = include_bytes!("../../../fixtures/synthetic/s0_polarity.gbr");
 
 struct S0App {
-    capabilities: Capabilities,
+    service: ApplicationService,
     snapshot: DocumentSnapshot,
     analysis: AnalysisResult,
     zoom: f32,
@@ -20,7 +20,6 @@ impl S0App {
         service
             .open_demo_s0("s0-demo", SAMPLE)
             .map_err(|error| error.to_string())?;
-        let capabilities = service.capabilities();
         let snapshot = service
             .snapshot("s0-demo")
             .map_err(|error| error.to_string())?;
@@ -44,7 +43,7 @@ impl S0App {
             .map(|state| state.target_format)
             .unwrap_or(egui_wgpu::wgpu::TextureFormat::Bgra8UnormSrgb);
         Ok(Self {
-            capabilities,
+            service,
             snapshot,
             analysis,
             zoom: 18.0,
@@ -70,7 +69,8 @@ impl eframe::App for S0App {
                 ui.heading("S0 capabilities");
                 ui.label(format!(
                     "API v{} · revision {}",
-                    self.capabilities.api_version, self.snapshot.revision
+                    self.service.capabilities().api_version,
+                    self.snapshot.revision
                 ));
                 let object_total: usize = self
                     .snapshot

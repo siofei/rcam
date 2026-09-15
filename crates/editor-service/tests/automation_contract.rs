@@ -93,6 +93,10 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
         "system.capabilities",
         "document.open",
         "document.get",
+        "document.close",
+        "objects.move",
+        "history.undo",
+        "history.redo",
         "layers.list",
         "objects.query",
         "objects.get",
@@ -107,13 +111,7 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
             "{operation}"
         );
     }
-    for operation in [
-        "objects.move",
-        "objects.duplicate",
-        "objects.delete",
-        "history.undo",
-        "text.create",
-    ] {
+    for operation in ["objects.duplicate", "objects.delete", "text.create"] {
         assert!(
             !capabilities
                 .supported_operations

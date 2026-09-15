@@ -322,3 +322,32 @@ IN/LN 与属性均作为来源诊断处理，不作为稳定 ID；无损失时�
 G74 零弧导出可规范化为同位置/同圆光圈宽度的 G01 零长度 stroke；重新打开后对象类型可能为 Line，
 但 dot 覆盖必须保持。不能以原始 G74 零弧的 ObjectId/类型要求跨会话恒定身份。
 本轮不新增操作名，capabilities 明确公布受测圆弧/Region 边界，详见 ADR 0007。
+
+## S1-B1 已实施接口（Mac-first）
+
+本节覆盖前文 S1-A 的无编辑限制；整体 V1 设计仍有未实施操作。依据 ADR 0008。
+宿主授权后的 capabilities 新增 objects.move、history.undo、history.redo、document.close；read_only=false。
+默认无文件授权构造器与 S0 文档仍只读。公开 params/result DTO 可 JSON 编解码。
+
+| 操作 | params | 结果 |
+|---|---|---|
+| objects.move | `{layer_id,object_ids,dx_mm,dy_mm}` | revision、changed_object_ids、undo_entries_added=1、undo_entries、redo_entries、dirty |
+| history.undo / history.redo | `{}` | revision、changed_object_ids、undo_entries_added=0、undo_entries、redo_entries、dirty |
+| document.close | `{discard_changes?:false}` | `{closed:true}`；脏内容默认 confirmation_required，明确 true 才放弃 |
+
+这些操作均要求真实 document_id 和 expected_revision。成功 Move/Undo/Redo 推进一次 revision；
+同调用的对象按曝光顺序一起提交。空集、重复 ID、非有限/越界位移拒绝；未知目标 NOT_FOUND，
+锁定层 LAYER_LOCKED，预算超限 RESOURCE_LIMIT，旧版本 REVISION_CONFLICT，无历史 INVALID_ARGUMENT。
+失败不变更内容/revision/历史，也不清除 Redo。关闭移除该会话历史，新打开分配新身份。
+当前未开放 layer.update，但真实模型锁定位在编辑入口检查，不能由请求绕过。
+
+上限为每次 10000 对象、100 条历史、64 MiB 保守历史内存计费（含提交峰值/Redo）；超限整体拒绝。
+Flash、Line、轴向 RectangularSweep、Arc 和完整 Region 可平移，光圈定义不变。
+圆弧保留 full/zero sweep、方向和源分辨率；移动后重新运行原几何合法性检查，不扩大输入兼容范围。
+查询实时读取模型，旧分页游标在修改/Undo/Redo 后失效；没有独立缓存需要更新。
+现有 contains 为“对象包含查询矩形”，intersects 为相交；完整几何查询仍受 S1-A 限制。
+
+文档信息新增 dirty/undo_entries/redo_entries，图层查询增加 locked。
+成功的新路径导出以当前内容哈希更新保存基线；失败/待确认不更新，也不清除历史。
+当前只支持单层导入文档，未来多层导入须扩展为逐层保存基线。
+所有接口仍同步；GUI 后台任务、edit.batch、其他变换、文字和完整保存产品流程未交付。

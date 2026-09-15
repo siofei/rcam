@@ -1,7 +1,7 @@
-//! Small, UI-free S0 semantic model.
-//!
-//! This is deliberately only the geometry needed by the S0 risk fixture. It is
-//! not the V1 editor model and has no writer or editing commands.
+//! UI-free f64 manufacturing geometry, validation and bounded atomic editing.
+//! The original S0 display model remains separate from the S1 semantic model.
+
+pub mod edit;
 
 use serde::{Deserialize, Serialize};
 
@@ -525,6 +525,8 @@ pub struct SemanticObject {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SemanticLayer {
+    #[serde(default)]
+    pub locked: bool,
     pub id: String,
     pub name: String,
     pub objects: Vec<SemanticObject>,

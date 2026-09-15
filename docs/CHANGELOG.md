@@ -70,3 +70,9 @@ Windows原生门禁仍阻塞，不宣称已进入S1或完成V1。
 
 ADR 0007 澄清 arc deviation、G74 least-deviation/0°、旧 metadata/FS 严格策略；
 保留 96 个有效用例、退役身份、平台门槛和私有样本身份。更正有规范依据的旧圆弧测试真值。
+
+## 2026-09-15 · Mac-first S1-B1
+
+按 RCam_MAC_FIRST_S1B_NEXT_TASK.md 和 ADR 0008 调整当前阶段排期为 macOS arm64，
+保留 Windows 必测身份及最终双平台门槛。新增 Move、Undo/Redo、关闭会话与内容哈希保存基线；
+新增独立 JSON 编辑往返测试。未扩展 Gerber 兼容范围、GUI 编辑或脚本运行时。

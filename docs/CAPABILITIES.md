@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发切片为 S1-A.1，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+当前开发切片为 S1-B1，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下 S0/S0-B/S0-C 段落保留当时的实施状态；S1-A 当前状态见文末及 `S1_A_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -80,3 +80,13 @@ S0-C Windows platform gate 仍 blocked，不作为生产加工文件发行。
 
 公开专项通过不能替代独立工具一致性；大 deviation 和原始 G74 零弧的本地 gerbv 差异单独保留。
 CORE10 当前状态及未完成项以本轮脱敏证据为准，不授予生产输出或 S1-B 编辑验收通过。
+
+## S1-B1 基础编辑（2026-09-15）
+
+当前实现切片为 S1-B1；前文 S1-A/A.1 段落保留历史状态。依据 ADR 0008 和 S1_B1_REVIEW.md。
+宿主授权服务实现 objects.move、history.undo/history.redo、document.close。
+支持 Flash/Line/RectangularSweep/Arc/Region 整体平移；版本单调递增，历史恢复原几何，
+失败原子拒绝，保存后基于内容哈希判脏。新路径导出使用原有 Writer 和重新解析核验。
+当前限制为 10000 对象/命令、100 事务、64 MiB 保守计费，查询实时读制造模型。
+GUI 长期持有服务，画面仍为 S0 演示；没有编辑控件/拖动/完整文件打开流程。
+Windows deferred / not executed；CORE-03/07/08、独立参考差异继续保留，不能宣称完整 AT/CORE10/V1/生产通过。
