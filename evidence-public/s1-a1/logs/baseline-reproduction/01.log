@@ -1,0 +1,25 @@
+cargo test --manifest-path <baseline-workspace>/Cargo.toml --locked -p editor-service --test s1a_semantic_truth g74_least_deviation_and_zero_sweep_are_accepted -- --exact
+   Compiling editor-core v0.1.0 (<baseline-workspace>/crates/editor-core)
+   Compiling gerber-io v0.1.0 (<baseline-workspace>/crates/gerber-io)
+   Compiling editor-service v0.1.0 (<baseline-workspace>/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.44s
+     Running tests/s1a_semantic_truth.rs (target/debug/deps/s1a_semantic_truth-e9fa7c7ce3e67c09)
+
+running 1 test
+test g74_least_deviation_and_zero_sweep_are_accepted ... FAILED
+
+failures:
+
+---- g74_least_deviation_and_zero_sweep_are_accepted stdout ----
+
+thread 'g74_least_deviation_and_zero_sweep_are_accepted' panicked at crates/editor-service/tests/s1a_semantic_truth.rs:163:72:
+called `Result::unwrap()` on an `Err` value: Semantic { line: 0, message: "command 7: G74 center is ambiguous" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    g74_least_deviation_and_zero_sweep_are_accepted
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p editor-service --test s1a_semantic_truth`

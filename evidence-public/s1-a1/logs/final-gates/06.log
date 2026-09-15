@@ -1,0 +1,33 @@
+cargo test --locked -p editor-service --test s1a_semantic_truth
+   Compiling editor-service v0.1.0 (<workspace>/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
+     Running tests/s1a_semantic_truth.rs (target/debug/deps/s1a_semantic_truth-e9fa7c7ce3e67c09)
+
+running 24 tests
+test frozen_core10_semantic_scan ... ignored, requires locally authorized frozen CORE10 manifest; explicit run only
+test incremental_io_is_applied_once ... ok
+test incremental_trailing_arc_offsets_are_not_reinterpreted_or_accumulated ... ok
+test first_incremental_missing_axis_is_zero ... ok
+test g74_least_deviation_and_zero_sweep_are_accepted ... ok
+test omitted_absolute_axis_preserves_exact_mm_value_after_inch_offset ... ok
+test all_frozen_formats_decode_digits_and_signs ... ok
+test ordinary_comment_may_span_physical_lines ... ok
+test macro_expansion_budget_is_global_across_apertures ... ok
+test macro_expression_recursion_is_bounded_including_unary_operators ... ok
+test legacy_empty_separators_packed_headers_and_multiline_macro_are_supported ... ok
+test trailing_incremental_full_circle_reencodes_offset_only_record ... ok
+test source_metadata_is_preserved_as_diagnostics ... ok
+test resource_limits_are_checked_at_each_input_expansion_boundary ... ok
+test writer_and_validation_copy_have_separate_resource_limits ... ok
+test parameterized_macro_uses_real_ad_arguments ... ok
+test writer_declares_multi_quadrant_for_region_arcs ... ok
+test writer_comparison_does_not_relax_to_old_input_resolution ... ok
+test original_apertures_arcs_and_rectangular_sweeps_have_known_geometry ... ok
+test unbound_template_parameter_does_not_hide_invalid_constant_primitive ... ok
+test writer_failure_preserves_preexisting_temporary_and_target_files ... ok
+test writer_preserves_transform_precision_in_physical_space ... ok
+test original_eighteen_scope_inputs_have_actual_semantics ... ok
+test independent_source_geometry_and_rejection_truth ... ok
+
+test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

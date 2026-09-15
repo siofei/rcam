@@ -1,0 +1,13 @@
+cargo test --locked -p editor-service --test s1a1_arcs
+   Compiling editor-core v0.1.0 (<workspace>/crates/editor-core)
+   Compiling gerber-io v0.1.0 (<workspace>/crates/gerber-io)
+   Compiling editor-service v0.1.0 (<workspace>/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.66s
+     Running tests/s1a1_arcs.rs (target/debug/deps/s1a1_arcs-d9ac8efa7c7a2ac3)
+
+running 2 tests
+test source_resolution_and_declared_center_survive_units_and_normalization ... ok
+test public_arc_fixture_truth_and_reopen ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

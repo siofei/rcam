@@ -1,0 +1,167 @@
+{
+  "schema_version": 2,
+  "run_id": "s1-a1-20260915-implementation",
+  "base_commit": "f6da9a4de38f9128956cba2813e1f5e0710486e9",
+  "working_tree_changes": true,
+  "files": {
+    "crates/editor-app/Cargo.toml": "d7ec2da93dfe0d23b3fe41bf6317611cc252ed178bfc19155bfb0a54ed2c9595",
+    "crates/editor-app/src/canvas.wgsl": "6d677c15835eb774701a9852635fed5273af1e8099e35e1c8bed5cb81f8c0143",
+    "crates/editor-app/src/gpu_tests.rs": "91cbb5439520e03766ad930ff13419332f7d66fd018f392648008a27b4864846",
+    "crates/editor-app/src/main.rs": "b4975ec08cfae07643904d1cefdd545a7a6aa03dc017518b7d5868fc161aa2a3",
+    "crates/editor-app/src/navigation_tests.rs": "30da55a042ca6c2db9712412c3827baaea67248aaf631bc4c0a40d7ef2b23406",
+    "crates/editor-core/Cargo.toml": "345b2f9c4aef9968d0919d180f3ab97269edf4dbd0ec0d79bfa58fb83abafd66",
+    "crates/editor-core/src/lib.rs": "be4dfc66ef1bedf3e29ae8afac49d8372f83627a123f5a9e4c2a2d7e664751f1",
+    "crates/editor-core/tests/review_geometry_regressions.rs": "a574203b7fac690b7d959d23f5987d7613810c934779a9ea800a18ffea4bcf91",
+    "crates/editor-core/tests/s1a_independent_geometry.rs": "0621284dec296438d9e3b300d488be5ddc7566631990934f848b0fae32328dc5",
+    "crates/editor-service/Cargo.toml": "67a8aba569a95fbad583d47a3f456e38eef3bef33dc831e5c5416770279291ad",
+    "crates/editor-service/src/lib.rs": "49a199ab66bbcaf3c72ed3927c48b673af32625d1bdcd0bf9c78f179c68decaf",
+    "crates/editor-service/tests/automation_contract.rs": "c169e6a887bddd4f7f1cd79ab8eabb1fe3e9a3b3fd58d2657bc7b86e457dc537",
+    "crates/editor-service/tests/dependency_boundary.rs": "756b4479ff9043c57a74d3199f6975fc6465a016f73801609e3f685371c8c3d5",
+    "crates/editor-service/tests/headless_workflow.rs": "42a65aecc1c68319aaffddb92b775484a12cb2792100c69ddb1d3d048367bf25",
+    "crates/editor-service/tests/historical_audit.rs": "1fb7d0b505788a27d9611990ac2bbde1a80d554a08e3a66787dc5d738b880d8c",
+    "crates/editor-service/tests/review_service_regressions.rs": "3d19cea71058c00921dda22082e835b0db0d586df5131af33a7646183205227b",
+    "crates/editor-service/tests/s0c_scope_boundary.rs": "8680f146f95046870fe943d6b46764d676f58fcc53d9b9f7b5c76b85170116c0",
+    "crates/editor-service/tests/s1a1_arcs.rs": "01734592ae3df9bb63d252c6071d16ce1b44e31b563a542f640df8d80f455ef2",
+    "crates/editor-service/tests/s1a_independent.rs": "c743a950c4792cac21f9a6310a0d84c5c595315dc9b442cb4f1a192ff04e15eb",
+    "crates/editor-service/tests/s1a_semantic_truth.rs": "8dc565f249165af8676d62f204c5af40eeaadbcd5e000c1736c5e7d871dd9f0d",
+    "crates/gerber-io/Cargo.toml": "3eaa4dcf16032f67c128f368f835af0e9818d8036ca7b481aad7f7204ddf84ca",
+    "crates/gerber-io/src/lib.rs": "baf56efb80556b9105a810190e8c25446e047a3d5ca8061a776e099a1aa129c8",
+    "crates/gerber-io/src/s1.rs": "8210114954e796ddbbdb7f4fa9be33dc239c5402d7136cb08c9344a7b942662c",
+    "crates/gerber-io/tests/review_parser_regressions.rs": "2953ee742011b0e78716282a55477b5c7f8da38b526281bfbbf507f8fcc4bf2f",
+    "crates/gerber-io/tests/s1_adapter.rs": "3d984b1f213da5b8e45433eb4da0890fefc84feb9e20c22f6bcf3ba7e0159954",
+    "Cargo.lock": "4ea9fe64222777a7133aefa10e3f49af82bc11347599d8b11a6457ad99546718",
+    "Cargo.toml": "70d95accc54616a45fcd97410ac519cad62b9542c227a7782680f0ce9bb89cd7",
+    "rust-toolchain.toml": "53bb02e8b6feacc498601210c27e159d09bfb4045555428a0f85ab22c269fe19"
+  },
+  "release_binary_sha256": "26fcf11452df79103ae37902f1c8a08420fb87b827cd5d0f002856a3582085c9",
+  "core10": [
+    {
+      "core_id": "CORE-01",
+      "expected_sha256": "8abf91299385b31bbcdb948725e8e7c5692eba48fa7730f429004cf7f15e5e4c",
+      "before_sha256": "8abf91299385b31bbcdb948725e8e7c5692eba48fa7730f429004cf7f15e5e4c",
+      "after_sha256": "8abf91299385b31bbcdb948725e8e7c5692eba48fa7730f429004cf7f15e5e4c",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-02",
+      "expected_sha256": "46a4b2c106c59fffa378a98623d3a28baf174e2c61b177cdcaffca2e1d43b96d",
+      "before_sha256": "46a4b2c106c59fffa378a98623d3a28baf174e2c61b177cdcaffca2e1d43b96d",
+      "after_sha256": "46a4b2c106c59fffa378a98623d3a28baf174e2c61b177cdcaffca2e1d43b96d",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-03",
+      "expected_sha256": "354ddb10e6f1b08e3e45917906b077b638f02bc3be95754ebac92f35c464ad79",
+      "before_sha256": "354ddb10e6f1b08e3e45917906b077b638f02bc3be95754ebac92f35c464ad79",
+      "after_sha256": "354ddb10e6f1b08e3e45917906b077b638f02bc3be95754ebac92f35c464ad79",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-04",
+      "expected_sha256": "c8997b55e107d121a2bb3ceb183fcea5608eaae3928d92f708be7c86e2a0ff77",
+      "before_sha256": "c8997b55e107d121a2bb3ceb183fcea5608eaae3928d92f708be7c86e2a0ff77",
+      "after_sha256": "c8997b55e107d121a2bb3ceb183fcea5608eaae3928d92f708be7c86e2a0ff77",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-05",
+      "expected_sha256": "2c38eabcbbad8aeb565101560f326f1ef48dd616f0237069bb08df2a6efc2851",
+      "before_sha256": "2c38eabcbbad8aeb565101560f326f1ef48dd616f0237069bb08df2a6efc2851",
+      "after_sha256": "2c38eabcbbad8aeb565101560f326f1ef48dd616f0237069bb08df2a6efc2851",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-06",
+      "expected_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+      "before_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+      "after_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-07",
+      "expected_sha256": "e382d7efbd505601ceb97a8d7ff6cb1c0d09054286a3e9e0a3833860e62eb997",
+      "before_sha256": "e382d7efbd505601ceb97a8d7ff6cb1c0d09054286a3e9e0a3833860e62eb997",
+      "after_sha256": "e382d7efbd505601ceb97a8d7ff6cb1c0d09054286a3e9e0a3833860e62eb997",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-08",
+      "expected_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+      "before_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+      "after_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-09",
+      "expected_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+      "before_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+      "after_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+      "unchanged": true
+    },
+    {
+      "core_id": "CORE-10",
+      "expected_sha256": "17fb5ae9ba3a6f1ec06f45e5ea3a3e739d5e5ee210e7cdead55367624cc4480f",
+      "before_sha256": "17fb5ae9ba3a6f1ec06f45e5ea3a3e739d5e5ee210e7cdead55367624cc4480f",
+      "after_sha256": "17fb5ae9ba3a6f1ec06f45e5ea3a3e739d5e5ee210e7cdead55367624cc4480f",
+      "unchanged": true
+    }
+  ],
+  "fixture_integrity": [
+    {
+      "suite": "s0c",
+      "count": 18,
+      "hashes_verified": true,
+      "original_bytes_unchanged": true
+    },
+    {
+      "suite": "s1a",
+      "count": 50,
+      "hashes_verified": true,
+      "original_bytes_unchanged": true
+    },
+    {
+      "suite": "s1a1",
+      "count": 17,
+      "hashes_verified": true,
+      "original_bytes_unchanged": null,
+      "newly_added": true
+    }
+  ],
+  "acceptance_case_identity": {
+    "schema_version": 2,
+    "active": 96,
+    "retired": 1,
+    "all_original_cases_and_required_platforms_unchanged": true
+  },
+  "specification_sha256": "ac9e9899f573d69e472b2112f1ae879c70f6cd13e17db41a1c885caf69961662",
+  "reference_output_revalidation": {
+    "g74_ccw_quarter.gbr": "88b68e985a7f8393af1c2edba95ed0bffaab83bb1a992af084858beca6ac7d1f",
+    "g74_cw.gbr": "ba032590d174b0a1c6a1eee0e8b5840ed8927911d8ba1a2606256d40ee998509",
+    "g74_cw_quarter.gbr": "ba032590d174b0a1c6a1eee0e8b5840ed8927911d8ba1a2606256d40ee998509",
+    "g74_least_deviation.gbr": "d053de64cf15b56664181347f3812eee9eaef91fbaea7d44e0c7269fd3e4c86a",
+    "g74_zero.gbr": "981da7c38ac3857b31a8522d4cee0b5c620906085a94d2394e8498b2bea47ff5",
+    "g74_zero_offset.gbr": "981da7c38ac3857b31a8522d4cee0b5c620906085a94d2394e8498b2bea47ff5",
+    "g75_exact.gbr": "88b68e985a7f8393af1c2edba95ed0bffaab83bb1a992af084858beca6ac7d1f",
+    "g75_full.gbr": "f20dc33d14dec7d47ad62f004e69a0f26aaa756bcd3b6cf72c259dc4678626e6",
+    "g75_full_circle.gbr": "f20dc33d14dec7d47ad62f004e69a0f26aaa756bcd3b6cf72c259dc4678626e6",
+    "g75_invalid_radius.gbr": "a7a46e863af8ba258051c43db578765cb67fbb23c9eab4be64bc5a592a950b47",
+    "g75_large_deviation.gbr": "a7a46e863af8ba258051c43db578765cb67fbb23c9eab4be64bc5a592a950b47",
+    "g75_near_full.gbr": "d48fe84c135b2a50bf61f975206ef8e8b96b1d932afdd3a4a1630ec48e951742",
+    "g75_region_deviation_safe.gbr": "655a4d4698269b33c5bbe2a028f7308555e84c5e6f8716615d7d3e887b5d21a7",
+    "g75_small_deviation.gbr": "f2eeef2d57666ad06602eb9603fd643262c6822203990510b1b13c211ad27f64",
+    "g91_modal_transitions.gbr": "5fe0408ce235d601e7d17bfe1b938f182c1a1a0129e2ec1abc964465f3912f6c",
+    "incremental_missing_axis.gbr": "75605b4e3d16a8a824492991a93f981ac2719484a856c91d4182e79537566529",
+    "io_inches.gbr": "901d129fb2936ac999b71bcf867a99e3f653b83136cd4237ed8ad5dffbb97b2c",
+    "macro_hole_over_line.gbr": "26d09ad5f24318ffbf668d6b420c60e9926e9e678f16ff59f8675c156e546ffa",
+    "macro_rotated_circle.gbr": "4ee82a486789e4ed0e8f123c4d62773369a3e25362657d7e322af04a4f404dbb",
+    "macro_rotated_rectangle.gbr": "7dae7c62bd6c2d66d8244801a67e94d5a5122106c21cf6e612e4bf90e9c311d5",
+    "macro_unused_undefined.gbr": "3ee258792d904c6b44c9bbbd072fbe74a71aae799e575a2828f0a8a995d97797",
+    "nested_region_union.gbr": "cdd641948c273a9c51f22ea10b293076fb4b0bcf083460774c7a0d5566e5a50f",
+    "ordered_local_hole.gbr": "c5f0d8c16a356c3478e2e7b665d26637e75a9308c568d9cefdaa17b48b0c0ead",
+    "region_arc.gbr": "4304b809c6495e941e21fa6ed9a2a899fc88811e40ceb87e39819541de2b1dad",
+    "region_cutin.gbr": "86f3c8fc65f0c027f3196289dbab3f576d97622e726d0c0c65e440abaf69761c",
+    "standard_hole_over_line.gbr": "156061d9d9238831854eaaabf87f4a83f7e1d3ecf3ed4c62fae61b64311131ca",
+    "trailing_zero.gbr": "e25acdcf3286f39a46bbdc1212fdd13a08d956b6d486d02b7a56b99ba0139464",
+    "ucamco_full_circle_geometry.gbr": "199a690539c82051048073723ee7b9ba8d437eadd687bd8c4f6bcd41f60e6408"
+  }
+}

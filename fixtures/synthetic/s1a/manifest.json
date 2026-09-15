@@ -166,8 +166,9 @@
       "name": "g75_invalid_radius",
       "path": "fixtures/synthetic/s1a/g75_invalid_radius.gbr",
       "sha256": "8385ba38185ab868fd23ef02a95d7009b2e1a0adb7753d52e3d303323b459750",
-      "accept": false,
-      "coverage_mm": []
+      "accept": true,
+      "coverage_mm": [],
+      "truth_correction": "S1-A.1: historical filename; nonzero deviation is valid under Ucamco 2026.05 section 4.7.2.2. Source bytes unchanged."
     },
     {
       "name": "incremental_missing_axis",

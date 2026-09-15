@@ -314,3 +314,11 @@ S0 演示仍使用原四个接口。宿主须通过 `ApplicationService::with_fi
 IN/LN 与属性均作为来源诊断处理，不作为稳定 ID；无损失时不重复确认。
 共享 IO Writer 负责语义/数值校验和规范化往返核对，服务负责主机权限、revision 和元数据策略。
 临时文件只发布到新路径，失败不覆盖已有目标。
+
+### S1-A.1 圆弧查询说明
+
+现有对象 DTO 的 `Arc` 保留输入端点、声明圆心、方向和全圆身份；可选 `source` 包含
+`resolution_mm` 与 `single_quadrant`。这些是自有只读数据，不暴露 parser AST 或覆盖缓存。
+G74 零弧导出可规范化为同位置/同圆光圈宽度的 G01 零长度 stroke；重新打开后对象类型可能为 Line，
+但 dot 覆盖必须保持。不能以原始 G74 零弧的 ObjectId/类型要求跨会话恒定身份。
+本轮不新增操作名，capabilities 明确公布受测圆弧/Region 边界，详见 ADR 0007。

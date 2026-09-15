@@ -3225,5 +3225,24 @@
         "status": "未执行"
       }
     ]
+  },
+  "s1a1_arc_clarification": {
+    "adr": "docs/adr/0007-s1-a1-arc-and-legacy-policy.md",
+    "cases": [
+      "AT-013",
+      "AT-014",
+      "AT-019",
+      "AT-053",
+      "AT-055"
+    ],
+    "fixture_manifest": "fixtures/synthetic/s1a1/manifest.json",
+    "scenarios": [
+      "G75 exact/small/large deviation and nonsensical centers",
+      "G74 least-deviation candidate and zero-degree dot",
+      "Declared center, source resolution, full/near-full arc preservation",
+      "Independent coverage and writer/reopen; no mesh-derived manufacturing output",
+      "Fail closed for Region topology not proven across the allowed annular interpretations"
+    ],
+    "status": "implementation checks are not full AT acceptance"
   }
 }

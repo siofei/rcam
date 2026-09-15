@@ -1,0 +1,336 @@
+{
+  "schema_version": 2,
+  "kind": "s1_a1_arc_manufacturing_truth",
+  "cases": [
+    {
+      "name": "g75_exact",
+      "path": "fixtures/synthetic/s1a1/g75_exact.gbr",
+      "sha256": "b8004ef3c045ea1d57abbc82b6def79b76a095ad61b07b41ff9fe0eb8b861534",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0.74,
+          0.74,
+          true
+        ],
+        [
+          0.9,
+          0.9,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g75_small_deviation",
+      "path": "fixtures/synthetic/s1a1/g75_small_deviation.gbr",
+      "sha256": "08b257bdb6aef4728e74900a385fdb9f7b51043c4b5f126c138da6cb92c0c4ef",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0.74,
+          0.74,
+          true
+        ],
+        [
+          0,
+          1.00002,
+          true
+        ]
+      ]
+    },
+    {
+      "name": "g75_large_deviation",
+      "path": "fixtures/synthetic/s1a1/g75_large_deviation.gbr",
+      "sha256": "8385ba38185ab868fd23ef02a95d7009b2e1a0adb7753d52e3d303323b459750",
+      "accept": true,
+      "coverage_mm": [
+        [
+          1.06066,
+          1.06066,
+          true
+        ],
+        [
+          0.707107,
+          0.707107,
+          false
+        ],
+        [
+          1.3,
+          0,
+          true
+        ],
+        [
+          0,
+          1.8,
+          true
+        ]
+      ]
+    },
+    {
+      "name": "g75_nonsensical",
+      "path": "fixtures/synthetic/s1a1/g75_nonsensical.gbr",
+      "sha256": "8ef75a56b5bf1007eafb4660a610faf225bb0c463fd7f046f72ff109cd3b801c",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "g75_near_nonsensical",
+      "path": "fixtures/synthetic/s1a1/g75_near_nonsensical.gbr",
+      "sha256": "c1293a93bc7cc0a11b46217fdbb2e2b4a639a167dead024b6f24a3227f550529",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "g75_center_endpoint",
+      "path": "fixtures/synthetic/s1a1/g75_center_endpoint.gbr",
+      "sha256": "3053797ff060ed53c74ebdc4db706c8ed351f71b622345440ec1fa84fb3cd390",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "g75_full",
+      "path": "fixtures/synthetic/s1a1/g75_full.gbr",
+      "sha256": "9674a5881f6e255fa351d2b57c96dfe218c0b09e9d11ec3884892a92a0329d58",
+      "accept": true,
+      "coverage_mm": [
+        [
+          -1,
+          0,
+          true
+        ],
+        [
+          0,
+          0,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g75_near_full",
+      "path": "fixtures/synthetic/s1a1/g75_near_full.gbr",
+      "sha256": "24dd4fab3b43067ac303cc52b9ce32bfd6e36974ee750b07d424b18f79c24555",
+      "accept": true,
+      "coverage_mm": [
+        [
+          -1,
+          0,
+          true
+        ],
+        [
+          0,
+          0,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g74_cw_quarter",
+      "path": "fixtures/synthetic/s1a1/g74_cw_quarter.gbr",
+      "sha256": "caf89938b2660d4580fbf0cdddae2ccb276fe192fbaa88e33df11d7ee57c6934",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0.74,
+          0.74,
+          true
+        ],
+        [
+          -0.7,
+          0.7,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g74_ccw_quarter",
+      "path": "fixtures/synthetic/s1a1/g74_ccw_quarter.gbr",
+      "sha256": "5720e1cc17018a799a4fa525ca6e0fe94c19626e543cfd80d54e95447d997a18",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0.74,
+          0.74,
+          true
+        ],
+        [
+          -0.7,
+          0.7,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g74_least_deviation",
+      "path": "fixtures/synthetic/s1a1/g74_least_deviation.gbr",
+      "sha256": "08374af8aaad972c3ca404334d3ff415469803ebb22e9618c06e744a812187fa",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          0,
+          0.2,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g74_zero",
+      "path": "fixtures/synthetic/s1a1/g74_zero.gbr",
+      "sha256": "0096adb1955f1c1ba98052dc8bfa175210b8ce3eb07417cc74d400118a551fa6",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          0.09,
+          0,
+          true
+        ],
+        [
+          1,
+          1,
+          false
+        ],
+        [
+          2,
+          0,
+          false
+        ]
+      ],
+      "reference_viewport": {
+        "origin_inches": [
+          -0.1,
+          -0.1
+        ],
+        "window_inches": [
+          0.2,
+          0.2
+        ],
+        "dpi": 2400
+      }
+    },
+    {
+      "name": "g74_zero_offset",
+      "path": "fixtures/synthetic/s1a1/g74_zero_offset.gbr",
+      "sha256": "b499e88618c3cfe42128971b97746d2c5a56bbf539c0fcfa64b08faac15314f9",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          0.09,
+          0,
+          true
+        ],
+        [
+          0.11,
+          0,
+          false
+        ]
+      ],
+      "reference_viewport": {
+        "origin_inches": [
+          -0.1,
+          -0.1
+        ],
+        "window_inches": [
+          0.2,
+          0.2
+        ],
+        "dpi": 2400
+      }
+    },
+    {
+      "name": "g74_no_candidate",
+      "path": "fixtures/synthetic/s1a1/g74_no_candidate.gbr",
+      "sha256": "a9e2b81b54bd29984a8f99ef18e12e0b6fe2325e0b1d224a6d702700bb5af2d5",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "ucamco_full_circle_geometry",
+      "path": "fixtures/synthetic/s1a1/ucamco_full_circle_geometry.gbr",
+      "sha256": "3b0682db8e992e8d7f70fe11ce1587c5ca0a15b345e9563c51586709f0000fe3",
+      "accept": true,
+      "coverage_mm": [
+        [
+          37.5,
+          10,
+          true
+        ],
+        [
+          42.5,
+          10,
+          true
+        ],
+        [
+          40,
+          12.5,
+          true
+        ],
+        [
+          40,
+          10,
+          false
+        ]
+      ],
+      "reference_viewport": {
+        "origin_inches": [
+          -0.4,
+          -0.4
+        ],
+        "window_inches": [
+          2.5,
+          2.5
+        ]
+      },
+      "source": "Project-authored reconstruction of full-circle numeric geometry from Ucamco Polarities_and_Apertures.gbr; not the full upstream file",
+      "upstream_sha256": "b4d51700e0e173632fe91b3d5ba40511631b33757d38e13b48f276b173ca4969"
+    },
+    {
+      "name": "g75_region_deviation_safe",
+      "path": "fixtures/synthetic/s1a1/g75_region_deviation_safe.gbr",
+      "sha256": "6745f0dee183eb1f0d9106ec5b2cc02afd6e23674188460574b3665f0a6d6974",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          0.5,
+          0.5,
+          true
+        ],
+        [
+          0.8,
+          0.8,
+          false
+        ],
+        [
+          -3.1,
+          0,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g75_region_deviation_unsafe",
+      "path": "fixtures/synthetic/s1a1/g75_region_deviation_unsafe.gbr",
+      "sha256": "0a5b53fc2d916e9e465e33ff6b075cce6a1103a6fb2dc0c0755836de30db56f9",
+      "accept": false,
+      "coverage_mm": []
+    }
+  ]
+}

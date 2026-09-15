@@ -1,0 +1,32 @@
+[
+  {
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "seconds": 0.265163959,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo check --workspace --all-targets --locked",
+    "exit_code": 0,
+    "seconds": 0.8057748339999999,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 0.407681333,
+    "log": "03.log"
+  },
+  {
+    "command": "cargo test --workspace --locked",
+    "exit_code": 0,
+    "seconds": 4.166840208,
+    "log": "04.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a1_arcs",
+    "exit_code": 0,
+    "seconds": 0.19328937499999999,
+    "log": "05.log"
+  }
+]

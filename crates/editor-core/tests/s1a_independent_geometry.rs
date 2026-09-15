@@ -109,6 +109,7 @@ fn swept_arcs_include_round_endpoint_caps() {
         center: point(0., 0.),
         direction: ArcDirection::CounterClockwise,
         full_circle: false,
+        source: None,
     };
     let doc = document(
         None,
@@ -131,6 +132,7 @@ fn full_circle_flag_cannot_hide_invalid_end_point() {
         center: point(0., 0.),
         direction: ArcDirection::CounterClockwise,
         full_circle: true,
+        source: None,
     };
     assert!(
         document(
@@ -153,6 +155,7 @@ fn curved_region_coverage_is_not_display_tessellation() {
         center: point(0., 0.),
         direction: ArcDirection::CounterClockwise,
         full_circle: false,
+        source: None,
     };
     let doc = document(
         None,

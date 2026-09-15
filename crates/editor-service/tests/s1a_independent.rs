@@ -46,8 +46,17 @@ fn public_truth_opens_or_rejects_and_normalizes_without_source_writes() {
         "../../../fixtures/synthetic/s1a/manifest.json"
     ))
     .unwrap();
+    let arcs: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/synthetic/s1a1/manifest.json"
+    ))
+    .unwrap();
     let mut failures = Vec::new();
-    for case in manifest["cases"].as_array().unwrap() {
+    for case in manifest["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(arcs["cases"].as_array().unwrap())
+    {
         let name = case["name"].as_str().unwrap();
         let path = root.join(case["path"].as_str().unwrap());
         let before = std::fs::read(&path).unwrap();

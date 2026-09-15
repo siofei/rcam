@@ -1,0 +1,582 @@
+{
+  "schema_version": 2,
+  "kind": "independent_raster_probes_not_manufacturing_geometry",
+  "binary": "/opt/homebrew/Cellar/gerbv/2.11.1/bin/gerbv",
+  "version": "gerbv version v4.0\nCopyright (C) 2001-2008 by Stefan Petersen\nand the respective original authors listed in the source files.\n",
+  "binary_sha256": "fe0d337aa07163b847cfe78784dfefe0627e4a6516db4c025b11cc8eb03c8383",
+  "dpi": 600,
+  "origin_inches": [
+    -0.4,
+    -0.4
+  ],
+  "window_inches": [
+    1.2,
+    1.2
+  ],
+  "results": [
+    {
+      "case": "ordered_local_hole",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "4f8d1036089dcdeccaeff3ca75bec78fb0dde39535aece89df5fe3b4254e6506",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 4,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 6,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_hole_over_line",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "835b464ff544ce7835caac21d844bde76b307b8bcdf95473f7c970f3392927d7",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0.5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "standard_hole_over_line",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "ac7f530c730b6a4b06c6374a3d23b4395056710bf29c1bcac5ad108b8781f0ce",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0.5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "nested_region_union",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90422): WARNING **: 10:42:18.572: Most likely found a RS-274D file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/fixtures/synthetic/s1a/nested_region_union.gbr\" ... trying to open anyways\n\n\n** (process:90422): WARNING **: 10:42:18.573: Missing apertures/drill sizes...trying to load anyways\n\n",
+      "input_sha256": "d341ad27ce606f8df771944d467dab16dc895625764eb775904b9f8605195bcf",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 2,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.5,
+          "y_mm": 0.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 5,
+          "y_mm": 5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g75_full_circle",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "9674a5881f6e255fa351d2b57c96dfe218c0b09e9d11ec3884892a92a0329d58",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": -1,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g74_cw",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "caf89938b2660d4580fbf0cdddae2ccb276fe192fbaa88e33df11d7ee57c6934",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0.707106781,
+          "y_mm": 0.707106781,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": -0.707106781,
+          "y_mm": 0.707106781,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "incremental_missing_axis",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "2f129f13a957b1938fb641745d32a8802f1c707741ffb3dbb07ffad0bf48574f",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 1,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 3,
+          "y_mm": 2,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "io_inches",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "c11723da031d257e7a6ce52211e03702adc9de3c4b9faabf040316ebbe0051f3",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 7.62,
+          "y_mm": 12.7,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2.54,
+          "y_mm": 5.08,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_unused_undefined",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "00b20dabc0e861a2f69fdffecdaf9899e3966989a50112994c40bdaffd62edaa",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 1,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "trailing_zero",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "2fb2ff49ce4395f334bbe459fa253b1e82083508d7a2a95931a083e1ec3f25d8",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 1,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.01,
+          "y_mm": 0.02,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "region_cutin",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "18a52e61f27673325a5bae604cd013ad861d22ab2aa4c1ef01bcf3c6cccb9b44",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 2,
+          "y_mm": 2,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0.5,
+          "y_mm": 0.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 3.5,
+          "y_mm": 3.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "region_arc",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "5a675a2e33b2ca58e9de0494b1a0f9394804f5f13b9cddee96f892df8288ddcc",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": -0.5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.1,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_rotated_circle",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "7410c6ed686e252dc0ca1340011b872ccc726c4f8d7eae476a304da08de65199",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_rotated_rectangle",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "0ed2a979299c9c7bb79b6c71e46e2fd3b47b7e6cbbaf146e50c72a61ae4f9e4f",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g91_modal_transitions",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "d1948f823576fdbafb12d3ef777fadab07f452f7a6c8f1070486774579e144cd",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 1,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 4,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 6,
+          "y_mm": 2,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

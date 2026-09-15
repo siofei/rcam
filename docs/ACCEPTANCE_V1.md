@@ -1768,3 +1768,12 @@ B2接受项：
 `macro_missing_actual_argument.gbr`（实际调用缺参）。常量除零、未知 primitive、非法常量轮廓和
 所有实际实例几何继续拒绝，原 96 个身份、完整用例步骤、数值阈值与 required_platforms 不变。
 此注记本身不授予任何 AT 通过状态，更正前的测试 manifest/失败日志保留在 S1-A evidence。
+
+### S1-A.1 圆弧追加场景 · AT-013/014/019/053/055
+
+依据 ADR 0007：分别断言 G75 exact/small/large deviation、nonsensical center、全圆和近全圆；
+G74 顺逆 quarter、多个候选取最小 deviation、0° dot、无候选及负 I/J。输入字段和源分辨率保留，
+覆盖独立物理点、Writer/reopen、量化变成全圆的失败保护均须检查。
+真非零 deviation 的 Region 检查原始不确定环扇区与所有边的拓扑关系，缺少证明则拒绝；浮点噪声不得误判成输入格式错误。
+更正两个旧 G74 输入和 g75_invalid_radius 的错误真值，保留所有原字节及更正前记录。
+本追加场景不代替原移动/镜像/双平台步骤，不授予完整 AT 通过。

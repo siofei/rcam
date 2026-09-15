@@ -1,0 +1,28 @@
+Run ID: s1-a1-20260915-implementation
+Final source: 86 passed / 0 failed / 2 ignored. CORE10 separately executed, all-ten gate exit 101.
+
+exit 0: cargo fmt --all -> logs/final-numeric-gates/01.log
+exit 0: cargo fmt --all -- --check -> logs/final-numeric-gates/02.log
+exit 0: cargo check --workspace --all-targets --locked -> logs/final-numeric-gates/03.log
+exit 0: cargo clippy --workspace --all-targets --locked -- -D warnings -> logs/final-numeric-gates/04.log
+exit 0: cargo test --workspace --locked -> logs/final-numeric-gates/05.log
+exit 0: cargo test --locked -p editor-service --test automation_contract -> logs/final-numeric-gates/06.log
+exit 0: cargo test --locked -p editor-service --test s1a_semantic_truth -> logs/final-numeric-gates/07.log
+exit 0: cargo test --locked -p editor-service --test s1a_independent -> logs/final-numeric-gates/08.log
+exit 0: cargo test --locked -p editor-service --test headless_workflow -> logs/final-numeric-gates/09.log
+exit 0: cargo test --locked -p editor-service --test s1a1_arcs -> logs/final-numeric-gates/10.log
+exit 0: cargo tree --locked -p editor-service --edges normal -> logs/final-numeric-gates/11.log
+exit 0: cargo build --release --locked -p editor-app -> logs/final-numeric-gates/12.log
+exit 0: cargo fmt --all -- --check -> logs/final-test-review/01.log
+exit 0: cargo check --workspace --all-targets --locked -> logs/final-test-review/02.log
+exit 0: cargo clippy --workspace --all-targets --locked -- -D warnings -> logs/final-test-review/03.log
+exit 0: cargo test --workspace --locked -> logs/final-test-review/04.log
+exit 0: cargo test --locked -p editor-service --test s1a1_arcs -> logs/final-test-review/05.log
+exit 0: python3 scripts/test_audit_core10.py -> logs/final-gates/12.log
+exit 0: Python syntax compilation for scripts/*.py (temporary bytecode directory).
+CORE10: 7/10 semantics and unedited export/reopen; all source hashes unchanged; cargo exit 101, driver exit 1.
+Arc source reference: exit 1, 10/12 passed. Arc output reference: exit 1, 11/12 passed.
+S1-A old public reference: source/output each 15/15 passed, exit 0.
+All 28 normalized public outputs (16 S1-A + 12 S1-A.1) have byte-identical revalidation with final source.
+Baseline replay: corrected G74 test fails on original HEAD source, exit 101 (expected reproduction).
+Windows native evidence: BLOCKED. GUI/IME/GPU/performance: NOT EXECUTED. No full V1/S1-B/production claim.

@@ -1,0 +1,74 @@
+[
+  {
+    "command": "cargo fmt --all",
+    "exit_code": 0,
+    "seconds": 0.466117042,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "seconds": 0.16421374999999994,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo check --workspace --all-targets --locked",
+    "exit_code": 0,
+    "seconds": 3.192525708,
+    "log": "03.log"
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 2.465270916,
+    "log": "04.log"
+  },
+  {
+    "command": "cargo test --workspace --locked",
+    "exit_code": 0,
+    "seconds": 20.36340775,
+    "log": "05.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test automation_contract",
+    "exit_code": 0,
+    "seconds": 2.2850825839999978,
+    "log": "06.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a_semantic_truth",
+    "exit_code": 0,
+    "seconds": 1.0995002079999985,
+    "log": "07.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a_independent",
+    "exit_code": 0,
+    "seconds": 1.2680515830000019,
+    "log": "08.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test headless_workflow",
+    "exit_code": 0,
+    "seconds": 0.911038375000004,
+    "log": "09.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a1_arcs",
+    "exit_code": 0,
+    "seconds": 1.068152333999997,
+    "log": "10.log"
+  },
+  {
+    "command": "cargo tree --locked -p editor-service --edges normal",
+    "exit_code": 0,
+    "seconds": 0.09255199999999775,
+    "log": "11.log"
+  },
+  {
+    "command": "cargo build --release --locked -p editor-app",
+    "exit_code": 0,
+    "seconds": 5.411728958000005,
+    "log": "12.log"
+  }
+]

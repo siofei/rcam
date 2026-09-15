@@ -1,0 +1,13 @@
+python3 scripts/check_s1a_reference.py --out evidence/s1-a1-20260915-implementation/reference-arcs-output-final --manifest fixtures/synthetic/s1a1/manifest.json --normalized evidence/s1-a1-20260915-implementation/normalized-public-final
+g75_exact passed
+g75_small_deviation passed
+g75_large_deviation failed
+g75_full passed
+g75_near_full passed
+g74_cw_quarter passed
+g74_ccw_quarter passed
+g74_least_deviation passed
+g74_zero passed
+g74_zero_offset passed
+ucamco_full_circle_geometry passed
+g75_region_deviation_safe passed

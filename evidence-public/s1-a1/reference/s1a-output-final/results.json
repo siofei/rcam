@@ -1,0 +1,582 @@
+{
+  "schema_version": 2,
+  "kind": "independent_raster_probes_not_manufacturing_geometry",
+  "binary": "/opt/homebrew/Cellar/gerbv/2.11.1/bin/gerbv",
+  "version": "gerbv version v4.0\nCopyright (C) 2001-2008 by Stefan Petersen\nand the respective original authors listed in the source files.\n",
+  "binary_sha256": "fe0d337aa07163b847cfe78784dfefe0627e4a6516db4c025b11cc8eb03c8383",
+  "dpi": 600,
+  "origin_inches": [
+    -0.4,
+    -0.4
+  ],
+  "window_inches": [
+    1.2,
+    1.2
+  ],
+  "results": [
+    {
+      "case": "ordered_local_hole",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90451): CRITICAL **: 10:42:23.872: Unknown RS-274X extension found %LM% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.872: Unknown RS-274X extension found %LR% at line 9 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LS% at line 10 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LM% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LR% at line 13 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LS% at line 14 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LM% at line 17 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LR% at line 18 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LS% at line 19 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LM% at line 21 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LR% at line 22 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LS% at line 23 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LM% at line 26 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LR% at line 27 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LS% at line 28 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LM% at line 30 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LR% at line 31 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n\n** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LS% at line 32 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr\"\n",
+      "input_sha256": "c5f0d8c16a356c3478e2e7b665d26637e75a9308c568d9cefdaa17b48b0c0ead",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 4,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 6,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_hole_over_line",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90452): CRITICAL **: 10:42:24.283: Unknown RS-274X extension found %LM% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_hole_over_line.gbr\"\n\n** (process:90452): CRITICAL **: 10:42:24.284: Unknown RS-274X extension found %LR% at line 13 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_hole_over_line.gbr\"\n\n** (process:90452): CRITICAL **: 10:42:24.284: Unknown RS-274X extension found %LS% at line 14 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_hole_over_line.gbr\"\n\n** (process:90452): CRITICAL **: 10:42:24.284: Unknown RS-274X extension found %LM% at line 16 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_hole_over_line.gbr\"\n\n** (process:90452): CRITICAL **: 10:42:24.285: Unknown RS-274X extension found %LR% at line 17 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_hole_over_line.gbr\"\n\n** (process:90452): CRITICAL **: 10:42:24.285: Unknown RS-274X extension found %LS% at line 18 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_hole_over_line.gbr\"\n",
+      "input_sha256": "26d09ad5f24318ffbf668d6b420c60e9926e9e678f16ff59f8675c156e546ffa",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0.5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "standard_hole_over_line",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90453): CRITICAL **: 10:42:24.651: Unknown RS-274X extension found %LM% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/standard_hole_over_line.gbr\"\n\n** (process:90453): CRITICAL **: 10:42:24.652: Unknown RS-274X extension found %LR% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/standard_hole_over_line.gbr\"\n\n** (process:90453): CRITICAL **: 10:42:24.652: Unknown RS-274X extension found %LS% at line 13 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/standard_hole_over_line.gbr\"\n\n** (process:90453): CRITICAL **: 10:42:24.652: Unknown RS-274X extension found %LM% at line 15 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/standard_hole_over_line.gbr\"\n\n** (process:90453): CRITICAL **: 10:42:24.652: Unknown RS-274X extension found %LR% at line 16 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/standard_hole_over_line.gbr\"\n\n** (process:90453): CRITICAL **: 10:42:24.653: Unknown RS-274X extension found %LS% at line 17 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/standard_hole_over_line.gbr\"\n",
+      "input_sha256": "156061d9d9238831854eaaabf87f4a83f7e1d3ecf3ed4c62fae61b64311131ca",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0.5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "nested_region_union",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90454): WARNING **: 10:42:25.013: Most likely found a RS-274D file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/nested_region_union.gbr\" ... trying to open anyways\n\n\n** (process:90454): WARNING **: 10:42:25.013: Missing apertures/drill sizes...trying to load anyways\n\n",
+      "input_sha256": "cdd641948c273a9c51f22ea10b293076fb4b0bcf083460774c7a0d5566e5a50f",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 2,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.5,
+          "y_mm": 0.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 5,
+          "y_mm": 5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g75_full_circle",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "f20dc33d14dec7d47ad62f004e69a0f26aaa756bcd3b6cf72c259dc4678626e6",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": -1,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g74_cw",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "ba032590d174b0a1c6a1eee0e8b5840ed8927911d8ba1a2606256d40ee998509",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0.707106781,
+          "y_mm": 0.707106781,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": -0.707106781,
+          "y_mm": 0.707106781,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "incremental_missing_axis",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90463): CRITICAL **: 10:42:26.122: Unknown RS-274X extension found %LM% at line 6 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.122: Unknown RS-274X extension found %LR% at line 7 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.122: Unknown RS-274X extension found %LS% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.123: Unknown RS-274X extension found %LM% at line 10 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.123: Unknown RS-274X extension found %LR% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.123: Unknown RS-274X extension found %LS% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.123: Unknown RS-274X extension found %LM% at line 14 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.123: Unknown RS-274X extension found %LR% at line 15 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.123: Unknown RS-274X extension found %LS% at line 16 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.124: Unknown RS-274X extension found %LM% at line 18 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.124: Unknown RS-274X extension found %LR% at line 19 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.124: Unknown RS-274X extension found %LS% at line 20 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.124: Unknown RS-274X extension found %LM% at line 22 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.124: Unknown RS-274X extension found %LR% at line 23 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.125: Unknown RS-274X extension found %LS% at line 24 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.125: Unknown RS-274X extension found %LM% at line 26 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.125: Unknown RS-274X extension found %LR% at line 27 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n\n** (process:90463): CRITICAL **: 10:42:26.125: Unknown RS-274X extension found %LS% at line 28 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/incremental_missing_axis.gbr\"\n",
+      "input_sha256": "75605b4e3d16a8a824492991a93f981ac2719484a856c91d4182e79537566529",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 1,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 3,
+          "y_mm": 2,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "io_inches",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90464): CRITICAL **: 10:42:26.488: Unknown RS-274X extension found %LM% at line 6 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/io_inches.gbr\"\n\n** (process:90464): CRITICAL **: 10:42:26.489: Unknown RS-274X extension found %LR% at line 7 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/io_inches.gbr\"\n\n** (process:90464): CRITICAL **: 10:42:26.489: Unknown RS-274X extension found %LS% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/io_inches.gbr\"\n\n** (process:90464): CRITICAL **: 10:42:26.489: Unknown RS-274X extension found %LM% at line 10 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/io_inches.gbr\"\n\n** (process:90464): CRITICAL **: 10:42:26.489: Unknown RS-274X extension found %LR% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/io_inches.gbr\"\n\n** (process:90464): CRITICAL **: 10:42:26.490: Unknown RS-274X extension found %LS% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/io_inches.gbr\"\n",
+      "input_sha256": "901d129fb2936ac999b71bcf867a99e3f653b83136cd4237ed8ad5dffbb97b2c",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 7.62,
+          "y_mm": 12.7,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2.54,
+          "y_mm": 5.08,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_unused_undefined",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90465): CRITICAL **: 10:42:26.845: Unknown RS-274X extension found %LM% at line 6 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_unused_undefined.gbr\"\n\n** (process:90465): CRITICAL **: 10:42:26.845: Unknown RS-274X extension found %LR% at line 7 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_unused_undefined.gbr\"\n\n** (process:90465): CRITICAL **: 10:42:26.845: Unknown RS-274X extension found %LS% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_unused_undefined.gbr\"\n\n** (process:90465): CRITICAL **: 10:42:26.846: Unknown RS-274X extension found %LM% at line 10 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_unused_undefined.gbr\"\n\n** (process:90465): CRITICAL **: 10:42:26.846: Unknown RS-274X extension found %LR% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_unused_undefined.gbr\"\n\n** (process:90465): CRITICAL **: 10:42:26.846: Unknown RS-274X extension found %LS% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_unused_undefined.gbr\"\n",
+      "input_sha256": "3ee258792d904c6b44c9bbbd072fbe74a71aae799e575a2828f0a8a995d97797",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 1,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "trailing_zero",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90466): CRITICAL **: 10:42:27.210: Unknown RS-274X extension found %LM% at line 6 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr\"\n\n** (process:90466): CRITICAL **: 10:42:27.210: Unknown RS-274X extension found %LR% at line 7 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr\"\n\n** (process:90466): CRITICAL **: 10:42:27.211: Unknown RS-274X extension found %LS% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr\"\n\n** (process:90466): CRITICAL **: 10:42:27.211: Unknown RS-274X extension found %LM% at line 10 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr\"\n\n** (process:90466): CRITICAL **: 10:42:27.211: Unknown RS-274X extension found %LR% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr\"\n\n** (process:90466): CRITICAL **: 10:42:27.212: Unknown RS-274X extension found %LS% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr\"\n",
+      "input_sha256": "e25acdcf3286f39a46bbdc1212fdd13a08d956b6d486d02b7a56b99ba0139464",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 1,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.01,
+          "y_mm": 0.02,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "region_cutin",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "86f3c8fc65f0c027f3196289dbab3f576d97622e726d0c0c65e440abaf69761c",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 2,
+          "y_mm": 2,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0.5,
+          "y_mm": 0.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 3.5,
+          "y_mm": 3.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "region_arc",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "4304b809c6495e941e21fa6ed9a2a899fc88811e40ceb87e39819541de2b1dad",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": -0.5,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.1,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_rotated_circle",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90470): CRITICAL **: 10:42:28.425: Unknown RS-274X extension found %LM% at line 7 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_circle.gbr\"\n\n** (process:90470): CRITICAL **: 10:42:28.425: Unknown RS-274X extension found %LR% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_circle.gbr\"\n\n** (process:90470): CRITICAL **: 10:42:28.426: Unknown RS-274X extension found %LS% at line 9 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_circle.gbr\"\n\n** (process:90470): CRITICAL **: 10:42:28.426: Unknown RS-274X extension found %LM% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_circle.gbr\"\n\n** (process:90470): CRITICAL **: 10:42:28.426: Unknown RS-274X extension found %LR% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_circle.gbr\"\n\n** (process:90470): CRITICAL **: 10:42:28.426: Unknown RS-274X extension found %LS% at line 13 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_circle.gbr\"\n",
+      "input_sha256": "4ee82a486789e4ed0e8f123c4d62773369a3e25362657d7e322af04a4f404dbb",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "macro_rotated_rectangle",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90471): CRITICAL **: 10:42:28.811: Unknown RS-274X extension found %LM% at line 7 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_rectangle.gbr\"\n\n** (process:90471): CRITICAL **: 10:42:28.812: Unknown RS-274X extension found %LR% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_rectangle.gbr\"\n\n** (process:90471): CRITICAL **: 10:42:28.812: Unknown RS-274X extension found %LS% at line 9 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_rectangle.gbr\"\n\n** (process:90471): CRITICAL **: 10:42:28.812: Unknown RS-274X extension found %LM% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_rectangle.gbr\"\n\n** (process:90471): CRITICAL **: 10:42:28.812: Unknown RS-274X extension found %LR% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_rectangle.gbr\"\n\n** (process:90471): CRITICAL **: 10:42:28.812: Unknown RS-274X extension found %LS% at line 13 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/macro_rotated_rectangle.gbr\"\n",
+      "input_sha256": "7dae7c62bd6c2d66d8244801a67e94d5a5122106c21cf6e612e4bf90e9c311d5",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 2,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g91_modal_transitions",
+      "exit_code": 0,
+      "diagnostics": "\n** (process:90472): CRITICAL **: 10:42:29.175: Unknown RS-274X extension found %LM% at line 6 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.176: Unknown RS-274X extension found %LR% at line 7 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.176: Unknown RS-274X extension found %LS% at line 8 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.176: Unknown RS-274X extension found %LM% at line 10 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.176: Unknown RS-274X extension found %LR% at line 11 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.177: Unknown RS-274X extension found %LS% at line 12 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.177: Unknown RS-274X extension found %LM% at line 14 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.177: Unknown RS-274X extension found %LR% at line 15 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.177: Unknown RS-274X extension found %LS% at line 16 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.177: Unknown RS-274X extension found %LM% at line 18 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.177: Unknown RS-274X extension found %LR% at line 19 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.178: Unknown RS-274X extension found %LS% at line 20 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.178: Unknown RS-274X extension found %LM% at line 22 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.178: Unknown RS-274X extension found %LR% at line 23 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.178: Unknown RS-274X extension found %LS% at line 24 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.179: Unknown RS-274X extension found %LM% at line 26 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.179: Unknown RS-274X extension found %LR% at line 27 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n\n** (process:90472): CRITICAL **: 10:42:29.179: Unknown RS-274X extension found %LS% at line 28 in file \"/Volumes/\u5916\u63a5\u786c\u76d8/rcam/evidence/s1-a1-20260915-implementation/normalized-public-final/g91_modal_transitions.gbr\"\n",
+      "input_sha256": "5fe0408ce235d601e7d17bfe1b938f182c1a1a0129e2ec1abc964465f3912f6c",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 1,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 4,
+          "y_mm": 1,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 6,
+          "y_mm": 2,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

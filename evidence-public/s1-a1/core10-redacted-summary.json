@@ -1,0 +1,279 @@
+{
+  "schema_version": 2,
+  "kind": "semantic_and_unedited_roundtrip_not_edit_acceptance",
+  "cargo_exit_code": 101,
+  "command": "cargo test --locked -p editor-service --test s1a_semantic_truth frozen_core10_semantic_scan -- --ignored --exact --nocapture",
+  "all_ten_semantic_gate": "failed",
+  "results": [
+    {
+      "core_id": "CORE-01",
+      "original_first_failure": null,
+      "semantic_status": "passed",
+      "current_failure_category": null,
+      "objects": 9289,
+      "arc_deviation": {
+        "above_roundoff_count": 0,
+        "count": 244,
+        "max_deviation_mm": 2.842170943040401e-14,
+        "single_quadrant_count": 0,
+        "zero_sweep_count": 0
+      },
+      "unedited_roundtrip": "passed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-01",
+        "expected_sha256": "8abf91299385b31bbcdb948725e8e7c5692eba48fa7730f429004cf7f15e5e4c",
+        "before_sha256": "8abf91299385b31bbcdb948725e8e7c5692eba48fa7730f429004cf7f15e5e4c",
+        "after_sha256": "8abf91299385b31bbcdb948725e8e7c5692eba48fa7730f429004cf7f15e5e4c",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-02",
+      "original_first_failure": null,
+      "semantic_status": "passed",
+      "current_failure_category": null,
+      "objects": 230409,
+      "arc_deviation": {
+        "above_roundoff_count": 0,
+        "count": 0,
+        "max_deviation_mm": 0.0,
+        "single_quadrant_count": 0,
+        "zero_sweep_count": 0
+      },
+      "unedited_roundtrip": "passed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-02",
+        "expected_sha256": "46a4b2c106c59fffa378a98623d3a28baf174e2c61b177cdcaffca2e1d43b96d",
+        "before_sha256": "46a4b2c106c59fffa378a98623d3a28baf174e2c61b177cdcaffca2e1d43b96d",
+        "after_sha256": "46a4b2c106c59fffa378a98623d3a28baf174e2c61b177cdcaffca2e1d43b96d",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-03",
+      "original_first_failure": "invalid metadata date",
+      "semantic_status": "failed",
+      "current_failure_category": "invalid metadata date",
+      "objects": null,
+      "arc_deviation": null,
+      "unedited_roundtrip": "not_executed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-03",
+        "expected_sha256": "354ddb10e6f1b08e3e45917906b077b638f02bc3be95754ebac92f35c464ad79",
+        "before_sha256": "354ddb10e6f1b08e3e45917906b077b638f02bc3be95754ebac92f35c464ad79",
+        "after_sha256": "354ddb10e6f1b08e3e45917906b077b638f02bc3be95754ebac92f35c464ad79",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-04",
+      "original_first_failure": null,
+      "semantic_status": "passed",
+      "current_failure_category": null,
+      "objects": 19014,
+      "arc_deviation": {
+        "above_roundoff_count": 0,
+        "count": 0,
+        "max_deviation_mm": 0.0,
+        "single_quadrant_count": 0,
+        "zero_sweep_count": 0
+      },
+      "unedited_roundtrip": "passed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-04",
+        "expected_sha256": "c8997b55e107d121a2bb3ceb183fcea5608eaae3928d92f708be7c86e2a0ff77",
+        "before_sha256": "c8997b55e107d121a2bb3ceb183fcea5608eaae3928d92f708be7c86e2a0ff77",
+        "after_sha256": "c8997b55e107d121a2bb3ceb183fcea5608eaae3928d92f708be7c86e2a0ff77",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-05",
+      "original_first_failure": null,
+      "semantic_status": "passed",
+      "current_failure_category": null,
+      "objects": 999,
+      "arc_deviation": {
+        "above_roundoff_count": 0,
+        "count": 0,
+        "max_deviation_mm": 0.0,
+        "single_quadrant_count": 0,
+        "zero_sweep_count": 0
+      },
+      "unedited_roundtrip": "passed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-05",
+        "expected_sha256": "2c38eabcbbad8aeb565101560f326f1ef48dd616f0237069bb08df2a6efc2851",
+        "before_sha256": "2c38eabcbbad8aeb565101560f326f1ef48dd616f0237069bb08df2a6efc2851",
+        "after_sha256": "2c38eabcbbad8aeb565101560f326f1ef48dd616f0237069bb08df2a6efc2851",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-06",
+      "original_first_failure": "G75 radius/sweep consistency",
+      "semantic_status": "passed",
+      "current_failure_category": null,
+      "objects": 828,
+      "arc_deviation": {
+        "above_roundoff_count": 1,
+        "count": 12,
+        "max_deviation_mm": 8.685180043999097e-05,
+        "single_quadrant_count": 0,
+        "zero_sweep_count": 0
+      },
+      "unedited_roundtrip": "passed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-06",
+        "expected_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+        "before_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+        "after_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-07",
+      "original_first_failure": "coordinate field exceeds FS width",
+      "semantic_status": "failed",
+      "current_failure_category": "coordinate field exceeds FS width",
+      "objects": null,
+      "arc_deviation": null,
+      "unedited_roundtrip": "not_executed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-07",
+        "expected_sha256": "e382d7efbd505601ceb97a8d7ff6cb1c0d09054286a3e9e0a3833860e62eb997",
+        "before_sha256": "e382d7efbd505601ceb97a8d7ff6cb1c0d09054286a3e9e0a3833860e62eb997",
+        "after_sha256": "e382d7efbd505601ceb97a8d7ff6cb1c0d09054286a3e9e0a3833860e62eb997",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-08",
+      "original_first_failure": "no G74 center",
+      "semantic_status": "failed",
+      "current_failure_category": "Region topology rejected",
+      "objects": null,
+      "arc_deviation": {
+        "count": 132,
+        "single_quadrant_count": 132,
+        "zero_sweep_count": 0,
+        "above_roundoff_count": 84,
+        "max_deviation_mm": 9.999999999976694e-05
+      },
+      "unedited_roundtrip": "not_executed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-08",
+        "expected_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+        "before_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+        "after_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-09",
+      "original_first_failure": "G75 radius/sweep consistency",
+      "semantic_status": "passed",
+      "current_failure_category": null,
+      "objects": 11434,
+      "arc_deviation": {
+        "above_roundoff_count": 48,
+        "count": 99,
+        "max_deviation_mm": 0.0002540000000050835,
+        "single_quadrant_count": 0,
+        "zero_sweep_count": 0
+      },
+      "unedited_roundtrip": "passed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-09",
+        "expected_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+        "before_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+        "after_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+        "unchanged": true
+      }
+    },
+    {
+      "core_id": "CORE-10",
+      "original_first_failure": null,
+      "semantic_status": "passed",
+      "current_failure_category": null,
+      "objects": 684,
+      "arc_deviation": {
+        "above_roundoff_count": 0,
+        "count": 0,
+        "max_deviation_mm": 0.0,
+        "single_quadrant_count": 0,
+        "zero_sweep_count": 0
+      },
+      "unedited_roundtrip": "passed",
+      "edited_roundtrip": "not_executed",
+      "hashes": {
+        "core_id": "CORE-10",
+        "expected_sha256": "17fb5ae9ba3a6f1ec06f45e5ea3a3e739d5e5ee210e7cdead55367624cc4480f",
+        "before_sha256": "17fb5ae9ba3a6f1ec06f45e5ea3a3e739d5e5ee210e7cdead55367624cc4480f",
+        "after_sha256": "17fb5ae9ba3a6f1ec06f45e5ea3a3e739d5e5ee210e7cdead55367624cc4480f",
+        "unchanged": true
+      }
+    }
+  ],
+  "reference": [
+    {
+      "core_id": "CORE-06",
+      "method": "local gerbv 1024x1024 autoscale source/output raster supplement",
+      "full_independent_manufacturing_geometry": "not_verified",
+      "source": {
+        "exit_code": 0,
+        "file_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+        "has_diagnostics": false,
+        "foreground_pixels": 20513
+      },
+      "output": {
+        "exit_code": 0,
+        "file_sha256": "38b5d8cb51fbe45e41955199005af59c2e92bbd2213bdd887404532f8a7def89",
+        "has_diagnostics": true,
+        "foreground_pixels": 20513
+      },
+      "different_pixels": 0,
+      "same_sampled_raster": true
+    },
+    {
+      "core_id": "CORE-08",
+      "method": "local gerbv 1024x1024 autoscale source/output raster supplement",
+      "full_independent_manufacturing_geometry": "not_verified",
+      "source": {
+        "exit_code": 0,
+        "file_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+        "has_diagnostics": false,
+        "foreground_pixels": 34779
+      },
+      "output": "not_available"
+    },
+    {
+      "core_id": "CORE-09",
+      "method": "local gerbv 1024x1024 autoscale source/output raster supplement",
+      "full_independent_manufacturing_geometry": "not_verified",
+      "source": {
+        "exit_code": 0,
+        "file_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+        "has_diagnostics": true,
+        "foreground_pixels": 41828
+      },
+      "output": {
+        "exit_code": 0,
+        "file_sha256": "c14edeb5cee600169acab54cc233dd3c356c25f44d0db08c23bd6ebfe549435b",
+        "has_diagnostics": true,
+        "foreground_pixels": 41828
+      },
+      "different_pixels": 0,
+      "same_sampled_raster": true
+    }
+  ]
+}

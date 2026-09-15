@@ -1,0 +1,7 @@
+["/opt/homebrew/bin/gerbv", "-x", "png", "-D", "600", "-O", "-0.4x-0.4", "-W", "1.2x1.2", "-B", "0", "-b", "#000000", "-f", "#FFFFFF", "-o", "evidence/s1-a1-20260915-implementation/reference-s1a-output-final/nested_region_union.png", "evidence/s1-a1-20260915-implementation/normalized-public-final/nested_region_union.gbr"]
+
+** (process:90454): WARNING **: 10:42:25.013: Most likely found a RS-274D file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/nested_region_union.gbr" ... trying to open anyways
+
+
+** (process:90454): WARNING **: 10:42:25.013: Missing apertures/drill sizes...trying to load anyways
+

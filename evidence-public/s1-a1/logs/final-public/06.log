@@ -1,0 +1,16 @@
+python3 scripts/check_s1a_reference.py --out evidence/s1-a1-20260915-implementation/reference-s1a-output-final --normalized evidence/s1-a1-20260915-implementation/normalized-public-final
+ordered_local_hole passed
+macro_hole_over_line passed
+standard_hole_over_line passed
+nested_region_union passed
+g75_full_circle passed
+g74_cw passed
+incremental_missing_axis passed
+io_inches passed
+macro_unused_undefined passed
+trailing_zero passed
+region_cutin passed
+region_arc passed
+macro_rotated_circle passed
+macro_rotated_rectangle passed
+g91_modal_transitions passed

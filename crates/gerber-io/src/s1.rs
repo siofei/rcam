@@ -5,10 +5,10 @@
 //! manufacturing model exposed to the rest of the application.
 
 use editor_core::{
-    ApertureDefinition, ApertureShape, ArcDirection, ArcGeometry, Exposure, LocalTransform,
-    MacroPrimitive, Mirror, MmPoint, RegionContour, RegionEdge, RegionRole, SemanticDocument,
-    SemanticError, SemanticFormat, SemanticGeometry, SemanticLayer, SemanticObject, SourceMetadata,
-    ValidationReport,
+    ApertureDefinition, ApertureShape, ArcDirection, ArcGeometry, ArcSource, Exposure,
+    LocalTransform, MacroPrimitive, Mirror, MmPoint, RegionContour, RegionEdge, RegionRole,
+    SemanticDocument, SemanticError, SemanticFormat, SemanticGeometry, SemanticLayer,
+    SemanticObject, SourceMetadata, ValidationReport,
 };
 use gerber_parser::gerber_types::{
     Aperture, Command, CoordinateMode, DCode, ExtendedCode, FunctionCode, GCode, InterpolationMode,
@@ -998,7 +998,12 @@ fn interpret_s1(
         io_offset,
         budget,
     )?;
-    document.validate().map_err(core_error)?;
+    document.validate().map_err(|error| {
+        semantic(
+            0,
+            format!("{error}; {:?}", document.arc_deviation_summary()),
+        )
+    })?;
     Ok(S1Scene {
         document,
         metadata,
@@ -2226,6 +2231,15 @@ fn interpret_commands(
     io_offset: MmPoint,
     budget: S1Budget,
 ) -> Result<(), S1Error> {
+    let source_decimal = document
+        .source
+        .coordinate_format
+        .as_deref()
+        .and_then(|fs| fs.split_once('X'))
+        .and_then(|(_, digits)| digits.chars().nth(1))
+        .and_then(|digit| digit.to_digit(10))
+        .unwrap_or(u32::from(document.format.decimal));
+    let source_resolution = unit_scale * 10_f64.powi(-(source_decimal as i32));
     let mut active_aperture: Option<String> = None;
     let mut current: Option<MmPoint> = None;
     let mut polarity = Exposure::Dark;
@@ -2566,6 +2580,7 @@ fn interpret_commands(
                                 interpolation,
                                 quadrant,
                                 unit_scale,
+                                source_resolution,
                                 command_index,
                             )?;
                             state.edges.push(edge);
@@ -2588,6 +2603,7 @@ fn interpret_commands(
                             interpolation,
                             quadrant,
                             unit_scale,
+                            source_resolution,
                             transform,
                             shape,
                             command_index,
@@ -2777,6 +2793,7 @@ fn edge_end(edge: &RegionEdge) -> MmPoint {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn interpolation_edge(
     start: MmPoint,
     end: MmPoint,
@@ -2784,6 +2801,7 @@ fn interpolation_edge(
     interpolation: InterpolationMode,
     quadrant: QuadrantMode,
     unit_scale: f64,
+    source_resolution: f64,
     command_index: usize,
 ) -> Result<RegionEdge, S1Error> {
     match interpolation {
@@ -2800,6 +2818,7 @@ fn interpolation_edge(
                 },
                 quadrant,
                 unit_scale,
+                source_resolution,
                 command_index,
             )?))
         }
@@ -2814,6 +2833,7 @@ fn interpolation_geometry(
     interpolation: InterpolationMode,
     quadrant: QuadrantMode,
     unit_scale: f64,
+    source_resolution: f64,
     transform: LocalTransform,
     aperture: &ApertureShape,
     command_index: usize,
@@ -2883,6 +2903,7 @@ fn interpolation_geometry(
                     },
                     quadrant,
                     unit_scale,
+                    source_resolution,
                     command_index,
                 )?,
                 width_mm,
@@ -2891,6 +2912,7 @@ fn interpolation_geometry(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn arc_from_command(
     start: MmPoint,
     end: MmPoint,
@@ -2898,6 +2920,7 @@ fn arc_from_command(
     direction: ArcDirection,
     quadrant: QuadrantMode,
     unit_scale: f64,
+    source_resolution: f64,
     command_index: usize,
 ) -> Result<ArcGeometry, S1Error> {
     let offset = offset
@@ -2907,7 +2930,7 @@ fn arc_from_command(
     if !i.is_finite() || !j.is_finite() || i.abs() > 1e9 || j.abs() > 1e9 {
         return Err(command_semantic(command_index, "arc offset is invalid"));
     }
-    if i == 0.0 && j == 0.0 {
+    if i == 0.0 && j == 0.0 && !(matches!(quadrant, QuadrantMode::Single) && start == end) {
         return Err(command_semantic(command_index, "arc offset cannot be zero"));
     }
     if matches!(quadrant, QuadrantMode::Single) && (i < 0.0 || j < 0.0) {
@@ -2920,18 +2943,36 @@ fn arc_from_command(
             center: MmPoint::new(start.x_mm + i, start.y_mm + j),
             direction,
             full_circle: start == end,
+            source: Some(ArcSource {
+                resolution_mm: source_resolution,
+                single_quadrant: matches!(quadrant, QuadrantMode::Single),
+            }),
         };
         if !path.is_valid() {
             return Err(command_semantic(
                 command_index,
-                "G75 arc has inconsistent radius or sweep",
+                "G75 arc has a nonsensical center, zero radius or invalid sweep",
             ));
         }
         return Ok(path);
     }
 
-    // G74 carries unsigned magnitudes.  Select a unique center candidate that
-    // has equal endpoint radii and a sweep no greater than one quadrant.
+    // A G74 start=end operation sweeps only a dot. Center signs do not affect
+    // its coverage; retain a deterministic declared candidate for provenance.
+    if start == end {
+        return Ok(ArcGeometry {
+            start,
+            end,
+            center: MmPoint::new(start.x_mm + i, start.y_mm + j),
+            direction,
+            full_circle: false,
+            source: Some(ArcSource {
+                resolution_mm: source_resolution,
+                single_quadrant: true,
+            }),
+        });
+    }
+    // Ucamco 2026.05 §8.2.4: direction, <=90 degrees, then least deviation.
     let mut candidates = Vec::new();
     for sign_x in [-1.0, 1.0] {
         for sign_y in [-1.0, 1.0] {
@@ -2942,27 +2983,40 @@ fn arc_from_command(
                 center,
                 direction,
                 full_circle: false,
+                source: Some(ArcSource {
+                    resolution_mm: source_resolution,
+                    single_quadrant: matches!(quadrant, QuadrantMode::Single),
+                }),
             };
             if path.is_valid()
                 && path.sweep_radians().is_some_and(|sweep| {
-                    sweep > editor_core::EPSILON_MM && sweep <= std::f64::consts::FRAC_PI_2 + 2e-9
+                    sweep > 0.0 && sweep <= std::f64::consts::FRAC_PI_2 + path.angular_uncertainty()
                 })
                 && !candidates
                     .iter()
-                    .any(|candidate: &ArcGeometry| candidate.center.distance_mm(center) <= 1e-9)
+                    .any(|candidate: &ArcGeometry| candidate.center == center)
             {
                 candidates.push(path);
             }
         }
     }
-    match candidates.as_slice() {
-        [path] => Ok(*path),
-        [] => Err(command_semantic(
+    candidates.sort_by(|a, b| a.arc_deviation().total_cmp(&b.arc_deviation()));
+    let Some(best) = candidates.first().copied() else {
+        return Err(command_semantic(
             command_index,
             "G74 has no valid single-quadrant center",
-        )),
-        _ => Err(command_semantic(command_index, "G74 center is ambiguous")),
+        ));
+    };
+    if let Some(next) = candidates.get(1) {
+        let uncertainty = best.numeric_tolerance().max(next.numeric_tolerance());
+        if (next.arc_deviation() - best.arc_deviation()).abs() <= uncertainty {
+            return Err(command_semantic(
+                command_index,
+                "G74 least-deviation center is indeterminate",
+            ));
+        }
     }
+    Ok(best)
 }
 
 /// Serialize only a validated semantic snapshot.  The result is reparsed by
@@ -3123,7 +3177,7 @@ pub fn write_s1_with_budget(
                     let code = *dynamic_codes
                         .get(&object_index)
                         .ok_or_else(|| semantic(0, "missing dynamic arc aperture"))?;
-                    out.push_str(&format!("D{code}*\nG75*\n"));
+                    out.push_str(&format!("D{code}*\n"));
                     emit_move(&mut out, path.start)?;
                     emit_arc(&mut out, *path)?;
                 }
@@ -3242,6 +3296,34 @@ fn geometry_semantically_equal(
     tolerance: f64,
 ) -> bool {
     match (left, right) {
+        (
+            SemanticGeometry::Arc {
+                path,
+                width_mm: arc_width,
+            },
+            SemanticGeometry::Line {
+                start,
+                end,
+                width_mm: line_width,
+            },
+        )
+        | (
+            SemanticGeometry::Line {
+                start,
+                end,
+                width_mm: line_width,
+            },
+            SemanticGeometry::Arc {
+                path,
+                width_mm: arc_width,
+            },
+        ) => {
+            path.zero_sweep()
+                && start == end
+                && points_close(path.start, *start, tolerance)
+                && close(*arc_width, *line_width, tolerance)
+        }
+
         (
             SemanticGeometry::Flash {
                 center: left_center,
@@ -3483,7 +3565,12 @@ fn aperture_shapes_equal(left: &ApertureShape, right: &ApertureShape, tolerance:
 fn arc_semantically_equal(left: &ArcGeometry, right: &ArcGeometry, tolerance: f64) -> bool {
     points_close(left.start, right.start, tolerance)
         && points_close(left.end, right.end, tolerance)
-        && points_close(left.center, right.center, tolerance)
+        && ((left.zero_sweep() && right.zero_sweep())
+            || points_close(left.center, right.center, tolerance))
+        && (left.zero_sweep()
+            || ((left.arc_deviation() - right.arc_deviation()).abs() <= 6.0 * tolerance
+                && (left.radius() - right.radius()).abs() <= 3.0 * tolerance
+                && (left.end_radius() - right.end_radius()).abs() <= 3.0 * tolerance))
         && left.direction == right.direction
         && left.full_circle == right.full_circle
 }
@@ -3817,12 +3904,19 @@ fn emit_line(output: &mut String, point: MmPoint) -> Result<(), S1Error> {
 }
 
 fn emit_arc(output: &mut String, path: ArcGeometry) -> Result<(), S1Error> {
+    // A zero-angle circular sweep is exactly a zero-length circular-aperture
+    // linear sweep. Emit G01 so older readers cannot turn G74 into a circle.
+    if path.zero_sweep() {
+        return emit_line(output, path.end);
+    }
+
     // The parser reconstructs the center as quantized start + quantized I/J.
     // Quantize the start first when calculating the offsets so center error is
     // bounded by one output coordinate quantum's half, rather than summing
     // two unrelated roundings.
     let start_x = quantized(path.start.x_mm);
     let start_y = quantized(path.start.y_mm);
+    output.push_str("G75*\n");
     let i = coord(path.center.x_mm - start_x)?;
     let j = coord(path.center.y_mm - start_y)?;
     let command = if matches!(path.direction, ArcDirection::Clockwise) {

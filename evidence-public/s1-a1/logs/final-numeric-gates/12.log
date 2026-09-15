@@ -1,0 +1,6 @@
+cargo build --release --locked -p editor-app
+   Compiling editor-core v0.1.0 (<workspace>/crates/editor-core)
+   Compiling gerber-io v0.1.0 (<workspace>/crates/gerber-io)
+   Compiling editor-service v0.1.0 (<workspace>/crates/editor-service)
+   Compiling editor-app v0.1.0 (<workspace>/crates/editor-app)
+    Finished `release` profile [optimized] target(s) in 5.37s

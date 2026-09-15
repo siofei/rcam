@@ -358,7 +358,7 @@ GPU 可以批量绘制，但只能在已证明结果等价的连续范围和合�
 
 对于镜像，二维线性变换的行列式为负时，圆弧顺逆时针要翻转；同时应用两次镜像时方向恢复。V1 的交互变换仅包含平移、旋转和镜像；**不开放非等比缩放**，避免把圆弧变成椭圆却仍输出 G02／G03。
 
-导入合法 LS 可作统一缩放处理。变换后导出的圆弧必须在量化以后再次检查两端半径一致性，不能只校验内存中未舍入的圆弧。
+导入合法 LS 可作统一缩放处理。变换后导出的圆弧必须在量化以后再次检查圆心、扫角、arc deviation 和制造语义，不能把两端严格等半径当作 Gerber 输入合法性条件，也不能只校验内存中未舍入的圆弧。
 
 ## 8. egui / eframe 与 wgpu 的边界
 
@@ -838,3 +838,10 @@ cargo test --locked -p editor-service --test headless_workflow
 - [S16] OpenAI Windows 原生沙箱：`https://developers.openai.com/codex/windows/`；说明文章：`https://openai.com/index/building-codex-windows-sandbox/`
 - [S17] OpenAI `AGENTS.md` 指引：`https://developers.openai.com/codex/guides/agents-md/`
 - [S18] Cargo.toml 与 Cargo.lock：`https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html`
+
+### S1-A.1 圆弧语义澄清
+
+依据 [ADR 0007](adr/0007-s1-a1-arc-and-legacy-policy.md)，G75 支持合法非零 deviation 的目标，
+G74 按最小 deviation 选择中心，相同端点按 0° 解释；原始字段与显示/覆盖曲线分离。
+Region 中非零 deviation 仅在圆形解释位于原始环带、角度单调且不确定环扇区拓扑检查通过时接受；其余明确拒绝并公开限制。
+此边界不删除 V1 要求、不改变 96 个验收身份、双平台证据或 CORE10 门槛。

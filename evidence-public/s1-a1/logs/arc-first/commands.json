@@ -1,0 +1,8 @@
+[
+  {
+    "command": "cargo test --locked -p editor-service --test s1a1_arcs",
+    "exit_code": 0,
+    "seconds": 4.381771917,
+    "log": "01.log"
+  }
+]

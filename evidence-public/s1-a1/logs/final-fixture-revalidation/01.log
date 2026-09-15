@@ -1,0 +1,14 @@
+cargo test --locked -p editor-service --test s1a1_arcs
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running tests/s1a1_arcs.rs (target/debug/deps/s1a1_arcs-d9ac8efa7c7a2ac3)
+
+running 6 tests
+test capabilities_describe_tested_arc_boundaries ... ok
+test g74_roundoff_at_large_origin_and_real_over_quarter_are_distinct ... ok
+test isolated_fuzzy_region_uses_a_verified_circle_inside_the_annulus ... ok
+test source_resolution_and_declared_center_survive_units_and_normalization ... ok
+test region_fuzziness_and_quantization_fail_closed ... ok
+test public_arc_fixture_truth_and_reopen ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

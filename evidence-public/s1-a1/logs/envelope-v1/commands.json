@@ -1,0 +1,20 @@
+[
+  {
+    "command": "cargo fmt --all",
+    "exit_code": 0,
+    "seconds": 0.549669875,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a1_arcs",
+    "exit_code": 0,
+    "seconds": 4.5083991249999995,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a_semantic_truth",
+    "exit_code": 0,
+    "seconds": 0.9196760420000007,
+    "log": "03.log"
+  }
+]

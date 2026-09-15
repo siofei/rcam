@@ -1,0 +1,102 @@
+{
+  "schema_version": 2,
+  "run_id": "s1-a1-20260915-implementation",
+  "local_reference": [
+    {
+      "run": "arcs-source-final",
+      "cases": 12,
+      "passed": 10,
+      "differences": [
+        "g75_large_deviation",
+        "g74_zero"
+      ],
+      "details": "reference/arcs-source-final/results.json"
+    },
+    {
+      "run": "arcs-output-final",
+      "cases": 12,
+      "passed": 11,
+      "differences": [
+        "g75_large_deviation"
+      ],
+      "details": "reference/arcs-output-final/results.json"
+    },
+    {
+      "run": "s1a-source-final",
+      "cases": 15,
+      "passed": 15,
+      "differences": [],
+      "details": "reference/s1a-source-final/results.json"
+    },
+    {
+      "run": "s1a-output-final",
+      "cases": 15,
+      "passed": 15,
+      "differences": [],
+      "details": "reference/s1a-output-final/results.json"
+    }
+  ],
+  "core10_reference": [
+    {
+      "core_id": "CORE-06",
+      "method": "local gerbv 1024x1024 autoscale source/output raster supplement",
+      "full_independent_manufacturing_geometry": "not_verified",
+      "source": {
+        "exit_code": 0,
+        "file_sha256": "ce9ce36ce4fa418026917c83d81fadff6c6fdd6591fa9d2e7b1ec7fb45d777d3",
+        "has_diagnostics": false,
+        "foreground_pixels": 20513
+      },
+      "output": {
+        "exit_code": 0,
+        "file_sha256": "38b5d8cb51fbe45e41955199005af59c2e92bbd2213bdd887404532f8a7def89",
+        "has_diagnostics": true,
+        "foreground_pixels": 20513
+      },
+      "different_pixels": 0,
+      "same_sampled_raster": true
+    },
+    {
+      "core_id": "CORE-08",
+      "method": "local gerbv 1024x1024 autoscale source/output raster supplement",
+      "full_independent_manufacturing_geometry": "not_verified",
+      "source": {
+        "exit_code": 0,
+        "file_sha256": "8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f",
+        "has_diagnostics": false,
+        "foreground_pixels": 34779
+      },
+      "output": "not_available"
+    },
+    {
+      "core_id": "CORE-09",
+      "method": "local gerbv 1024x1024 autoscale source/output raster supplement",
+      "full_independent_manufacturing_geometry": "not_verified",
+      "source": {
+        "exit_code": 0,
+        "file_sha256": "a354a9657839dae5ff587dab1a3ad6bc05d28bb246c54bbaf9ea563a64143f5d",
+        "has_diagnostics": true,
+        "foreground_pixels": 41828
+      },
+      "output": {
+        "exit_code": 0,
+        "file_sha256": "c14edeb5cee600169acab54cc233dd3c356c25f44d0db08c23bd6ebfe549435b",
+        "has_diagnostics": true,
+        "foreground_pixels": 41828
+      },
+      "different_pixels": 0,
+      "same_sampled_raster": true
+    }
+  ],
+  "unresolved": [
+    "The gerbv large-deviation rendering differs from the declared canonical coverage. Reference compliance across the whole annulus is not established; this comparison is NOT a pass.",
+    "Original G74 zero-angle with nonzero I/J is omitted by this gerbv build; normalized G01 dot output passes."
+  ],
+  "official_regression": "Numerical full-circle reconstruction tested; whole official files contain unsupported thermal macro/AB. Archive inventory and hashes retained; no private data uploaded.",
+  "independent_full_manufacturing_geometry": "not_complete",
+  "final_source_output_revalidation": {
+    "all_reference_output_bytes_identical": true,
+    "files": 28,
+    "evidence": "logs/final-fixture-revalidation/commands.json"
+  }
+}

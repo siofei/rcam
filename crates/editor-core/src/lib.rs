@@ -289,12 +289,39 @@ pub enum MacroPrimitive {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ArcSource {
+    pub resolution_mm: f64,
+    pub single_quadrant: bool,
+}
+
+/// Endpoints and center are the declared manufacturing input, never mesh data.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ArcGeometry {
     pub start: MmPoint,
     pub end: MmPoint,
     pub center: MmPoint,
     pub direction: ArcDirection,
     pub full_circle: bool,
+    pub source: Option<ArcSource>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArcDeviationSummary {
+    pub count: usize,
+    pub single_quadrant_count: usize,
+    pub zero_sweep_count: usize,
+    pub above_roundoff_count: usize,
+    pub max_deviation_mm: f64,
+}
+
+impl ArcDeviationSummary {
+    pub fn include(&mut self, arc: ArcGeometry) {
+        self.count += 1;
+        self.single_quadrant_count += usize::from(arc.source.is_some_and(|s| s.single_quadrant));
+        self.zero_sweep_count += usize::from(arc.zero_sweep());
+        self.above_roundoff_count += usize::from(arc.arc_deviation() > arc.numeric_tolerance());
+        self.max_deviation_mm = self.max_deviation_mm.max(arc.arc_deviation());
+    }
 }
 
 impl ArcGeometry {
@@ -302,9 +329,85 @@ impl ArcGeometry {
         self.start.distance_mm(self.center)
     }
 
+    pub fn numeric_tolerance(self) -> f64 {
+        64.0 * f64::EPSILON
+            * [
+                self.start.x_mm.abs(),
+                self.start.y_mm.abs(),
+                self.end.x_mm.abs(),
+                self.end.y_mm.abs(),
+                self.center.x_mm.abs(),
+                self.center.y_mm.abs(),
+                self.radius(),
+                self.end_radius(),
+                1.0,
+            ]
+            .into_iter()
+            .fold(0.0, f64::max)
+    }
+
+    pub fn angular_uncertainty(self) -> f64 {
+        self.numeric_tolerance() / self.radius().min(self.end_radius())
+    }
+
+    pub fn end_radius(self) -> f64 {
+        self.end.distance_mm(self.center)
+    }
+
+    pub fn arc_deviation(self) -> f64 {
+        (self.radius() - self.end_radius()).abs()
+    }
+
+    pub fn zero_sweep(self) -> bool {
+        !self.full_circle && self.start == self.end
+    }
+
+    /// A continuous, angularly and radially monotone curve inside the declared
+    /// annular band: radial join, mean-radius circular arc, radial join.
+    /// The joins and this circle are coverage/render data, not writer input.
+    pub fn canonical_circle(self) -> Self {
+        if self.zero_sweep() {
+            return self;
+        }
+        let radius = (self.radius() + self.end_radius()) / 2.0;
+        let project = |point: MmPoint| {
+            let scale = radius / point.distance_mm(self.center);
+            MmPoint::new(
+                self.center.x_mm + (point.x_mm - self.center.x_mm) * scale,
+                self.center.y_mm + (point.y_mm - self.center.y_mm) * scale,
+            )
+        };
+        Self {
+            start: project(self.start),
+            end: project(self.end),
+            source: None,
+            ..self
+        }
+    }
+
+    pub fn has_nonsensical_center(self) -> bool {
+        if self.start == self.end {
+            return false;
+        }
+        let dx = self.end.x_mm - self.start.x_mm;
+        let dy = self.end.y_mm - self.start.y_mm;
+        let chord = dx.hypot(dy);
+        let cx = self.center.x_mm - self.start.x_mm;
+        let cy = self.center.y_mm - self.start.y_mm;
+        let projection = (cx * dx + cy * dy) / (chord * chord);
+        let distance = (cx * dy - cy * dx).abs() / chord;
+        // The spec gives no numeric definition of "close". Freeze one input
+        // quantum plus f64 arithmetic uncertainty, not an arc-deviation cap.
+        let close = self.source.map_or(0.0, |s| s.resolution_mm) + self.numeric_tolerance();
+        distance <= close && !(projection > 0.0 && projection < 1.0)
+    }
+
     pub fn sweep_radians(self) -> Option<f64> {
+        if self.zero_sweep() {
+            return Some(0.0);
+        }
         let radius = self.radius();
-        if !radius.is_finite() || radius <= EPSILON_MM {
+        if !radius.is_finite() || radius <= 0.0 {
             return None;
         }
         if self.full_circle {
@@ -340,12 +443,29 @@ impl ArcGeometry {
         let end_radius = self.end.distance_mm(self.center);
         radius.is_finite()
             && end_radius.is_finite()
-            && radius > EPSILON_MM
-            && ((self.full_circle && self.start.distance_mm(self.end) <= EPSILON_MM)
-                || (!self.full_circle && self.start.distance_mm(self.end) > EPSILON_MM))
-            && (radius - end_radius).abs() <= EPSILON_MM
+            && self.numeric_tolerance() <= EPSILON_MM
+            && (self.zero_sweep() || (radius > 0.0 && end_radius > 0.0))
+            && self.source.is_none_or(|s| {
+                s.resolution_mm.is_finite()
+                    && s.resolution_mm > 0.0
+                    && if s.single_quadrant {
+                        !self.full_circle
+                            && (self.zero_sweep()
+                                || self.sweep_radians().is_some_and(|a| {
+                                    a <= std::f64::consts::FRAC_PI_2 + self.angular_uncertainty()
+                                }))
+                    } else {
+                        !self.zero_sweep()
+                    }
+            })
+            && (!self.full_circle || self.start == self.end)
+            && !self.has_nonsensical_center()
             && self.sweep_radians().is_some_and(|sweep| {
-                self.full_circle || (sweep > EPSILON_MM && sweep <= std::f64::consts::TAU)
+                if self.zero_sweep() {
+                    true
+                } else {
+                    sweep > 0.0 && sweep <= std::f64::consts::TAU
+                }
             })
     }
 }
@@ -487,6 +607,24 @@ impl std::fmt::Display for SemanticError {
 impl std::error::Error for SemanticError {}
 
 impl SemanticDocument {
+    pub fn arc_deviation_summary(&self) -> ArcDeviationSummary {
+        let mut summary = ArcDeviationSummary::default();
+        for object in self.layers.iter().flat_map(|layer| &layer.objects) {
+            match &object.geometry {
+                SemanticGeometry::Arc { path, .. } => summary.include(*path),
+                SemanticGeometry::Region { contours } => {
+                    for edge in contours.iter().flat_map(|contour| &contour.edges) {
+                        if let RegionEdge::Arc(arc) = edge {
+                            summary.include(*arc);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        summary
+    }
+
     pub fn validate(&self) -> Result<ValidationReport, SemanticError> {
         if !valid_id(&self.id) || self.unit != "mm" {
             return Err(SemanticError::Invalid("document id/unit is invalid".into()));
@@ -843,8 +981,245 @@ fn validate_contour(contour: &RegionContour) -> Result<(), SemanticError> {
             "full circle is only valid as a standalone contour".into(),
         ));
     }
-    validate_contour_intersections(&contour.edges)?;
+    let canonical = canonical_region_contour(contour)?;
+    validate_contour_intersections(&canonical.edges)?;
+    validate_region_envelopes(contour, &canonical)?;
     Ok(())
+}
+
+/// A Region may use a circular interpretation only when its entire directed
+/// curve stays in the declared annulus. Major fuzzy arcs needing another curve
+/// remain unsupported here; stroke coverage handles them with radial joins.
+fn canonical_region_contour(contour: &RegionContour) -> Result<RegionContour, SemanticError> {
+    let mut result = contour.clone();
+    for edge in &mut result.edges {
+        let RegionEdge::Arc(input) = edge else {
+            continue;
+        };
+        if input.zero_sweep() {
+            return Err(SemanticError::Invalid(
+                "zero-sweep Region boundary is degenerate".into(),
+            ));
+        }
+        if input.full_circle {
+            continue;
+        }
+        let dx = input.end.x_mm - input.start.x_mm;
+        let dy = input.end.y_mm - input.start.y_mm;
+        let chord2 = dx * dx + dy * dy;
+        let r0 = input.radius();
+        let r1 = input.end_radius();
+        let correction = (r1 - r0) * (r1 + r0) / (2.0 * chord2);
+        let mut circle = *input;
+        circle.center = MmPoint::new(
+            input.center.x_mm + correction * dx,
+            input.center.y_mm + correction * dy,
+        );
+        circle.source = None;
+        if !circle.is_valid() {
+            return Err(SemanticError::Invalid(
+                "Region canonical circle is invalid".into(),
+            ));
+        }
+        let angle =
+            (circle.center.y_mm - input.center.y_mm).atan2(circle.center.x_mm - input.center.x_mm);
+        let tolerance = input.numeric_tolerance();
+        for point in [circle.start, circle.end] {
+            let tangent_rate = circle.radius()
+                + ((circle.center.x_mm - input.center.x_mm) * (point.x_mm - circle.center.x_mm)
+                    + (circle.center.y_mm - input.center.y_mm) * (point.y_mm - circle.center.y_mm))
+                    / circle.radius();
+            if tangent_rate <= tolerance {
+                return Err(SemanticError::Invalid(
+                    "Region interpretation is not angularly monotone".into(),
+                ));
+            }
+        }
+        for angle in [angle, angle + std::f64::consts::PI] {
+            if arc_parameter(circle, angle).is_some() {
+                let point = MmPoint::new(
+                    circle.center.x_mm + circle.radius() * angle.cos(),
+                    circle.center.y_mm + circle.radius() * angle.sin(),
+                );
+                let radius = point.distance_mm(input.center);
+                let tangent_rate = circle.radius()
+                    + (circle.center.x_mm - input.center.x_mm) * angle.cos()
+                    + (circle.center.y_mm - input.center.y_mm) * angle.sin();
+                if tangent_rate <= tolerance {
+                    return Err(SemanticError::Invalid(
+                        "Region interpretation is not angularly monotone".into(),
+                    ));
+                }
+
+                if radius < r0.min(r1) - tolerance || radius > r0.max(r1) + tolerance {
+                    return Err(SemanticError::Invalid(
+                        "Region fuzzy arc has no supported circular interpretation inside its annulus".into()));
+                }
+            }
+        }
+        *input = circle;
+    }
+    Ok(result)
+}
+
+/// The annular sector contains every permitted interpretation, not just our
+/// chosen circle. Refuse a Region if another boundary can enter that sector.
+/// Endpoint contact is allowed only within the existing core comparison bound.
+fn validate_region_envelopes(
+    original: &RegionContour,
+    canonical: &RegionContour,
+) -> Result<(), SemanticError> {
+    let mut pairs = 0usize;
+    for (index, edge) in original.edges.iter().enumerate() {
+        let RegionEdge::Arc(arc) = edge else {
+            continue;
+        };
+        if arc.arc_deviation() <= arc.numeric_tolerance() {
+            continue;
+        }
+        for (other, candidate) in original.edges.iter().enumerate() {
+            if index == other {
+                continue;
+            }
+            pairs += 1;
+            if pairs > MAX_INTERSECTION_CANDIDATES {
+                return Err(SemanticError::ResourceLimit {
+                    resource: "region_envelope_pairs",
+                    limit: MAX_INTERSECTION_CANDIDATES,
+                    actual: pairs,
+                });
+            }
+            let adjacent =
+                index.abs_diff(other) == 1 || index.abs_diff(other) + 1 == original.edges.len();
+            let allowed = if adjacent {
+                Some(adjacent_connection(index, other, &original.edges))
+            } else {
+                None
+            };
+            let mut boundaries = vec![canonical.edges[other].clone()];
+            if let RegionEdge::Arc(other_arc) = candidate
+                && other_arc.arc_deviation() > other_arc.numeric_tolerance()
+            {
+                boundaries.extend(arc_envelope_boundaries(*other_arc));
+                // Test both directions, including complete containment.
+                if arc_envelope_boundaries(*arc)
+                    .iter()
+                    .any(|part| edge_enters_envelope(part, *other_arc, allowed))
+                {
+                    return Err(SemanticError::Invalid(
+                        "Region arc uncertainty envelopes overlap".into(),
+                    ));
+                }
+            }
+            if boundaries
+                .iter()
+                .any(|part| edge_enters_envelope(part, *arc, allowed))
+            {
+                return Err(SemanticError::Invalid(
+                    "Region boundary enters an arc uncertainty envelope".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn arc_envelope_boundaries(arc: ArcGeometry) -> [RegionEdge; 4] {
+    let project = |point: MmPoint, radius: f64| {
+        let scale = radius / point.distance_mm(arc.center);
+        MmPoint::new(
+            arc.center.x_mm + (point.x_mm - arc.center.x_mm) * scale,
+            arc.center.y_mm + (point.y_mm - arc.center.y_mm) * scale,
+        )
+    };
+    let low = arc.radius().min(arc.end_radius());
+    let high = arc.radius().max(arc.end_radius());
+    let inner_start = project(arc.start, low);
+    let inner_end = project(arc.end, low);
+    let outer_start = project(arc.start, high);
+    let outer_end = project(arc.end, high);
+    let reverse = match arc.direction {
+        ArcDirection::Clockwise => ArcDirection::CounterClockwise,
+        ArcDirection::CounterClockwise => ArcDirection::Clockwise,
+    };
+    [
+        RegionEdge::Arc(ArcGeometry {
+            start: outer_start,
+            end: outer_end,
+            source: None,
+            ..arc
+        }),
+        RegionEdge::Line {
+            start: outer_end,
+            end: inner_end,
+        },
+        RegionEdge::Arc(ArcGeometry {
+            start: inner_end,
+            end: inner_start,
+            direction: reverse,
+            source: None,
+            ..arc
+        }),
+        RegionEdge::Line {
+            start: inner_start,
+            end: outer_start,
+        },
+    ]
+}
+
+fn edge_enters_envelope(edge: &RegionEdge, arc: ArcGeometry, allowed: Option<MmPoint>) -> bool {
+    let contains = |point: MmPoint| {
+        if allowed.is_some_and(|end| end.distance_mm(point) <= EPSILON_MM) {
+            return false;
+        }
+        let radius = point.distance_mm(arc.center);
+        radius >= arc.radius().min(arc.end_radius()) - arc.numeric_tolerance()
+            && radius <= arc.radius().max(arc.end_radius()) + arc.numeric_tolerance()
+            && arc_parameter(
+                arc,
+                (point.y_mm - arc.center.y_mm).atan2(point.x_mm - arc.center.x_mm),
+            )
+            .is_some()
+    };
+    let at = |parameter: f64| match edge {
+        RegionEdge::Line { start, end } => MmPoint::new(
+            start.x_mm + (end.x_mm - start.x_mm) * parameter,
+            start.y_mm + (end.y_mm - start.y_mm) * parameter,
+        ),
+        RegionEdge::Arc(circle) => arc_point_at(*circle, parameter),
+    };
+    let mut parameters = vec![0.0, 1.0];
+    for boundary in arc_envelope_boundaries(arc) {
+        for point in edge_intersection_points(edge, &boundary) {
+            if contains(point) {
+                return true;
+            }
+            let parameter = match edge {
+                RegionEdge::Line { start, end } => {
+                    let dx = end.x_mm - start.x_mm;
+                    let dy = end.y_mm - start.y_mm;
+                    let length2 = dx * dx + dy * dy;
+                    (length2 > 0.0).then(|| {
+                        ((point.x_mm - start.x_mm) * dx + (point.y_mm - start.y_mm) * dy) / length2
+                    })
+                }
+                RegionEdge::Arc(circle) => arc_parameter(
+                    *circle,
+                    (point.y_mm - circle.center.y_mm).atan2(point.x_mm - circle.center.x_mm),
+                ),
+            };
+            if let Some(t) = parameter {
+                parameters.push(t.clamp(0.0, 1.0));
+            }
+        }
+    }
+    parameters.sort_by(f64::total_cmp);
+    // Each interval stays in one connected component of the sector complement;
+    // analytic boundary intersections delimit it, no display tessellation is used.
+    parameters.iter().any(|&t| contains(at(t)))
+        || parameters
+            .windows(2)
+            .any(|pair| contains(at((pair[0] + pair[1]) / 2.0)))
 }
 
 fn validate_outline_points(points: &[MmPoint]) -> Result<(), SemanticError> {
@@ -1558,21 +1933,29 @@ fn arc_covers(path: ArcGeometry, width: f64, point: MmPoint) -> bool {
     if !width.is_finite() || width <= 0.0 || !path.is_valid() {
         return false;
     }
-    let radius = path.radius();
-    let point_radius = point.distance_mm(path.center);
-    if (point_radius - radius).abs() > width / 2.0 + EPSILON_MM {
-        return false;
+    if path.zero_sweep() {
+        return point.distance_mm(path.start) <= width / 2.0 + EPSILON_MM;
     }
-    if path.full_circle
-        || point.distance_mm(path.start) <= width / 2.0 + EPSILON_MM
-        || point.distance_mm(path.end) <= width / 2.0 + EPSILON_MM
+    let circle = path.canonical_circle();
+    if capsule_covers(path.start, circle.start, width, point)
+        || capsule_covers(circle.end, path.end, width, point)
     {
         return true;
     }
-    point_on_arc(point, path)
+    (point.distance_mm(circle.center) - circle.radius()).abs() <= width / 2.0 + EPSILON_MM
+        && (circle.full_circle
+            || arc_parameter(
+                circle,
+                (point.y_mm - circle.center.y_mm).atan2(point.x_mm - circle.center.x_mm),
+            )
+            .is_some())
 }
 
 fn contour_covers(contour: &RegionContour, point: MmPoint) -> bool {
+    let Ok(canonical) = canonical_region_contour(contour) else {
+        return false;
+    };
+    let contour = &canonical;
     if !point.is_valid_geometry() {
         return false;
     }
@@ -1839,6 +2222,7 @@ mod tests {
             center: MmPoint::new(0.0, 0.0),
             direction: ArcDirection::CounterClockwise,
             full_circle: false,
+            source: None,
         };
         let same_path_backwards = ArcGeometry {
             start: MmPoint::new(-1.0, 0.0),
@@ -1846,6 +2230,7 @@ mod tests {
             center: MmPoint::new(0.0, 0.0),
             direction: ArcDirection::Clockwise,
             full_circle: false,
+            source: None,
         };
         let lower = ArcGeometry {
             start: MmPoint::new(-1.0, 0.0),
@@ -1853,6 +2238,7 @@ mod tests {
             center: MmPoint::new(0.0, 0.0),
             direction: ArcDirection::CounterClockwise,
             full_circle: false,
+            source: None,
         };
         assert!(
             validate_contour(&RegionContour {

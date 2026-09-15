@@ -1,0 +1,13 @@
+["/opt/homebrew/bin/gerbv", "-x", "png", "-D", "600", "-O", "-0.4x-0.4", "-W", "1.2x1.2", "-B", "0", "-b", "#000000", "-f", "#FFFFFF", "-o", "evidence/s1-a1-20260915-implementation/reference-s1a-output-final/trailing_zero.png", "evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr"]
+
+** (process:90466): CRITICAL **: 10:42:27.210: Unknown RS-274X extension found %LM% at line 6 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr"
+
+** (process:90466): CRITICAL **: 10:42:27.210: Unknown RS-274X extension found %LR% at line 7 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr"
+
+** (process:90466): CRITICAL **: 10:42:27.211: Unknown RS-274X extension found %LS% at line 8 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr"
+
+** (process:90466): CRITICAL **: 10:42:27.211: Unknown RS-274X extension found %LM% at line 10 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr"
+
+** (process:90466): CRITICAL **: 10:42:27.211: Unknown RS-274X extension found %LR% at line 11 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr"
+
+** (process:90466): CRITICAL **: 10:42:27.212: Unknown RS-274X extension found %LS% at line 12 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/trailing_zero.gbr"

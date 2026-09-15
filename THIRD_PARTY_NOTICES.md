@@ -18,3 +18,22 @@ restate every transitive package notice.
 The application uses only the APIs documented by the locked versions. The
 direct dependency declarations are in the workspace `Cargo.toml`; no user
 Gerber, font, or private sample is downloaded or sent to a third party.
+
+## S1-A.1 reference material (not product dependencies)
+
+No Cargo dependency, toolchain version, copied library code, or bundled font was added.
+The Ucamco 2026.05 specification was read locally to implement arc semantics;
+its SHA-256 is `ac9e9899f573d69e472b2112f1ae879c70f6cd13e17db41a1c885caf69961662`.
+Source: [official specification](https://www.ucamco.com/files/downloads/file_en/554/gerber-layer-format-specification-revision-2026-05_en.pdf).
+
+The project-authored `ucamco_full_circle_geometry.gbr` reconstructs the numeric circle
+from `Polarities_and_Apertures.gbr` in the [official test archive](https://www.ucamco.com/files/downloads/file_en/423/gerber-layer-format-test-files_en.zip).
+The original archive/PDF/complete upstream files are not redistributed in the source package.
+Archive and upstream-file hashes are recorded in the public reference inventory. This is an
+extracted geometric regression, not a claim that the complete upstream file passes: that file
+also contains an unsupported thermal macro. The official arc-containing block file uses AB,
+which remains outside the current supported subset.
+
+The separately installed local gerbv is used as a reference process only; it is not linked,
+copied, or distributed with the application. Its actual version and binary hash accompany
+the reference results. Differences and unsupported reference behavior remain in the report.

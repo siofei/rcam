@@ -155,15 +155,13 @@ fn incremental_io_is_applied_once() {
 }
 
 #[test]
-fn g74_ambiguous_centers_and_full_circle_are_rejected() {
-    // Both (+0.1,+1) and (-0.1,+1) satisfy radius tolerance and a small
-    // counterclockwise sweep. Choosing the first candidate is unsafe.
+fn g74_least_deviation_and_zero_sweep_are_accepted() {
     for operation in ["G03X3Y0I100000J1000000D01*", "G03X0Y0I1000000J0D01*"] {
         let source = format!(
             "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\nD10*\nG74*\nX0Y0D02*\n{operation}\nM02*\n"
         );
-        let error = parse_s1(source.as_bytes(), "g74-reject").unwrap_err();
-        assert!(matches!(error, S1Error::Semantic { .. }), "{error:?}");
+        let scene = parse_s1(source.as_bytes(), "g74-corrected-truth").unwrap();
+        write_s1(&scene.document).unwrap();
     }
 }
 
@@ -561,7 +559,21 @@ fn frozen_core10_semantic_scan() {
         let start = std::time::Instant::now();
         let result = match parse_s1(&bytes, id) {
             Ok(scene) => {
-                json!({"core_id":id,"semantic_status":"passed","objects":scene.document.object_count(),"validation":scene.document.validate().unwrap()})
+                let mut row = json!({"core_id":id,"semantic_status":"passed","objects":scene.document.object_count(),"validation":scene.document.validate().unwrap(),"arc_deviation":scene.document.arc_deviation_summary()});
+                if let Ok(dir) = std::env::var("RCAM_CORE10_EXPORT_DIR") {
+                    std::fs::create_dir_all(&dir).unwrap();
+                    match export_s1_new_path(
+                        &scene.document,
+                        &Path::new(&dir).join(format!("{id}.gbr")),
+                    ) {
+                        Ok(_) => row["unedited_roundtrip"] = json!("passed"),
+                        Err(error) => {
+                            row["unedited_roundtrip"] = json!("failed");
+                            row["export_diagnostic"] = json!(error.to_string());
+                        }
+                    }
+                }
+                row
             }
             Err(error) => {
                 json!({"core_id":id,"semantic_status":"failed","diagnostic":error.to_string()})

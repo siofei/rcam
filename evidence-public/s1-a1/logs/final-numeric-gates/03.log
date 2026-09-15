@@ -1,0 +1,6 @@
+cargo check --workspace --all-targets --locked
+    Checking editor-core v0.1.0 (<workspace>/crates/editor-core)
+    Checking gerber-io v0.1.0 (<workspace>/crates/gerber-io)
+    Checking editor-service v0.1.0 (<workspace>/crates/editor-service)
+    Checking editor-app v0.1.0 (<workspace>/crates/editor-app)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.15s

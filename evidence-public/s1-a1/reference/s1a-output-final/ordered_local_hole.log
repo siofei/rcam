@@ -1,0 +1,37 @@
+["/opt/homebrew/bin/gerbv", "-x", "png", "-D", "600", "-O", "-0.4x-0.4", "-W", "1.2x1.2", "-B", "0", "-b", "#000000", "-f", "#FFFFFF", "-o", "evidence/s1-a1-20260915-implementation/reference-s1a-output-final/ordered_local_hole.png", "evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"]
+
+** (process:90451): CRITICAL **: 10:42:23.872: Unknown RS-274X extension found %LM% at line 8 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.872: Unknown RS-274X extension found %LR% at line 9 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LS% at line 10 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LM% at line 12 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LR% at line 13 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LS% at line 14 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.873: Unknown RS-274X extension found %LM% at line 17 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LR% at line 18 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LS% at line 19 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LM% at line 21 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LR% at line 22 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LS% at line 23 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.874: Unknown RS-274X extension found %LM% at line 26 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LR% at line 27 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LS% at line 28 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LM% at line 30 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LR% at line 31 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"
+
+** (process:90451): CRITICAL **: 10:42:23.875: Unknown RS-274X extension found %LS% at line 32 in file "<workspace>/evidence/s1-a1-20260915-implementation/normalized-public-final/ordered_local_hole.gbr"

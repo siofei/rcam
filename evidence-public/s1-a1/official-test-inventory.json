@@ -1,0 +1,60 @@
+{
+  "zip_sha256": "7e1e6bacdc24deb92fbf08940d37ccd26cff25fc9e5ca608b919d4d542d2698f",
+  "files": [
+    {
+      "name": "A_drill_file.gbr",
+      "sha256": "00c0b5b5dcd6f8733a3a10f98bcca7feafd00cc21add722d9b74d65e501e1e3f",
+      "arc_commands": 0
+    },
+    {
+      "name": "Block_with_different_orientations.gbr",
+      "sha256": "192b7e2198e895bd17ad75b6bd163a5929d05f0a627287f942b98e7e2f61a7d0",
+      "arc_commands": 1
+    },
+    {
+      "name": "Nested_blocks.gbr",
+      "sha256": "b1ab58d8edd8189a9e69fbd4a57ab27d5bd06edde21a6141465c816731efea41",
+      "arc_commands": 0
+    },
+    {
+      "name": "Polarities_and_Apertures.gbr",
+      "sha256": "b4d51700e0e173632fe91b3d5ba40511631b33757d38e13b48f276b173ca4969",
+      "arc_commands": 3
+    },
+    {
+      "name": "sample_macro.gbr",
+      "sha256": "151368a4d9861a1acde840564906be7c7e34020809ec7c51f271b8e022efe51c",
+      "arc_commands": 0
+    },
+    {
+      "name": "sample_macro_X1.gbr",
+      "sha256": "3e993f5f415ddc923d2289a7bd36fc226e01361fcdf8e6cc5eb045a31787cde5",
+      "arc_commands": 0
+    },
+    {
+      "name": "SMD_prim_20.gbr",
+      "sha256": "8c8a5e37f1f9652bd0cb497238b24a41ab459fe96f8459183231b66868359eed",
+      "arc_commands": 0
+    },
+    {
+      "name": "SMD_prim_20_X1.gbr",
+      "sha256": "081ebbad99fd00edc512ee5a2aaac1396c83afb470c45989c65a53448958fedc",
+      "arc_commands": 0
+    },
+    {
+      "name": "SMD_prim_21.gbr",
+      "sha256": "81651e4635976d8434d66597833abd31a929a454b7daf05ae49d3c0b6db434c6",
+      "arc_commands": 0
+    },
+    {
+      "name": "SMD_prim_21_X1.gbr",
+      "sha256": "d3f4d6b8e41e6a2cea238dfd9892095927cd054d4953093e438c7f46af710802",
+      "arc_commands": 0
+    },
+    {
+      "name": "Two_square_boxes.gbr",
+      "sha256": "72597187a35f695f4ef41742688f4e9abb21187702c3188568f2f34299c896ba",
+      "arc_commands": 0
+    }
+  ]
+}

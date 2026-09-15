@@ -1,0 +1,20 @@
+cargo test --locked -p editor-core --test s1a_independent_geometry
+   Compiling editor-core v0.1.0 (<workspace>/crates/editor-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.45s
+     Running tests/s1a_independent_geometry.rs (target/debug/deps/s1a_independent_geometry-5f70eea07dc47bdf)
+
+running 11 tests
+test macro_rotation_moves_off_origin_primitive_centres ... ok
+test degenerate_backtracking_contour_is_not_a_region ... ok
+test polygon_hole_must_fit_inside_edges_not_just_vertex_circle ... ok
+test bowtie_is_not_a_valid_region_or_macro_outline ... ok
+test full_circle_flag_cannot_hide_invalid_end_point ... ok
+test curved_region_coverage_is_not_display_tessellation ... ok
+test nested_independent_contours_are_union_not_a_hole ... ok
+test legal_axis_cutin_creates_only_a_local_hole ... ok
+test swept_arcs_include_round_endpoint_caps ... ok
+test zero_rectangular_sweep_is_outside_frozen_nonzero_subset ... ok
+test tiny_local_holes_remain_transparent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

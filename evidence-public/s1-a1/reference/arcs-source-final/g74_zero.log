@@ -1,0 +1,1 @@
+["/opt/homebrew/bin/gerbv", "-x", "png", "-D", "2400", "-O", "-0.1x-0.1", "-W", "0.2x0.2", "-B", "0", "-b", "#000000", "-f", "#FFFFFF", "-o", "evidence/s1-a1-20260915-implementation/reference-arcs-source-final/g74_zero.png", "fixtures/synthetic/s1a1/g74_zero.gbr"]

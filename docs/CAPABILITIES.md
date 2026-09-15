@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发切片为 S1-A，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+当前开发切片为 S1-A.1，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下 S0/S0-B/S0-C 段落保留当时的实施状态；S1-A 当前状态见文末及 `S1_A_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -64,3 +64,19 @@ S0-C Windows platform gate 仍 blocked，不作为生产加工文件发行。
 
 原 96 个验收身份、185 个逐平台槽、CORE10 编辑往返门槛均未变更。
 公开小样与本机无窗口测试不能替代 Windows 原生、GUI/IME/GPU 或完整 V1 验收。
+
+## S1-A.1 圆弧与旧文件门禁（2026-09-15）
+
+见 [ADR 0007](adr/0007-s1-a1-arc-and-legacy-policy.md) 与 [本轮审查](S1_A1_REVIEW.md)。
+
+- G75 stroke 接受合法非零 deviation，保留端点、声明圆心、方向、源分辨率/象限；拒绝 nonsensical center。
+- G74 按方向/≤90°/最小 deviation 选择中心；0° 为圆形 dot，Writer 输出等价 G01 零长度 stroke。
+- stroke 覆盖采用明确的平均半径圆弧与径向连接，含真实线宽和端帽；Writer 保留输入环带，不从该辅助曲线写回。
+- Region 仅接受可证实在输入环带内、角度单调的圆形解释；非零 deviation 还检查完整不确定环扇区与其他边的拓扑。
+  没有可验证圆形解释、扇区冲突或超过比较预算时拒绝，不能笼统宣称完整 Region/G74/G75 支持。
+- CORE-03 metadata、CORE-07 FS 超宽继续 Strict；MetadataWarning 或 legacy recovery 尚未实现。
+- 实际服务 capabilities 与这些边界由 s1a1_arcs 专项同步断言。
+- 无新增产品依赖、编辑操作、GUI 文件流程、运行时或平台。Windows 和完整 V1 门槛保持原状。
+
+公开专项通过不能替代独立工具一致性；大 deviation 和原始 G74 零弧的本地 gerbv 差异单独保留。
+CORE10 当前状态及未完成项以本轮脱敏证据为准，不授予生产输出或 S1-B 编辑验收通过。

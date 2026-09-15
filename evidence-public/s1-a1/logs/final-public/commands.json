@@ -1,0 +1,38 @@
+[
+  {
+    "command": "cargo test --locked -p editor-service --test s1a1_arcs",
+    "exit_code": 0,
+    "seconds": 0.16001004200000002,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a_independent",
+    "exit_code": 0,
+    "seconds": 0.37494866700000007,
+    "log": "02.log"
+  },
+  {
+    "command": "python3 scripts/check_s1a_reference.py --out evidence/s1-a1-20260915-implementation/reference-arcs-source-final --manifest fixtures/synthetic/s1a1/manifest.json",
+    "exit_code": 1,
+    "seconds": 5.789270458,
+    "log": "03.log"
+  },
+  {
+    "command": "python3 scripts/check_s1a_reference.py --out evidence/s1-a1-20260915-implementation/reference-arcs-output-final --manifest fixtures/synthetic/s1a1/manifest.json --normalized evidence/s1-a1-20260915-implementation/normalized-public-final",
+    "exit_code": 1,
+    "seconds": 5.557830083000001,
+    "log": "04.log"
+  },
+  {
+    "command": "python3 scripts/check_s1a_reference.py --out evidence/s1-a1-20260915-implementation/reference-s1a-source-final",
+    "exit_code": 0,
+    "seconds": 6.482350292000001,
+    "log": "05.log"
+  },
+  {
+    "command": "python3 scripts/check_s1a_reference.py --out evidence/s1-a1-20260915-implementation/reference-s1a-output-final --normalized evidence/s1-a1-20260915-implementation/normalized-public-final",
+    "exit_code": 0,
+    "seconds": 5.791972583,
+    "log": "06.log"
+  }
+]

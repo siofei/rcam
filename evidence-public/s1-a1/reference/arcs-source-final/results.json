@@ -1,0 +1,465 @@
+{
+  "schema_version": 2,
+  "kind": "independent_raster_probes_not_manufacturing_geometry",
+  "binary": "/opt/homebrew/Cellar/gerbv/2.11.1/bin/gerbv",
+  "version": "gerbv version v4.0\nCopyright (C) 2001-2008 by Stefan Petersen\nand the respective original authors listed in the source files.\n",
+  "binary_sha256": "fe0d337aa07163b847cfe78784dfefe0627e4a6516db4c025b11cc8eb03c8383",
+  "dpi": 600,
+  "origin_inches": [
+    -0.4,
+    -0.4
+  ],
+  "window_inches": [
+    1.2,
+    1.2
+  ],
+  "results": [
+    {
+      "case": "g75_exact",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "b8004ef3c045ea1d57abbc82b6def79b76a095ad61b07b41ff9fe0eb8b861534",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0.74,
+          "y_mm": 0.74,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.9,
+          "y_mm": 0.9,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g75_small_deviation",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "08b257bdb6aef4728e74900a385fdb9f7b51043c4b5f126c138da6cb92c0c4ef",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0.74,
+          "y_mm": 0.74,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.00002,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g75_large_deviation",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "8385ba38185ab868fd23ef02a95d7009b2e1a0adb7753d52e3d303323b459750",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 1.06066,
+          "y_mm": 1.06066,
+          "expected": true,
+          "actual": false,
+          "passed": false
+        },
+        {
+          "x_mm": 0.707107,
+          "y_mm": 0.707107,
+          "expected": false,
+          "actual": true,
+          "passed": false
+        },
+        {
+          "x_mm": 1.3,
+          "y_mm": 0,
+          "expected": true,
+          "actual": false,
+          "passed": false
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 1.8,
+          "expected": true,
+          "actual": false,
+          "passed": false
+        }
+      ],
+      "status": "failed"
+    },
+    {
+      "case": "g75_full",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "9674a5881f6e255fa351d2b57c96dfe218c0b09e9d11ec3884892a92a0329d58",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": -1,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g75_near_full",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "24dd4fab3b43067ac303cc52b9ce32bfd6e36974ee750b07d424b18f79c24555",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": -1,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g74_cw_quarter",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "caf89938b2660d4580fbf0cdddae2ccb276fe192fbaa88e33df11d7ee57c6934",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0.74,
+          "y_mm": 0.74,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": -0.7,
+          "y_mm": 0.7,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g74_ccw_quarter",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "5720e1cc17018a799a4fa525ca6e0fe94c19626e543cfd80d54e95447d997a18",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0.74,
+          "y_mm": 0.74,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": -0.7,
+          "y_mm": 0.7,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g74_least_deviation",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "08374af8aaad972c3ca404334d3ff415469803ebb22e9618c06e744a812187fa",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0,
+          "y_mm": 0.2,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g74_zero",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "0096adb1955f1c1ba98052dc8bfa175210b8ce3eb07417cc74d400118a551fa6",
+      "origin_inches": [
+        -0.1,
+        -0.1
+      ],
+      "window_inches": [
+        0.2,
+        0.2
+      ],
+      "dpi": 2400,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": false,
+          "passed": false
+        },
+        {
+          "x_mm": 0.09,
+          "y_mm": 0,
+          "expected": true,
+          "actual": false,
+          "passed": false
+        },
+        {
+          "x_mm": 1,
+          "y_mm": 1,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": 2,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "failed"
+    },
+    {
+      "case": "g74_zero_offset",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "b499e88618c3cfe42128971b97746d2c5a56bbf539c0fcfa64b08faac15314f9",
+      "origin_inches": [
+        -0.1,
+        -0.1
+      ],
+      "window_inches": [
+        0.2,
+        0.2
+      ],
+      "dpi": 2400,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.09,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.11,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "ucamco_full_circle_geometry",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "3b0682db8e992e8d7f70fe11ce1587c5ca0a15b345e9563c51586709f0000fe3",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        2.5,
+        2.5
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 37.5,
+          "y_mm": 10,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 42.5,
+          "y_mm": 10,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 40,
+          "y_mm": 12.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 40,
+          "y_mm": 10,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "case": "g75_region_deviation_safe",
+      "exit_code": 0,
+      "diagnostics": "",
+      "input_sha256": "6745f0dee183eb1f0d9106ec5b2cc02afd6e23674188460574b3665f0a6d6974",
+      "origin_inches": [
+        -0.4,
+        -0.4
+      ],
+      "window_inches": [
+        1.2,
+        1.2
+      ],
+      "dpi": 600,
+      "points": [
+        {
+          "x_mm": 0,
+          "y_mm": 0,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.5,
+          "y_mm": 0.5,
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "x_mm": 0.8,
+          "y_mm": 0.8,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "x_mm": -3.1,
+          "y_mm": 0,
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

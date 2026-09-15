@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "run_id": "s1-a1-20260915-implementation",
+  "captured_at_utc": "2026-09-15T02:46:07.283015+00:00",
+  "os": {
+    "command": "sw_vers",
+    "exit_code": 0,
+    "output": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80\n"
+  },
+  "architecture": {
+    "command": "uname -m",
+    "exit_code": 0,
+    "output": "arm64\n"
+  },
+  "rustc": {
+    "command": "<workspace>/.tools/cargo/bin/rustc -Vv",
+    "exit_code": 0,
+    "output": "rustc 1.89.0 (29483883e 2025-08-04)\nbinary: rustc\ncommit-hash: 29483883eed69d5fb4db01964cdf2af4d86e9cb2\ncommit-date: 2025-08-04\nhost: aarch64-apple-darwin\nrelease: 1.89.0\nLLVM version: 20.1.7\n"
+  },
+  "cargo": {
+    "command": "<workspace>/.tools/cargo/bin/cargo --version",
+    "exit_code": 0,
+    "output": "cargo 1.89.0 (c24e10642 2025-06-23)\n"
+  },
+  "gerbv": {
+    "command": "gerbv --version",
+    "exit_code": 0,
+    "output": "gerbv version v4.0\nCopyright (C) 2001-2008 by Stefan Petersen\nand the respective original authors listed in the source files.\n"
+  },
+  "toolchain_environment": "repository .tools/cargo and .tools/rustup; cached dependencies; not clean-room build",
+  "platforms": {
+    "macos-arm64": "headless/build checks executed; GUI/IME/GPU/performance not executed in this slice",
+    "windows-x64": "blocked: no native host/evidence"
+  },
+  "scope": "S1-A.1 only; no Move/Undo/Redo, no S1-B, no production release"
+}

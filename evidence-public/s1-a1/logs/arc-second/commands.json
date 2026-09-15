@@ -1,0 +1,26 @@
+[
+  {
+    "command": "cargo fmt --all",
+    "exit_code": 0,
+    "seconds": 0.581073583,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a1_arcs",
+    "exit_code": 0,
+    "seconds": 5.706366375,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1a_semantic_truth",
+    "exit_code": 0,
+    "seconds": 1.409634542,
+    "log": "03.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-core --test s1a_independent_geometry",
+    "exit_code": 0,
+    "seconds": 1.9984627499999998,
+    "log": "04.log"
+  }
+]

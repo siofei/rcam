@@ -1,0 +1,8 @@
+[
+  {
+    "command": "cargo test --manifest-path <baseline-workspace>/Cargo.toml --locked -p editor-service --test s1a_semantic_truth g74_least_deviation_and_zero_sweep_are_accepted -- --exact",
+    "exit_code": 101,
+    "seconds": 6.172669,
+    "log": "01.log"
+  }
+]

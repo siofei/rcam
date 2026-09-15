@@ -63,30 +63,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--normalized', type=Path)
+    parser.add_argument('--manifest', type=Path, default=Path('fixtures/synthetic/s1a/manifest.json'))
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
     binary = shutil.which('gerbv')
     if not binary:
         raise SystemExit('BLOCKED: local gerbv missing')
-    manifest = json.loads(Path('fixtures/synthetic/s1a/manifest.json').read_text())
+    manifest = json.loads(args.manifest.read_text())
     results = []
     for case in manifest['cases']:
         if not case['accept'] or not case['coverage_mm']:
             continue
         source = (args.normalized / (case['name'] + '.gbr')) if args.normalized else Path(case['path'])
         output = args.out / (case['name'] + '.png')
-        command = [binary, '-x', 'png', '-D', '600', '-O', '-0.4x-0.4', '-W', '1.2x1.2',
+        viewport = case.get('reference_viewport', {})
+        dpi = viewport.get('dpi', 600)
+        origin = viewport.get('origin_inches', [-.4, -.4])
+        window = viewport.get('window_inches', [1.2, 1.2])
+        command = [binary, '-x', 'png', '-D', str(dpi), '-O', f'{origin[0]}x{origin[1]}', '-W', f'{window[0]}x{window[1]}',
                    '-B', '0', '-b', '#000000', '-f', '#FFFFFF', '-o', str(output), str(source)]
         run = subprocess.run(command, capture_output=True, text=True, timeout=30)
         (args.out / (case['name'] + '.log')).write_text(json.dumps(command) + '\n' + run.stdout + run.stderr)
         item = {'case': case['name'], 'exit_code': run.returncode, 'diagnostics': run.stderr,
-                'input_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'points': []}
+                'input_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'origin_inches': origin, 'window_inches': window, 'dpi': dpi, 'points': []}
         if run.returncode:
             item['status'] = 'failed'
         else:
             width, height, channels, rows = read_png(output)
             for x, y, expected in case['coverage_mm']:
-                px, py = int((x/25.4 + .4) * 600), height - 1 - int((y/25.4 + .4) * 600)
+                px, py = int((x/25.4 - origin[0]) * dpi), height - 1 - int((y/25.4 - origin[1]) * dpi)
                 if not (0 <= px < width and 0 <= py < height):
                     raise ValueError('probe outside fixed window')
                 actual = max(rows[py][px*channels:px*channels+3]) > 127

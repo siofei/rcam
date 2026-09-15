@@ -1,4 +1,4 @@
-# RCam Gerber editor — S1-A semantic foundation
+# RCam Gerber editor — S1-A.1 arc validation
 
 This workspace contains the S0 demonstration window and the S1-A semantic
 parser, model, validation, and new-path writer. It is not EditableV1 or a
@@ -17,7 +17,8 @@ geometry DTOs, validates them, and exports an unchanged layer to a new path.
 Its supported subset is frozen by ADR 0005. The existing window still uses
 the S0 demonstration path; full GUI integration, object editing, Undo/Redo,
 and source overwrite remain unimplemented. See `docs/S1_A_REVIEW.md` for
-actual evidence and limitations; CORE10 editing round trips are not claimed.
+historical evidence. The current arc/legacy review is `docs/S1_A1_REVIEW.md`;
+redacted, distributable logs are in `evidence-public/s1-a1/`. CORE10 editing round trips are not claimed.
 
 The S0 window uses English labels so the default eframe font remains legible
 on a clean installation; no user font is bundled. Chinese UI and vector text
