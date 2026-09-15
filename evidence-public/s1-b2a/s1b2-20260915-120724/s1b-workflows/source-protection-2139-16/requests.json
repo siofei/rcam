@@ -1,0 +1,481 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "s1b-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b-workflows/source-protection-2139-16/source.gbr",
+        "source_sha256": "5be7668141a0047845c10299c071c92d7bb89c5bd5fccfda567135f5dcd9eab3",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "s1b-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Line": {
+                  "end": {
+                    "x_mm": 2.0,
+                    "y_mm": 0.0
+                  },
+                  "start": {
+                    "x_mm": 0.0,
+                    "y_mm": 0.0
+                  },
+                  "width_mm": 0.2
+                }
+              },
+              "object_id": "object-2",
+              "origin": {
+                "command_index": 7,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Arc": {
+                  "path": {
+                    "center": {
+                      "x_mm": 0.0,
+                      "y_mm": 0.0
+                    },
+                    "direction": "CounterClockwise",
+                    "end": {
+                      "x_mm": 0.0,
+                      "y_mm": 1.0
+                    },
+                    "full_circle": false,
+                    "source": {
+                      "resolution_mm": 1e-6,
+                      "single_quadrant": false
+                    },
+                    "start": {
+                      "x_mm": 1.0,
+                      "y_mm": 0.0
+                    }
+                  },
+                  "width_mm": 0.2
+                }
+              },
+              "object_id": "object-3",
+              "origin": {
+                "command_index": 11,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Region": {
+                  "contours": [
+                    {
+                      "edges": [
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 12.0,
+                              "y_mm": 10.0
+                            },
+                            "start": {
+                              "x_mm": 10.0,
+                              "y_mm": 10.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 12.0,
+                              "y_mm": 12.0
+                            },
+                            "start": {
+                              "x_mm": 12.0,
+                              "y_mm": 10.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 10.0,
+                              "y_mm": 12.0
+                            },
+                            "start": {
+                              "x_mm": 12.0,
+                              "y_mm": 12.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 10.0,
+                              "y_mm": 10.0
+                            },
+                            "start": {
+                              "x_mm": 10.0,
+                              "y_mm": 12.0
+                            }
+                          }
+                        }
+                      ],
+                      "role": "Solid"
+                    }
+                  ]
+                }
+              },
+              "object_id": "object-4",
+              "origin": {
+                "command_index": 12,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 4
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.move",
+      "params": {
+        "dx_mm": 5.0,
+        "dy_mm": -3.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2",
+          "object-3",
+          "object-4"
+        ]
+      },
+      "request_id": "s1b-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-2",
+      "result": {
+        "changed_object_ids": [
+          "object-1",
+          "object-2",
+          "object-3",
+          "object-4"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "gerber.export_layer",
+      "params": {
+        "layer_id": "layer-1",
+        "metadata_policy": {
+          "mode": "require_confirmation"
+        },
+        "overwrite": {
+          "mode": "deny"
+        },
+        "path": "source.gbr"
+      },
+      "request_id": "s1b-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "field": "params.path"
+        },
+        "message": "export target must be a new path"
+      },
+      "job_id": null,
+      "request_id": "s1b-3",
+      "result": null,
+      "revision": "1",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "s1b-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-4",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "1",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b-workflows/source-protection-2139-16/source.gbr",
+        "source_sha256": "5be7668141a0047845c10299c071c92d7bb89c5bd5fccfda567135f5dcd9eab3",
+        "undo_entries": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.validate",
+      "params": {},
+      "request_id": "s1b-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-5",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "document_id": "doc-1",
+        "revision": "1",
+        "valid": true
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "gerber.export_layer",
+      "params": {
+        "layer_id": "layer-1",
+        "metadata_policy": {
+          "mode": "require_confirmation"
+        },
+        "overwrite": {
+          "mode": "deny"
+        },
+        "path": "edited.gbr"
+      },
+      "request_id": "s1b-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-6",
+      "result": {
+        "api_version": 1,
+        "bytes": 407,
+        "current_revision": "1",
+        "document_id": "doc-1",
+        "exported_revision": "1",
+        "layer_id": "layer-1",
+        "path": "<workspace>/evidence/s1b2-20260915-120724/s1b-workflows/source-protection-2139-16/edited.gbr",
+        "sha256": "788562f0d560bdb6e176ffecafd2fb3ac276bea09bb28777e33233ddbbad7c9f"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "edited.gbr"
+      },
+      "request_id": "s1b-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-7",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-2",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b-workflows/source-protection-2139-16/edited.gbr",
+        "source_sha256": "788562f0d560bdb6e176ffecafd2fb3ac276bea09bb28777e33233ddbbad7c9f",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "s1b-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "s1b-8",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-3",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b-workflows/source-protection-2139-16/source.gbr",
+        "source_sha256": "5be7668141a0047845c10299c071c92d7bb89c5bd5fccfda567135f5dcd9eab3",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "run_id": "s1b1-20260915-final",
+  "captured_at": "2026-09-15T03:34:29.921543+00:00",
+  "platform": "macos-arm64",
+  "cpu": {
+    "command": "sysctl -n machdep.cpu.brand_string",
+    "output": "Apple M1",
+    "exit_code": 0,
+    "note": "Verified with read-only sandbox escalation; initial sandbox read was denied."
+  },
+  "windows": "deferred / not executed",
+  "gui_gpu_ime": "not executed",
+  "toolchain": "existing .tools cache; no dependency changes; not clean-room build",
+  "os": {
+    "command": [
+      "sw_vers"
+    ],
+    "exit_code": 0,
+    "output": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80\n"
+  },
+  "arch": {
+    "command": [
+      "uname",
+      "-m"
+    ],
+    "exit_code": 0,
+    "output": "arm64\n"
+  },
+  "rustc": {
+    "command": [
+      "rustc",
+      "-Vv"
+    ],
+    "exit_code": 0,
+    "output": "rustc 1.89.0 (29483883e 2025-08-04)\nbinary: rustc\ncommit-hash: 29483883eed69d5fb4db01964cdf2af4d86e9cb2\ncommit-date: 2025-08-04\nhost: aarch64-apple-darwin\nrelease: 1.89.0\nLLVM version: 20.1.7\n"
+  },
+  "cargo": {
+    "command": [
+      "cargo",
+      "--version"
+    ],
+    "exit_code": 0,
+    "output": "cargo 1.89.0 (c24e10642 2025-06-23)\n"
+  },
+  "base_commit": {
+    "command": [
+      "git",
+      "rev-parse",
+      "HEAD"
+    ],
+    "exit_code": 0,
+    "output": "4bf84a05bd065b057b402062741661f6754f0192\n"
+  }
+}

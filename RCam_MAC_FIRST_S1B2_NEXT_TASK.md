@@ -1,5 +1,8 @@
 # RCam 下一阶段 Codex 任务：Mac-first S1-B2 编辑能力扩展
 
+> 执行记录（2026-09-15）：S1-B1.1 与 S1-B2a 已完成本机门禁，见 [S1_B2_REVIEW](docs/S1_B2_REVIEW.md)。
+> 本文原任务正文保留；后续仅按 ADR 0010 进入 S1-B2b，不自动进入 GUI。
+
 > 基线：S1-B1 `6b5d9c0`。  
 > 当前平台：macOS Apple Silicon。Windows 延后且保持 not executed/deferred；不新增 Linux/WSL2 产品支持。  
 > 本任务不进入完整 GUI、文字、Production Renderer 或兼容性扩张。

@@ -1,0 +1,56 @@
+[
+  {
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "seconds": 0.19470958300000002,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo check --workspace --all-targets --locked",
+    "exit_code": 0,
+    "seconds": 3.859103916,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 3.325159833,
+    "log": "03.log"
+  },
+  {
+    "command": "cargo test --workspace --locked",
+    "exit_code": 0,
+    "seconds": 21.869808833999997,
+    "log": "04.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b_edit_workflow",
+    "exit_code": 0,
+    "seconds": 4.233479125000002,
+    "log": "05.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test automation_contract",
+    "exit_code": 0,
+    "seconds": 0.9720118749999997,
+    "log": "06.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test headless_workflow",
+    "exit_code": 0,
+    "seconds": 1.0442651660000024,
+    "log": "07.log"
+  },
+  {
+    "command": "cargo tree --locked -p editor-service --edges normal",
+    "exit_code": 0,
+    "seconds": 0.09104370800000083,
+    "log": "08.log"
+  },
+  {
+    "command": "cargo build --release --locked -p editor-app",
+    "exit_code": 0,
+    "seconds": 5.898740334000003,
+    "log": "09.log"
+  }
+]

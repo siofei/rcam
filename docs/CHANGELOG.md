@@ -76,3 +76,10 @@ ADR 0007 澄清 arc deviation、G74 least-deviation/0°、旧 metadata/FS 严格
 按 RCam_MAC_FIRST_S1B_NEXT_TASK.md 和 ADR 0008 调整当前阶段排期为 macOS arm64，
 保留 Windows 必测身份及最终双平台门槛。新增 Move、Undo/Redo、关闭会话与内容哈希保存基线；
 新增独立 JSON 编辑往返测试。未扩展 Gerber 兼容范围、GUI 编辑或脚本运行时。
+
+## 2026-09-15 · S1-B1.1 / S1-B2a
+
+- 修复零／舍入不变 Move、NOT_FOUND 实体定位、导出保存目标身份及过期任务索引。
+- 将来源与曝光顺序分离，增加同层 Duplicate/Delete、原子结构历史和稳定 ID 契约（ADR 0009）。
+- 新增局部验收场景、真实 JSON 编辑往返测试、阶段原始日志脱敏打包。
+- 冻结后续旋转／镜像表示能力（ADR 0010），本轮未实现；96 个用例、required_platforms、CORE10 门槛不变。

@@ -1,0 +1,7 @@
+{
+  "commit": "6b5d9c0cf5885addf1fb5398e11cf123eae65b0c",
+  "files_checked": 29,
+  "mismatches": [],
+  "status": "PASS",
+  "note": "Verified archived source hashes against Git objects now; historical Cargo results are preserved, not rerun on old commit."
+}

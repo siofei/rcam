@@ -43,6 +43,7 @@ pub struct ResourceLimits {
     pub max_objects: usize,
     pub max_query_results: usize,
     pub max_move_objects: usize,
+    pub max_edit_objects: usize,
     pub max_history_entries: usize,
     pub max_history_bytes: usize,
 }
@@ -198,6 +199,7 @@ pub struct DocumentInfo {
     pub revision: String,
     pub source_path: String,
     pub source_sha256: String,
+    pub last_saved_path: Option<String>,
     pub dirty: bool,
     pub undo_entries: usize,
     pub redo_entries: usize,
@@ -276,6 +278,7 @@ struct S1DocumentRecord {
     revision: u64,
     history: EditHistory,
     saved_content_hash: String,
+    last_saved_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -337,6 +340,16 @@ pub struct MoveParams {
     pub object_ids: Vec<String>,
     pub dx_mm: f64,
     pub dy_mm: f64,
+}
+
+/// Duplicate uses the same explicit offset DTO as Move; zero offset is valid.
+pub type DuplicateParams = MoveParams;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteParams {
+    pub layer_id: String,
+    pub object_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -456,6 +469,7 @@ impl ApplicationService {
                     max_objects: gerber_io::MAX_OBJECTS,
                     max_query_results: 0,
                     max_move_objects: 0,
+                    max_edit_objects: 0,
                     max_history_entries: 0,
                     max_history_bytes: 0,
                 },
@@ -468,7 +482,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S1-B1 move/undo/redo/export/reopen".into(),
+            stage: "S1-B2a move/duplicate/delete/undo/redo/export/reopen".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -479,6 +493,8 @@ impl ApplicationService {
                 "document.get".into(),
                 "document.close".into(),
                 "objects.move".into(),
+                "objects.duplicate".into(),
+                "objects.delete".into(),
                 "history.undo".into(),
                 "history.redo".into(),
                 "layers.list".into(),
@@ -488,9 +504,7 @@ impl ApplicationService {
                 "gerber.export_layer".into(),
             ],
             unsupported_operations: vec![
-                "objects.duplicate".into(),
-                "objects.delete".into(),
-                "text.create".into(),
+                "objects.rotate".into(), "objects.mirror".into(), "text.create".into(),
             ],
             supported_gerber_subset: vec![
                 "FS absolute coordinates".into(),
@@ -522,6 +536,7 @@ impl ApplicationService {
                 max_objects: gerber_io::S1_MAX_OBJECTS,
                 max_query_results: 1000,
                 max_move_objects: MAX_MOVE_OBJECTS,
+                max_edit_objects: MAX_MOVE_OBJECTS,
                 max_history_entries: MAX_HISTORY_ENTRIES,
                 max_history_bytes: MAX_HISTORY_BYTES,
             },
@@ -578,7 +593,7 @@ impl ApplicationService {
         let scene = self
             .scenes
             .get_mut(&result.document_id)
-            .ok_or_else(|| ServiceError::not_found(&result.document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", &result.document_id))?;
         add_s0_risk_layers(scene);
         result.layer_ids = scene
             .document
@@ -607,6 +622,7 @@ impl ApplicationService {
         let metadata = serde_json::to_value(&scene.metadata).map_err(serialize_error)?;
         let record = S1DocumentRecord {
             saved_content_hash: content_hash(&scene.document),
+            last_saved_path: None,
             document: scene.document,
             source_path: canonical,
             source_sha256,
@@ -624,14 +640,14 @@ impl ApplicationService {
         self.documents
             .get(document_id)
             .map(|record| document_info(document_id, record))
-            .ok_or_else(|| ServiceError::not_found(document_id))
+            .ok_or_else(|| ServiceError::not_found("document", document_id))
     }
 
     pub fn layers_list(&self, document_id: &str) -> Result<Vec<LayerInfo>, ServiceError> {
         let record = self
             .documents
             .get(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         Ok(record
             .document
             .layers
@@ -653,18 +669,18 @@ impl ApplicationService {
         let record = self
             .documents
             .get(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         let layer = record
             .document
             .layers
             .iter()
             .find(|layer| layer.id == params.layer_id)
-            .ok_or_else(|| ServiceError::not_found(&params.layer_id))?;
+            .ok_or_else(|| ServiceError::not_found("layer", &params.layer_id))?;
         let object = layer
             .objects
             .iter()
             .find(|object| object.object_id == params.object_id)
-            .ok_or_else(|| ServiceError::not_found(&params.object_id))?;
+            .ok_or_else(|| ServiceError::not_found("object", &params.object_id))?;
         Ok(ObjectInfo {
             layer_id: layer.id.clone(),
             object: object.clone(),
@@ -679,7 +695,7 @@ impl ApplicationService {
         let record = self
             .documents
             .get(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         validate_query_params(&params)?;
         let limit = params.limit.unwrap_or(1000).min(1000);
         let fingerprint = query_fingerprint(document_id, &params);
@@ -694,7 +710,7 @@ impl ApplicationService {
             .layers
             .iter()
             .find(|layer| layer.id == params.layer_id)
-            .ok_or_else(|| ServiceError::not_found(&params.layer_id))?;
+            .ok_or_else(|| ServiceError::not_found("layer", &params.layer_id))?;
         let mut matches = Vec::new();
         let mut total = 0usize;
         for object in &layer.objects {
@@ -759,6 +775,42 @@ impl ApplicationService {
         Ok(edit_result(document_id, record, ids, 1))
     }
 
+    pub fn objects_duplicate(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: DuplicateParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        let ids = record
+            .history
+            .duplicate_objects(
+                &mut record.document,
+                &params.layer_id,
+                &params.object_ids,
+                params.dx_mm,
+                params.dy_mm,
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
+    pub fn objects_delete(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: DeleteParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        let ids = record
+            .history
+            .delete_objects(&mut record.document, &params.layer_id, &params.object_ids)
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
     pub fn history_undo(
         &mut self,
         document_id: &str,
@@ -795,7 +847,7 @@ impl ApplicationService {
         let record = self
             .documents
             .get_mut(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         check_revision(record.revision, expected_revision)?;
         if record.revision == u64::MAX {
             return Err(ServiceError::resource("revision", usize::MAX, usize::MAX));
@@ -812,7 +864,7 @@ impl ApplicationService {
         let record = self
             .documents
             .get(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         check_revision(record.revision, expected_revision)?;
         if !discard_changes && content_hash(&record.document) != record.saved_content_hash {
             return Err(ServiceError {
@@ -829,7 +881,7 @@ impl ApplicationService {
         let record = self
             .documents
             .get(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         record.document.validate().map_err(map_semantic_error)?;
         Ok(ValidationResult {
             api_version: API_VERSION,
@@ -849,7 +901,7 @@ impl ApplicationService {
         let record = self
             .documents
             .get(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         check_revision(record.revision, expected_revision)?;
         let access = self
             .file_access
@@ -869,7 +921,7 @@ impl ApplicationService {
             .iter()
             .any(|layer| layer.id == params.layer_id)
         {
-            return Err(ServiceError::not_found(&params.layer_id));
+            return Err(ServiceError::not_found("layer", &params.layer_id));
         }
         document.layers.retain(|layer| layer.id == params.layer_id);
         document.validate().map_err(map_semantic_error)?;
@@ -909,10 +961,9 @@ impl ApplicationService {
             sha256: sha256_hex(&bytes),
             bytes: bytes.len(),
         };
-        self.documents
-            .get_mut(document_id)
-            .unwrap()
-            .saved_content_hash = saved_content_hash;
+        let record = self.documents.get_mut(document_id).unwrap();
+        record.saved_content_hash = saved_content_hash;
+        record.last_saved_path = Some(result.path.clone());
         Ok(result)
     }
 
@@ -1047,7 +1098,8 @@ impl ApplicationService {
                 serde_json::to_value(self.objects_get(document_id, params)?)
                     .map_err(serialize_error)?
             }
-            "objects.move" | "history.undo" | "history.redo" | "document.close"
+            "objects.move" | "objects.duplicate" | "objects.delete" | "history.undo"
+            | "history.redo" | "document.close"
                 if self.file_access.is_some() =>
             {
                 let id = required_document_id(request)?;
@@ -1059,6 +1111,18 @@ impl ApplicationService {
                 })?;
                 match request.op.as_str() {
                     "objects.move" => serde_json::to_value(self.objects_move(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.duplicate" => serde_json::to_value(self.objects_duplicate(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.delete" => serde_json::to_value(self.objects_delete(
                         id,
                         revision,
                         parse_params(&request.params)?,
@@ -1146,14 +1210,14 @@ impl ApplicationService {
         self.scenes
             .get(document_id)
             .map(|scene| scene.document.snapshot(0))
-            .ok_or_else(|| ServiceError::not_found(document_id))
+            .ok_or_else(|| ServiceError::not_found("document", document_id))
     }
 
     pub fn analyze_s0(&self, document_id: &str) -> Result<AnalysisResult, ServiceError> {
         let scene = self
             .scenes
             .get(document_id)
-            .ok_or_else(|| ServiceError::not_found(document_id))?;
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         let layer_id = scene
             .document
             .layers
@@ -1222,11 +1286,11 @@ impl ServiceError {
         }
     }
 
-    fn not_found(document_id: &str) -> Self {
+    fn not_found(entity: &str, id: &str) -> Self {
         Self {
             code: "NOT_FOUND".into(),
-            message: format!("document {document_id:?} is not open"),
-            details: serde_json::json!({"document_id": document_id}),
+            message: format!("{entity} {id:?} was not found"),
+            details: serde_json::json!({"entity": entity, "id": id}),
         }
     }
 }
@@ -1246,6 +1310,7 @@ fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
         revision: record.revision.to_string(),
         source_path: record.source_path.to_string_lossy().into_owned(),
         source_sha256: record.source_sha256.clone(),
+        last_saved_path: record.last_saved_path.clone(),
         dirty: content_hash(&record.document) != record.saved_content_hash,
         undo_entries: record.history.undo_len(),
         redo_entries: record.history.redo_len(),
@@ -1273,7 +1338,7 @@ fn edit_result(id: &str, record: &S1DocumentRecord, ids: Vec<String>, added: usi
 
 fn map_edit_error(error: EditError) -> ServiceError {
     match error {
-        EditError::NotFound(id) => ServiceError::not_found(&id),
+        EditError::NotFound { entity, id } => ServiceError::not_found(entity, &id),
         EditError::InvalidArgument => {
             ServiceError::invalid_field("params", "目标集合或移动距离无效，不能提交。")
         }
@@ -1284,8 +1349,8 @@ fn map_edit_error(error: EditError) -> ServiceError {
         },
         EditError::ResourceLimit => ServiceError {
             code: "RESOURCE_LIMIT".into(),
-            message: "移动对象数量或撤销历史超过预算。".into(),
-            details: serde_json::json!({"max_move_objects": MAX_MOVE_OBJECTS, "max_history_entries": MAX_HISTORY_ENTRIES, "max_history_bytes": MAX_HISTORY_BYTES}),
+            message: "编辑对象数量或撤销历史超过预算。".into(),
+            details: serde_json::json!({"max_edit_objects": MAX_MOVE_OBJECTS, "max_move_objects": MAX_MOVE_OBJECTS, "max_document_objects": gerber_io::S1_MAX_OBJECTS, "max_region_edges": gerber_io::S1_MAX_REGION_EDGES, "max_history_entries": MAX_HISTORY_ENTRIES, "max_history_bytes": MAX_HISTORY_BYTES}),
         },
         EditError::EmptyHistory => ServiceError::invalid_field("op", "没有可撤销或重做的事务。"),
         EditError::InvalidGeometry(error) => map_semantic_error(error),
@@ -1497,7 +1562,7 @@ fn matches_region(
                 .apertures
                 .iter()
                 .find(|aperture| aperture.id == *aperture_id)
-                .ok_or_else(|| ServiceError::not_found(aperture_id))?;
+                .ok_or_else(|| ServiceError::not_found("aperture", aperture_id))?;
             let ApertureShape::Circle {
                 diameter_mm,
                 hole_diameter_mm,
@@ -2294,10 +2359,17 @@ mod s1b_guards {
         service.documents.get_mut(&id).unwrap().document.layers[0].locked = true;
         let before = service.documents[&id].document.clone();
         let info = service.document_get(&id).unwrap();
-        let result=service.execute_json(&serde_json::json!({"api_version":1,"request_id":"locked","document_id":id,"expected_revision":"0","op":"objects.move","params":{"layer_id":layer,"object_ids":[object],"dx_mm":5,"dy_mm":-3}}).to_string());
-        assert_eq!(result["error"]["code"], "LAYER_LOCKED");
-        assert_eq!(service.documents[&id].document, before);
-        assert_eq!(service.document_get(&id).unwrap(), info);
+        for op in ["objects.move", "objects.duplicate", "objects.delete"] {
+            let params = if op == "objects.delete" {
+                serde_json::json!({"layer_id":layer,"object_ids":[object]})
+            } else {
+                serde_json::json!({"layer_id":layer,"object_ids":[object],"dx_mm":5,"dy_mm":-3})
+            };
+            let result = service.execute_json(&serde_json::json!({"api_version":1,"request_id":"locked","document_id":id,"expected_revision":"0","op":op,"params":params}).to_string());
+            assert_eq!(result["error"]["code"], "LAYER_LOCKED");
+            assert_eq!(service.documents[&id].document, before);
+            assert_eq!(service.document_get(&id).unwrap(), info);
+        }
     }
 
     #[test]

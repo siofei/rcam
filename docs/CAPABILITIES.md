@@ -90,3 +90,11 @@ CORE10 当前状态及未完成项以本轮脱敏证据为准，不授予生产�
 当前限制为 10000 对象/命令、100 事务、64 MiB 保守计费，查询实时读制造模型。
 GUI 长期持有服务，画面仍为 S0 演示；没有编辑控件/拖动/完整文件打开流程。
 Windows deferred / not executed；CORE-03/07/08、独立参考差异继续保留，不能宣称完整 AT/CORE10/V1/生产通过。
+
+## S1-B1.1 / S1-B2a（2026-09-15）
+
+当前新增同层 objects.duplicate / objects.delete 与原子插入／删除 Undo/Redo；详细顺序、ID、预算和保存身份
+见 ADR 0009 与 AUTOMATION_API.md。Move 精确零／舍入不变时拒绝，NOT_FOUND 带 entity/id。
+对象 provenance 改为 Imported/Generated，与当前曝光顺序分离；成功导出报告 last_saved_path。
+旋转／镜像仅有 ADR 0010，仍为 unsupported；矩形扫掠缺少方向表示时不假称任意旋转。
+无新增依赖或兼容范围；GUI 编辑、Windows、CORE10 完整流程及双平台 V1 仍未完成。

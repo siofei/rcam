@@ -3250,5 +3250,43 @@
     "platform": "macos-arm64",
     "windows": "deferred / not executed",
     "case_status": "partial checks only; required_platforms unchanged"
+  },
+  "s1b2_local_checks": {
+    "scope": "S1-B1.1 / S1-B2a only; not complete AT acceptance",
+    "decision": "adr/0009-s1-b2a-object-transactions.md",
+    "case_ids": [
+      "AT-030",
+      "AT-031",
+      "AT-035",
+      "AT-036",
+      "AT-038",
+      "AT-039",
+      "AT-040",
+      "AT-041",
+      "AT-042",
+      "AT-054",
+      "AT-086",
+      "AT-088",
+      "AT-089",
+      "AT-090",
+      "AT-091",
+      "AT-093",
+      "AT-095",
+      "AT-097"
+    ],
+    "checks": [
+      "zero and representationally unchanged Move rejects without history",
+      "NOT_FOUND entity and id",
+      "source versus last_saved_path",
+      "Imported/Generated origin distinct from current exposure order",
+      "Duplicate after each source in current order; monotonic non-reused IDs",
+      "Delete and insert Undo/Redo restore exact object and index",
+      "failure atomicity and resource budgets",
+      "cursor revision conflict after structural edits",
+      "export/reopen plus independent circle coverage and source protection",
+      "Delete All exports/reopens an empty image; malformed or unsupported empty-looking files still reject"
+    ],
+    "status": "未执行",
+    "platform_note": "macOS stage gates; Windows deferred; required_platforms unchanged"
   }
 }

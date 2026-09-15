@@ -1,0 +1,471 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "b2-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b2-workflows/s1b2-2155-11/source.gbr",
+        "source_sha256": "7557f2bf56ced7ec17e2757998840f32b83a9b7a5bb26b31eec8c6f10b1f4270",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 6,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "clear",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-11",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-2",
+              "origin": {
+                "command_index": 9,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-12",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-3",
+              "origin": {
+                "command_index": 12,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 3
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-2",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 6,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "clear",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-11",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-2",
+              "origin": {
+                "command_index": 9,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-12",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-3",
+              "origin": {
+                "command_index": 12,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 3
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.duplicate",
+      "params": {
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-3",
+          "object-2",
+          "object-1"
+        ]
+      },
+      "request_id": "b2-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-3",
+      "result": {
+        "changed_object_ids": [
+          "doc-1-generated-object-0",
+          "doc-1-generated-object-1",
+          "doc-1-generated-object-2"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-4",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 6,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "doc-1-generated-object-0",
+              "origin": {
+                "kind": "generated",
+                "operation_id": "doc-1-generated-op-0"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "clear",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-11",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-2",
+              "origin": {
+                "command_index": 9,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "clear",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-11",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "doc-1-generated-object-1",
+              "origin": {
+                "kind": "generated",
+                "operation_id": "doc-1-generated-op-0"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-12",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-3",
+              "origin": {
+                "command_index": 12,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-12",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "doc-1-generated-object-2",
+              "origin": {
+                "kind": "generated",
+                "operation_id": "doc-1-generated-op-0"
+              }
+            }
+          }
+        ],
+        "revision": "1",
+        "total": 6
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

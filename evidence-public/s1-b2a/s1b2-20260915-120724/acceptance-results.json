@@ -1,0 +1,1904 @@
+{
+  "schema_version": 2,
+  "run_id": "s1b2-20260915-120724",
+  "stage": "S1-B1.1 / S1-B2a",
+  "stage_status": "PASS macOS local implementation gates",
+  "v1_status": "未完成",
+  "windows": "deferred / not executed",
+  "gui_gpu_ime": "not executed",
+  "CORE10": "full editing round-trip not complete; no samples replaced",
+  "workspace": {
+    "passed": 132,
+    "failed": 0,
+    "ignored": 2
+  },
+  "s1b_edit_workflow": {
+    "passed": 17,
+    "failed": 0
+  },
+  "s1b2_edit_workflow": {
+    "passed": 27,
+    "failed": 0
+  },
+  "normal_dependency_audit": "PASS no egui/eframe/egui-wgpu/wgpu/winit",
+  "source_hashes": "tested-source-hashes.json",
+  "case_results": [
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-001",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-001",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-002",
+      "platform": "shared",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-003",
+      "platform": "shared",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-004",
+      "platform": "shared",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-005",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-005",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-006",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-006",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-007",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-007",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-008",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-008",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-009",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-009",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-010",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-010",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-011",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-011",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-012",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-012",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-013",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-013",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-014",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-014",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-015",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-015",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-016",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-016",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-017",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-017",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-018",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-018",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-019",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-019",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-020",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-020",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-021",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-021",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-022",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-022",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-023",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-023",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-024",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-024",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-025",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-025",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-026",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-026",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-027",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-027",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-028",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-028",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-029",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-029",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-030",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-030",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-031",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-031",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-032",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-032",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-033",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-033",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-034",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-034",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-035",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-035",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-036",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-036",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-037",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-037",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-038",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-038",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-039",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-039",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-040",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-040",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-041",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-041",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-042",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-042",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-043",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-043",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-044",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-044",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-045",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-045",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-046",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-046",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-047",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-047",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-048",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-048",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-049",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-049",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-050",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-050",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-051",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-051",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-052",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-052",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-053",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-053",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-054",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-054",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-055",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-055",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-056",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-056",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-057",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-057",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-058",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-058",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-059",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-059",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-060",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-060",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-061",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-061",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-062",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-062",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-063",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-063",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-064",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-064",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-065",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-065",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-066",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-066",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-067",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-067",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-068",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-068",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-069",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-069",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-070",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-070",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-071",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-071",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-072",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-072",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-073",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-073",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-074",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-074",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-075",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-075",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-076",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-077",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-078",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-078",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-080",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-080",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-081",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-081",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-082",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-082",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-083",
+      "platform": "shared",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-084",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-084",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-085",
+      "platform": "shared",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-086",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-086",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-087",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-087",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-088",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-088",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-089",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-089",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-090",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-090",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-091",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-091",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-092",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-092",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-093",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-093",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-094",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-094",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-095",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-095",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-096",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-096",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-097",
+      "platform": "windows-x64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    },
+    {
+      "spec_document_version": "1.1",
+      "spec_schema_version": 2,
+      "case_id": "AT-097",
+      "platform": "macos-arm64",
+      "status": "未执行",
+      "actual_result": "Complete V1 acceptance not executed; local S1-B2a checks separately recorded.",
+      "evidence_paths": [],
+      "defect_ids": []
+    }
+  ],
+  "local_case_ids": [
+    "AT-030",
+    "AT-031",
+    "AT-035",
+    "AT-036",
+    "AT-038",
+    "AT-039",
+    "AT-040",
+    "AT-041",
+    "AT-042",
+    "AT-054",
+    "AT-086",
+    "AT-088",
+    "AT-089",
+    "AT-090",
+    "AT-091",
+    "AT-093",
+    "AT-095",
+    "AT-097"
+  ],
+  "limitations": [
+    "GUI editing/IME/GPU not tested",
+    "Windows native deferred",
+    "CORE-03/07/08 and independent arc reference differences retained",
+    "Rotate/Mirror ADR only",
+    "Cross-layer duplicate, configurable history eviction and edit.batch not implemented"
+  ]
+}

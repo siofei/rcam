@@ -1,0 +1,30 @@
+   Compiling editor-service v0.1.0 (<workspace>/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.90s
+     Running tests/s1b2_edit_workflow.rs (.tools/target/debug/deps/s1b2_edit_workflow-21ad9219846081c2)
+
+running 22 tests
+test core_locked_and_budget_edits_are_atomic ... ok
+test delete_redo_removes_same_objects ... ok
+test deleted_and_undone_ids_are_never_reallocated ... ok
+test capabilities_and_strict_dtos_match_implemented_operations ... ok
+test delete_multi_object_is_atomic ... ok
+test duplicate_flash_has_new_stable_id ... ok
+test delete_undo_restores_exact_indices_and_ids ... ok
+test duplicate_preserves_exposure_order ... ok
+test duplicate_undo_redo_restores_same_ids ... ok
+test late_duplicate_failure_preserves_all_objects_and_allocator ... ok
+test missing_layer_has_layer_not_found_details ... ok
+test missing_object_has_object_not_found_details ... ok
+test export_reports_saved_target_without_claiming_source_was_modified ... ok
+test query_cursor_conflicts_after_insert_delete ... ok
+test failed_delete_preserves_document_history ... ok
+test zero_move_does_not_create_history ... ok
+test delete_export_reopen_matches_document ... ok
+test failed_duplicate_preserves_document_history_and_id_contract ... ok
+test duplicate_clear_object_preserves_composition ... ok
+test duplicate_export_reopen_matches_document ... ok
+test mixed_geometry_duplicate_delete_roundtrip_preserves_originals ... ok
+test structural_byte_budget_rejects_without_losing_redo ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+

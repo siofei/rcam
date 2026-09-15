@@ -6,8 +6,8 @@
 
 use editor_core::{
     ApertureDefinition, ApertureShape, ArcDirection, ArcGeometry, ArcSource, Exposure,
-    LocalTransform, MacroPrimitive, Mirror, MmPoint, RegionContour, RegionEdge, RegionRole,
-    SemanticDocument, SemanticError, SemanticFormat, SemanticGeometry, SemanticLayer,
+    LocalTransform, MacroPrimitive, Mirror, MmPoint, ObjectOrigin, RegionContour, RegionEdge,
+    RegionRole, SemanticDocument, SemanticError, SemanticFormat, SemanticGeometry, SemanticLayer,
     SemanticObject, SourceMetadata, ValidationReport,
 };
 use gerber_parser::gerber_types::{
@@ -22,11 +22,11 @@ use std::path::{Path, PathBuf};
 
 pub const S1_MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 pub const S1_MAX_COMMANDS: usize = 2_000_000;
-pub const S1_MAX_OBJECTS: usize = 500_000;
+pub const S1_MAX_OBJECTS: usize = editor_core::edit::MAX_EDIT_DOCUMENT_OBJECTS;
 pub const S1_MAX_AM_EXPANSIONS: usize = 1_000_000;
 pub const S1_MAX_AM_EXPRESSION_TOKENS: usize = 100_000;
 pub const S1_MAX_AM_EXPRESSION_DEPTH: usize = 256;
-pub const S1_MAX_REGION_EDGES: usize = 2_000_000;
+pub const S1_MAX_REGION_EDGES: usize = editor_core::edit::MAX_EDIT_REGION_EDGES;
 pub const S1_MAX_WRITER_BYTES: usize = 32 * 1024 * 1024;
 pub const S1_MAX_VALIDATION_BYTES: usize = 32 * 1024 * 1024;
 const S1_ROUNDTRIP_TOLERANCE_MM: f64 = 0.500001e-6;
@@ -2484,7 +2484,9 @@ fn interpret_commands(
                             object_id: format!("object-{}", object_count + 1),
                             geometry: SemanticGeometry::Region { contours },
                             exposure: polarity,
-                            source_command: state.source_command,
+                            origin: ObjectOrigin::Imported {
+                                command_index: state.source_command,
+                            },
                         },
                         &mut object_count,
                         budget.max_objects,
@@ -2554,7 +2556,7 @@ fn interpret_commands(
                                     transform,
                                 },
                                 exposure: polarity,
-                                source_command: command_index,
+                                origin: ObjectOrigin::Imported { command_index },
                             },
                             &mut object_count,
                             budget.max_objects,
@@ -2615,7 +2617,7 @@ fn interpret_commands(
                                 object_id: format!("object-{}", object_count + 1),
                                 geometry,
                                 exposure: polarity,
-                                source_command: command_index,
+                                origin: ObjectOrigin::Imported { command_index },
                             },
                             &mut object_count,
                             budget.max_objects,
@@ -2639,12 +2641,8 @@ fn interpret_commands(
             "G36 is not closed by G37",
         ));
     }
-    if document.object_count() == 0 {
-        return Err(command_semantic(
-            doc.commands().len(),
-            "document has no drawable objects",
-        ));
-    }
+    // A fully validated empty image is valid after Delete All. Syntax, state,
+    // references and unsupported commands above are still checked in full.
     Ok(())
 }
 

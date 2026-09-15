@@ -1,0 +1,4 @@
+Historical run s1b1-20260915-final, commit 6b5d9c0cf5885addf1fb5398e11cf123eae65b0c
+workspace: 105 passed / 0 failed / 2 ignored
+S1-B1专项: test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+This is archived evidence, not a fresh run of the old commit.

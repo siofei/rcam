@@ -1,0 +1,89 @@
+   Compiling editor-core v0.1.0 (<workspace>/crates/editor-core)
+   Compiling gerber-io v0.1.0 (<workspace>/crates/gerber-io)
+   Compiling editor-service v0.1.0 (<workspace>/crates/editor-service)
+   Compiling editor-app v0.1.0 (<workspace>/crates/editor-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.73s
+     Running unittests src/main.rs (.tools/target/debug/deps/editor_app-6fdd09612b5f3bc5)
+
+running 5 tests
+test gpu_tests::native_gpu_coverage_regressions ... ignored, requires native Metal or DX12 hardware; run explicitly and retain raw output
+test gpu_tests::short_line_projection_counterexample ... ok
+test gpu_tests::checked_gpu_conversion_refuses_overflow_underflow_and_lost_holes ... ok
+test navigation_tests::navigation_hover_and_unowned_release_do_not_pan ... ok
+test navigation_tests::navigation_drag_keeps_release_frame_motion_without_double_counting ... ok
+
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (.tools/target/debug/deps/editor_core-abeb892aa662b731)
+
+running 5 tests
+test tests::points_are_measured_in_millimetres ... ok
+test tests::aperture_hole_is_local_and_does_not_clear_prior_line_model ... ok
+test tests::dark_clear_dark_preserves_expected_annuli ... ok
+test tests::coincident_arc_overlap_is_rejected_but_complementary_arcs_are_valid ... ok
+test tests::macro_outline_propagates_typed_intersection_resource_limit ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/review_geometry_regressions.rs (.tools/target/debug/deps/review_geometry_regressions-317cf6265964caa8)
+
+running 3 tests
+test sub_tolerance_hole_is_never_silently_filled ... ok
+test unrepresentable_f64_radius_is_explicitly_rejected ... ok
+test short_line_endpoint_and_zero_length_follow_capsule_geometry ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/s1a_independent_geometry.rs (.tools/target/debug/deps/s1a_independent_geometry-c8e0fb2c3e1ce8ed)
+
+running 11 tests
+test macro_rotation_moves_off_origin_primitive_centres ... ok
+test curved_region_coverage_is_not_display_tessellation ... ok
+test polygon_hole_must_fit_inside_edges_not_just_vertex_circle ... ok
+test bowtie_is_not_a_valid_region_or_macro_outline ... ok
+test full_circle_flag_cannot_hide_invalid_end_point ... ok
+test legal_axis_cutin_creates_only_a_local_hole ... ok
+test swept_arcs_include_round_endpoint_caps ... ok
+test degenerate_backtracking_contour_is_not_a_region ... ok
+test nested_independent_contours_are_union_not_a_hole ... ok
+test tiny_local_holes_remain_transparent ... ok
+test zero_rectangular_sweep_is_outside_frozen_nonzero_subset ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (.tools/target/debug/deps/editor_service-73cb6f391db779c1)
+
+running 7 tests
+test tests::capability_dto_is_json_round_trippable ... ok
+test tests::json_boundary_rejects_unknown_versions_operations_and_fields ... ok
+test tests::duplicate_document_id_is_rejected_without_revision_reset ... ok
+test tests::service_returns_real_parser_snapshot_and_analysis ... ok
+test s1b_guards::revision_overflow_and_large_revision_are_safe ... ok
+test s1b_guards::locked_layer_is_rejected_by_real_json_entry_without_history_changes ... ok
+test tests::sha256_matches_standard_vectors ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/automation_contract.rs (.tools/target/debug/deps/automation_contract-df908a7c12e037bb)
+
+running 4 tests
+test s0_json_contract_rejects_unknown_fields_and_unimplemented_edits ... ok
+test s1_json_contract_rejects_implicit_authority_and_nested_unknown_fields ... ok
+test s1_json_contract_publishes_only_authorized_real_operations ... FAILED
+test s0_json_contract_uses_real_parser_and_read_only_snapshot ... ok
+
+failures:
+
+---- s1_json_contract_publishes_only_authorized_real_operations stdout ----
+
+thread 's1_json_contract_publishes_only_authorized_real_operations' panicked at crates/editor-service/tests/automation_contract.rs:115:9:
+objects.duplicate
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    s1_json_contract_publishes_only_authorized_real_operations
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p editor-service --test automation_contract`

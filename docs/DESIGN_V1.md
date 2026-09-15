@@ -851,3 +851,14 @@ Region 中非零 deviation 仅在圆形解释位于原始环带、角度单调�
 按用户指定任务及 [ADR 0008](adr/0008-mac-first-s1b1.md)，当前开发/阶段验收采用 macOS arm64，
 Windows 延后但最终双平台门槛不变。S1-B1 仅 Move、Undo/Redo、编辑后安全往返与服务生命周期。
 CORE-03/07/08 和独立圆弧参考差异继续保留；不扩展 Gerber 兼容范围。
+
+### S1-B1.1 / S1-B2a 来源与结构编辑
+
+依据 [ADR 0009](adr/0009-s1-b2a-object-transactions.md)，当前顺序由 layer.objects 定义，
+对象来源区分 Imported/Generated。复制按源当前顺序逐一插在源后，删除保留完整对象以便精确撤销。
+历史区分修改／插入／删除，结构事务含前后 ID 顺序守卫；零 Move 不创建事务，保存身份区分来源和目标。
+[ADR 0010](adr/0010-s1-b2b-transform-representation.md) 冻结后续旋转／镜像的可表示范围，
+当前尚不开放其能力。这里只推进 Mac-first 服务闭环，不改变完整 V1 几何、CORE10 或双平台门槛。
+
+S1-B2a 删除至空图层：允许合法完整 Gerber 文档含零图元，继续经过全命令／格式／单位／结束检查；
+以真实空图像输出，不伪造零尺寸加工图元。详见 ADR 0009 删除至空图层补充。

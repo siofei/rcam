@@ -1,0 +1,344 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "b2-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b2-workflows/s1b2-2155-30/source.gbr",
+        "source_sha256": "492978312661387fe94698a97aec16d90046c5eccd89ac8f0a9e3dd9cb1640c6",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "RectangularSweep": {
+                  "end": {
+                    "x_mm": 3.0,
+                    "y_mm": 0.0
+                  },
+                  "height_mm": 1.0,
+                  "start": {
+                    "x_mm": 0.0,
+                    "y_mm": 0.0
+                  },
+                  "width_mm": 2.0
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 6,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.duplicate",
+      "params": {
+        "dx_mm": 5.0,
+        "dy_mm": -3.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ]
+      },
+      "request_id": "b2-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-2",
+      "result": {
+        "changed_object_ids": [
+          "doc-1-generated-object-0"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "objects.delete",
+      "params": {
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ]
+      },
+      "request_id": "b2-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-3",
+      "result": {
+        "changed_object_ids": [
+          "object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "2",
+        "undo_entries": 2,
+        "undo_entries_added": 1
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.validate",
+      "params": {},
+      "request_id": "b2-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-4",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "document_id": "doc-1",
+        "revision": "2",
+        "valid": true
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-5",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "2",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b2-workflows/s1b2-2155-30/source.gbr",
+        "source_sha256": "492978312661387fe94698a97aec16d90046c5eccd89ac8f0a9e3dd9cb1640c6",
+        "undo_entries": 2
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "2",
+      "op": "gerber.export_layer",
+      "params": {
+        "layer_id": "layer-1",
+        "metadata_policy": {
+          "mode": "require_confirmation"
+        },
+        "overwrite": {
+          "mode": "deny"
+        },
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-6",
+      "result": {
+        "api_version": 1,
+        "bytes": 138,
+        "current_revision": "2",
+        "document_id": "doc-1",
+        "exported_revision": "2",
+        "layer_id": "layer-1",
+        "path": "<workspace>/evidence/s1b2-20260915-120724/s1b2-workflows/s1b2-2155-30/edited.gbr",
+        "sha256": "88b8fc2e85a509a4be712bdc89f8d7ae653e3319037930eaa56d78ee47298f7d"
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-7",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-2",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b2-workflows/s1b2-2155-30/edited.gbr",
+        "source_sha256": "88b8fc2e85a509a4be712bdc89f8d7ae653e3319037930eaa56d78ee47298f7d",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-8",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": "<workspace>/evidence/s1b2-20260915-120724/s1b2-workflows/s1b2-2155-30/edited.gbr",
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "2",
+        "source_path": "<workspace>/evidence/s1b2-20260915-120724/s1b2-workflows/s1b2-2155-30/source.gbr",
+        "source_sha256": "492978312661387fe94698a97aec16d90046c5eccd89ac8f0a9e3dd9cb1640c6",
+        "undo_entries": 2
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

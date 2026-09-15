@@ -1,0 +1,14 @@
+{
+  "schema_version": 2,
+  "run_id": "s1b2-20260915-120724",
+  "platform": "macos-arm64",
+  "captured_at": "2026-09-15T04:07:24.238516+00:00",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80\n",
+  "arch": "arm64",
+  "rust": "rustc 1.89.0 (29483883e 2025-08-04)\nbinary: rustc\ncommit-hash: 29483883eed69d5fb4db01964cdf2af4d86e9cb2\ncommit-date: 2025-08-04\nhost: aarch64-apple-darwin\nrelease: 1.89.0\nLLVM version: 20.1.7\n",
+  "cargo": "cargo 1.89.0 (c24e10642 2025-06-23)\n",
+  "base_commit": "9675664009d79afd79effead00dbe305028139c0",
+  "build": "local cached toolchain; not clean-room; .tools/target",
+  "windows": "deferred / not executed",
+  "gui_gpu_ime": "not executed"
+}

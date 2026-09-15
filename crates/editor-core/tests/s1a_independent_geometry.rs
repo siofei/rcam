@@ -29,7 +29,7 @@ fn document(shape: Option<ApertureShape>, geometry: SemanticGeometry) -> Semanti
             objects: vec![SemanticObject {
                 object_id: "object".into(),
                 exposure: Exposure::Dark,
-                source_command: 1,
+                origin: ObjectOrigin::Imported { command_index: 1 },
                 geometry,
             }],
         }],

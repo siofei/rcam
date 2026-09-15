@@ -1,0 +1,5 @@
+Workspace: 132 passed / 0 failed / 2 ignored
+S1-B1 workflow: 17 passed / 0 failed
+S1-B2a workflow: 27 passed / 0 failed
+All 10 Cargo gates exited 0. Normal service dependencies contain no window/GPU crates.
+Ignored tests require native GPU or explicit private CORE audit; not counted as passed.

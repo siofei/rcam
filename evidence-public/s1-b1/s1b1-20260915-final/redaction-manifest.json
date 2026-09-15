@@ -1,0 +1,77 @@
+[
+  {
+    "path": "environment.json",
+    "original_sha256": "a9d43cfb264049f4f92922ab2caf0816622aa6d428b5004976e2715bbf73022e",
+    "public_sha256": "a9d43cfb264049f4f92922ab2caf0816622aa6d428b5004976e2715bbf73022e"
+  },
+  {
+    "path": "tested-source-hashes.json",
+    "original_sha256": "58762f41c625e920ffbe988263c69be1d3ed7df069224a4c5b707e3043ec635a",
+    "public_sha256": "58762f41c625e920ffbe988263c69be1d3ed7df069224a4c5b707e3043ec635a"
+  },
+  {
+    "path": "release-sha256.json",
+    "original_sha256": "31ca0573a52fb1ee27f7f953542cef35f526c6c3c86665dd3c709f3ed70a50f2",
+    "public_sha256": "31ca0573a52fb1ee27f7f953542cef35f526c6c3c86665dd3c709f3ed70a50f2"
+  },
+  {
+    "path": "commit.json",
+    "original_sha256": "bc3da7e91e3ae5afd0c38a6facc821a8374f5d9c4c5262370f0bba294752d647",
+    "public_sha256": "bc3da7e91e3ae5afd0c38a6facc821a8374f5d9c4c5262370f0bba294752d647"
+  },
+  {
+    "path": "acceptance-results.json",
+    "original_sha256": "f7f69811e3c1cd2310b80d4ab17ba8100ee044f3347dc8d4c2e9b3e32aaca982",
+    "public_sha256": "f7f69811e3c1cd2310b80d4ab17ba8100ee044f3347dc8d4c2e9b3e32aaca982"
+  },
+  {
+    "path": "gates/01.log",
+    "original_sha256": "b6e19c16e0d5f97094745b63c78c4f15238111c4de91b081bba774a71abff1e8",
+    "public_sha256": "b6e19c16e0d5f97094745b63c78c4f15238111c4de91b081bba774a71abff1e8"
+  },
+  {
+    "path": "gates/02.log",
+    "original_sha256": "4813ac76243804457a120999c31afaddb220302094b47a6d5afa401c3c0056c2",
+    "public_sha256": "2c021a041e368916740ab4ab2f7e2eb46795d963314d333f1c75e5f5c2bb4c91"
+  },
+  {
+    "path": "gates/03.log",
+    "original_sha256": "78419dcdf6604e34462af604ee3e4e7a51aa4ad86aebd14d2bedd026f3a4b5be",
+    "public_sha256": "71d2286a3d7181ed9bb64cc77a9c63aba5f4222900c108e5dc62d58c3720e343"
+  },
+  {
+    "path": "gates/04.log",
+    "original_sha256": "46a8ccd0ec21d5f2fa31d158dd87ad64aeca13ef243666682ed14a7e05721a44",
+    "public_sha256": "59f45b7c5f4577f611258cc9e91e20666098653287685d30657320e41e299e58"
+  },
+  {
+    "path": "gates/05.log",
+    "original_sha256": "2fa2ba34060090ce33f2fec8cc78a0e6c3567ec593c1975ca2df535741efe544",
+    "public_sha256": "745bcbe511bf9377ff83289f3a932e72d3bc60645e1540fc0ee483e3138f3336"
+  },
+  {
+    "path": "gates/06.log",
+    "original_sha256": "7f7148dab249fc10f1de62899fcf65c3b071a4a0fe55090048195a9da5d8f86a",
+    "public_sha256": "e131e0cc1b9675ccd39b1cb5d94deba9074b7be489d8b6aa20cbb6ba6dfed955"
+  },
+  {
+    "path": "gates/07.log",
+    "original_sha256": "9d043d253fb807171cb7be71055fc69a32be0325459f64a8331052e932b482eb",
+    "public_sha256": "ea5f53321d48138e005dfc045079944d1fa1a80608f6a1286a55ab12f67d98fe"
+  },
+  {
+    "path": "gates/08.log",
+    "original_sha256": "b5605928b0c573ce93183786d1b008820d6566051cd974d82b8453d92c426a23",
+    "public_sha256": "0e0feac4e93942b1b1708c84410298a817a49655228aa5f99a514a014875f207"
+  },
+  {
+    "path": "gates/09.log",
+    "original_sha256": "83dc1fdfc3efa11105ea05310d7a05974a20e3a462d5486e71ac387622c8c4f6",
+    "public_sha256": "0119b63596637373a42f9cb5821b75d7d2c7200aabe39a88d20ecce563c0f56a"
+  },
+  {
+    "path": "gates/commands.json",
+    "original_sha256": "abeec007eb042b9b6de27671855a277d9705b26321908fa04e75cabbdd9f55ea",
+    "public_sha256": "abeec007eb042b9b6de27671855a277d9705b26321908fa04e75cabbdd9f55ea"
+  }
+]

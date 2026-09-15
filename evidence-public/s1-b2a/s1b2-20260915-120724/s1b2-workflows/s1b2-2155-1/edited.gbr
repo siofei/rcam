@@ -1,0 +1,23 @@
+G04 RCam normalized S1 output*
+%FSLAX66Y66*%
+%MOMM*%
+%ADD10C,10*%
+%ADD11C,6*%
+%ADD12C,2*%
+D10*
+%LMN*%
+%LR0*%
+%LS1*%
+X2000000Y2000000D03*
+%LMN*%
+%LR0*%
+%LS1*%
+D12*
+%LMN*%
+%LR0*%
+%LS1*%
+X2000000Y2000000D03*
+%LMN*%
+%LR0*%
+%LS1*%
+M02*

@@ -1,0 +1,135 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.214324333,
+    "log": "gates/01.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "check",
+      "--workspace",
+      "--all-targets",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 2.076335625,
+    "log": "gates/02.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--locked",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 1.52720425,
+    "log": "gates/03.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 19.098479875,
+    "log": "gates/04.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s1b_edit_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 4.235568750000002,
+    "log": "gates/05.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s1b2_edit_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 2.2618883340000018,
+    "log": "gates/06.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "automation_contract"
+    ],
+    "exit_code": 0,
+    "seconds": 0.9439605840000027,
+    "log": "gates/07.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "headless_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 1.0257138329999975,
+    "log": "gates/08.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--edges",
+      "normal"
+    ],
+    "exit_code": 0,
+    "seconds": 0.10881783299999981,
+    "log": "gates/09.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "-p",
+      "editor-app"
+    ],
+    "exit_code": 0,
+    "seconds": 8.350689540999998,
+    "log": "gates/10.log"
+  }
+]

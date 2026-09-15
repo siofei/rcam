@@ -516,11 +516,18 @@ pub enum SemanticGeometry {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ObjectOrigin {
+    Imported { command_index: usize },
+    Generated { operation_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SemanticObject {
     pub object_id: String,
     pub geometry: SemanticGeometry,
     pub exposure: Exposure,
-    pub source_command: usize,
+    pub origin: ObjectOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -663,20 +670,16 @@ impl SemanticDocument {
             if !valid_id(&layer.id) || !layer_ids.insert(layer.id.clone()) {
                 return Err(SemanticError::DuplicateId(layer.id.clone()));
             }
-            let mut previous = None;
             for object in &layer.objects {
                 if !valid_id(&object.object_id) || !object_ids.insert(object.object_id.clone()) {
                     return Err(SemanticError::DuplicateId(object.object_id.clone()));
                 }
                 validate_geometry(&object.geometry, &aperture_ids)?;
-                if let Some(command) = previous
-                    && object.source_command < command
+                if let ObjectOrigin::Generated { operation_id } = &object.origin
+                    && !valid_id(operation_id)
                 {
-                    return Err(SemanticError::Invalid(
-                        "object order is not source order".into(),
-                    ));
+                    return Err(SemanticError::Invalid("invalid generated origin".into()));
                 }
-                previous = Some(object.source_command);
                 objects += 1;
                 if let SemanticGeometry::Region { contours } = &object.geometry {
                     for contour in contours {

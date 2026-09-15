@@ -351,3 +351,31 @@ Flash、Line、轴向 RectangularSweep、Arc 和完整 Region 可平移，光圈
 成功的新路径导出以当前内容哈希更新保存基线；失败/待确认不更新，也不清除历史。
 当前只支持单层导入文档，未来多层导入须扩展为逐层保存基线。
 所有接口仍同步；GUI 后台任务、edit.batch、其他变换、文字和完整保存产品流程未交付。
+
+## S1-B1.1 / S1-B2a 已实施接口（Mac-first）
+
+依据 ADR 0009，覆盖前述阶段的复制／删除缺失说明。仍不实现跨图层剪贴板、edit.batch 或异步任务。
+
+| 操作 | params | 结果 |
+|---|---|---|
+| objects.duplicate | `{layer_id,object_ids,dx_mm,dy_mm}` | 一个原子事务；changed_object_ids 为全新副本 ID，按源曝光顺序返回 |
+| objects.delete | `{layer_id,object_ids}` | 一个原子事务；changed_object_ids 为删除的 ID，按源曝光顺序返回 |
+
+两者都必须携带 document_id 与 expected_revision，返回已有 EditResult 结构；参数严格拒绝未知字段。
+同一图层内，各副本插入各自源对象之后；原对象及副本各自相对曝光顺序保持，不能解释为隔离图像复制。
+成功 Duplicate 才消耗单调 ID；Undo/Delete 不回收，Redo 恢复相同 ID、几何、极性、origin 和位置。
+零偏移 Duplicate 仍创建新对象；零 Move／f64 舍入后所有几何未变的 Move 返回 INVALID_ARGUMENT。
+空集、重复／未知 ID、锁定层、非法坐标、数量／历史预算超限均原子拒绝，Redo 仅被成功的新编辑清空。
+max_edit_objects=10000（max_move_objects 保留同值）；100 条／64 MiB 历史预算继续适用，
+插入还检查文档 500000 对象／2000000 Region 边上限。字节预算含前后 ID 顺序守卫与暂存合并数组。
+
+ObjectInfo.object 的 source_command 替换为 origin：
+`{"kind":"imported","command_index":123}` 或 `{"kind":"generated","operation_id":"..."}`。
+这是开发期 DTO 迁移；调用方不得从来源序号推断当前顺序，顺序以 objects.query 返回数组为准。
+分页游标在插入／删除／Undo／Redo 后均因 revision 改变而失效。
+NOT_FOUND 的 details 统一为 `{"entity":"document|layer|object|aperture","id":"..."}`。
+
+document.get/open 的 last_saved_path 初始 null；成功导出后为规范化目标路径。
+source_path/source_sha256 始终指向打开来源，未因导出改写；GUI 后续要分别显示来源与最后保存位置。
+失败导出保留 last_saved_path、dirty 和历史。Undo/Redo 不改变最后写入文件路径，dirty 仍按保存内容基线判断。
+旋转／镜像仅冻结 ADR 0010，仍不在 supported_operations 中。

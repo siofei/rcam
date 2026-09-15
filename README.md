@@ -1,16 +1,16 @@
-# RCam Gerber editor — Mac-first S1-B1
+# RCam Gerber editor — Mac-first S1-B2a
 
 The headless application service now supports authorized Gerber open/query,
-atomic multi-object Move, Undo/Redo, validation, safe export to a new path and
+atomic multi-object Move/Duplicate/Delete, Undo/Redo, validation, safe export to a new path and
 reopen. Geometry stays in the shared f64 manufacturing model; history stores
-only changed objects. The window remains the S0 demonstration and now retains
+changed geometry or inserted/deleted objects plus bounded ID order guards. The window remains the S0 demonstration and now retains
 its application service for its lifetime.
 
 Current stage checks target macOS arm64. Windows is deferred, not passed.
 This is not EditableV1, full CORE10 acceptance or a production release.
 CORE-03/07/08 compatibility gaps and independent arc reference differences
-remain recorded. See `docs/S1_B1_REVIEW.md` and `docs/adr/0008-mac-first-s1b1.md`.
-Historical S1-A.1 evidence remains in `evidence-public/s1-a1/`.
+remain recorded. See `docs/S1_B2_REVIEW.md` and `docs/adr/0009-s1-b2a-object-transactions.md`.
+Historical S1-A.1 and S1-B1 evidence remains under `evidence-public/`; new runs use their own run IDs.
 
 The S0 window uses English labels so the default eframe font remains legible
 on a clean installation; no user font is bundled. Chinese UI and vector text
@@ -21,7 +21,7 @@ support are deferred to the planned S4 scope.
 ```text
 crates/editor-core/       f64/mm geometry and layer coverage
 crates/gerber-io/         strict finite parser adapter
-crates/editor-service/    UI-free S0/S1-B1 service and JSON request envelope
+crates/editor-service/    UI-free S0/S1-B2a service and JSON request envelope
 crates/editor-app/        eframe + egui-wgpu S0 demonstration window
 fixtures/synthetic/       immutable S0-C inputs and independent S1-A truth
 docs/DEPENDENCIES.md      locked dependency and alternative record
@@ -46,7 +46,7 @@ cargo run --release --locked -p editor-app
 The real parser/service contracts live in `automation_contract.rs` and
 `headless_workflow.rs` under `crates/editor-service/tests/`. They exercise
 open/query/validate/export/reopen without a window. This is an unchanged
-document baseline; a V1 headless editing workflow is not yet implemented.
+document baseline; the S1-B1 Move workflow and S1-B2a Duplicate/Delete workflows are implemented; the full V1 headless automation workflow remains incomplete.
 
 ```text
 cargo test --locked -p editor-service --test automation_contract
