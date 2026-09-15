@@ -1,0 +1,12 @@
+cargo test --locked -p editor-service --test s1b2c_workspace_workflow
+   Compiling editor-core v0.1.0 ($WORKSPACE/crates/editor-core)
+   Compiling gerber-io v0.1.0 ($WORKSPACE/crates/gerber-io)
+   Compiling editor-service v0.1.0 ($WORKSPACE/crates/editor-service)
+error[E0026]: variant `Flash` does not have a field named `at`
+   --> crates/editor-service/tests/s1b2c_workspace_workflow.rs:240:51
+    |
+240 |     if let editor_core::SemanticGeometry::Flash { at, .. } =
+    |                                                   ^^ variant `Flash` does not have this field
+
+For more information about this error, try `rustc --explain E0026`.
+error: could not compile `editor-service` (test "s1b2c_workspace_workflow") due to 1 previous error

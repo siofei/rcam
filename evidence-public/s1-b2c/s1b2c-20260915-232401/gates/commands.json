@@ -1,0 +1,80 @@
+[
+  {
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "seconds": 0.297328917,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo check --workspace --all-targets --locked",
+    "exit_code": 0,
+    "seconds": 2.855904875,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 0.2425277910000001,
+    "log": "03.log"
+  },
+  {
+    "command": "cargo test --workspace --locked",
+    "exit_code": 0,
+    "seconds": 16.156143125,
+    "log": "04.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b_edit_workflow",
+    "exit_code": 0,
+    "seconds": 2.3638777920000003,
+    "log": "05.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2_edit_workflow",
+    "exit_code": 0,
+    "seconds": 1.8095178749999974,
+    "log": "06.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2b_transform_workflow",
+    "exit_code": 0,
+    "seconds": 1.8642069170000006,
+    "log": "07.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2c_workspace_workflow",
+    "exit_code": 0,
+    "seconds": 0.9114495829999996,
+    "log": "08.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test automation_contract",
+    "exit_code": 0,
+    "seconds": 0.9152089589999974,
+    "log": "09.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test headless_workflow",
+    "exit_code": 0,
+    "seconds": 0.9818187499999986,
+    "log": "10.log"
+  },
+  {
+    "command": "cargo tree --locked -p editor-service --edges normal",
+    "exit_code": 0,
+    "seconds": 0.08615216599999798,
+    "log": "11.log"
+  },
+  {
+    "command": "cargo build --release --locked -p editor-app",
+    "exit_code": 0,
+    "seconds": 6.484441749999995,
+    "log": "12.log"
+  },
+  {
+    "command": "python3 scripts/source_manifest.py --check",
+    "exit_code": 0,
+    "seconds": 0.33029824999999846,
+    "log": "13.log"
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2c_workspace_workflow",
+    "exit_code": 0,
+    "seconds": 5.0222721660000005,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo test --workspace --locked",
+    "exit_code": 0,
+    "seconds": 29.988910667,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 101,
+    "seconds": 4.098302042,
+    "log": "03.log"
+  }
+]

@@ -1,0 +1,315 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "workspace-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "workspace-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2c-20260915-232401/workflow/workspace-72584-6/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "workspace-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "workspace-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 3.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "workspace-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "workspace-2",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2c-20260915-232401/workflow/workspace-72584-6/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "layer.update",
+      "params": {
+        "expected_workspace_revision": "0",
+        "layer_id": "layer-1",
+        "visible": false
+      },
+      "request_id": "workspace-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "workspace-3",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2c-20260915-232401/workflow/workspace-72584-6/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "1"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "workspace-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "workspace-4",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2c-20260915-232401/workflow/workspace-72584-6/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "1"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.move",
+      "params": {
+        "dx_mm": 5,
+        "dy_mm": -1,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ]
+      },
+      "request_id": "workspace-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "workspace-5",
+      "result": {
+        "changed_object_ids": [
+          "object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "workspace-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "workspace-6",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "1",
+        "source_path": "$WORKSPACE/evidence/s1b2c-20260915-232401/workflow/workspace-72584-6/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 1,
+        "workspace_revision": "1"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "document.close",
+      "params": {
+        "discard_changes": false
+      },
+      "request_id": "workspace-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "CONFIRMATION_REQUIRED",
+        "details": {
+          "field": "params.discard_changes"
+        },
+        "message": "文档有未保存修改，需要明确放弃。"
+      },
+      "job_id": null,
+      "request_id": "workspace-7",
+      "result": null,
+      "revision": "1",
+      "status": "confirmation_required",
+      "warnings": []
+    }
+  }
+]

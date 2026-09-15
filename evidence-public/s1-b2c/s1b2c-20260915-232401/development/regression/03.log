@@ -1,0 +1,31 @@
+cargo clippy --workspace --all-targets --locked -- -D warnings
+    Checking editor-core v0.1.0 ($WORKSPACE/crates/editor-core)
+    Checking gerber-io v0.1.0 ($WORKSPACE/crates/gerber-io)
+    Checking editor-service v0.1.0 ($WORKSPACE/crates/editor-service)
+error: this `if` statement can be collapsed
+   --> crates/editor-service/src/lib.rs:773:9
+    |
+773 | /         if let Some(name) = &params.display_name {
+774 | |             if name.trim().is_empty() || name.len() > 1024 {
+775 | |                 return Err(ServiceError::invalid_field(
+776 | |                     "params.display_name",
+...   |
+780 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+773 ~         if let Some(name) = &params.display_name
+774 ~             && (name.trim().is_empty() || name.len() > 1024) {
+775 |                 return Err(ServiceError::invalid_field(
+...
+778 |                 ));
+779 ~             }
+    |
+
+error: could not compile `editor-service` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `editor-service` (lib test) due to 1 previous error

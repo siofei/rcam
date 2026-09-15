@@ -1,0 +1,12 @@
+{
+  "normal_service_dependency_tree": "gates/11.log",
+  "forbidden_window_gpu_dependencies": [
+    "egui",
+    "eframe",
+    "egui-wgpu",
+    "wgpu",
+    "winit"
+  ],
+  "found": [],
+  "status": "PASS"
+}

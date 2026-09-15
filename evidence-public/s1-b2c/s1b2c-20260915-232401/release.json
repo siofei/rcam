@@ -1,0 +1,5 @@
+{
+  "path": ".tools/target/release/editor-app",
+  "sha256": "21942cedbdec8e72228202de17e10958837c8e13006540532b7330fd3b4211af",
+  "stage": "S0 reference demo retained; no S2 GUI claims"
+}

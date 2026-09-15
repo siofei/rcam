@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "kind": "local_stage_checks_not_full_acceptance",
+  "stage": "S1-B2c",
+  "run_id": "s1b2c-20260915-232401",
+  "tested_code_commit": "1b3b2a5ac4b312d1ced3b94393fd92ba73e914ac",
+  "status": "PASS",
+  "workspace": {
+    "passed": 181,
+    "failed": 0,
+    "ignored": 2
+  },
+  "workspace_specialized": {
+    "passed": 17,
+    "failed": 0
+  },
+  "windows": "deferred / not executed",
+  "full_v1": "not passed",
+  "core10": "not completed",
+  "gui_gpu_ime": "not executed"
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2c_workspace_workflow",
+    "exit_code": 101,
+    "seconds": 4.726424292,
+    "log": "01.log"
+  }
+]
