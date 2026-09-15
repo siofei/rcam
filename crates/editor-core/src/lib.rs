@@ -1,6 +1,9 @@
 //! UI-free f64 manufacturing geometry, validation and bounded atomic editing.
 //! The original S0 display model remains separate from the S1 semantic model.
 
+mod bounds;
+pub mod hit_test;
+pub use bounds::BoundsMm;
 pub mod edit;
 mod transform;
 

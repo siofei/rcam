@@ -1,3 +1,6 @@
+> 当前推进到 **S2-A.2：精确对象几何命中**。公开 `objects.hit_test` 与制造边界查询。
+> GUI 仍是 S0 演示；S2-A.3 GUI 尚未完成。契约见 [ADR 0014](docs/adr/0014-s2a2-hit-test.md)。
+
 # RCam Gerber editor — Mac-first S1-B2c
 
 The headless application service now supports authorized Gerber open/query,
@@ -28,7 +31,7 @@ See ADR 0012 and `docs/S1_B2C_REVIEW.md` for scope and evidence. The next stage 
 ```text
 crates/editor-core/       f64/mm geometry and layer coverage
 crates/gerber-io/         strict finite parser adapter
-crates/editor-service/    UI-free S0/S1-B2c service and JSON request envelope
+crates/editor-service/    UI-free S0/S2-A.2 service and JSON request envelope
 crates/editor-app/        eframe + egui-wgpu S0 demonstration window
 fixtures/synthetic/       immutable S0-C inputs and independent S1-A truth
 docs/DEPENDENCIES.md      locked dependency and alternative record

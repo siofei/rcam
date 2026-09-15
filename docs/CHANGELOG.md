@@ -1,5 +1,17 @@
 # 文档变更记录
 
+## 2026-09-16 · S2-A.2 精确 Hit Test
+
+新增 objects.hit_test、严格 DTO/错误/资源契约、f64 材料距离和有序 Macro 边界查询，
+新增独立几何及真实 JSON 编辑/历史回归。ADR 0014 明确失败边界与阶段退出范围。
+未修改 parser/writer/制造历史，未实现 GUI 或 Windows；原完整验收门槛保持。
+
+## S2-A.1：制造边界查询
+
+新增 ADR 0013，按 Mac-first 小闭环实现 document.bounds/layer.bounds，供后续 GUI Fit 使用。
+新增全部当前几何的解析外框和真实服务往返检查；无新依赖，不改制造模型、parser 或 writer。
+S2-A GUI、点选及 Windows 仍未完成，原 96 用例身份及门槛不变。
+
 ## 2026-09-15 · S1-B2b
 
 按下一阶段交接实现 Rotate/Mirror，复用原子 Modify 事务；修复两边 Region 的共享端点

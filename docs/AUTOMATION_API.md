@@ -411,3 +411,36 @@ expected_revision；params 必填 layer_id、expected_workspace_revision（十�
 ```
 
 示例ID必须换成真实查询结果；并非已运行脚本。专项入口 `s1b2c_workspace_workflow` 实际验证服务调用。
+
+## S2-A.1 已实现：制造边界
+
+- `document.bounds` params `{}`；`layer.bounds` params `{"layer_id":"真实查询取得的ID"}`。
+- 使用 api_version=1、request_id、document_id；只读接口不接受 expected_revision。
+- result `{document_id, revision, bounds}`；bounds 为 null 或
+  `{min_x_mm,min_y_mm,max_x_mm,max_y_mm}`，均为 f64 毫米。空内容为 null，
+  未知文档/图层是 NOT_FOUND，非法或多余字段是 INVALID_ARGUMENT。
+- revision 绑定查询快照并与信封一致；不改内容/历史/dirty/保存路径。
+- 包围 Dark/Clear 制造对象，不受工作区显隐锁定影响。Macro 为 Dark primitive 保守包络，
+  不扣除局部 Clear；不是最终可见区域或命中结果。详见 ADR 0013。
+- `objects.hit_test` 与 S2-A GUI 仍未实现；不公布未实现的点选能力。
+
+## S2-A.2 已实现：精确对象几何命中
+
+`objects.hit_test` 只读 params：
+
+```json
+{"layer_id":"真实图层ID","point":{"x_mm":12.34,"y_mm":56.78},"tolerance_mm":0.05}
+```
+
+结果 `{document_id,revision,layer_id,object_ids}`；revision 与信封一致，ID 保持曝光顺序。
+不接受 expected_revision；顶层/params/point 未知字段严格拒绝。坐标各轴绝对值不超过
+1e9 mm、tolerance 位于 [0,1e9]，全部必须有限。INVALID_ARGUMENT 定位非法字段；
+未知文档/图层 NOT_FOUND。资源预算超限 RESOURCE_LIMIT，不能证明的数值退化
+UNSUPPORTED_FEATURE；两者均整次拒绝，不返回部分 ID。
+
+命中为到独立对象材料闭包的 f64 欧氏距离 <= tolerance_mm；孔洞内距材料仍远的点不命中。
+Dark/Clear 对象均可命中；工作区显隐/锁定/名称不参与；不改变 revision/dirty/history。
+这不是最终可见像素 API，也不是 GUI 已实现。Macro 计算有序布尔材料的线段/圆弧边界，
+不使用 S2-A.1 保守包络作真值。capabilities.resource_limits.max_hit_test_work=2000000；
+普通几何线性扫描、Macro 每次查询共享准备且有边界组合预算，不宣传大规模实时性能。
+详细几何、舍入和失败规则见 ADR 0014。

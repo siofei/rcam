@@ -3349,5 +3349,44 @@
     ],
     "status": "未执行",
     "platform_note": "macOS local evidence separately recorded; Windows deferred; required_platforms unchanged"
+  },
+  "s2a2_local_checks": {
+    "adr": "adr/0014-s2a2-hit-test.md",
+    "stage": "S2-A.2",
+    "platform": "macos-arm64",
+    "windows_status": "deferred / not executed",
+    "case_ids": [
+      "AT-010",
+      "AT-011",
+      "AT-012",
+      "AT-013",
+      "AT-014",
+      "AT-015",
+      "AT-016",
+      "AT-026",
+      "AT-027",
+      "AT-028",
+      "AT-030",
+      "AT-039",
+      "AT-040",
+      "AT-088",
+      "AT-089",
+      "AT-090",
+      "AT-095"
+    ],
+    "checks": [
+      "C/R/O/P/Macro material distance, holes and LocalTransform",
+      "Line including tiny nonzero and zero-length segments",
+      "Exact RectangularSweep algorithm including diagonal; manufacturing support unchanged",
+      "Canonical Arc average radius, radial joins, CW/CCW, full and zero sweep",
+      "Canonical Region/cut-in/arc boundary distance",
+      "Independent rectangle-cell distance oracle for ordered Macro Dark/Clear",
+      "Stable ordered IDs including Clear; no implicit workspace inputs",
+      "Strict point/tolerance/revision/unknown-field contracts",
+      "Move/Duplicate/Delete/Rotate/Mirror/Undo/Redo and export/reopen",
+      "Resource/numerical failure returns no partial IDs and no state change"
+    ],
+    "full_case_rule": "Local checks do not replace complete GUI/platform steps or grant full AT/V1 PASS; original required_platforms and thresholds unchanged.",
+    "status": "未执行"
   }
 }

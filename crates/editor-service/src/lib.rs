@@ -40,6 +40,7 @@ pub struct Capabilities {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceLimits {
+    pub max_hit_test_work: usize,
     pub max_source_bytes: usize,
     pub max_objects: usize,
     pub max_query_results: usize,
@@ -234,6 +235,45 @@ pub struct LayerUpdateParams {
     pub display_name: Option<String>,
     pub visible: Option<bool>,
     pub locked: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HitTestPoint {
+    pub x_mm: f64,
+    pub y_mm: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HitTestParams {
+    pub layer_id: String,
+    pub point: HitTestPoint,
+    pub tolerance_mm: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HitTestResult {
+    pub document_id: String,
+    pub revision: String,
+    pub layer_id: String,
+    pub object_ids: Vec<String>,
+}
+
+/// Revision-bound read-only manufacturing envelope, including Clear objects.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoundsResult {
+    pub document_id: String,
+    pub revision: String,
+    pub bounds: Option<editor_core::BoundsMm>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayerBoundsParams {
+    pub layer_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -512,6 +552,7 @@ impl ApplicationService {
                     "production export".into(),
                 ],
                 resource_limits: ResourceLimits {
+                    max_hit_test_work: 0,
                     max_source_bytes: gerber_io::MAX_SOURCE_BYTES,
                     max_objects: gerber_io::MAX_OBJECTS,
                     max_query_results: 0,
@@ -529,7 +570,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S1-B2c workspace state and manufacturing history".into(),
+            stage: "S2-A.2 exact object hit-test".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -548,6 +589,9 @@ impl ApplicationService {
                 "history.redo".into(),
                 "layers.list".into(),
                 "layer.update".into(),
+                "objects.hit_test".into(),
+                "layer.bounds".into(),
+                "document.bounds".into(),
                 "objects.query".into(),
                 "objects.get".into(),
                 "document.validate".into(),
@@ -583,6 +627,7 @@ impl ApplicationService {
                 "production export".into(),
             ],
             resource_limits: ResourceLimits {
+                    max_hit_test_work: editor_core::hit_test::MAX_HIT_TEST_WORK,
                 max_source_bytes: gerber_io::S1_MAX_SOURCE_BYTES,
                 max_objects: gerber_io::S1_MAX_OBJECTS,
                 max_query_results: 1000,
@@ -793,6 +838,77 @@ impl ApplicationService {
             record.workspace_revision = revision;
         }
         Ok(document_info(document_id, record))
+    }
+
+    pub fn objects_hit_test(
+        &self,
+        document_id: &str,
+        params: HitTestParams,
+    ) -> Result<HitTestResult, ServiceError> {
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        let point = MmPoint::new(params.point.x_mm, params.point.y_mm);
+        let object_ids = record.document.hit_test(&params.layer_id, point, params.tolerance_mm)
+            .map_err(|error| {
+                use editor_core::hit_test::HitTestError;
+                match error {
+                    HitTestError::InvalidArgument(field) => ServiceError::invalid_field(field, "invalid hit-test parameter"),
+                    HitTestError::MissingLayer(id) => ServiceError::not_found("layer", &id),
+                    HitTestError::Geometry(error) => map_semantic_error(error),
+                    HitTestError::ResourceLimit => ServiceError::resource("hit_test_work", editor_core::hit_test::MAX_HIT_TEST_WORK, editor_core::hit_test::MAX_HIT_TEST_WORK + 1),
+                    HitTestError::Unsupported(reason) => ServiceError { code: "UNSUPPORTED_FEATURE".into(), message: reason.into(), details: serde_json::json!({"operation":"objects.hit_test","reason":reason}) },
+                }
+            })?;
+        Ok(HitTestResult {
+            document_id: document_id.into(),
+            revision: record.revision.to_string(),
+            layer_id: params.layer_id,
+            object_ids,
+        })
+    }
+
+    pub fn document_bounds(&self, document_id: &str) -> Result<BoundsResult, ServiceError> {
+        self.bounds(document_id, None)
+    }
+
+    pub fn layer_bounds(
+        &self,
+        document_id: &str,
+        params: LayerBoundsParams,
+    ) -> Result<BoundsResult, ServiceError> {
+        if params.layer_id.trim().is_empty() {
+            return Err(ServiceError::invalid_field(
+                "layer_id",
+                "layer_id must not be empty",
+            ));
+        }
+        self.bounds(document_id, Some(&params.layer_id))
+    }
+
+    fn bounds(
+        &self,
+        document_id: &str,
+        layer_id: Option<&str>,
+    ) -> Result<BoundsResult, ServiceError> {
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        if let Some(id) = layer_id
+            && !record.document.layers.iter().any(|layer| layer.id == id)
+        {
+            return Err(ServiceError::not_found("layer", id));
+        }
+        Ok(BoundsResult {
+            document_id: document_id.into(),
+            revision: record.revision.to_string(),
+            bounds: record
+                .document
+                .manufacturing_bounds(layer_id)
+                .map_err(map_semantic_error)?,
+        })
     }
 
     pub fn objects_get(
@@ -1253,6 +1369,33 @@ impl ApplicationService {
                 let document_id = required_document_id(request)?;
                 let layers = self.layers_list(document_id)?;
                 serde_json::to_value(layers).map_err(serialize_error)?
+            }
+            "objects.hit_test" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                let id = required_document_id(request)?;
+                serde_json::to_value(self.objects_hit_test(id, parse_params(&request.params)?)?)
+                    .map_err(serialize_error)?
+            }
+            "document.bounds" | "layer.bounds" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                let document_id = required_document_id(request)?;
+                let result = if request.op == "document.bounds" {
+                    parse_empty_params(&request.params)?;
+                    self.document_bounds(document_id)?
+                } else {
+                    self.layer_bounds(document_id, parse_params(&request.params)?)?
+                };
+                serde_json::to_value(result).map_err(serialize_error)?
             }
             "layer.update" if self.file_access.is_some() => {
                 let id = required_document_id(request)?;

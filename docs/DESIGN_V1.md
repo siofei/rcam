@@ -874,3 +874,18 @@ S1-B2a 删除至空图层：允许合法完整 Gerber 文档含零图元，继�
 ADR 0012 实施 ADR 0011 的模型边界：图层显示名/显隐/锁定属于服务 workspace，独立 workspace_revision，
 不进入制造 hash、writer 或历史；新编辑检查锁，Undo/Redo 恢复制造事务不受当前锁阻断。
 S2 hit-test/bounds 仅冻结精确 f64 边界，本轮不开放；其余 V1 门槛不变。
+
+### S2-A.1 实施注记：制造边界查询
+
+见 [ADR 0013](adr/0013-s2a-bounds.md)。先实现 GUI Fit 的 f64 制造边界前置闭环，
+`document.bounds` / `layer.bounds` 与现有编辑/历史/导出服务共用同一版本模型。
+包围全部 Dark/Clear 对象；Macro 为 Dark 原语保守包络，非最终布尔可见区域的最紧框。
+其余 S2-A 点选/渲染/GUI 退出要求仍保留，不能用查询测试替代 Mac GUI 验收。
+
+### S2-A.2 实施注记：对象材料点选
+
+见 [ADR 0014](adr/0014-s2a2-hit-test.md)。`objects.hit_test` 提供独立对象材料闭包距离，
+包含 Clear，不读取 workspace。支持标准/宏 Flash 孔洞和局部变换、真实扫掠、原圆弧
+偏差/径向接线及 canonical Region；数值歧义/资源超限整次拒绝。
+RectangularSweep 斜向仅作为独立查询算法验证，不改变轴向制造/导入/导出支持范围。
+本轮停止在 S2-A.2 无 GUI 服务，S2-A.3 GUI 与双平台完整 V1 门槛保留。
