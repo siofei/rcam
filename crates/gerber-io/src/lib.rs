@@ -12,6 +12,9 @@ use gerber_parser::{GerberDoc, parse};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
 
+mod s1;
+pub use s1::*;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct S0Scene {
     pub document: Document,

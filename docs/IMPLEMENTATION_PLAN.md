@@ -34,7 +34,7 @@ S0 整体退出还要求：REAL30/CORE10 预先冻结、规范差异审查、许
 
 用户于 2026-09-14 授权只读使用 /Volumes/硬盘盒/0727SMT。仅在本地分析，不上传、不修改源文件。先盘点已展开文件，压缩档不自动解包到源目录。私有清单和路径保存在 fixtures/private 与 evidence（Git 忽略）。CORE10 选择须覆盖业务文件并在语义测试前固定，不能按最终成功率事后挑选。
 
-## 当前任务 S0-C：范围收口与原生基线
+## 历史任务 S0-C：范围收口与原生基线
 
 依据 RCam_S0C_S1_Development_Guide.docx；关联需求/AT/允许修改范围见 ADR 0005。
 本轮仅修改审计工具、测试、公开小样与配套文档；无产品代码实现任务，无需委派 Luna 产品实现。
@@ -42,3 +42,17 @@ S0 整体退出还要求：REAL30/CORE10 预先冻结、规范差异审查、许
 独立工具对照、服务拒绝边界回归、运行ID证据和退出清单。Windows实机缺失保持阻塞。
 下一轮 S1-A 先完成目标子集语义及 writer；S1-B 实现 Open→Query→Move→Undo/Redo→Export→Reopen。
 Move 是首个编辑动作，不提前同时铺开旋转/文字/完整GUI。阶段正式切换受 S0-C 退出门禁约束。
+
+## 当前任务 S1-A：语义核心与安全 Writer
+
+授权任务书：`RCam_S1A_NEXT_TASK.md`。允许在 Windows 证据等待期间开展核心开发；
+S0-C platform gate 仍为 blocked，不能据本机结果标记双平台通过。
+需求：R01–R06、R14–R16、R19–R22；相关局部验收：AT-001、003–020、053、055–059、080–081、085–089、092–095。
+允许修改：editor-core、gerber-io、editor-service 及其测试，必要的依赖声明（须记录理由）、
+公开新增测试样本、开发期核验脚本、能力/API/实施/评审文档和源码清单。
+保留既有 GUI/S0 行为，不改原 18 个 S0-C 样本真值、96 个 AT 身份和阈值。
+
+Luna 负责产品代码，按 core/io 和 service 划分文件边界；主代理负责独立测试、
+只读 CORE10 核验、构建门禁与交付结论。新闭环为 Open → Query → Validate →
+Export(new path) → Reopen，范围严格按 ADR 0005；Move/Undo/Redo 留待 S1-B。
+证据另存 `evidence/s1-a-20260915-implementation/`，包含早期失败，不覆盖历史。

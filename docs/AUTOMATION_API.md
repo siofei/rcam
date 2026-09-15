@@ -280,3 +280,37 @@ cargo test --locked -p editor-service --test headless_workflow
 保留 document.open_s0 的源文本/调用方文档 ID 临时形状；不是正式 document.open 路径接口。
 `execute_json` 的 Rust 返回类型已迁移为 JSON Value，成功/业务失败/解码失败均有同一信封。
 可可靠取得的 request_id 回显，歧义/畸形输入为 null。对应回归测试与尚未启用的生命周期设计见 ADR 0003。
+
+## S1-A 接口形状（2026-09-15）
+
+本节描述本轮实现的窄接口；实际执行结果见 `S1_A_REVIEW.md`，不代表完整 V1 契约或双平台通过。
+S0 演示仍使用原四个接口。宿主须通过 `ApplicationService::with_file_access` 注入
+`FileAccessPolicy::new(working_directory, read_roots, write_roots)`，才启用 S1 文件入口。
+默认构造器没有文件授权；请求不能增加授权目录。路径规范化后检查真实目标，读入时限制字节数。
+
+| 操作 | params | 结果要点 |
+|---|---|---|
+| `document.open` | `{path}`；无 document_id | 新文档/图层 ID、revision="0"、读入时计算的 source_sha256、诊断 |
+| `document.get` | `{}` | 文档来源和只读信息 |
+| `layers.list` | `{}` | 图层信息数组，含 layer_id/name/object_count |
+| `objects.query` | `{layer_id, geometry_type?, region_mm?, relation?, limit?, cursor?}` | 有序 objects、total、next_cursor、revision |
+| `objects.get` | `{layer_id, object_id}` | 对象只读 DTO |
+| `document.validate` | `{}` | 真实语义校验结果 |
+| `gerber.export_layer` | `{layer_id,path,overwrite,metadata_policy}` | exported_revision/current_revision、path、sha256、bytes |
+
+除 open 外须提供 document_id；export 还须提供十进制字符串 expected_revision。
+本阶段没有内容编辑，revision 保持 0，旧版本导出请求仍返回 REVISION_CONFLICT。
+未知字段（包括嵌套字段）、版本和操作严格拒绝。所有新操作均在进程内同步调用，无窗口依赖；
+尚未接入完整 GUI 的后台任务，也未实现 Move/Undo/Redo、jobs、文字、脚本或网络服务。
+
+查询 region_mm 字段为 min_x_mm/min_y_mm/max_x_mm/max_y_mm，关系为 contains/intersects。
+分页上限 1000，游标绑定文档、revision 和过滤条件。当前物理矩形查询仅开放已经实现的
+圆形 Flash、圆形线段、轴向矩形扫掠精确判断；其他几何或变换组合明确返回 UNSUPPORTED_FEATURE。
+未指定物理矩形时可按图层/类型枚举对象。这不等于完整 AT-089 或 GUI 选择验收通过。
+
+导出只接受 overwrite.mode="deny"；已有目标返回结构化待确认结果，但本阶段仍不提供覆盖实现。
+元数据默认 require_confirmation；实际有待移除类别时不写目标，调用方使用
+`{mode:"drop_listed",categories:[...]}` 明确授权全部受影响类别后重试。
+IN/LN 与属性均作为来源诊断处理，不作为稳定 ID；无损失时不重复确认。
+共享 IO Writer 负责语义/数值校验和规范化往返核对，服务负责主机权限、revision 和元数据策略。
+临时文件只发布到新路径，失败不覆盖已有目标。

@@ -1,4 +1,5 @@
-use editor_service::ApplicationService;
+use editor_service::{ApplicationService, FileAccessPolicy};
+use std::path::Path;
 
 const SAMPLE: &str = include_str!("../../../fixtures/synthetic/s0_polarity.gbr");
 
@@ -73,5 +74,94 @@ fn s0_json_contract_rejects_unknown_fields_and_unimplemented_edits() {
     assert_eq!(
         service.execute_json(&edit.to_string())["error"]["code"],
         "UNSUPPORTED_OPERATION"
+    );
+}
+
+#[test]
+fn s1_json_contract_publishes_only_authorized_real_operations() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let service = ApplicationService::with_file_access(FileAccessPolicy::new(
+        root.clone(),
+        [root.join("fixtures/synthetic")],
+        [std::env::temp_dir()],
+    ));
+    let capabilities = service.capabilities();
+    for operation in [
+        "system.capabilities",
+        "document.open",
+        "document.get",
+        "layers.list",
+        "objects.query",
+        "objects.get",
+        "document.validate",
+        "gerber.export_layer",
+    ] {
+        assert!(
+            capabilities
+                .supported_operations
+                .iter()
+                .any(|item| item == operation),
+            "{operation}"
+        );
+    }
+    for operation in [
+        "objects.move",
+        "objects.duplicate",
+        "objects.delete",
+        "history.undo",
+        "text.create",
+    ] {
+        assert!(
+            !capabilities
+                .supported_operations
+                .iter()
+                .any(|item| item == operation),
+            "{operation}"
+        );
+    }
+}
+
+#[test]
+fn s1_json_contract_rejects_implicit_authority_and_nested_unknown_fields() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/synthetic/s1a/ordered_local_hole.gbr");
+    let mut service = ApplicationService::new();
+    let denied = serde_json::json!({
+        "api_version": 1,
+        "request_id": "denied",
+        "op": "document.open",
+        "params": {"path": source}
+    });
+    assert_eq!(
+        service.execute_json(&denied.to_string())["error"]["code"],
+        "PERMISSION_DENIED"
+    );
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let mut authorized = ApplicationService::with_file_access(FileAccessPolicy::new(
+        root.clone(),
+        [root.join("fixtures/synthetic/s1a")],
+        [std::env::temp_dir()],
+    ));
+    let unknown = serde_json::json!({
+        "api_version": 1,
+        "request_id": "query",
+        "op": "objects.query",
+        "document_id": "missing",
+        "params": {
+            "layer_id": "layer-1",
+            "relation": "intersects",
+            "region_mm": {"min_x_mm": 0.0, "min_y_mm": 0.0, "max_x_mm": 1.0, "max_y_mm": 1.0, "unexpected": true}
+        }
+    });
+    assert_eq!(
+        authorized.execute_json(&unknown.to_string())["error"]["code"],
+        "INVALID_ARGUMENT"
     );
 }

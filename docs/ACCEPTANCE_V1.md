@@ -1759,3 +1759,12 @@ B2接受项：
 3. CORE10不能更换失败样本，最终10/10仍须完整V1流程；逐平台证据缺失不能通过。
 
 判定：追加步骤与原用例同时满足；保留原 required_platforms。证据须有真实请求/输出、独立几何断言、源/目标哈希、失败零修改检查及原始日志。状态：未执行。
+
+### S1-A 模板实例化判定注记 · AT-010、AT-019、AT-088
+
+依据 [ADR 0006](adr/0006-s1-a-macro-template-validation.md)，区分未实例化 AM 模板的参数引用
+与实际 AD 调用缺参。前者仍执行全语法/能力扫描，不用虚构参数生成几何；后者必须失败且无加工输出。
+独立公开输入为 `macro_unused_undefined.gbr`（原内容保留、参数模板未被调用）和新增的
+`macro_missing_actual_argument.gbr`（实际调用缺参）。常量除零、未知 primitive、非法常量轮廓和
+所有实际实例几何继续拒绝，原 96 个身份、完整用例步骤、数值阈值与 required_platforms 不变。
+此注记本身不授予任何 AT 通过状态，更正前的测试 manifest/失败日志保留在 S1-A evidence。

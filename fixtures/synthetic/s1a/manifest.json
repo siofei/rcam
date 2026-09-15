@@ -1,0 +1,585 @@
+{
+  "schema_version": 2,
+  "kind": "independent_s1a_synthetic_truth",
+  "source": "Project-authored geometric assertions, no private content",
+  "cases": [
+    {
+      "name": "ordered_local_hole",
+      "path": "fixtures/synthetic/s1a/ordered_local_hole.gbr",
+      "sha256": "4f8d1036089dcdeccaeff3ca75bec78fb0dde39535aece89df5fe3b4254e6506",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          2,
+          0,
+          false
+        ],
+        [
+          4,
+          0,
+          true
+        ],
+        [
+          6,
+          0,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "macro_hole_over_line",
+      "path": "fixtures/synthetic/s1a/macro_hole_over_line.gbr",
+      "sha256": "835b464ff544ce7835caac21d844bde76b307b8bcdf95473f7c970f3392927d7",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          0,
+          0.5,
+          false
+        ],
+        [
+          0,
+          1.5,
+          true
+        ]
+      ]
+    },
+    {
+      "name": "standard_hole_over_line",
+      "path": "fixtures/synthetic/s1a/standard_hole_over_line.gbr",
+      "sha256": "ac7f530c730b6a4b06c6374a3d23b4395056710bf29c1bcac5ad108b8781f0ce",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          0,
+          0.5,
+          false
+        ],
+        [
+          0,
+          1.5,
+          true
+        ]
+      ]
+    },
+    {
+      "name": "nested_region_union",
+      "path": "fixtures/synthetic/s1a/nested_region_union.gbr",
+      "sha256": "d341ad27ce606f8df771944d467dab16dc895625764eb775904b9f8605195bcf",
+      "accept": true,
+      "coverage_mm": [
+        [
+          2,
+          2,
+          true
+        ],
+        [
+          0.5,
+          0.5,
+          true
+        ],
+        [
+          5,
+          5,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "region_bowtie",
+      "path": "fixtures/synthetic/s1a/region_bowtie.gbr",
+      "sha256": "d50ef990e58c3f444282c4b7105f0f889b405a897eaa3fbd1c9d7e9ae9d805d9",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "region_not_closed",
+      "path": "fixtures/synthetic/s1a/region_not_closed.gbr",
+      "sha256": "ce14b5881124e6823d422e962138821dd2a54c1e50dd0544ae2539cc73108c38",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "g75_full_circle",
+      "path": "fixtures/synthetic/s1a/g75_full_circle.gbr",
+      "sha256": "9674a5881f6e255fa351d2b57c96dfe218c0b09e9d11ec3884892a92a0329d58",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          1,
+          true
+        ],
+        [
+          -1,
+          0,
+          true
+        ],
+        [
+          0,
+          0,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g74_cw",
+      "path": "fixtures/synthetic/s1a/g74_cw.gbr",
+      "sha256": "caf89938b2660d4580fbf0cdddae2ccb276fe192fbaa88e33df11d7ee57c6934",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0.707106781,
+          0.707106781,
+          true
+        ],
+        [
+          -0.707106781,
+          0.707106781,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "g74_negative_offset",
+      "path": "fixtures/synthetic/s1a/g74_negative_offset.gbr",
+      "sha256": "89969afdc11c45baedb6f1850aa681052ea755bf2bbbf0fa7c1648a431c08729",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "g75_invalid_radius",
+      "path": "fixtures/synthetic/s1a/g75_invalid_radius.gbr",
+      "sha256": "8385ba38185ab868fd23ef02a95d7009b2e1a0adb7753d52e3d303323b459750",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "incremental_missing_axis",
+      "path": "fixtures/synthetic/s1a/incremental_missing_axis.gbr",
+      "sha256": "2f129f13a957b1938fb641745d32a8802f1c707741ffb3dbb07ffad0bf48574f",
+      "accept": true,
+      "coverage_mm": [
+        [
+          1,
+          1,
+          true
+        ],
+        [
+          2,
+          1,
+          true
+        ],
+        [
+          2,
+          2,
+          true
+        ],
+        [
+          3,
+          2,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "io_inches",
+      "path": "fixtures/synthetic/s1a/io_inches.gbr",
+      "sha256": "c11723da031d257e7a6ce52211e03702adc9de3c4b9faabf040316ebbe0051f3",
+      "accept": true,
+      "coverage_mm": [
+        [
+          7.62,
+          12.7,
+          true
+        ],
+        [
+          2.54,
+          5.08,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "ab",
+      "path": "fixtures/synthetic/s1a/ab.gbr",
+      "sha256": "180163141dee5d88b593cc8a1cb2793f55e6718a0ee2fc1170217f62fe97bd18",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "sr_complex",
+      "path": "fixtures/synthetic/s1a/sr_complex.gbr",
+      "sha256": "b76f234ec2707b492b3d8cc13f32c1794fdcb9222b0061e5c6f8f0f034145f88",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "sr_nested",
+      "path": "fixtures/synthetic/s1a/sr_nested.gbr",
+      "sha256": "149932d60bd58913ac8f63f1f3a84704ecfb3408cb3fbcbb9c3376f33840a96c",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "ir_nonzero",
+      "path": "fixtures/synthetic/s1a/ir_nonzero.gbr",
+      "sha256": "55abc83fa656b05c666e086480532c4409a9d34f62f496a0d91e4686dad0df18",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "ic_invalid",
+      "path": "fixtures/synthetic/s1a/ic_invalid.gbr",
+      "sha256": "1c60df543da7d3794e97be443b124d3b57a16d9d5832f42cbbf25122bb1b2c8e",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "of_nonzero",
+      "path": "fixtures/synthetic/s1a/of_nonzero.gbr",
+      "sha256": "85c149f38ad498e9707ccd9533653f9503ab69d86117efcd1498cfd5bf211063",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "mi_nonzero",
+      "path": "fixtures/synthetic/s1a/mi_nonzero.gbr",
+      "sha256": "90b9d21b80b0b210257603239fa1212b06a252e7920d032edbf1694f09a56dda",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "sf_nonidentity",
+      "path": "fixtures/synthetic/s1a/sf_nonidentity.gbr",
+      "sha256": "762498ef674befa0d9f0c6d4f9a79389767753c3ba0ebedae34c115d00335556",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "units_conflict",
+      "path": "fixtures/synthetic/s1a/units_conflict.gbr",
+      "sha256": "2a0807724f5aa9f1f7db8369beb0395cc81e390ea0ed8fdaa3ced707fd82c5ec",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "macro_unknown",
+      "path": "fixtures/synthetic/s1a/macro_unknown.gbr",
+      "sha256": "1f6785a37f4fe0f0adb3f5e5943e4746075e5698cd7937350753acd11876cc93",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "macro_unused_divzero",
+      "path": "fixtures/synthetic/s1a/macro_unused_divzero.gbr",
+      "sha256": "97d5e9b979af21dda8b552d9c7cc3d6fc3b9d3088dafd1444e592e9b9d613bff",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "macro_unused_undefined",
+      "path": "fixtures/synthetic/s1a/macro_unused_undefined.gbr",
+      "sha256": "00b20dabc0e861a2f69fdffecdaf9899e3966989a50112994c40bdaffd62edaa",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0,
+          true
+        ],
+        [
+          1,
+          0,
+          false
+        ]
+      ],
+      "clarification": "ADR 0006: uninstantiated formal parameter; source bytes unchanged"
+    },
+    {
+      "name": "macro_bowtie",
+      "path": "fixtures/synthetic/s1a/macro_bowtie.gbr",
+      "sha256": "5eb442edc5ab9ae1288df6b17483e6f60c36716345f92357e0247c472edc8f47",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "io_late",
+      "path": "fixtures/synthetic/s1a/io_late.gbr",
+      "sha256": "654187c2db6bfc77b523d63130e24ecc718231033f4bcfa13d56508262158e5f",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "ir_late",
+      "path": "fixtures/synthetic/s1a/ir_late.gbr",
+      "sha256": "eadfcdeaa3d266d4d00642ade990a28c942eaf872bfda8b48ec3a4c13b969359",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "units_late",
+      "path": "fixtures/synthetic/s1a/units_late.gbr",
+      "sha256": "2d4ca9ee7aee8bed86aa127f640513a9081717ad85dcf2c6d555f989029d484a",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "ic_late",
+      "path": "fixtures/synthetic/s1a/ic_late.gbr",
+      "sha256": "bfa0381eba4eb86d6da472fbecc91615085ce358a0dae57043b029e0f2cb4d58",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "fs_conflict",
+      "path": "fixtures/synthetic/s1a/fs_conflict.gbr",
+      "sha256": "4cd1c111a48b1319cfcd7528f36a3cef339ffd76448749b07a83550b90dd89cb",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "fs_width_overflow",
+      "path": "fixtures/synthetic/s1a/fs_width_overflow.gbr",
+      "sha256": "6fbffa995a5dd2b84e68ba448671dc8cfe812368c34a94aa3f1b3ab0c56b069a",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "after_end",
+      "path": "fixtures/synthetic/s1a/after_end.gbr",
+      "sha256": "40d1662e710960085e093d03164bd1909d8e4acbda03ca29204f24763ee1cb92",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "rect_diagonal",
+      "path": "fixtures/synthetic/s1a/rect_diagonal.gbr",
+      "sha256": "95667c602fc01dda92afdef2d804cbae6fbd40765bc20ae8683737a9adc2346b",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "rect_hole_sweep",
+      "path": "fixtures/synthetic/s1a/rect_hole_sweep.gbr",
+      "sha256": "b316fd0964d51dfd7671c432d0f3f55765801336c5b5b778b9b83080269473eb",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "trailing_zero",
+      "path": "fixtures/synthetic/s1a/trailing_zero.gbr",
+      "sha256": "2fb2ff49ce4395f334bbe459fa253b1e82083508d7a2a95931a083e1ec3f25d8",
+      "accept": true,
+      "coverage_mm": [
+        [
+          1,
+          2,
+          true
+        ],
+        [
+          0.01,
+          0.02,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "region_cutin",
+      "path": "fixtures/synthetic/s1a/region_cutin.gbr",
+      "sha256": "18a52e61f27673325a5bae604cd013ad861d22ab2aa4c1ef01bcf3c6cccb9b44",
+      "accept": true,
+      "coverage_mm": [
+        [
+          2,
+          2,
+          false
+        ],
+        [
+          0.5,
+          0.5,
+          true
+        ],
+        [
+          3.5,
+          3.5,
+          true
+        ]
+      ]
+    },
+    {
+      "name": "region_arc",
+      "path": "fixtures/synthetic/s1a/region_arc.gbr",
+      "sha256": "5a675a2e33b2ca58e9de0494b1a0f9394804f5f13b9cddee96f892df8288ddcc",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          0.5,
+          true
+        ],
+        [
+          0,
+          -0.5,
+          false
+        ],
+        [
+          0,
+          1.1,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "macro_rotated_circle",
+      "path": "fixtures/synthetic/s1a/macro_rotated_circle.gbr",
+      "sha256": "7410c6ed686e252dc0ca1340011b872ccc726c4f8d7eae476a304da08de65199",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          2,
+          true
+        ],
+        [
+          2,
+          0,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "macro_rotated_rectangle",
+      "path": "fixtures/synthetic/s1a/macro_rotated_rectangle.gbr",
+      "sha256": "0ed2a979299c9c7bb79b6c71e46e2fd3b47b7e6cbbaf146e50c72a61ae4f9e4f",
+      "accept": true,
+      "coverage_mm": [
+        [
+          0,
+          2,
+          true
+        ],
+        [
+          2,
+          0,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "hidden_after_ln",
+      "path": "fixtures/synthetic/s1a/hidden_after_ln.gbr",
+      "sha256": "dda899f6b114871c51c73f8b5ca0f04285d7330c2764635c8cadf3fcb5df2e29",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "aperture_defined_after_use",
+      "path": "fixtures/synthetic/s1a/aperture_defined_after_use.gbr",
+      "sha256": "58c59956a32916fafcb0d09c141f48f630b04f7048bfdc3183eb3d7a94ce0768",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "aperture_redefined",
+      "path": "fixtures/synthetic/s1a/aperture_redefined.gbr",
+      "sha256": "0fee3d9163a7de557725582ba0472b06966b0a42fd24f2d8e410e1290eea6ec4",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "zero_length_rectangular_sweep",
+      "path": "fixtures/synthetic/s1a/zero_length_rectangular_sweep.gbr",
+      "sha256": "89161db9aece78b04c0236d44b45a0822db3aa6f289e375f6fa540d1750fe766",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "polarity_inside_region",
+      "path": "fixtures/synthetic/s1a/polarity_inside_region.gbr",
+      "sha256": "d04663a758d5da292b44faa4e8b58a6453dc4057ce5a13e2f578a7b495d7c4b6",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "fs_d_short_digits",
+      "path": "fixtures/synthetic/s1a/fs_d_short_digits.gbr",
+      "sha256": "24e9fdad9b1b42206d17fdb4ea0a0a0b15f441611e779bb6a7a222d3649fa643",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "io_before_unit",
+      "path": "fixtures/synthetic/s1a/io_before_unit.gbr",
+      "sha256": "23c840cecd2405f3835819e7c6111a1800482b787e62a8461e8edd203bfc3a4e",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "sr_unmatched_close",
+      "path": "fixtures/synthetic/s1a/sr_unmatched_close.gbr",
+      "sha256": "45906b28df8eb9735b66e83df57a645222116a9718e454c2c2e661b7a4a999e8",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "sf_zero",
+      "path": "fixtures/synthetic/s1a/sf_zero.gbr",
+      "sha256": "b746803afff854563bb56b3315dd3ec36faa6b1be7e94f5e6903e9018f29ad51",
+      "accept": false,
+      "coverage_mm": []
+    },
+    {
+      "name": "g91_modal_transitions",
+      "path": "fixtures/synthetic/s1a/g91_modal_transitions.gbr",
+      "sha256": "d1948f823576fdbafb12d3ef777fadab07f452f7a6c8f1070486774579e144cd",
+      "accept": true,
+      "coverage_mm": [
+        [
+          1,
+          1,
+          true
+        ],
+        [
+          2,
+          1,
+          true
+        ],
+        [
+          4,
+          1,
+          true
+        ],
+        [
+          6,
+          2,
+          false
+        ]
+      ]
+    },
+    {
+      "name": "macro_missing_actual_argument",
+      "path": "fixtures/synthetic/s1a/macro_missing_actual_argument.gbr",
+      "sha256": "027cb09fbfb621e7193b0ee2374d1ea84b144afcde6c9a159134aed9addaf6ca",
+      "accept": false,
+      "coverage_mm": []
+    }
+  ],
+  "clarification": "docs/adr/0006-s1-a-macro-template-validation.md",
+  "previous_manifest_sha256": "60c4fb496327275aeebc4958ee104e7fec1d28ca5459ac5332b6869cf01d96fc"
+}
