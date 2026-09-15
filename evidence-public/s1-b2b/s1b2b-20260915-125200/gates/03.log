@@ -1,0 +1,3 @@
+cargo clippy --workspace --all-targets --locked -- -D warnings
+    Checking editor-service v0.1.0 ($WORKSPACE/crates/editor-service)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.57s

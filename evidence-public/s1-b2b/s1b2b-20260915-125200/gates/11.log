@@ -1,0 +1,2 @@
+cargo build --release --locked -p editor-app
+    Finished `release` profile [optimized] target(s) in 0.30s

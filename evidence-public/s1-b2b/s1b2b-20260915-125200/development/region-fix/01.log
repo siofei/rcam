@@ -1,0 +1,51 @@
+cargo test --locked -p editor-service --test s1b2b_transform_workflow
+   Compiling editor-core v0.1.0 ($WORKSPACE/crates/editor-core)
+   Compiling gerber-io v0.1.0 ($WORKSPACE/crates/gerber-io)
+   Compiling editor-service v0.1.0 ($WORKSPACE/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.92s
+     Running tests/s1b2b_transform_workflow.rs (.tools/target/debug/deps/s1b2b_transform_workflow-2d10c268935e6cb6)
+
+running 25 tests
+test core_locked_and_history_limits_are_atomic ... ok
+test invariant_line_mirror_is_noop_and_preserves_history ... ok
+test overflow_and_roundoff_reject_without_history ... ok
+test rectangular_sweep_rejects_37_deg_atomically ... ok
+test mirror_undo_redo_restores_exact_state ... ok
+test mixed_selection_failure_is_atomic ... ok
+test rectangular_sweep_rotates_exact_90_and_swaps_dimensions ... ok
+test mirror_region_flips_all_arc_directions ... ok
+test rotate_full_circle_remains_full_circle ... ok
+test four_quarter_turns_restore_exact_or_frozen_canonical_state ... ok
+test rotate_flash_updates_local_transform ... ok
+test rotate_existing_mirrored_flash_composes_correctly ... ok
+test rotate_g74_zero_sweep_remains_zero_sweep ... ok
+test rotate_arc_preserves_direction_and_source_semantics ... ok
+test mirror_arc_flips_direction ... ok
+test rotate_line_roundtrip ... ok
+test rotate_point_37_about_nonzero_pivot ... ok
+test rotate_point_90_about_origin ... ok
+test strict_transform_dtos_and_finite_checks_preserve_redo ... ok
+test rotate_region_preserves_edge_order_and_topology ... FAILED
+test rotate_undo_redo_restores_exact_state ... ok
+test mirror_flash_composes_local_transform ... ok
+test mirror_twice_restores_exact_state ... ok
+test rotate_mirror_export_reopen_matches_independent_geometry ... ok
+test structural_order_guard_scalability_baseline ... ok
+
+failures:
+
+---- rotate_region_preserves_edge_order_and_topology stdout ----
+
+thread 'rotate_region_preserves_edge_order_and_topology' panicked at crates/editor-service/tests/s1b2b_transform_workflow.rs:68:9:
+assertion `left == right` failed: {"api_version":1,"document_id":"doc-1","error":{"code":"VALIDATION_FAILED","details":{"stage":"semantic_validation"},"message":"region contour self-intersects (6,11) points=[MmPoint { x_mm: 1.0045440030574626, y_mm: 0.9977344436486106 }] cutins=[]"},"job_id":null,"request_id":"b2-3","result":null,"revision":"0","status":"error","warnings":[]}
+  left: String("error")
+ right: "completed"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    rotate_region_preserves_edge_order_and_topology
+
+test result: FAILED. 24 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+error: test failed, to rerun pass `-p editor-service --test s1b2b_transform_workflow`

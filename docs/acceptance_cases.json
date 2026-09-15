@@ -3288,5 +3288,40 @@
     ],
     "status": "未执行",
     "platform_note": "macOS stage gates; Windows deferred; required_platforms unchanged"
+  },
+  "s1b2b_local_checks": {
+    "stage": "S1-B2b",
+    "case_ids": [
+      "AT-013",
+      "AT-014",
+      "AT-015",
+      "AT-016",
+      "AT-033",
+      "AT-034",
+      "AT-039",
+      "AT-040",
+      "AT-042",
+      "AT-054",
+      "AT-055",
+      "AT-086",
+      "AT-088",
+      "AT-090",
+      "AT-091",
+      "AT-095",
+      "AT-097"
+    ],
+    "checks": [
+      "Explicit JSON Rotate/Mirror and revision/atomic Modify history",
+      "Independent known points and asymmetric local aperture hole coverage",
+      "Arc direction, full-circle, zero-sweep and source preservation",
+      "Region edge topology and rotated parallel cut-ins",
+      "Two-edge shared endpoints with unchanged envelope interior rejection",
+      "RectangularSweep exact quarter-turns; mixed unsupported selection atomic rejection",
+      "Exact stored Undo/Redo; invalid inputs and budgets preserve Redo",
+      "Validate/export/reopen and source bytes unchanged",
+      "Debug structural order guard scale baseline; not release performance acceptance"
+    ],
+    "status": "未执行",
+    "platform_note": "macOS local stage evidence separately recorded; Windows deferred; required_platforms unchanged"
   }
 }

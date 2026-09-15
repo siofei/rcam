@@ -1,0 +1,514 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "b2-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-64/source.gbr",
+        "source_sha256": "7557f2bf56ced7ec17e2757998840f32b83a9b7a5bb26b31eec8c6f10b1f4270",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 6,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "clear",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-11",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-2",
+              "origin": {
+                "command_index": 9,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-12",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 2.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-3",
+              "origin": {
+                "command_index": 12,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 3
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.rotate",
+      "params": {
+        "angle_deg": 37.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2",
+          "object-3"
+        ],
+        "pivot_mm": {
+          "x_mm": 2.0,
+          "y_mm": 3.0
+        }
+      },
+      "request_id": "b2-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-2",
+      "result": {
+        "changed_object_ids": [
+          "object-1",
+          "object-2",
+          "object-3"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-3",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.6018150231520485,
+                    "y_mm": 2.201364489952707
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 37.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 6,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "clear",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-11",
+                  "center": {
+                    "x_mm": 2.6018150231520485,
+                    "y_mm": 2.201364489952707
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 37.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-2",
+              "origin": {
+                "command_index": 9,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-12",
+                  "center": {
+                    "x_mm": 2.6018150231520485,
+                    "y_mm": 2.201364489952707
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 37.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-3",
+              "origin": {
+                "command_index": 12,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "1",
+        "total": 3
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "objects.mirror",
+      "params": {
+        "axis": {
+          "coordinate_mm": 4.0,
+          "kind": "vertical"
+        },
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2",
+          "object-3"
+        ]
+      },
+      "request_id": "b2-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-4",
+      "result": {
+        "changed_object_ids": [
+          "object-1",
+          "object-2",
+          "object-3"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "2",
+        "undo_entries": 2,
+        "undo_entries_added": 1
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.validate",
+      "params": {},
+      "request_id": "b2-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-5",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "document_id": "doc-1",
+        "revision": "2",
+        "valid": true
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-6",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "2",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-64/source.gbr",
+        "source_sha256": "7557f2bf56ced7ec17e2757998840f32b83a9b7a5bb26b31eec8c6f10b1f4270",
+        "undo_entries": 2
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "2",
+      "op": "gerber.export_layer",
+      "params": {
+        "layer_id": "layer-1",
+        "metadata_policy": {
+          "mode": "require_confirmation"
+        },
+        "overwrite": {
+          "mode": "deny"
+        },
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-7",
+      "result": {
+        "api_version": 1,
+        "bytes": 319,
+        "current_revision": "2",
+        "document_id": "doc-1",
+        "exported_revision": "2",
+        "layer_id": "layer-1",
+        "path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-64/edited.gbr",
+        "sha256": "66c2ed9c6de4f79cffa3f69ff9ed4cc1e4de0ac7265ac80b169e3e9a1af68668"
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-8",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-2",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-64/edited.gbr",
+        "source_sha256": "66c2ed9c6de4f79cffa3f69ff9ed4cc1e4de0ac7265ac80b169e3e9a1af68668",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-9"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-9",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-64/edited.gbr",
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "2",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-64/source.gbr",
+        "source_sha256": "7557f2bf56ced7ec17e2757998840f32b83a9b7a5bb26b31eec8c6f10b1f4270",
+        "undo_entries": 2
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

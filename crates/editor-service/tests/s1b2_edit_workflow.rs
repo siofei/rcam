@@ -559,7 +559,12 @@ fn capabilities_and_strict_dtos_match_implemented_operations() {
     let mut r = Run::new();
     let ids = r.ids();
     let caps = r.ok("system.capabilities", None, json!({}));
-    for op in ["objects.duplicate", "objects.delete"] {
+    for op in [
+        "objects.duplicate",
+        "objects.delete",
+        "objects.rotate",
+        "objects.mirror",
+    ] {
         assert!(
             caps["supported_operations"]
                 .as_array()
@@ -567,7 +572,8 @@ fn capabilities_and_strict_dtos_match_implemented_operations() {
                 .contains(&json!(op))
         );
     }
-    for op in ["objects.rotate", "objects.mirror"] {
+    {
+        let op = "text.create";
         assert!(
             !caps["supported_operations"]
                 .as_array()

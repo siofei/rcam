@@ -1,0 +1,13 @@
+cargo clippy --workspace --all-targets --locked -- -D warnings
+    Checking editor-service v0.1.0 ($WORKSPACE/crates/editor-service)
+error: manual `RangeInclusive::contains` implementation
+   --> crates/editor-service/tests/s1b2b_transform_workflow.rs:582:64
+    |
+582 |                         (dx * dx + p.y_mm * p.y_mm <= 0.01) || (rad >= 1. && rad <= 2.)
+    |                                                                ^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(1. ..=2.).contains(&rad)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#manual_range_contains
+    = note: `-D clippy::manual-range-contains` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_range_contains)]`
+
+error: could not compile `editor-service` (test "s1b2b_transform_workflow") due to 1 previous error

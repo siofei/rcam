@@ -1,0 +1,47 @@
+cargo test --locked -p editor-core
+   Compiling editor-core v0.1.0 ($WORKSPACE/crates/editor-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.09s
+     Running unittests src/lib.rs (.tools/target/debug/deps/editor_core-99237df34a926635)
+
+running 6 tests
+test tests::points_are_measured_in_millimetres ... ok
+test tests::dark_clear_dark_preserves_expected_annuli ... ok
+test cutin_direction_regression::rotated_parallel_cutins_detected_but_mixed_directions_rejected ... ok
+test tests::coincident_arc_overlap_is_rejected_but_complementary_arcs_are_valid ... ok
+test tests::aperture_hole_is_local_and_does_not_clear_prior_line_model ... ok
+test tests::macro_outline_propagates_typed_intersection_resource_limit ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/review_geometry_regressions.rs (.tools/target/debug/deps/review_geometry_regressions-951a1ceed598c95e)
+
+running 3 tests
+test short_line_endpoint_and_zero_length_follow_capsule_geometry ... ok
+test unrepresentable_f64_radius_is_explicitly_rejected ... ok
+test sub_tolerance_hole_is_never_silently_filled ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/s1a_independent_geometry.rs (.tools/target/debug/deps/s1a_independent_geometry-5f70eea07dc47bdf)
+
+running 11 tests
+test full_circle_flag_cannot_hide_invalid_end_point ... ok
+test macro_rotation_moves_off_origin_primitive_centres ... ok
+test curved_region_coverage_is_not_display_tessellation ... ok
+test nested_independent_contours_are_union_not_a_hole ... ok
+test degenerate_backtracking_contour_is_not_a_region ... ok
+test legal_axis_cutin_creates_only_a_local_hole ... ok
+test polygon_hole_must_fit_inside_edges_not_just_vertex_circle ... ok
+test bowtie_is_not_a_valid_region_or_macro_outline ... ok
+test swept_arcs_include_round_endpoint_caps ... ok
+test tiny_local_holes_remain_transparent ... ok
+test zero_rectangular_sweep_is_outside_frozen_nonzero_subset ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests editor_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

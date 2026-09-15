@@ -1,7 +1,7 @@
-# RCam Gerber editor — Mac-first S1-B2a
+# RCam Gerber editor — Mac-first S1-B2b
 
 The headless application service now supports authorized Gerber open/query,
-atomic multi-object Move/Duplicate/Delete, Undo/Redo, validation, safe export to a new path and
+atomic multi-object Move/Duplicate/Delete/Rotate/Mirror, Undo/Redo, validation, safe export to a new path and
 reopen. Geometry stays in the shared f64 manufacturing model; history stores
 changed geometry or inserted/deleted objects plus bounded ID order guards. The window remains the S0 demonstration and now retains
 its application service for its lifetime.
@@ -9,19 +9,24 @@ its application service for its lifetime.
 Current stage checks target macOS arm64. Windows is deferred, not passed.
 This is not EditableV1, full CORE10 acceptance or a production release.
 CORE-03/07/08 compatibility gaps and independent arc reference differences
-remain recorded. See `docs/S1_B2_REVIEW.md` and `docs/adr/0009-s1-b2a-object-transactions.md`.
+remain recorded. See `docs/S1_B2B_REVIEW.md` and `docs/adr/0010-s1-b2b-transform-representation.md`.
 Historical S1-A.1 and S1-B1 evidence remains under `evidence-public/`; new runs use their own run IDs.
 
 The S0 window uses English labels so the default eframe font remains legible
 on a clean installation; no user font is bundled. Chinese UI and vector text
 support are deferred to the planned S4 scope.
 
+Rotate preserves true manufacturing geometry; mirrored arcs reverse direction.
+Rectangular sweeps support exact multiples of 90 degrees only (odd turns swap aperture dimensions);
+mirror axes are world horizontal/vertical. Unsupported mixed selections reject atomically.
+Pre-GUI state and structural-history work is recorded in ADR 0011.
+
 ## Workspace
 
 ```text
 crates/editor-core/       f64/mm geometry and layer coverage
 crates/gerber-io/         strict finite parser adapter
-crates/editor-service/    UI-free S0/S1-B2a service and JSON request envelope
+crates/editor-service/    UI-free S0/S1-B2b service and JSON request envelope
 crates/editor-app/        eframe + egui-wgpu S0 demonstration window
 fixtures/synthetic/       immutable S0-C inputs and independent S1-A truth
 docs/DEPENDENCIES.md      locked dependency and alternative record
@@ -46,7 +51,7 @@ cargo run --release --locked -p editor-app
 The real parser/service contracts live in `automation_contract.rs` and
 `headless_workflow.rs` under `crates/editor-service/tests/`. They exercise
 open/query/validate/export/reopen without a window. This is an unchanged
-document baseline; the S1-B1 Move workflow and S1-B2a Duplicate/Delete workflows are implemented; the full V1 headless automation workflow remains incomplete.
+document baseline; the S1-B1 Move workflow and S1-B2b Duplicate/Delete workflows are implemented; the full V1 headless automation workflow remains incomplete.
 
 ```text
 cargo test --locked -p editor-service --test automation_contract

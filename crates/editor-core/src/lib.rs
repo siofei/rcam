@@ -2,6 +2,7 @@
 //! The original S0 display model remains separate from the S1 semantic model.
 
 pub mod edit;
+mod transform;
 
 use serde::{Deserialize, Serialize};
 
@@ -1096,10 +1097,17 @@ fn validate_region_envelopes(
             }
             let adjacent =
                 index.abs_diff(other) == 1 || index.abs_diff(other) + 1 == original.edges.len();
-            let allowed = if adjacent {
-                Some(adjacent_connection(index, other, &original.edges))
+            let allowed = if adjacent && original.edges.len() == 2 {
+                // A two-edge closed contour shares BOTH endpoints. Match the
+                // intersection guard; keep the same EPSILON_MM neighborhood.
+                [Some(edge_start(edge)), Some(edge_end(edge))]
+            } else if adjacent {
+                [
+                    Some(adjacent_connection(index, other, &original.edges)),
+                    None,
+                ]
             } else {
-                None
+                [None, None]
             };
             let mut boundaries = vec![canonical.edges[other].clone()];
             if let RegionEdge::Arc(other_arc) = candidate
@@ -1172,9 +1180,17 @@ fn arc_envelope_boundaries(arc: ArcGeometry) -> [RegionEdge; 4] {
     ]
 }
 
-fn edge_enters_envelope(edge: &RegionEdge, arc: ArcGeometry, allowed: Option<MmPoint>) -> bool {
+fn edge_enters_envelope(
+    edge: &RegionEdge,
+    arc: ArcGeometry,
+    allowed: [Option<MmPoint>; 2],
+) -> bool {
     let contains = |point: MmPoint| {
-        if allowed.is_some_and(|end| end.distance_mm(point) <= EPSILON_MM) {
+        if allowed
+            .iter()
+            .flatten()
+            .any(|end| end.distance_mm(point) <= EPSILON_MM)
+        {
             return false;
         }
         let radius = point.distance_mm(arc.center);
@@ -1421,7 +1437,7 @@ fn point_key(point: MmPoint) -> (i64, i64) {
     )
 }
 
-fn contour_cutins(edges: &[RegionEdge]) -> (Vec<MmPoint>, Option<bool>, bool) {
+fn contour_cutins(edges: &[RegionEdge]) -> (Vec<MmPoint>, Option<MmPoint>, bool) {
     let mut by_start = std::collections::HashMap::<(i64, i64), Vec<usize>>::new();
     for (index, edge) in edges.iter().enumerate() {
         if let RegionEdge::Line { start, .. } = edge {
@@ -1445,12 +1461,10 @@ fn contour_cutins(edges: &[RegionEdge]) -> (Vec<MmPoint>, Option<bool>, bool) {
             let RegionEdge::Line { end: other_end, .. } = &edges[other] else {
                 continue;
             };
-            if other_end.distance_mm(*start) <= EPSILON_MM
-                && line_axis(edge).is_some()
-                && line_axis(&edges[other]).is_some()
+            if other_end.distance_mm(*start) <= EPSILON_MM && legal_cutin_pair(edge, &edges[other])
             {
-                let this_axis = line_axis(edge).expect("line axis checked above");
-                if axis.is_some_and(|previous| previous != this_axis) {
+                let this_axis = MmPoint::new(end.x_mm - start.x_mm, end.y_mm - start.y_mm);
+                if axis.is_some_and(|previous: MmPoint| !parallel_cutins(previous, this_axis)) {
                     mixed_axes = true;
                     continue;
                 }
@@ -1524,16 +1538,9 @@ fn point_is_arc_interior(point: MmPoint, arc: ArcGeometry) -> bool {
     arc_parameter(arc, angle).is_some_and(|parameter| parameter > 1e-12 && parameter < 1.0 - 1e-12)
 }
 
-fn line_axis(edge: &RegionEdge) -> Option<bool> {
-    match edge {
-        RegionEdge::Line { start, end } if (start.y_mm - end.y_mm).abs() <= EPSILON_MM => {
-            Some(true)
-        }
-        RegionEdge::Line { start, end } if (start.x_mm - end.x_mm).abs() <= EPSILON_MM => {
-            Some(false)
-        }
-        _ => None,
-    }
+fn parallel_cutins(a: MmPoint, b: MmPoint) -> bool {
+    let length = a.x_mm.hypot(a.y_mm).min(b.x_mm.hypot(b.y_mm));
+    length > EPSILON_MM && (a.x_mm * b.y_mm - a.y_mm * b.x_mm).abs() / length <= EPSILON_MM
 }
 
 fn legal_cutin_pair(first: &RegionEdge, second: &RegionEdge) -> bool {
@@ -1542,8 +1549,12 @@ fn legal_cutin_pair(first: &RegionEdge, second: &RegionEdge) -> bool {
     else {
         return false;
     };
-    line_axis(first)
-        .is_some_and(|_| a.distance_mm(*d) <= EPSILON_MM && b.distance_mm(*c) <= EPSILON_MM)
+    a.distance_mm(*d) <= EPSILON_MM
+        && b.distance_mm(*c) <= EPSILON_MM
+        && parallel_cutins(
+            MmPoint::new(b.x_mm - a.x_mm, b.y_mm - a.y_mm),
+            MmPoint::new(d.x_mm - c.x_mm, d.y_mm - c.y_mm),
+        )
 }
 
 fn edge_intersection_points(first: &RegionEdge, second: &RegionEdge) -> Vec<MmPoint> {
@@ -2281,5 +2292,30 @@ mod tests {
                 actual,
             }) if actual > MAX_INTERSECTION_EDGES
         ));
+    }
+}
+
+#[cfg(test)]
+mod cutin_direction_regression {
+    use super::*;
+    #[test]
+    fn rotated_parallel_cutins_detected_but_mixed_directions_rejected() {
+        let line = |a, b, c, d| RegionEdge::Line {
+            start: MmPoint::new(a, b),
+            end: MmPoint::new(c, d),
+        };
+        let mut edges = vec![
+            line(0., 0., 1., 1.),
+            line(1., 1., 0., 0.),
+            line(2., 0., 4., 2.),
+            line(4., 2., 2., 0.),
+        ];
+        let (points, _, mixed) = contour_cutins(&edges);
+        assert_eq!(points.len(), 4);
+        assert!(!mixed);
+        edges[2] = line(2., 0., 2., 2.);
+        edges[3] = line(2., 2., 2., 0.);
+        assert!(contour_cutins(&edges).2);
+        assert!(!legal_cutin_pair(&edges[0], &line(1., 1., 0.1, 0.)));
     }
 }

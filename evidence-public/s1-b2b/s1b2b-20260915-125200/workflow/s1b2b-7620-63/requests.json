@@ -1,0 +1,844 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "b2-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7620-63/source.gbr",
+        "source_sha256": "18a52e61f27673325a5bae604cd013ad861d22ab2aa4c1ef01bcf3c6cccb9b44",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Region": {
+                  "contours": [
+                    {
+                      "edges": [
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 3.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 3.0,
+                              "y_mm": 3.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 3.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 3.0,
+                              "y_mm": 1.0
+                            },
+                            "start": {
+                              "x_mm": 3.0,
+                              "y_mm": 3.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 1.0
+                            },
+                            "start": {
+                              "x_mm": 3.0,
+                              "y_mm": 1.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 1.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 0.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 4.0,
+                              "y_mm": 0.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 4.0,
+                              "y_mm": 4.0
+                            },
+                            "start": {
+                              "x_mm": 4.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 4.0
+                            },
+                            "start": {
+                              "x_mm": 4.0,
+                              "y_mm": 4.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 4.0
+                            }
+                          }
+                        }
+                      ],
+                      "role": "Solid"
+                    }
+                  ]
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 3,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-2",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Region": {
+                  "contours": [
+                    {
+                      "edges": [
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 3.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 3.0,
+                              "y_mm": 3.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 3.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 3.0,
+                              "y_mm": 1.0
+                            },
+                            "start": {
+                              "x_mm": 3.0,
+                              "y_mm": 3.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 1.0
+                            },
+                            "start": {
+                              "x_mm": 3.0,
+                              "y_mm": 1.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 1.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 0.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 4.0,
+                              "y_mm": 0.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 4.0,
+                              "y_mm": 4.0
+                            },
+                            "start": {
+                              "x_mm": 4.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 4.0
+                            },
+                            "start": {
+                              "x_mm": 4.0,
+                              "y_mm": 4.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 0.0,
+                              "y_mm": 2.0
+                            },
+                            "start": {
+                              "x_mm": 0.0,
+                              "y_mm": 4.0
+                            }
+                          }
+                        }
+                      ],
+                      "role": "Solid"
+                    }
+                  ]
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 3,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.rotate",
+      "params": {
+        "angle_deg": 37.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ],
+        "pivot_mm": {
+          "x_mm": 2.0,
+          "y_mm": 3.0
+        }
+      },
+      "request_id": "b2-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-3",
+      "result": {
+        "changed_object_ids": [
+          "object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-4",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Region": {
+                  "contours": [
+                    {
+                      "edges": [
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.8031795131047554,
+                              "y_mm": 1.5995494668006587
+                            },
+                            "start": {
+                              "x_mm": 1.0045440030574626,
+                              "y_mm": 0.9977344436486106
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.2013644899527072,
+                              "y_mm": 2.3981849768479515
+                            },
+                            "start": {
+                              "x_mm": 1.8031795131047554,
+                              "y_mm": 1.5995494668006587
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 2.798635510047293,
+                              "y_mm": 3.6018150231520485
+                            },
+                            "start": {
+                              "x_mm": 1.2013644899527072,
+                              "y_mm": 2.3981849768479515
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 4.002265556351389,
+                              "y_mm": 2.004544003057463
+                            },
+                            "start": {
+                              "x_mm": 2.798635510047293,
+                              "y_mm": 3.6018150231520485
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 2.4049945362568037,
+                              "y_mm": 0.8009139567533659
+                            },
+                            "start": {
+                              "x_mm": 4.002265556351389,
+                              "y_mm": 2.004544003057463
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.8031795131047554,
+                              "y_mm": 1.5995494668006587
+                            },
+                            "start": {
+                              "x_mm": 2.4049945362568037,
+                              "y_mm": 0.8009139567533659
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0045440030574626,
+                              "y_mm": 0.9977344436486106
+                            },
+                            "start": {
+                              "x_mm": 1.8031795131047554,
+                              "y_mm": 1.5995494668006587
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 2.208174049361559,
+                              "y_mm": -0.599536576445975
+                            },
+                            "start": {
+                              "x_mm": 1.0045440030574626,
+                              "y_mm": 0.9977344436486106
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 5.40271608955073,
+                              "y_mm": 1.8077235161622185
+                            },
+                            "start": {
+                              "x_mm": 2.208174049361559,
+                              "y_mm": -0.599536576445975
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 2.995455996942537,
+                              "y_mm": 5.002265556351389
+                            },
+                            "start": {
+                              "x_mm": 5.40271608955073,
+                              "y_mm": 1.8077235161622185
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": -0.19908604324663393,
+                              "y_mm": 2.5950054637431963
+                            },
+                            "start": {
+                              "x_mm": 2.995455996942537,
+                              "y_mm": 5.002265556351389
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0045440030574626,
+                              "y_mm": 0.9977344436486106
+                            },
+                            "start": {
+                              "x_mm": -0.19908604324663393,
+                              "y_mm": 2.5950054637431963
+                            }
+                          }
+                        }
+                      ],
+                      "role": "Solid"
+                    }
+                  ]
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 3,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "1",
+        "total": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.validate",
+      "params": {},
+      "request_id": "b2-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-5",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "document_id": "doc-1",
+        "revision": "1",
+        "valid": true
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-6",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "1",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7620-63/source.gbr",
+        "source_sha256": "18a52e61f27673325a5bae604cd013ad861d22ab2aa4c1ef01bcf3c6cccb9b44",
+        "undo_entries": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "gerber.export_layer",
+      "params": {
+        "layer_id": "layer-1",
+        "metadata_policy": {
+          "mode": "require_confirmation"
+        },
+        "overwrite": {
+          "mode": "deny"
+        },
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-7",
+      "result": {
+        "api_version": 1,
+        "bytes": 387,
+        "current_revision": "1",
+        "document_id": "doc-1",
+        "exported_revision": "1",
+        "layer_id": "layer-1",
+        "path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7620-63/edited.gbr",
+        "sha256": "09afada434ce2cd52e1e3c6068eda5c48d1c9aa30a2da900fff50ab078d54bd7"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-8",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-2",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7620-63/edited.gbr",
+        "source_sha256": "09afada434ce2cd52e1e3c6068eda5c48d1c9aa30a2da900fff50ab078d54bd7",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-9"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-9",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7620-63/edited.gbr",
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "1",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7620-63/source.gbr",
+        "source_sha256": "18a52e61f27673325a5bae604cd013ad861d22ab2aa4c1ef01bcf3c6cccb9b44",
+        "undo_entries": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

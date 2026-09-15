@@ -1,0 +1,8 @@
+[
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2b_transform_workflow",
+    "exit_code": 101,
+    "seconds": 7.196424041999999,
+    "log": "01.log"
+  }
+]

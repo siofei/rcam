@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "active_cases": 96,
+  "retired_cases": 1,
+  "unchanged_cases_and_required_platforms": true,
+  "unchanged_retired_cases": true,
+  "added_only": "s1b2b_local_checks"
+}

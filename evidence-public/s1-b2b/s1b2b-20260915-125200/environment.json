@@ -1,0 +1,54 @@
+{
+  "run_id": "s1b2b-20260915-125200",
+  "commands": [
+    {
+      "command": [
+        "sw_vers"
+      ],
+      "exit_code": 0,
+      "stdout": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "uname",
+        "-m"
+      ],
+      "exit_code": 0,
+      "stdout": "arm64\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "rustc",
+        "-Vv"
+      ],
+      "exit_code": 0,
+      "stdout": "rustc 1.89.0 (29483883e 2025-08-04)\nbinary: rustc\ncommit-hash: 29483883eed69d5fb4db01964cdf2af4d86e9cb2\ncommit-date: 2025-08-04\nhost: aarch64-apple-darwin\nrelease: 1.89.0\nLLVM version: 20.1.7\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "cargo",
+        "-V"
+      ],
+      "exit_code": 0,
+      "stdout": "cargo 1.89.0 (c24e10642 2025-06-23)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "stdout": "256dbc97cdb99841f4bd32e81819c27f51f52e21\n",
+      "stderr": ""
+    }
+  ],
+  "build": "macOS arm64; existing .tools toolchain/cache; not clean-room",
+  "hardware_note": "CPU sysctl query denied by sandbox; no hardware identity inferred. Debug baseline is not performance acceptance.",
+  "windows": "deferred / not executed",
+  "gui_gpu_ime": "not executed"
+}

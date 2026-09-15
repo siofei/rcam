@@ -1,0 +1,8 @@
+[
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 101,
+    "seconds": 1.43939625,
+    "log": "01.log"
+  }
+]

@@ -1,0 +1,40 @@
+cargo test --locked -p editor-service --test s1b2b_transform_workflow
+   Compiling editor-service v0.1.0 ($WORKSPACE/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.63s
+     Running tests/s1b2b_transform_workflow.rs (.tools/target/debug/deps/s1b2b_transform_workflow-2d10c268935e6cb6)
+
+running 31 tests
+test capabilities_publish_only_tested_transform_scope ... ok
+test core_locked_and_history_limits_are_atomic ... ok
+test invariant_line_mirror_is_noop_and_preserves_history ... ok
+test mirror_undo_redo_restores_exact_state ... ok
+test mirror_region_flips_all_arc_directions ... ok
+test overflow_and_roundoff_reject_without_history ... ok
+test negative_and_large_finite_angles_normalize_with_canonical_repetition ... ok
+test mixed_selection_failure_is_atomic ... ok
+test asymmetric_macro_orientation_and_local_hole_survive_composed_transform ... ok
+test rectangular_sweep_rejects_37_deg_atomically ... ok
+test rectangular_sweep_rotates_exact_90_and_swaps_dimensions ... ok
+test four_quarter_turns_restore_exact_or_frozen_canonical_state ... ok
+test rotate_full_circle_remains_full_circle ... ok
+test mirror_arc_flips_direction ... ok
+test rotate_g74_zero_sweep_remains_zero_sweep ... ok
+test rotate_line_roundtrip ... ok
+test rotate_point_37_about_nonzero_pivot ... ok
+test rotate_point_90_about_origin ... ok
+test rotate_flash_updates_local_transform ... ok
+test rotate_arc_preserves_direction_and_source_semantics ... ok
+test strict_transform_dtos_and_finite_checks_preserve_redo ... ok
+test rotate_existing_mirrored_flash_composes_correctly ... ok
+test mirror_twice_restores_exact_state ... ok
+test rotate_undo_redo_restores_exact_state ... ok
+test mirror_flash_composes_local_transform ... ok
+test two_edge_region_envelope_checks_both_shared_endpoints_but_not_interior ... ok
+test rotate_region_preserves_edge_order_and_topology ... ok
+test rotated_cutin_preserves_independent_square_hole_truth ... ok
+test rotate_mirror_export_reopen_matches_independent_geometry ... ok
+test transform_byte_budget_failure_retains_redo ... ok
+test structural_order_guard_scalability_baseline ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+

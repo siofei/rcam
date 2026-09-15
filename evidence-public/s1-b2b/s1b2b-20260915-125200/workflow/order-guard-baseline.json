@@ -1,0 +1,30 @@
+[
+  {
+    "build": "test debug, local cache",
+    "max_history_bytes": 67108864,
+    "objects": 10000,
+    "result": "Ok([\"baseline-generated-object-0\"])",
+    "seconds": 0.021503125
+  },
+  {
+    "build": "test debug, local cache",
+    "max_history_bytes": 67108864,
+    "objects": 100000,
+    "result": "Ok([\"baseline-generated-object-0\"])",
+    "seconds": 0.10817775
+  },
+  {
+    "build": "test debug, local cache",
+    "max_history_bytes": 67108864,
+    "objects": 150000,
+    "result": "Err(ResourceLimit)",
+    "seconds": 0.0501765
+  },
+  {
+    "build": "test debug, local cache",
+    "max_history_bytes": 67108864,
+    "objects": 500000,
+    "result": "Err(ResourceLimit)",
+    "seconds": 0.164299791
+  }
+]

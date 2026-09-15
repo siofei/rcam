@@ -3,6 +3,14 @@ use super::*;
 use std::collections::HashSet;
 use std::mem::size_of;
 
+/// World axes: horizontal y=coordinate_mm, vertical x=coordinate_mm.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MirrorAxis {
+    Horizontal { coordinate_mm: f64 },
+    Vertical { coordinate_mm: f64 },
+}
+
 pub const MAX_MOVE_OBJECTS: usize = 10_000;
 pub const MAX_HISTORY_ENTRIES: usize = 100;
 pub const MAX_HISTORY_BYTES: usize = 64 * 1024 * 1024;
@@ -12,6 +20,7 @@ pub const MAX_EDIT_REGION_EDGES: usize = 2_000_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
     InvalidArgument,
+    UnsupportedTransform,
     NotFound { entity: &'static str, id: String },
     LayerLocked(String),
     ResourceLimit,
@@ -45,6 +54,7 @@ struct Transaction {
     layer_id: String,
     layer: usize,
     operation: Operation,
+    // TODO ADR 0011: O(N) order guards must be compacted before large-file editing.
     // Exact order guard for structural edits, without cloning document geometry.
     before_order: Vec<String>,
     after_order: Vec<String>,
@@ -152,6 +162,45 @@ impl EditHistory {
         if !MmPoint::new(dx_mm, dy_mm).is_valid_geometry() || (dx_mm == 0.0 && dy_mm == 0.0) {
             return Err(EditError::InvalidArgument);
         }
+        self.modify_objects(document, layer_id, object_ids, |geometry| {
+            translate(geometry, dx_mm, dy_mm)
+        })
+    }
+
+    pub fn rotate_objects(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        angle_deg: f64,
+        pivot: MmPoint,
+    ) -> Result<Vec<String>, EditError> {
+        let transform = super::transform::WorldTransform::rotation(angle_deg, pivot)?;
+        self.modify_objects(document, layer_id, object_ids, |geometry| {
+            transform.apply(geometry)
+        })
+    }
+
+    pub fn mirror_objects(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        axis: MirrorAxis,
+    ) -> Result<Vec<String>, EditError> {
+        let transform = super::transform::WorldTransform::reflection(axis)?;
+        self.modify_objects(document, layer_id, object_ids, |geometry| {
+            transform.apply(geometry)
+        })
+    }
+
+    fn modify_objects(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        modify: impl Fn(&mut SemanticGeometry) -> Result<(), EditError>,
+    ) -> Result<Vec<String>, EditError> {
         let (layer_index, selected) = self.targets(document, layer_id, object_ids)?;
         let layer = &document.layers[layer_index];
         let bytes = size_of::<Transaction>()
@@ -173,7 +222,7 @@ impl EditHistory {
         for index in selected {
             let object = &layer.objects[index];
             let mut after = object.geometry.clone();
-            translate(&mut after, dx_mm, dy_mm)?;
+            modify(&mut after)?;
             validate_geometry(&after, &aperture_ids).map_err(EditError::InvalidGeometry)?;
             changes.push(Change {
                 object_id: object.object_id.clone(),

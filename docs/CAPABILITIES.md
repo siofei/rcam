@@ -98,3 +98,11 @@ Windows deferred / not executed；CORE-03/07/08、独立参考差异继续保留
 对象 provenance 改为 Imported/Generated，与当前曝光顺序分离；成功导出报告 last_saved_path。
 旋转／镜像仅有 ADR 0010，仍为 unsupported；矩形扫掠缺少方向表示时不假称任意旋转。
 无新增依赖或兼容范围；GUI 编辑、Windows、CORE10 完整流程及双平台 V1 仍未完成。
+
+## S1-B2b 变换能力
+
+当前无窗口服务支持 objects.rotate/objects.mirror，严格显式 ID 与 revision，一个请求一个 Modify 历史。
+Flash/Circular Line/Arc/Region 支持数值可靠的有限角旋转；Flash 组合局部方向，Arc 反射翻转方向。
+RectangularSweep 仅精确整数90°旋转（奇数交换宽高），所有对象镜像仅水平/垂直世界轴。
+非支持角度的混合集合整批 UNSUPPORTED_FEATURE，不宣传所有对象任意角支持。
+GUI/文字/edit.batch/完整 CORE10/Windows 未完成，production export 仍不授权。

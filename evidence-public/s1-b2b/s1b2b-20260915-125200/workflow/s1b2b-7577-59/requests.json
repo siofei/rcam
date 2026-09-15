@@ -1,0 +1,514 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "b2-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-59/source.gbr",
+        "source_sha256": "5a675a2e33b2ca58e9de0494b1a0f9394804f5f13b9cddee96f892df8288ddcc",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Region": {
+                  "contours": [
+                    {
+                      "edges": [
+                        {
+                          "Arc": {
+                            "center": {
+                              "x_mm": 0.0,
+                              "y_mm": 0.0
+                            },
+                            "direction": "CounterClockwise",
+                            "end": {
+                              "x_mm": -1.0,
+                              "y_mm": 0.0
+                            },
+                            "full_circle": false,
+                            "source": {
+                              "resolution_mm": 1e-6,
+                              "single_quadrant": false
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 0.0
+                            },
+                            "start": {
+                              "x_mm": -1.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        }
+                      ],
+                      "role": "Solid"
+                    }
+                  ]
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-2",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Region": {
+                  "contours": [
+                    {
+                      "edges": [
+                        {
+                          "Arc": {
+                            "center": {
+                              "x_mm": 0.0,
+                              "y_mm": 0.0
+                            },
+                            "direction": "CounterClockwise",
+                            "end": {
+                              "x_mm": -1.0,
+                              "y_mm": 0.0
+                            },
+                            "full_circle": false,
+                            "source": {
+                              "resolution_mm": 1e-6,
+                              "single_quadrant": false
+                            },
+                            "start": {
+                              "x_mm": 1.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 1.0,
+                              "y_mm": 0.0
+                            },
+                            "start": {
+                              "x_mm": -1.0,
+                              "y_mm": 0.0
+                            }
+                          }
+                        }
+                      ],
+                      "role": "Solid"
+                    }
+                  ]
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.rotate",
+      "params": {
+        "angle_deg": 37.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ],
+        "pivot_mm": {
+          "x_mm": 2.0,
+          "y_mm": 3.0
+        }
+      },
+      "request_id": "b2-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-3",
+      "result": {
+        "changed_object_ids": [
+          "object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "b2-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-4",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Region": {
+                  "contours": [
+                    {
+                      "edges": [
+                        {
+                          "Arc": {
+                            "center": {
+                              "x_mm": 2.208174049361559,
+                              "y_mm": -0.599536576445975
+                            },
+                            "direction": "CounterClockwise",
+                            "end": {
+                              "x_mm": 1.4095385393142663,
+                              "y_mm": -1.2013515995980233
+                            },
+                            "full_circle": false,
+                            "source": {
+                              "resolution_mm": 1e-6,
+                              "single_quadrant": false
+                            },
+                            "start": {
+                              "x_mm": 3.006809559408852,
+                              "y_mm": 0.002278446706073023
+                            }
+                          }
+                        },
+                        {
+                          "Line": {
+                            "end": {
+                              "x_mm": 3.006809559408852,
+                              "y_mm": 0.002278446706073023
+                            },
+                            "start": {
+                              "x_mm": 1.4095385393142663,
+                              "y_mm": -1.2013515995980233
+                            }
+                          }
+                        }
+                      ],
+                      "role": "Solid"
+                    }
+                  ]
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "1",
+        "total": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.validate",
+      "params": {},
+      "request_id": "b2-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-5",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "document_id": "doc-1",
+        "revision": "1",
+        "valid": true
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-6",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "1",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-59/source.gbr",
+        "source_sha256": "5a675a2e33b2ca58e9de0494b1a0f9394804f5f13b9cddee96f892df8288ddcc",
+        "undo_entries": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "gerber.export_layer",
+      "params": {
+        "layer_id": "layer-1",
+        "metadata_policy": {
+          "mode": "require_confirmation"
+        },
+        "overwrite": {
+          "mode": "deny"
+        },
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-7",
+      "result": {
+        "api_version": 1,
+        "bytes": 172,
+        "current_revision": "1",
+        "document_id": "doc-1",
+        "exported_revision": "1",
+        "layer_id": "layer-1",
+        "path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-59/edited.gbr",
+        "sha256": "0b0150de5a4eb47dfe47c7439ef619b4105640c9ca772176771aa007e190ed1e"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "edited.gbr"
+      },
+      "request_id": "b2-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-8",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-2",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-59/edited.gbr",
+        "source_sha256": "0b0150de5a4eb47dfe47c7439ef619b4105640c9ca772176771aa007e190ed1e",
+        "undo_entries": 0
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "b2-9"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "b2-9",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-59/edited.gbr",
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "1",
+        "source_path": "$WORKSPACE/evidence/s1b2b-20260915-125200/workflow/s1b2b-7577-59/source.gbr",
+        "source_sha256": "5a675a2e33b2ca58e9de0494b1a0f9394804f5f13b9cddee96f892df8288ddcc",
+        "undo_entries": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

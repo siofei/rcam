@@ -379,3 +379,19 @@ document.get/open 的 last_saved_path 初始 null；成功导出后为规范化�
 source_path/source_sha256 始终指向打开来源，未因导出改写；GUI 后续要分别显示来源与最后保存位置。
 失败导出保留 last_saved_path、dirty 和历史。Undo/Redo 不改变最后写入文件路径，dirty 仍按保存内容基线判断。
 旋转／镜像仅冻结 ADR 0010，仍不在 supported_operations 中。
+
+## S1-B2b 已实现的局部变换契约
+
+Mac-first 无窗口服务新增 `objects.rotate` / `objects.mirror`，实现与验证见 S1_B2B_REVIEW.md。
+两者使用现有信封、显式 layer_id/object_ids、expected_revision 和 EditResult；成功一次 revision
+与一个 Modify Undo，失败不改内容、ID、历史、Redo 或保存基线。对象最多 10000，沿用历史预算。
+
+Rotate params：`{"layer_id":"…","object_ids":["…"],"angle_deg":37,"pivot_mm":{"x_mm":10,"y_mm":20}}`。
+正角为世界坐标逆时针；有限角规范化 [0,360)，整周零旋转和全部候选状态不变 INVALID_ARGUMENT。
+Mirror params：`{"layer_id":"…","object_ids":["…"],"axis":{"kind":"horizontal","coordinate_mm":0}}`。
+horizontal 表示 y=c，vertical 表示 x=c；斜轴和未知嵌套字段拒绝。所有数值必须有限且结果精度可靠。
+
+Flash 同时变换中心和局部方向、保留光圈/scale；Arc 镜像翻转方向并保留原始圆弧语义；
+Region 保持全部边序/轮廓。RectangularSweep 只支持精确 90° 整数倍旋转及上述轴镜像，
+不支持的混合选择整批 UNSUPPORTED_FEATURE。capabilities 明确该限制，不宣称任意对象任意角支持。
+当前仍单文件/单服务文档；无 GUI 编辑、layer.update、edit.batch、文字或脚本引擎。

@@ -95,6 +95,8 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
         "document.get",
         "document.close",
         "objects.move",
+        "objects.rotate",
+        "objects.mirror",
         "objects.duplicate",
         "objects.delete",
         "history.undo",
@@ -113,7 +115,8 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
             "{operation}"
         );
     }
-    for operation in ["objects.rotate", "objects.mirror", "text.create"] {
+    {
+        let operation = "text.create";
         assert!(
             !capabilities
                 .supported_operations

@@ -3,6 +3,7 @@
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+pub use editor_core::edit::MirrorAxis;
 use editor_core::edit::{
     EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
 };
@@ -342,6 +343,30 @@ pub struct MoveParams {
     pub dy_mm: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PivotMm {
+    pub x_mm: f64,
+    pub y_mm: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RotateParams {
+    pub layer_id: String,
+    pub object_ids: Vec<String>,
+    pub angle_deg: f64,
+    pub pivot_mm: PivotMm,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MirrorParams {
+    pub layer_id: String,
+    pub object_ids: Vec<String>,
+    pub axis: MirrorAxis,
+}
+
 /// Duplicate uses the same explicit offset DTO as Move; zero offset is valid.
 pub type DuplicateParams = MoveParams;
 
@@ -482,7 +507,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S1-B2a move/duplicate/delete/undo/redo/export/reopen".into(),
+            stage: "S1-B2b move/duplicate/delete/rotate/mirror/undo/redo/export/reopen".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -493,6 +518,8 @@ impl ApplicationService {
                 "document.get".into(),
                 "document.close".into(),
                 "objects.move".into(),
+                "objects.rotate".into(),
+                "objects.mirror".into(),
                 "objects.duplicate".into(),
                 "objects.delete".into(),
                 "history.undo".into(),
@@ -504,7 +531,7 @@ impl ApplicationService {
                 "gerber.export_layer".into(),
             ],
             unsupported_operations: vec![
-                "objects.rotate".into(), "objects.mirror".into(), "text.create".into(),
+                "text.create".into(),
             ],
             supported_gerber_subset: vec![
                 "FS absolute coordinates".into(),
@@ -529,6 +556,7 @@ impl ApplicationService {
                 "non-identity MI/OF/SF/IR transforms".into(),
                 "unsupported AM primitives and expressions".into(),
                 "Excellon and RS-274D external apertures".into(),
+                "RectangularSweep rotation except exact multiples of 90 degrees; diagonal mirror axes".into(),
                 "production export".into(),
             ],
             resource_limits: ResourceLimits {
@@ -769,6 +797,47 @@ impl ApplicationService {
                 &params.object_ids,
                 params.dx_mm,
                 params.dy_mm,
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
+    pub fn objects_rotate(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: RotateParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        let ids = record
+            .history
+            .rotate_objects(
+                &mut record.document,
+                &params.layer_id,
+                &params.object_ids,
+                params.angle_deg,
+                MmPoint::new(params.pivot_mm.x_mm, params.pivot_mm.y_mm),
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
+    pub fn objects_mirror(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: MirrorParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        let ids = record
+            .history
+            .mirror_objects(
+                &mut record.document,
+                &params.layer_id,
+                &params.object_ids,
+                params.axis,
             )
             .map_err(map_edit_error)?;
         record.revision += 1;
@@ -1098,8 +1167,8 @@ impl ApplicationService {
                 serde_json::to_value(self.objects_get(document_id, params)?)
                     .map_err(serialize_error)?
             }
-            "objects.move" | "objects.duplicate" | "objects.delete" | "history.undo"
-            | "history.redo" | "document.close"
+            "objects.move" | "objects.rotate" | "objects.mirror" | "objects.duplicate"
+            | "objects.delete" | "history.undo" | "history.redo" | "document.close"
                 if self.file_access.is_some() =>
             {
                 let id = required_document_id(request)?;
@@ -1111,6 +1180,18 @@ impl ApplicationService {
                 })?;
                 match request.op.as_str() {
                     "objects.move" => serde_json::to_value(self.objects_move(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.rotate" => serde_json::to_value(self.objects_rotate(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.mirror" => serde_json::to_value(self.objects_mirror(
                         id,
                         revision,
                         parse_params(&request.params)?,
@@ -1340,8 +1421,13 @@ fn map_edit_error(error: EditError) -> ServiceError {
     match error {
         EditError::NotFound { entity, id } => ServiceError::not_found(entity, &id),
         EditError::InvalidArgument => {
-            ServiceError::invalid_field("params", "目标集合或移动距离无效，不能提交。")
+            ServiceError::invalid_field("params", "目标集合、变换参数或数值精度无效，不能提交。")
         }
+        EditError::UnsupportedTransform => ServiceError {
+            code: "UNSUPPORTED_FEATURE".into(),
+            message: "矩形扫掠仅支持整数 90° 旋转及水平／垂直镜像。".into(),
+            details: serde_json::json!({"geometry": "RectangularSweep", "rotation_step_deg": 90}),
+        },
         EditError::LayerLocked(id) => ServiceError {
             code: "LAYER_LOCKED".into(),
             message: "图层已锁定。".into(),

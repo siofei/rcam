@@ -1,0 +1,12 @@
+{
+  "result": "PASS",
+  "normal_tree_log": "gates/10.log",
+  "forbidden_normal_dependencies": [
+    "egui",
+    "eframe",
+    "egui-wgpu",
+    "wgpu",
+    "winit"
+  ],
+  "matches": []
+}

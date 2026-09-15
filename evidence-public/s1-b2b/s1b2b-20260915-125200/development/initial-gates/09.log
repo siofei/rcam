@@ -1,0 +1,11 @@
+cargo test --locked -p editor-service --test headless_workflow
+   Compiling editor-service v0.1.0 ($WORKSPACE/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+     Running tests/headless_workflow.rs (.tools/target/debug/deps/headless_workflow-db450e654e8ea701)
+
+running 2 tests
+test real_headless_open_query_export_reopen_preserves_source ... ok
+test metadata_policy_requires_confirmation_then_accepts_explicit_drop_list ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
