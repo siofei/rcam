@@ -1,5 +1,5 @@
 > 当前推进到 **S2-A.2：精确对象几何命中**。公开 `objects.hit_test` 与制造边界查询。
-> GUI 仍是 S0 演示；S2-A.3 GUI 尚未完成。契约见 [ADR 0014](docs/adr/0014-s2a2-hit-test.md)。
+> GUI 仍是 S0 演示；S2-A.3 GUI 尚未完成。契约见 [ADR 0014](docs/adr/0014-s2a2-hit-test.md)，实测见 [S2-A.2 报告](docs/S2_A2_REVIEW.md)。
 
 # RCam Gerber editor — Mac-first S1-B2c
 

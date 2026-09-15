@@ -1,0 +1,5 @@
+    Checking editor-core v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-core)
+    Checking gerber-io v0.1.0 (/Volumes/外接硬盘/rcam/crates/gerber-io)
+    Checking editor-service v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-service)
+    Checking editor-app v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-app)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.24s

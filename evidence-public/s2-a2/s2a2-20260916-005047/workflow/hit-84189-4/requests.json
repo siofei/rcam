@@ -1,0 +1,418 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "hit-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-4/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "hit-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 3.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.duplicate",
+      "params": {
+        "dx_mm": 2,
+        "dy_mm": 0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ]
+      },
+      "request_id": "hit-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-2",
+      "result": {
+        "changed_object_ids": [
+          "doc-1-generated-object-0"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "hit-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-3",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 3.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          },
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 4.0,
+                    "y_mm": 3.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "doc-1-generated-object-0",
+              "origin": {
+                "kind": "generated",
+                "operation_id": "doc-1-generated-op-0"
+              }
+            }
+          }
+        ],
+        "revision": "1",
+        "total": 2
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 3.0,
+          "y_mm": 3.0
+        },
+        "tolerance_mm": 0.0
+      },
+      "request_id": "hit-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-4",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "doc-1-generated-object-0"
+        ],
+        "revision": "1"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 4.0,
+          "y_mm": 3.0
+        },
+        "tolerance_mm": 0.0
+      },
+      "request_id": "hit-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-5",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "doc-1-generated-object-0"
+        ],
+        "revision": "1"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "objects.delete",
+      "params": {
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ]
+      },
+      "request_id": "hit-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-6",
+      "result": {
+        "changed_object_ids": [
+          "object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "2",
+        "undo_entries": 2,
+        "undo_entries_added": 1
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 3.0,
+          "y_mm": 3.0
+        },
+        "tolerance_mm": 0.0
+      },
+      "request_id": "hit-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-7",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "doc-1-generated-object-0"
+        ],
+        "revision": "2"
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "2",
+      "op": "history.undo",
+      "params": {},
+      "request_id": "hit-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-8",
+      "result": {
+        "changed_object_ids": [
+          "object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 1,
+        "revision": "3",
+        "undo_entries": 1,
+        "undo_entries_added": 0
+      },
+      "revision": "3",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 3.0,
+          "y_mm": 3.0
+        },
+        "tolerance_mm": 0.0
+      },
+      "request_id": "hit-9"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-9",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "doc-1-generated-object-0"
+        ],
+        "revision": "3"
+      },
+      "revision": "3",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

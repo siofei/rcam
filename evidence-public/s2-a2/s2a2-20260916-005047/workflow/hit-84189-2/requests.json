@@ -1,0 +1,871 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "hit-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "hit-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 3.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-2",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": -1
+      },
+      "request_id": "hit-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "field": "tolerance_mm"
+        },
+        "message": "invalid hit-test parameter"
+      },
+      "job_id": null,
+      "request_id": "hit-3",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-4",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 1000000001.0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "field": "point"
+        },
+        "message": "invalid hit-test parameter"
+      },
+      "job_id": null,
+      "request_id": "hit-5",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-6",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 1000000001.0
+      },
+      "request_id": "hit-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "field": "tolerance_mm"
+        },
+        "message": "invalid hit-test parameter"
+      },
+      "job_id": null,
+      "request_id": "hit-7",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-8",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "extra": 1,
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-9"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "diagnostic": "unknown field `extra`, expected `x_mm` or `y_mm`",
+          "field": "params"
+        },
+        "message": "invalid params: unknown field `extra`, expected `x_mm` or `y_mm`"
+      },
+      "job_id": null,
+      "request_id": "hit-9",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-10"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-10",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "extra": 1,
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-11"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "diagnostic": "unknown field `extra`, expected one of `layer_id`, `point`, `tolerance_mm`",
+          "field": "params"
+        },
+        "message": "invalid params: unknown field `extra`, expected one of `layer_id`, `point`, `tolerance_mm`"
+      },
+      "job_id": null,
+      "request_id": "hit-11",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-12"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-12",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-13"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "field": "layer_id"
+        },
+        "message": "invalid hit-test parameter"
+      },
+      "job_id": null,
+      "request_id": "hit-13",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-14"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-14",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point_mm": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-15"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "diagnostic": "unknown field `point_mm`, expected one of `layer_id`, `point`, `tolerance_mm`",
+          "field": "params"
+        },
+        "message": "invalid params: unknown field `point_mm`, expected one of `layer_id`, `point`, `tolerance_mm`"
+      },
+      "job_id": null,
+      "request_id": "hit-15",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-16"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-16",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        }
+      },
+      "request_id": "hit-17"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "diagnostic": "missing field `tolerance_mm`",
+          "field": "params"
+        },
+        "message": "invalid params: missing field `tolerance_mm`"
+      },
+      "job_id": null,
+      "request_id": "hit-17",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-18"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-18",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-19"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "field": "expected_revision"
+        },
+        "message": "read-only operation does not accept expected_revision"
+      },
+      "job_id": null,
+      "request_id": "hit-19",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "absent",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-20"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "NOT_FOUND",
+        "details": {
+          "entity": "layer",
+          "id": "absent"
+        },
+        "message": "layer \"absent\" was not found"
+      },
+      "job_id": null,
+      "request_id": "hit-20",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "raw_request": "{\"api_version\":1,\"request_id\":\"nonfinite\",\"document_id\":\"doc-1\",\"op\":\"objects.hit_test\",\"params\":{\"layer_id\":\"layer-1\",\"point\":{\"x_mm\":NaN,\"y_mm\":0},\"tolerance_mm\":0}}",
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "column": 136,
+          "diagnostic": "expected value at line 1 column 136",
+          "field": "request",
+          "line": 1
+        },
+        "message": "invalid request: expected value at line 1 column 136"
+      },
+      "job_id": null,
+      "request_id": null,
+      "result": null,
+      "revision": null,
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "raw_request": "{\"api_version\":1,\"request_id\":\"nonfinite\",\"document_id\":\"doc-1\",\"op\":\"objects.hit_test\",\"params\":{\"layer_id\":\"layer-1\",\"point\":{\"x_mm\":Infinity,\"y_mm\":0},\"tolerance_mm\":0}}",
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "column": 136,
+          "diagnostic": "expected value at line 1 column 136",
+          "field": "request",
+          "line": 1
+        },
+        "message": "invalid request: expected value at line 1 column 136"
+      },
+      "job_id": null,
+      "request_id": null,
+      "result": null,
+      "revision": null,
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "raw_request": "{\"api_version\":1,\"request_id\":\"nonfinite\",\"document_id\":\"doc-1\",\"op\":\"objects.hit_test\",\"params\":{\"layer_id\":\"layer-1\",\"point\":{\"x_mm\":1e999,\"y_mm\":0},\"tolerance_mm\":0}}",
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "column": 140,
+          "diagnostic": "number out of range at line 1 column 140",
+          "field": "request",
+          "line": 1
+        },
+        "message": "invalid request: number out of range at line 1 column 140"
+      },
+      "job_id": null,
+      "request_id": "nonfinite",
+      "result": null,
+      "revision": null,
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "hit-24"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-24",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-2/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

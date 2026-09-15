@@ -1,0 +1,1 @@
+7497c5cce784e23d431d57b4db267d18f1ea0ba2e189a75954815a3ab3a1827c  target/release/editor-app

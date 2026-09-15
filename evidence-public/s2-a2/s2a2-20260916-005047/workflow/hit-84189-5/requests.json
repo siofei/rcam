@@ -1,0 +1,314 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "hit-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2a2-20260916-005047/workflow/hit-84189-5/source.gbr",
+        "source_sha256": "0763a321446f76b3b287b4a7f2d86357a21384c2ed670d7b1ebd88198203052c",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.query",
+      "params": {
+        "layer_id": "layer-1"
+      },
+      "request_id": "hit-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-1",
+      "result": {
+        "api_version": 1,
+        "document_id": "doc-1",
+        "next_cursor": null,
+        "objects": [
+          {
+            "layer_id": "layer-1",
+            "object": {
+              "exposure": "dark",
+              "geometry": {
+                "Flash": {
+                  "aperture_id": "aperture-10",
+                  "center": {
+                    "x_mm": 2.0,
+                    "y_mm": 3.0
+                  },
+                  "transform": {
+                    "mirror": "None",
+                    "rotation_deg": 0.0,
+                    "scale": 1.0
+                  }
+                }
+              },
+              "object_id": "object-1",
+              "origin": {
+                "command_index": 4,
+                "kind": "imported"
+              }
+            }
+          }
+        ],
+        "revision": "0",
+        "total": 1
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "system.capabilities",
+      "params": {},
+      "request_id": "hit-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-2",
+      "result": {
+        "api_version": 1,
+        "precision": {
+          "compare_tolerance_mm": "1e-6",
+          "coordinate_type": "f64",
+          "coordinate_unit": "mm"
+        },
+        "read_only": false,
+        "resource_limits": {
+          "max_edit_objects": 10000,
+          "max_history_bytes": 67108864,
+          "max_history_entries": 100,
+          "max_hit_test_work": 2000000,
+          "max_move_objects": 10000,
+          "max_objects": 500000,
+          "max_query_results": 1000,
+          "max_source_bytes": 8388608
+        },
+        "stage": "S2-A.2 exact object hit-test",
+        "supported_gerber_subset": [
+          "FS absolute coordinates",
+          "FS incremental coordinates (I/G91)",
+          "MO MM/IN",
+          "G70/G71 unit state",
+          "AD C/R/O/P standard apertures",
+          "AM primitive 1/4/21 with bounded expressions",
+          "D01/D02/D03 ordered operations",
+          "G01 circular and rectangular sweeps",
+          "G75 strokes with nonzero arc deviation (annular canonical coverage)",
+          "G74 strokes with least-deviation center and zero-sweep dot",
+          "G36/G37 circular Region interpretations with annular-envelope topology checks",
+          "LPD/LPC ordered flash exposure",
+          "identity SR and image-state declarations",
+          "front-matter ICAS/IO/IN/LN"
+        ],
+        "supported_operations": [
+          "system.capabilities",
+          "document.open_s0",
+          "document.snapshot",
+          "document.analyze_s0",
+          "document.open",
+          "document.get",
+          "document.close",
+          "objects.move",
+          "objects.rotate",
+          "objects.mirror",
+          "objects.duplicate",
+          "objects.delete",
+          "history.undo",
+          "history.redo",
+          "layers.list",
+          "layer.update",
+          "objects.hit_test",
+          "layer.bounds",
+          "document.bounds",
+          "objects.query",
+          "objects.get",
+          "document.validate",
+          "gerber.export_layer"
+        ],
+        "unsupported_gerber_features": [
+          "Region arcs without a verified circular interpretation or separated uncertainty envelopes",
+          "AB aperture blocks",
+          "complex SR",
+          "non-identity MI/OF/SF/IR transforms",
+          "unsupported AM primitives and expressions",
+          "Excellon and RS-274D external apertures",
+          "RectangularSweep rotation except exact multiples of 90 degrees; diagonal mirror axes",
+          "production export"
+        ],
+        "unsupported_operations": [
+          "text.create"
+        ]
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.delete",
+      "params": {
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1"
+        ]
+      },
+      "request_id": "hit-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-3",
+      "result": {
+        "changed_object_ids": [
+          "object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 2.0,
+          "y_mm": 3.0
+        },
+        "tolerance_mm": 100.0
+      },
+      "request_id": "hit-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-4",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [],
+        "revision": "1"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "document.close",
+      "params": {
+        "discard_changes": true
+      },
+      "request_id": "hit-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "hit-5",
+      "result": {
+        "closed": true
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.hit_test",
+      "params": {
+        "layer_id": "layer-1",
+        "point": {
+          "x_mm": 0,
+          "y_mm": 0
+        },
+        "tolerance_mm": 0
+      },
+      "request_id": "hit-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "NOT_FOUND",
+        "details": {
+          "entity": "document",
+          "id": "doc-1"
+        },
+        "message": "document \"doc-1\" was not found"
+      },
+      "job_id": null,
+      "request_id": "hit-6",
+      "result": null,
+      "revision": null,
+      "status": "error",
+      "warnings": []
+    }
+  }
+]

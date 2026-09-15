@@ -1,0 +1,224 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.31605100631713867,
+    "log": "gates/01.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "check",
+      "--workspace",
+      "--all-targets",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 5.299724102020264,
+    "log": "gates/02.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--locked",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 3.301706075668335,
+    "log": "gates/03.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 4.407831907272339,
+    "log": "gates/04.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-core",
+      "--test",
+      "s2a_hit_test"
+    ],
+    "exit_code": 0,
+    "seconds": 0.24866986274719238,
+    "log": "gates/05.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s2a_hit_test_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 2.8205158710479736,
+    "log": "gates/06.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s2a_bounds_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 1.2559278011322021,
+    "log": "gates/07.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s1b_edit_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 1.5771241188049316,
+    "log": "gates/08.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s1b2_edit_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 2.7623631954193115,
+    "log": "gates/09.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s1b2b_transform_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 2.7461187839508057,
+    "log": "gates/10.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "s1b2c_workspace_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 1.1697840690612793,
+    "log": "gates/11.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "automation_contract"
+    ],
+    "exit_code": 0,
+    "seconds": 1.1549298763275146,
+    "log": "gates/12.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--test",
+      "headless_workflow"
+    ],
+    "exit_code": 0,
+    "seconds": 1.0599360466003418,
+    "log": "gates/13.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "-p",
+      "editor-service",
+      "--edges",
+      "normal"
+    ],
+    "exit_code": 0,
+    "seconds": 0.10476803779602051,
+    "log": "gates/14.log"
+  },
+  {
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "-p",
+      "editor-app"
+    ],
+    "exit_code": 0,
+    "seconds": 7.7670371532440186,
+    "log": "gates/15.log"
+  },
+  {
+    "command": [
+      "python3",
+      "scripts/source_manifest.py",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.3991239070892334,
+    "log": "gates/16.log"
+  },
+  {
+    "command": [
+      "python3",
+      "scripts/test_audit_core10.py"
+    ],
+    "exit_code": 0,
+    "seconds": 0.07597780227661133,
+    "log": "gates/17.log"
+  }
+]

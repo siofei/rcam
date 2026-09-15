@@ -1,0 +1,227 @@
+{
+  "schema_version": 2,
+  "spec_document_version": "1.1",
+  "kind": "stage_scoped_checks_not_full_at_acceptance",
+  "stage": "S2-A.2",
+  "stage_status": "通过",
+  "platform": "macos-arm64",
+  "tested_code_commit": "a1aa073a63328fa2ac9eec5f6eb5a55af072560e",
+  "tested_git_status": "clean",
+  "workspace_tests": {
+    "passed": 229,
+    "failed": 0,
+    "ignored": 2
+  },
+  "hit_test_core_tests": 18,
+  "hit_test_service_tests": 11,
+  "audit_core10_script_tests": 7,
+  "windows": "deferred / not executed",
+  "gui": "未执行：不属于 S2-A.2",
+  "core10_full_roundtrip": "未完成：审计脚本测试不等于真实 CORE10 编辑验收",
+  "cases": [
+    {
+      "case_id": "AT-010",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-011",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-012",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-013",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-014",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-015",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-016",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-026",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-027",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-028",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-030",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-039",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-040",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-088",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-089",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-090",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    },
+    {
+      "case_id": "AT-095",
+      "status": "未执行",
+      "local_check_status": "通过",
+      "platform": "macos-arm64",
+      "actual_result": "S2-A.2 相关无窗口点选检查通过；完整原步骤及 Windows/GUI 未执行",
+      "evidence_paths": [
+        "gates/04.log",
+        "gates/05.log",
+        "gates/06.log"
+      ]
+    }
+  ]
+}

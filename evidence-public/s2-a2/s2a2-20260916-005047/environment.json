@@ -1,0 +1,14 @@
+{
+  "schema_version": 2,
+  "stage": "S2-A.2",
+  "tested_code_commit": "a1aa073a63328fa2ac9eec5f6eb5a55af072560e",
+  "git_head": "a1aa073a63328fa2ac9eec5f6eb5a55af072560e",
+  "git_status": "clean",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80",
+  "architecture": "arm64",
+  "rustc": "rustc 1.89.0 (29483883e 2025-08-04)\nbinary: rustc\ncommit-hash: 29483883eed69d5fb4db01964cdf2af4d86e9cb2\ncommit-date: 2025-08-04\nhost: aarch64-apple-darwin\nrelease: 1.89.0\nLLVM version: 20.1.7",
+  "cargo": "cargo 1.89.0 (c24e10642 2025-06-23)",
+  "toolchain": "existing project .tools cache; not clean-machine installation",
+  "windows": "deferred / not executed",
+  "gui": "not executed; outside S2-A.2 scope"
+}
