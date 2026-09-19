@@ -1,0 +1,6 @@
+{
+  "fixtures/synthetic/s2a3/gui_primitives.gbr": "eca20f1392c007b97edfbc669aa0a6250118cc960aa5efb70df6ade49b8c2991",
+  "evidence/s2b1-final2-20260919/gui/final.gbr": "177c00cf0d4dd856428b89eea1f62b88fe01f24fad800767a2c910896d1455fe",
+  "target/release/editor-app": "cc9987e1a1764b0b7de037b5bf1e0c1085eb83b30b027a61561a6192c2e406d2",
+  "/private/tmp/rcam-s2b1-final/RCam.app/Contents/MacOS/editor-app": "cc9987e1a1764b0b7de037b5bf1e0c1085eb83b30b027a61561a6192c2e406d2"
+}

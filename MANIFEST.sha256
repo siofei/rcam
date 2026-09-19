@@ -8,7 +8,7 @@ b9af4e7f35f984aea632246caf22866616e5a45c5d78bea06a540e8e244c89dc  Cargo.lock
 6e8ead67c104e3cd8ad3a263f8013fd297eaa4ea1734c9f25f94b205398f6ad7  RCam_MAC_FIRST_S2A_GUI_NEXT_TASK.md
 683d7a6b4a1e0a00088c6dd11c74ae8b10e5ce424d692d176998ac14ad03f946  RCam_MAC_FIRST_S2B1_DIRECT_MANIPULATION_NEXT_TASK.md
 d1ed58aab146c5fa26df44571ada8918302d83f435800bf2464d8b8a403fce07  RCam_S1B2c_8ac82a0_Review.md
-390cf18fb219af605b365707a924bf7035a86760273693e11cc91e712609b24c  README.md
+a93224ecad56dadfe79a9192bcb153fd3c32bc994657a3dbcc7d62ac4b21a5bc  README.md
 7f561d44783d8151c4859c8e326bcd4944fb5353aa751bad30b1638f5d006833  THIRD_PARTY_NOTICES.md
 bf395c1c6322ef2785f1f1b83b99903b29754068aefde1c526232b16f60668ec  crates/editor-app/Cargo.toml
 f58d11eadf14d61da686ac75894bc0e34367fd6068db0103c3e47d98e0ceb5fd  crates/editor-app/src/app_tests.rs
@@ -61,12 +61,12 @@ baf56efb80556b9105a810190e8c25446e047a3d5ca8061a776e099a1aa129c8  crates/gerber-
 6635d9d0ec68c93e5ef69cfbe0764861e8fba51697f19654991317549b8d6359  docs/ACCEPTANCE_V1.md
 c4d9cd8e24dbf260340fa99e94dca5575e74fceac9318438acdfffbdb19b4c96  docs/AUTOMATION_API.md
 d0953ecb719518c93159b5a48ed27ee0c44e30c82db9b423434436f0904e9bfc  docs/BASELINE.md
-b58a9d0f30cb0431ca4b0cc1d7cef0b7f5a12505aa3367b730f740acfe4c92af  docs/CAPABILITIES.md
+04f5d6280247517209eba96f2e0a535d127410838d30cc08ae3623b0512799f0  docs/CAPABILITIES.md
 f5d8df95f874301d851c0e86173ba46c924f9fe8f63efbd01b47a51a331024b7  docs/CHANGELOG.md
 cf78bb0d1a1992fb0822c2a349218c331d417177037c9dd849c11f103a72631a  docs/DEPENDENCIES.md
 2f63d61378967dcfe09e6ba8eaf0c6920ea7991aa8ce6112a092f13e657739f2  docs/DESIGN_V1.md
 110c5ee63cf0c109ee988f152cd791f8139629e416d1eeb38502b805b4f25c04  docs/DRAG_FIX_REVIEW.md
-8daaa781e1c1ce75a96a5d4433453091324a1b457803f174ac1ad46f4169f1d3  docs/IMPLEMENTATION_PLAN.md
+5ac53decee2ba7d334628038b292defac17d3ee74e0f8cd11a80d7beebc8decd  docs/IMPLEMENTATION_PLAN.md
 a1bf887e336fa77cae788649f7fc94a87b2c2f2a5fa7e6eb87e5a18ec2821bfb  docs/README.md
 c9d8e99b3dff752d6dc291ea0fbdc613dc9d2e3b8d06b0e537ee59809da9e163  docs/S0_B_REVIEW.md
 3b8923f7631eeed247d19b6b2d6aa108d69672c624c8ae60e7a985d0cdaf2980  docs/S0_C_REVIEW.md
@@ -80,6 +80,7 @@ dcfbe0c41f732b2b32c2481f9785c29d13b44565d1c912381d5b89257414bdb9  docs/S1_B1_REV
 f1eaae4143684b1680fd5ebc12a400bd84d04d1465e260b8b67fe8beb694d409  docs/S2_A1_REVIEW.md
 ac0c280dd8c08c476f53e60515dae1c5d839aa155fb2bbd850042b4251019b19  docs/S2_A2_REVIEW.md
 858f00764215197e2598a2d301b9623633ccca1b7c5e2fee9771b2672c3c8aa0  docs/S2_A3_REVIEW.md
+1eafcf6e7fd7104e0850a3744157e56cc36f363fe59365081815b80440e2068b  docs/S2_B1_REVIEW.md
 03aad33dae0fbefb3bae4d5ca8b03b8ac605bbfe1cb90b6d5e7598f1363caac9  docs/acceptance_cases.json
 1a29c3b10acd29d7fd2dd07f56f4b7f1f04c4bded87538892cede6a84248e974  docs/adr/0001-s0-boundaries.md
 c4f89eff24d787e78c2fcb6335e7e6d0b6395ec32424c9a9a2ae7b9fe78b9ce8  docs/adr/0002-real-sample-scope-risk.md
@@ -1105,6 +1106,92 @@ b4dca5dd8f6cb0e535664ffff084d4ebc43ed65369537b700557e0074a9ba748  evidence-publi
 b4dca5dd8f6cb0e535664ffff084d4ebc43ed65369537b700557e0074a9ba748  evidence-public/s2a3-final-20260919/source-after-gui.json
 b4dca5dd8f6cb0e535664ffff084d4ebc43ed65369537b700557e0074a9ba748  evidence-public/s2a3-final-20260919/source-before.json
 147bcb58f17cc1365d9c04f9b22374351abbb6e3a52f66187f5076f9f53984fd  evidence-public/s2a3-final-20260919/summary.json
+ef2b055c85bf79e4f497967f2dc62469515d32acd50b84ff34b3ef7f56453249  evidence-public/s2b1-final2-20260919/artifact-hashes.json
+dad8538a2d3883f0abe135ce95867f4c668d42d28167cc2ae82ca30ad557beb0  evidence-public/s2b1-final2-20260919/environment.json
+b6e19c16e0d5f97094745b63c78c4f15238111c4de91b081bba774a71abff1e8  evidence-public/s2b1-final2-20260919/gates/01.log
+53e537f90433a18fe55ce0d40cb287673ec44dec0ea911dfcb83063094a9d4dc  evidence-public/s2b1-final2-20260919/gates/02.log
+c2f976dcf0eb4be3baf8f3e3bdc0ac8b34057dfb2d13061e4aabd7dfcc9fb440  evidence-public/s2b1-final2-20260919/gates/03.log
+556041b4376a7bfdc021ed04ceb0ccf102558579a8109a2a6800a0327595c2e9  evidence-public/s2b1-final2-20260919/gates/04.log
+ca5aa199231c2f9541a085c1619f83435ad17e63e32c8e41304fdeb3e5ae9ca8  evidence-public/s2b1-final2-20260919/gates/05.log
+ac06af06d48a46a9bbc41493f8b1c38f505fbb47cb70fbd92bb8db3b80a09445  evidence-public/s2b1-final2-20260919/gates/06.log
+fafaac1b538d9896140ff3d7b261830f51793f0f05ef295ae4ec4598f7d9e9ac  evidence-public/s2b1-final2-20260919/gates/07.log
+9dada63447d5e43c5eb4767f12de48625183f74cfb7bbf40a2b5a5e49a246ffc  evidence-public/s2b1-final2-20260919/gates/08.log
+afa96e3921daefa13a75c32274eda3874a484008a0790cc61e62cf7fcb3fde8e  evidence-public/s2b1-final2-20260919/gates/09.log
+54ce21ddd22e3fd968eb8fe6dfcbde4f1d441bdd9d21b6251bc2a5a6e2b0baa2  evidence-public/s2b1-final2-20260919/gates/10.log
+8808b163015f29de034138557aa7dfe5ce4fd5a92e3bb382819bb232f98abe18  evidence-public/s2b1-final2-20260919/gates/11.log
+063b3683acd977233dc491e924a978c192af3643c61e06d11c0114a9c214fb7c  evidence-public/s2b1-final2-20260919/gates/12.log
+261ed57f5b9c53ee48780b71d098b4bc9e49a05eaca6502ce20c10b3cb4ffb1d  evidence-public/s2b1-final2-20260919/gates/13.log
+b5605928b0c573ce93183786d1b008820d6566051cd974d82b8453d92c426a23  evidence-public/s2b1-final2-20260919/gates/14.log
+3dde1e687635dd6024e151bcd41ff869ac9d799cf7165627f61bc14dd4a59666  evidence-public/s2b1-final2-20260919/gates/15.log
+bc8ed6d8d59ebc9e39eb2f44fca6eb0fe2abf144e103ef55474d417f36297fad  evidence-public/s2b1-final2-20260919/gates/16.log
+9ec4dc95fa2cd74d1b169e5d7f5af56569091c940f0b3a9cb2618c7ac193a291  evidence-public/s2b1-final2-20260919/gates/17.log
+c1aec927d842601d702764fe66cb71fe97b4fec8823bbba369d639cc57fcee19  evidence-public/s2b1-final2-20260919/gates/commands.json
+555471a159d6d088e6c4289312e6b6107a056489b42b4ba5601f300348e2e38b  evidence-public/s2b1-final2-20260919/gui/01-drag.jpg
+efa8e75b2eba285bb2f430ac63bd0de00821d91c33ab2563e49c8cb411082611  evidence-public/s2b1-final2-20260919/gui/02-undo.jpg
+c86e439e85c9a9d10ad86522a47cfbd24d5af197b54d4fc0a866391948c9b62a  evidence-public/s2b1-final2-20260919/gui/03-duplicate.jpg
+b39c74cb918ed13b5c911c2f028e090d7e0a2bfad5f417bbd978e57ab57d8f58  evidence-public/s2b1-final2-20260919/gui/04-copy-moved.jpg
+d7c5f54152e6c6f4541d8de9a5c4347265d83d3b8bd4285456f8a47a1f7d2e1a  evidence-public/s2b1-final2-20260919/gui/05-delete.jpg
+5b010d898054b07376c3267897dfe505eabd85046b0f67a598a938043ae91f06  evidence-public/s2b1-final2-20260919/gui/06-focus.jpg
+676817070cf599f588ca7b565f173255b60b51a1d8c6bdde757773d4c1936846  evidence-public/s2b1-final2-20260919/gui/07-locked.jpg
+0ffb57ef411a51e012495c3d3c1e8f91293c9bbaa86dc32f808755fa5f717544  evidence-public/s2b1-final2-20260919/gui/08-saved.jpg
+18ae7b1184e6a11fdd4f94747fc23177454020158959d91be3a803a6c6f28306  evidence-public/s2b1-final2-20260919/gui/09-reopen.jpg
+6ab42a8ca6e696fac302b5d290ed8e97588d60deca4a069e62dead3ea24dd0c7  evidence-public/s2b1-final2-20260919/gui/10-fast-drag-fixed.jpg
+894a7f245c035503869d194ed8a565b38bb8741a187a0b1a35154804bc1c5731  evidence-public/s2b1-final2-20260919/gui/11-final-restored.jpg
+177c00cf0d4dd856428b89eea1f62b88fe01f24fad800767a2c910896d1455fe  evidence-public/s2b1-final2-20260919/gui/final.gbr
+4d46fecd004403bdbc373f63d8b03d30d333e219d666dcde3e7a11a3da0d59bc  evidence-public/s2b1-final2-20260919/gui/native.log
+6c1a6a91fc62af8d0a729a70f8e2970fc2dd102d1a744b9204578ed9054d2692  evidence-public/s2b1-final2-20260919/gui/user-confirmation.md
+bcfa62105dabe48aa35bdc122511ddaf57584e07552b3a496aaa7859a9894478  evidence-public/s2b1-final2-20260919/independent-output-check.json
+36bbbea94dfb2452a88460c7b939bfbf9413eb2d2081d2c96de21ee7be1b9844  evidence-public/s2b1-final2-20260919/metal/01.log
+7e99881eeb39964233fd871b53a8dbe8f5c690e9569ed70e9c95f5aabf450bef  evidence-public/s2b1-final2-20260919/metal/02.log
+a4cc19bec1f5ed54ab4a6059a9dc9cf49aab87bb18f687124a9d6f89dcead628  evidence-public/s2b1-final2-20260919/metal/commands.json
+0d1f5d72cddc9407b03ac54c021d933fd1a9db2d68b920355746b42bff334b92  evidence-public/s2b1-final2-20260919/prior-candidate/01-drag-redo.jpg
+644bd6e43b910f8ec903da8fdd54b55337c45c9c2418ffc205707c47826cffdb  evidence-public/s2b1-final2-20260919/prior-candidate/03-copy-drag.jpg
+953dc90bd1a16a38d51324f6868c7003fc18dd388333294dfdee0bbe684f11d7  evidence-public/s2b1-final2-20260919/prior-candidate/05-text-focus.jpg
+61bfdc49aafd05ca89d3d3cd0a71752132b95b29266f6c95bff84fc4e008e192  evidence-public/s2b1-final2-20260919/prior-candidate/06-locked.jpg
+82dc185ecffb9028af3f1549d5c4c0d68c256e1a2864b21279c3dcd42a2d7a16  evidence-public/s2b1-final2-20260919/prior-candidate/native.log
+15f673453e16b293d531b98729acf90dd7d58751b4dcb166053ce3ca548b4e69  evidence-public/s2b1-final2-20260919/results.json
+42b5778b3614a3c3e855d9958672168130c28f54421779de1134a86e5f37acc9  evidence-public/s2b1-final2-20260919/source-after.json
+42b5778b3614a3c3e855d9958672168130c28f54421779de1134a86e5f37acc9  evidence-public/s2b1-final2-20260919/source-before.json
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-0/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-1/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-10/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-11/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-12/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-13/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-14/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-15/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-16/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-17/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-18/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-19/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-2/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-20/中文 # source.gbx
+2475cf87b36de87a2e0ac9c0ea4b56be3d328b7714e306086c50f40f254aac6e  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-21/bad.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-21/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-22/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-23/中文 # source.gbx
+97da4f79959d4aef65faa2d92e372a34b6e06ecdd8bbc3550649210fe002d209  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-23/输出 # 1.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-24/中文 # source.gbx
+6ca7ea2feefc88ecb5ed6356ed963f47dc9137f82526fdd25d618ea626d0803f  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-25/exists.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-25/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-26/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-27/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-28/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-29/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-3/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-30/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-31/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-32/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-33/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-34/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-35/中文 # source.gbx
+68eea68f23fc7af46ff56690b0e6549439d3ee871e0c989c27afbc1a10fe5c3b  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-4/direct-final.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-4/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-5/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-6/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-7/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-8/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-9/中文 # source.gbx
 d0da84b84063b2419d56b6b59f39234644481ac845e330d9090dbbe45dbea58a  fixtures/synthetic/manifest.json
 fe00fd9ab0668d3d31ac8fe15344854f27d0ddd778ffc26a465036b03f13b43c  fixtures/synthetic/s0_polarity.gbr
 3c50e57dceeac36b4de4599e005981a2f4617abf492258193f89f53eb57dbc84  fixtures/synthetic/s0c/am_1.gbr

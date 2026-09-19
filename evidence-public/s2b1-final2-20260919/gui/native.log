@@ -1,0 +1,185 @@
+RCam S2-B1 native GPU: AdapterInfo { name: "Apple M1", vendor: 0, device: 0, device_type: IntegratedGpu, driver: "", driver_info: "", backend: Metal }
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+state document=doc-1 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=None saved=None
+gui_job=1 elapsed_ms=7
+display_rebuild=2 document=doc-1 revision=0 ppm=64 blocked=None
+state document=doc-1 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=None saved=None
+gui_job=2 elapsed_ms=0
+state document=doc-1 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=Some("object-1") saved=None
+gui_job=3 elapsed_ms=0
+state document=doc-1 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=Some("object-1") saved=None
+gui_job=4 elapsed_ms=0
+display_rebuild=3 document=doc-1 revision=1 ppm=64 blocked=None
+state document=doc-1 revision=1 workspace=0 dirty=true undo=1 redo=0 selected=Some("object-1") saved=None
+gui_job=5 elapsed_ms=0
+display_rebuild=4 document=doc-1 revision=2 ppm=64 blocked=None
+state document=doc-1 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-1") saved=None
+gui_job=6 elapsed_ms=0
+display_rebuild=5 document=doc-1 revision=3 ppm=64 blocked=None
+state document=doc-1 revision=3 workspace=0 dirty=true undo=1 redo=0 selected=Some("object-1") saved=None
+gui_job=7 elapsed_ms=0
+display_rebuild=6 document=doc-1 revision=4 ppm=64 blocked=None
+state document=doc-1 revision=4 workspace=0 dirty=true undo=2 redo=0 selected=Some("doc-1-generated-object-0") saved=None
+gui_job=8 elapsed_ms=0
+state document=doc-1 revision=4 workspace=0 dirty=true undo=2 redo=0 selected=Some("doc-1-generated-object-0") saved=None
+gui_job=9 elapsed_ms=0
+display_rebuild=7 document=doc-1 revision=5 ppm=64 blocked=None
+state document=doc-1 revision=5 workspace=0 dirty=true undo=3 redo=0 selected=Some("doc-1-generated-object-0") saved=None
+gui_job=10 elapsed_ms=0
+display_rebuild=8 document=doc-1 revision=6 ppm=64 blocked=None
+state document=doc-1 revision=6 workspace=0 dirty=true undo=4 redo=0 selected=None saved=None
+gui_job=11 elapsed_ms=0
+display_rebuild=9 document=doc-1 revision=7 ppm=64 blocked=None
+state document=doc-1 revision=7 workspace=0 dirty=true undo=3 redo=1 selected=None saved=None
+gui_job=12 elapsed_ms=0
+state document=doc-1 revision=7 workspace=0 dirty=true undo=3 redo=1 selected=Some("doc-1-generated-object-0") saved=None
+gui_job=13 elapsed_ms=0
+2026-09-19 23:48:37.862 editor-app[84326:25719761] TSM AdjustCapsLockLEDForKeyTransitionHandling - _ISSetPhysicalKeyboardCapsLockLED Inhibit
+display_rebuild=10 document=doc-1 revision=7 ppm=64 blocked=None
+state document=doc-1 revision=7 workspace=1 dirty=true undo=3 redo=1 selected=Some("doc-1-generated-object-0") saved=None
+gui_job=14 elapsed_ms=0
+display_rebuild=11 document=doc-1 revision=7 ppm=64 blocked=None
+state document=doc-1 revision=7 workspace=2 dirty=true undo=3 redo=1 selected=Some("doc-1-generated-object-0") saved=None
+gui_job=15 elapsed_ms=1
+state document=doc-1 revision=7 workspace=2 dirty=false undo=3 redo=1 selected=Some("doc-1-generated-object-0") saved=Some("/Volumes/外接硬盘/rcam/evidence/s2b1-final2-20260919/gui/final.gbr")
+gui_job=16 elapsed_ms=51
+display_rebuild=12 document=doc-2 revision=0 ppm=20 blocked=None
+state document=doc-2 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=None saved=None
+gui_job=17 elapsed_ms=76
+display_rebuild=13 document=doc-2 revision=0 ppm=64 blocked=None
+state document=doc-2 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=None saved=None
+gui_job=18 elapsed_ms=0
+state document=doc-2 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=Some("object-2") saved=None
+gui_job=19 elapsed_ms=0
+state document=doc-2 revision=0 workspace=0 dirty=false undo=0 redo=0 selected=Some("object-2") saved=None
+gui_job=20 elapsed_ms=0
+display_rebuild=14 document=doc-2 revision=1 ppm=64 blocked=None
+state document=doc-2 revision=1 workspace=0 dirty=true undo=1 redo=0 selected=Some("object-2") saved=None
+gui_job=21 elapsed_ms=0
+display_rebuild=15 document=doc-2 revision=2 ppm=64 blocked=None
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-2") saved=None
+gui_job=22 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=23 elapsed_ms=5
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=24 elapsed_ms=1
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-10") saved=None
+gui_job=25 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-10") saved=None
+gui_job=26 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=27 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=28 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=29 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=30 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-10") saved=None
+gui_job=31 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=32 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=33 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-10") saved=None
+gui_job=34 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-10") saved=None
+gui_job=35 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=36 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=37 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=38 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-13") saved=None
+gui_job=39 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-13") saved=None
+gui_job=40 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=41 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=42 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-12") saved=None
+gui_job=43 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-12") saved=None
+gui_job=44 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=45 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=46 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=47 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=48 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=49 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-12") saved=None
+gui_job=50 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-12") saved=None
+gui_job=51 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=52 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=53 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-8") saved=None
+gui_job=54 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-9") saved=None
+gui_job=55 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-9") saved=None
+gui_job=56 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-7") saved=None
+gui_job=57 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-7") saved=None
+gui_job=58 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-10") saved=None
+gui_job=59 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-10") saved=None
+gui_job=60 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=61 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=62 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=63 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-11") saved=None
+gui_job=64 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-2") saved=None
+gui_job=65 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-2") saved=None
+gui_job=66 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=67 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=68 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-1") saved=None
+gui_job=69 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-3") saved=None
+gui_job=70 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-3") saved=None
+gui_job=71 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-4") saved=None
+gui_job=72 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-4") saved=None
+gui_job=73 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=74 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=None saved=None
+gui_job=75 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-5") saved=None
+gui_job=76 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-6") saved=None
+gui_job=77 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-6") saved=None
+gui_job=78 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-8") saved=None
+gui_job=79 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-8") saved=None
+gui_job=80 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-9") saved=None
+gui_job=81 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-9") saved=None
+gui_job=82 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-12") saved=None
+gui_job=83 elapsed_ms=0
+state document=doc-2 revision=2 workspace=0 dirty=false undo=0 redo=1 selected=Some("object-12") saved=None
+gui_job=84 elapsed_ms=0

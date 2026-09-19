@@ -106,3 +106,10 @@ Flash/Circular Line/Arc/Region 支持数值可靠的有限角旋转；Flash 组�
 RectangularSweep 仅精确整数90°旋转（奇数交换宽高），所有对象镜像仅水平/垂直世界轴。
 非支持角度的混合集合整批 UNSUPPORTED_FEATURE，不宣传所有对象任意角支持。
 GUI/文字/edit.batch/完整 CORE10/Windows 未完成，production export 仍不授权。
+
+## S2-B1 Mac GUI 局部能力
+
+已选对象支持 4 physical px 阈值的直接拖动预览，释放通过服务提交一个 Move；Esc/失焦/PointerGone 取消。
+Cmd+D 原位复制并选中新对象；Delete/Backspace 删除，菜单和按钮共用同一服务，文本焦点不触发制造快捷键。
+单选、原位复制、同层曝光顺序边界不变；不含多选/框选/Grid/Snap/测距/Rotate-Mirror GUI。
+Mac 原生及证据限制见 S2_B1_REVIEW.md；不声明 Windows、完整 V1 或任何 Post-V1 格式支持。

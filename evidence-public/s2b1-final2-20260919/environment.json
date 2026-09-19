@@ -1,0 +1,13 @@
+{
+  "tested_code_commit": "aed930fcc2cdbfd729520bf213c3cf2b855a0dca",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80\n",
+  "arch": "arm64",
+  "gpu": "Apple M1 / Metal (native.log)",
+  "toolchain": "Rust 1.89.0 locked",
+  "workspace_test_totals": {
+    "passed": 273,
+    "failed": 0,
+    "ignored": 4
+  },
+  "normal_service_gui_gpu_dependencies": []
+}

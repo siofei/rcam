@@ -1,0 +1,72 @@
+cargo tree --locked -p editor-service --edges normal
+editor-service v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-service)
+├── editor-core v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-core)
+│   └── serde v1.0.229
+│       ├── serde_core v1.0.229
+│       └── serde_derive v1.0.229 (proc-macro)
+│           ├── proc-macro2 v1.0.107
+│           │   └── unicode-ident v1.0.24
+│           ├── quote v1.0.47
+│           │   └── proc-macro2 v1.0.107 (*)
+│           └── syn v3.0.5
+│               ├── proc-macro2 v1.0.107 (*)
+│               ├── quote v1.0.47 (*)
+│               └── unicode-ident v1.0.24
+├── gerber-io v0.1.0 (/Volumes/外接硬盘/rcam/crates/gerber-io)
+│   ├── editor-core v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-core) (*)
+│   ├── gerber-types v0.7.0
+│   │   ├── chrono v0.4.45
+│   │   │   ├── iana-time-zone v0.1.65
+│   │   │   │   └── core-foundation-sys v0.8.7
+│   │   │   └── num-traits v0.2.19
+│   │   ├── num-rational v0.4.2
+│   │   │   ├── num-bigint v0.4.8
+│   │   │   │   ├── num-integer v0.1.47
+│   │   │   │   │   └── num-traits v0.2.19
+│   │   │   │   └── num-traits v0.2.19
+│   │   │   ├── num-integer v0.1.47 (*)
+│   │   │   └── num-traits v0.2.19
+│   │   ├── strum v0.27.2
+│   │   ├── strum_macros v0.27.2 (proc-macro)
+│   │   │   ├── heck v0.5.0
+│   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   ├── quote v1.0.47 (*)
+│   │   │   └── syn v2.0.119
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── unicode-ident v1.0.24
+│   │   ├── thiserror v2.0.20
+│   │   │   └── thiserror-impl v2.0.20 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v3.0.5 (*)
+│   │   └── uuid v1.26.1
+│   └── gerber_parser v0.5.0
+│       ├── anyhow v1.0.104
+│       ├── gerber-types v0.7.0 (*)
+│       ├── lazy-regex v3.6.1
+│       │   ├── lazy-regex-proc_macros v3.6.1 (proc-macro)
+│       │   │   ├── proc-macro2 v1.0.107 (*)
+│       │   │   ├── quote v1.0.47 (*)
+│       │   │   ├── regex v1.13.1
+│       │   │   │   ├── aho-corasick v1.1.5
+│       │   │   │   │   └── memchr v2.8.3
+│       │   │   │   ├── memchr v2.8.3
+│       │   │   │   ├── regex-automata v0.4.18
+│       │   │   │   │   ├── aho-corasick v1.1.5 (*)
+│       │   │   │   │   ├── memchr v2.8.3
+│       │   │   │   │   └── regex-syntax v0.8.11
+│       │   │   │   └── regex-syntax v0.8.11
+│       │   │   └── syn v2.0.119 (*)
+│       │   ├── once_cell v1.21.4
+│       │   └── regex v1.13.1 (*)
+│       ├── log v0.4.34
+│       ├── regex v1.13.1 (*)
+│       ├── strum v0.27.2
+│       └── thiserror v2.0.20 (*)
+├── serde v1.0.229 (*)
+└── serde_json v1.0.151
+    ├── itoa v1.0.18
+    ├── memchr v2.8.3
+    ├── serde_core v1.0.229
+    └── zmij v1.0.23

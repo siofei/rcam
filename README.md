@@ -1,8 +1,8 @@
-# RCam Gerber editor — Mac-first S2-A.3
+# RCam Gerber editor — Mac-first S2-B1
 
 默认应用现已接入真实 Gerber 文件：原生打开、Finder 拖放、图层工作区、f64 导航、
-精确几何单选、属性、数值移动、撤销/重做与新路径另存为。
-范围和限制见 [ADR 0016](docs/adr/0016-s2a3-gui.md)。验收见 [S2-A.3报告](docs/S2_A3_REVIEW.md)：本轮Mac基础闭环通过，Windows与完整V1仍未通过。
+精确几何单选、属性、数值移动、已选对象直接拖动、原位复制、删除、撤销/重做与新路径另存为。
+范围和限制见 [ADR 0016](docs/adr/0016-s2a3-gui.md)。本轮范围见 [S2-B1任务](RCam_MAC_FIRST_S2B1_DIRECT_MANIPULATION_NEXT_TASK.md)，验收与证据边界见 [S2-B1报告](docs/S2_B1_REVIEW.md)。Windows与完整V1仍未通过。
 
 Mac 启动：`cargo run --release --locked -p editor-app`。
 测试应用包：先构建 release，再运行 `python3 scripts/package_macos.py --out target/gui-package`。

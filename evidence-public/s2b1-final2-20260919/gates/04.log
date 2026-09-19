@@ -1,0 +1,454 @@
+cargo test --workspace --locked
+   Compiling editor-app v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.62s
+     Running unittests src/main.rs (target/debug/deps/editor_app-a76862b0a6d86b59)
+
+running 45 tests
+test app_tests::drag_escape_cancels_without_side_effects ... ok
+test app_tests::drag_probe_uses_exact_hole_and_selects_other_without_arming ... ok
+test app_tests::cmd_d_duplicates_in_place_and_selects_new_object ... ok
+test app_tests::dirty_open_refused_and_close_requires_confirmation ... ok
+test app_tests::drag_preview_does_not_change_revision_dirty_or_history ... ok
+test app_tests::drag_release_before_async_hit_retains_endpoint ... ok
+test app_tests::delete_selected_clears_selection_and_undo_restores ... ok
+test app_tests::locked_duplicate_delete_fail_without_losing_selection ... ok
+test app_tests::drag_zero_delta_is_noop ... ok
+test app_tests::locked_layer_cannot_drag ... ok
+test app_tests::drag_capture_loss_cancels_without_side_effects ... ok
+test app_tests::drag_release_commits_exactly_one_move_transaction ... ok
+test app_tests::numeric_zero_move_not_submitted ... ok
+test app_tests::numeric_move_is_one_history_entry ... ok
+test app_tests::numeric_invalid_not_submitted ... ok
+test app_tests::locked_history_still_restores ... ok
+test app_tests::duplicate_undo_redo_preserves_generated_id ... ok
+test app_tests::open_failure_keeps_current_document ... ok
+test app_tests::render_snapshot_contract_is_owned_revision_bound ... ok
+test app_tests::save_failure_preserves_dirty_and_selection ... ok
+test app_tests::selection_allows_locked_but_move_rejected ... ok
+test app_tests::selection_clear_on_empty_click ... ok
+test app_tests::selection_uses_hit_test_order_topmost_layer ... ok
+test app_tests::selection_skips_hidden_layers ... ok
+test app_tests::retina_drag_threshold_is_physical_pixel_stable ... ok
+test app_tests::text_focus_blocks_manufacturing_delete_duplicate_undo ... ok
+test app_tests::selection_hole_center_not_selected ... ok
+test app_tests::direct_manipulation_save_reopen_preserves_final_geometry ... ok
+test app_tests::selection_survives_move_undo_redo ... ok
+test app_tests::service_failure_clears_preview_and_preserves_geometry ... ok
+test camera::tests::camera_fit_uses_f64_bounds ... ok
+test camera::tests::camera_zoom_keeps_cursor_world_point ... ok
+test camera::tests::screen_world_roundtrip_retina_scale ... ok
+test camera::tests::selection_tolerance_is_pixel_stable ... ok
+test display_tests::native_metal_drag_preview ... ignored, requires native Metal hardware; retain raw output
+test display_tests::native_metal_semantic_renderer ... ignored, requires native Metal hardware; retain raw output
+test app_tests::workspace_changes_do_not_mark_dirty ... ok
+test display_tests::invalid_zero_length_rectangle_remains_rejected ... ok
+test display_tests::renderer_refuses_numeric_precision_and_resource_overflow ... ok
+test app_tests::undo_redo_after_drag_preserves_selection ... ok
+test display_tests::renderer_refuses_partial_unsupported_document ... ok
+test app_tests::save_as_keeps_source_and_last_saved_identity ... ok
+test display_tests::region_refines_with_zoom_without_changing_semantics ... ok
+test display_tests::public_gui_sample_has_real_standard_and_macro_geometry ... ok
+test display_tests::renderer_builds_all_existing_semantic_variants ... ok
+
+test result: ok. 43 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running unittests src/s0_demo.rs (target/debug/examples/s0_demo-00f18eeaaa6a2ecd)
+
+running 5 tests
+test gpu_tests::native_gpu_coverage_regressions ... ignored, requires native Metal or DX12 hardware; run explicitly and retain raw output
+test gpu_tests::short_line_projection_counterexample ... ok
+test gpu_tests::checked_gpu_conversion_refuses_overflow_underflow_and_lost_holes ... ok
+test navigation_tests::navigation_hover_and_unowned_release_do_not_pan ... ok
+test navigation_tests::navigation_drag_keeps_release_frame_motion_without_double_counting ... ok
+
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/editor_core-abeb892aa662b731)
+
+running 7 tests
+test tests::points_are_measured_in_millimetres ... ok
+test tests::aperture_hole_is_local_and_does_not_clear_prior_line_model ... ok
+test tests::dark_clear_dark_preserves_expected_annuli ... ok
+test hit_test::budget_tests::reports_attempted_work_and_preserves_remaining_budget_on_failure ... ok
+test tests::coincident_arc_overlap_is_rejected_but_complementary_arcs_are_valid ... ok
+test cutin_direction_regression::rotated_parallel_cutins_detected_but_mixed_directions_rejected ... ok
+test tests::macro_outline_propagates_typed_intersection_resource_limit ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/review_geometry_regressions.rs (target/debug/deps/review_geometry_regressions-317cf6265964caa8)
+
+running 3 tests
+test sub_tolerance_hole_is_never_silently_filled ... ok
+test short_line_endpoint_and_zero_length_follow_capsule_geometry ... ok
+test unrepresentable_f64_radius_is_explicitly_rejected ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/s1a_independent_geometry.rs (target/debug/deps/s1a_independent_geometry-c8e0fb2c3e1ce8ed)
+
+running 11 tests
+test polygon_hole_must_fit_inside_edges_not_just_vertex_circle ... ok
+test curved_region_coverage_is_not_display_tessellation ... ok
+test full_circle_flag_cannot_hide_invalid_end_point ... ok
+test nested_independent_contours_are_union_not_a_hole ... ok
+test swept_arcs_include_round_endpoint_caps ... ok
+test legal_axis_cutin_creates_only_a_local_hole ... ok
+test degenerate_backtracking_contour_is_not_a_region ... ok
+test zero_rectangular_sweep_is_outside_frozen_nonzero_subset ... ok
+test bowtie_is_not_a_valid_region_or_macro_outline ... ok
+test tiny_local_holes_remain_transparent ... ok
+test macro_rotation_moves_off_origin_primitive_centres ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/s2a_bounds.rs (target/debug/deps/s2a_bounds-83fbd787d2a28a0c)
+
+running 12 tests
+test clear_objects_and_multiple_layers_are_included ... ok
+test empty_layer_and_document_are_null_unknown_layer_is_error ... ok
+test line_and_rectangular_sweep_include_real_width ... ok
+test macro_outline_and_clear_have_conservative_dark_envelope ... ok
+test arc_bounds_only_include_sweep_extrema_and_direction ... ok
+test macro_offset_circle_and_centerline_compose_local_transform ... ok
+test missing_aperture_is_not_silently_omitted ... ok
+test full_circle_zero_sweep_and_deviation_bounds ... ok
+test obround_diagonal_bounds_are_not_rotated_local_aabb ... ok
+test polygon_uses_vertices_instead_of_circumcircle ... ok
+test region_bounds_preserve_real_arc_extrema ... ok
+test flash_standard_shapes_respect_transform_and_holes ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/s2a_hit_test.rs (target/debug/deps/s2a_hit_test-4fbdf82e2f4d57dc)
+
+running 18 tests
+test hit_test_line_width_and_tolerance ... ok
+test hit_test_arc_direction_and_sweep ... ok
+test hit_test_arc_full_zero_and_deviation ... ok
+test hit_test_clear_object_returns_object_geometry_and_order ... ok
+test hit_test_flash_circle_hole ... ok
+test hit_test_invalid_params_and_budget_are_fail_closed ... ok
+test hit_test_macro_dark_clear_primitives ... ok
+test hit_test_rectangle_obround_polygon_local_transform ... ok
+test hit_test_zero_length_line_and_tiny_nonzero_segment ... ok
+test hit_test_rectangular_sweep_exact_not_aabb ... ok
+test hit_test_region_inside_outside_hole_cutin ... ok
+test macro_near_coincident_boundary_is_rejected_not_guessed ... ok
+test macro_overlapping_circles_and_complete_multi_clear_erasure ... ok
+test macro_rotated_outline_offset_and_local_mirror ... ok
+test region_real_arc_edges_and_independent_contour_union ... ok
+test tiny_hole_center_is_not_filled_by_a_fixed_numeric_selection_band ... ok
+test macro_overlap_corner_tolerance_uses_final_exposed_edges ... ok
+test macro_rectangles_match_independent_cell_distance_truth ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running unittests src/lib.rs (target/debug/deps/editor_service-73cb6f391db779c1)
+
+running 7 tests
+test tests::capability_dto_is_json_round_trippable ... ok
+test tests::json_boundary_rejects_unknown_versions_operations_and_fields ... ok
+test tests::duplicate_document_id_is_rejected_without_revision_reset ... ok
+test tests::service_returns_real_parser_snapshot_and_analysis ... ok
+test s1b_guards::revision_overflow_and_large_revision_are_safe ... ok
+test s1b_guards::locked_layer_is_rejected_by_real_json_entry_without_history_changes ... ok
+test tests::sha256_matches_standard_vectors ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/automation_contract.rs (target/debug/deps/automation_contract-df908a7c12e037bb)
+
+running 4 tests
+test s1_json_contract_publishes_only_authorized_real_operations ... ok
+test s0_json_contract_rejects_unknown_fields_and_unimplemented_edits ... ok
+test s1_json_contract_rejects_implicit_authority_and_nested_unknown_fields ... ok
+test s0_json_contract_uses_real_parser_and_read_only_snapshot ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-c7997fce7e532041)
+
+running 2 tests
+test dependency_gate_rejects_window_gpu_dialog_and_unknown_crates ... ok
+test service_normal_dependency_gate ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/headless_workflow.rs (target/debug/deps/headless_workflow-414f95a829973fd4)
+
+running 2 tests
+test metadata_policy_requires_confirmation_then_accepts_explicit_drop_list ... ok
+test real_headless_open_query_export_reopen_preserves_source ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/historical_audit.rs (target/debug/deps/historical_audit-80931f49762eb857)
+
+running 1 test
+test historical_35_checks ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/review_service_regressions.rs (target/debug/deps/review_service_regressions-53c2caa73750b738)
+
+running 6 tests
+test malformed_json_has_null_id_and_decode_location ... ok
+test capabilities_publish_actual_budgets_only_four_read_only_operations ... ok
+test strict_envelope_types_fields_and_ambiguous_ids_are_rejected ... ok
+test failures_echo_request_id_in_a_uniform_response ... ok
+test resource_limits_report_kind_limit_actual_and_preserve_document ... ok
+test exact_resource_boundaries_remain_usable ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running tests/s0c_scope_boundary.rs (target/debug/deps/s0c_scope_boundary-9e39de6fcf9a6b60)
+
+running 1 test
+test scope_fixtures_preserve_fail_closed_service_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/s1a1_arcs.rs (target/debug/deps/s1a1_arcs-b9b0f4dd93329f8f)
+
+running 6 tests
+test capabilities_describe_tested_arc_boundaries ... ok
+test g74_roundoff_at_large_origin_and_real_over_quarter_are_distinct ... ok
+test region_fuzziness_and_quantization_fail_closed ... ok
+test source_resolution_and_declared_center_survive_units_and_normalization ... ok
+test isolated_fuzzy_region_uses_a_verified_circle_inside_the_annulus ... ok
+test public_arc_fixture_truth_and_reopen ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/s1a_independent.rs (target/debug/deps/s1a_independent-fb1c947527d3b50d)
+
+running 2 tests
+test independent_service_permissions_conflicts_and_cursor_isolation ... ok
+test public_truth_opens_or_rejects_and_normalizes_without_source_writes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running tests/s1a_semantic_truth.rs (target/debug/deps/s1a_semantic_truth-bbed99524bab8da6)
+
+running 24 tests
+test frozen_core10_semantic_scan ... ignored, requires locally authorized frozen CORE10 manifest; explicit run only
+test incremental_io_is_applied_once ... ok
+test first_incremental_missing_axis_is_zero ... ok
+test all_frozen_formats_decode_digits_and_signs ... ok
+test incremental_trailing_arc_offsets_are_not_reinterpreted_or_accumulated ... ok
+test omitted_absolute_axis_preserves_exact_mm_value_after_inch_offset ... ok
+test macro_expansion_budget_is_global_across_apertures ... ok
+test g74_least_deviation_and_zero_sweep_are_accepted ... ok
+test macro_expression_recursion_is_bounded_including_unary_operators ... ok
+test ordinary_comment_may_span_physical_lines ... ok
+test trailing_incremental_full_circle_reencodes_offset_only_record ... ok
+test parameterized_macro_uses_real_ad_arguments ... ok
+test writer_and_validation_copy_have_separate_resource_limits ... ok
+test resource_limits_are_checked_at_each_input_expansion_boundary ... ok
+test source_metadata_is_preserved_as_diagnostics ... ok
+test writer_declares_multi_quadrant_for_region_arcs ... ok
+test writer_comparison_does_not_relax_to_old_input_resolution ... ok
+test legacy_empty_separators_packed_headers_and_multiline_macro_are_supported ... ok
+test unbound_template_parameter_does_not_hide_invalid_constant_primitive ... ok
+test original_apertures_arcs_and_rectangular_sweeps_have_known_geometry ... ok
+test writer_preserves_transform_precision_in_physical_space ... ok
+test writer_failure_preserves_preexisting_temporary_and_target_files ... ok
+test original_eighteen_scope_inputs_have_actual_semantics ... ok
+test independent_source_geometry_and_rejection_truth ... ok
+
+test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/s1b2_edit_workflow.rs (target/debug/deps/s1b2_edit_workflow-d6d00d1536adacb9)
+
+running 27 tests
+test core_budget_edits_are_atomic ... ok
+test deleted_and_undone_ids_are_never_reallocated ... ok
+test delete_multi_object_is_atomic ... ok
+test capabilities_and_strict_dtos_match_implemented_operations ... ok
+test delete_redo_removes_same_objects ... ok
+test direct_duplicate_rejects_nonfinite_parameters_and_json_requires_revision ... ok
+test empty_image_support_still_rejects_malformed_and_unknown_input ... ok
+test delete_undo_restores_exact_indices_and_ids ... ok
+test duplicate_flash_has_new_stable_id ... ok
+test duplicate_preserves_exposure_order ... ok
+test duplicate_undo_redo_restores_same_ids ... ok
+test history_guards_reject_changed_order_and_allow_valid_replay ... ok
+test late_duplicate_failure_preserves_all_objects_and_allocator ... ok
+test missing_layer_has_layer_not_found_details ... ok
+test empty_layer_exports_and_reopens_after_delete_all ... ok
+test failed_delete_preserves_document_history ... ok
+test missing_object_has_object_not_found_details ... ok
+test export_reports_saved_target_without_claiming_source_was_modified ... ok
+test failed_duplicate_preserves_document_history_and_id_contract ... ok
+test delete_export_reopen_matches_document ... ok
+test query_cursor_conflicts_after_insert_delete ... ok
+test zero_move_does_not_create_history ... ok
+test duplicate_clear_object_preserves_composition ... ok
+test writer_obeys_current_order_not_import_provenance ... ok
+test duplicate_export_reopen_matches_document ... ok
+test mixed_geometry_duplicate_delete_roundtrip_preserves_originals ... ok
+test structural_byte_budget_rejects_without_losing_redo ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+
+     Running tests/s1b2b_transform_workflow.rs (target/debug/deps/s1b2b_transform_workflow-b25321f1d583422b)
+
+running 31 tests
+test core_history_limits_are_atomic ... ok
+test capabilities_publish_only_tested_transform_scope ... ok
+test invariant_line_mirror_is_noop_and_preserves_history ... ok
+test mirror_undo_redo_restores_exact_state ... ok
+test mixed_selection_failure_is_atomic ... ok
+test mirror_region_flips_all_arc_directions ... ok
+test overflow_and_roundoff_reject_without_history ... ok
+test rectangular_sweep_rejects_37_deg_atomically ... ok
+test asymmetric_macro_orientation_and_local_hole_survive_composed_transform ... ok
+test negative_and_large_finite_angles_normalize_with_canonical_repetition ... ok
+test rectangular_sweep_rotates_exact_90_and_swaps_dimensions ... ok
+test rotate_full_circle_remains_full_circle ... ok
+test four_quarter_turns_restore_exact_or_frozen_canonical_state ... ok
+test mirror_arc_flips_direction ... ok
+test rotate_g74_zero_sweep_remains_zero_sweep ... ok
+test rotate_line_roundtrip ... ok
+test rotate_point_90_about_origin ... ok
+test rotate_point_37_about_nonzero_pivot ... ok
+test rotate_flash_updates_local_transform ... ok
+test rotate_undo_redo_restores_exact_state ... ok
+test strict_transform_dtos_and_finite_checks_preserve_redo ... ok
+test mirror_flash_composes_local_transform ... ok
+test rotate_arc_preserves_direction_and_source_semantics ... ok
+test rotate_existing_mirrored_flash_composes_correctly ... ok
+test two_edge_region_envelope_checks_both_shared_endpoints_but_not_interior ... ok
+test rotated_cutin_preserves_independent_square_hole_truth ... ok
+test rotate_region_preserves_edge_order_and_topology ... ok
+test mirror_twice_restores_exact_state ... ok
+test rotate_mirror_export_reopen_matches_independent_geometry ... ok
+test transform_byte_budget_failure_retains_redo ... ok
+test structural_order_guard_scalability_baseline ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+
+     Running tests/s1b2c_workspace_workflow.rs (target/debug/deps/s1b2c_workspace_workflow-1aab87fb8e639a9f)
+
+running 17 tests
+test layer_update_strict_json_fields ... ok
+test manufacturing_edit_still_changes_dirty ... ok
+test layer_update_unknown_layer_is_typed_not_found ... ok
+test lock_after_undo_does_not_block_redo ... ok
+test locked_layer_rejects_new_move_atomically ... ok
+test lock_after_move_does_not_block_undo ... ok
+test workspace_capability_and_dto_roundtrip ... ok
+test locked_layer_rejects_duplicate_delete_rotate_mirror ... ok
+test workspace_lock_does_not_change_manufacturing_dirty ... ok
+test workspace_noop_does_not_increment_revision ... ok
+test workspace_only_change_does_not_require_close_confirmation ... ok
+test workspace_stale_requests_preserve_state_and_history ... ok
+test workspace_rename_does_not_change_manufacturing_dirty ... ok
+test workspace_visibility_does_not_change_manufacturing_dirty ... ok
+test workspace_update_increments_only_workspace_revision ... ok
+test export_after_manufacturing_edit_clears_dirty ... ok
+test workspace_state_not_written_to_export ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/s1b_edit_workflow.rs (target/debug/deps/s1b_edit_workflow-bd5507b3f96b6d38)
+
+running 17 tests
+test move_flash_roundtrip ... ok
+test geometry_query_tracks_move_and_undo ... ok
+test failed_move_is_atomic ... ok
+test close_discards_history_and_does_not_reuse_ids ... ok
+test new_edit_clears_redo_branch ... ok
+test move_line_roundtrip ... ok
+test redo_restores_moved_geometry ... ok
+test multi_object_move_is_one_transaction ... ok
+test export_reopen_matches_edited_document ... ok
+test stale_revision_returns_revision_conflict ... ok
+test undo_restores_original_geometry ... ok
+test source_file_is_never_modified ... ok
+test move_region_preserves_topology ... ok
+test rejected_json_and_failed_export_preserve_geometry_history_and_saved_baseline ... ok
+test rectangular_sweep_and_local_macro_aperture_roundtrip ... ok
+test history_budget_rejects_without_changing_document ... ok
+test move_arc_preserves_arc_semantics ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+     Running tests/s2a_bounds_workflow.rs (target/debug/deps/s2a_bounds_workflow-b137ebbb07e7eb5f)
+
+running 7 tests
+test bounds_dto_roundtrip_preserves_f64_and_large_revision ... ok
+test delete_all_bounds_are_null_undo_restores ... ok
+test bounds_capabilities_match_handlers_and_close_invalidates_document ... ok
+test strict_bounds_contract_and_failures_leave_state_unchanged ... ok
+test bounds_workspace_visibility_does_not_change_manufacturing_bounds ... ok
+test bounds_after_move_undo_redo_export_reopen_and_source_preservation ... ok
+test layer_bounds_real_parser_flash_line_arc_region_and_cutin ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/s2a_hit_test_workflow.rs (target/debug/deps/s2a_hit_test_workflow-a2ab9f87a3a8292d)
+
+running 11 tests
+test hit_test_after_duplicate_delete_and_restored_id_order ... ok
+test hit_test_capability_empty_layer_and_closed_document ... ok
+test hit_test_after_rotate_mirror_tracks_real_geometry ... ok
+test hit_test_result_json_preserves_large_revision_and_stable_ids ... ok
+test hit_test_invalid_params_are_atomic_and_nested_fields_strict ... ok
+test hit_test_macro_clear_and_global_clear_are_distinct_parser_semantics ... ok
+test hit_test_workspace_and_queries_do_not_change_history_or_revisions ... ok
+test hit_test_rectangular_rotation_swap_and_arc_mirror_direction ... ok
+test hit_test_after_move_undo_redo_export_reopen ... ok
+test hit_test_real_parser_region_cutin_arc_deviation_and_rectangular_sweep ... ok
+test hit_test_resource_limit_returns_no_partial_ids_and_no_side_effects ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running unittests src/lib.rs (target/debug/deps/gerber_io-5d8c4d12b03bf568)
+
+running 4 tests
+test tests::parser_rejects_duplicate_modal_headers ... ok
+test tests::parser_rejects_scientific_aperture_numbers ... ok
+test tests::parser_rejects_m99_and_trailing_content_even_if_upstream_misparses_it ... ok
+test tests::parser_adapter_reads_strict_circle_flash_fixture ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/review_parser_regressions.rs (target/debug/deps/review_parser_regressions-1d90c6664a62307f)
+
+running 2 tests
+test first_flash_without_coordinates_is_rejected ... ok
+test repeated_flash_keeps_modal_position_aperture_polarity_and_order ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/s1_adapter.rs (target/debug/deps/s1_adapter-a0969c71a76ddfca)
+
+running 5 tests
+test rejects_aperture_use_before_definition ... ok
+test tokenizes_multiple_commands_on_one_line ... ok
+test scans_unused_macro_definitions ... ok
+test rejects_self_intersecting_unused_macro ... ok
+test writer_uses_local_macro_definition_and_honors_budget ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Doc-tests editor_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests editor_service
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests gerber_io
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

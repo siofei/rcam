@@ -1,0 +1,177 @@
+{
+  "schema_version": 2,
+  "run_id": "s2b1-final2-20260919",
+  "tested_code_commit": "aed930fcc2cdbfd729520bf213c3cf2b855a0dca",
+  "scope": "Mac-first S2-B1 local steps only; not full V1 cases",
+  "platform": "macOS arm64 / Apple M1 Metal",
+  "status": "PASS_WITH_RECORDED_EVIDENCE_LIMITS",
+  "cases": [
+    {
+      "case_id": "AT-022",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-025",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-026",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-030",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-032",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-035",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-036",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-038",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-040",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-041",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-043",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-054",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-086",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-087",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-090",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    },
+    {
+      "case_id": "AT-091",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "metal/commands.json",
+        "gui/native.log"
+      ]
+    }
+  ],
+  "retired_cases": [],
+  "windows": "deferred / not executed",
+  "limitations": [
+    "User-confirmed Esc/blur gestures were on first candidate; final candidate cancellation regression tests passed.",
+    "External RCam_S2A3_025e3a3_Review.md not provided.",
+    "CORE10 and full V1 not passed."
+  ]
+}

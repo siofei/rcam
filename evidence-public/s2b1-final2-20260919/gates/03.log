@@ -1,0 +1,3 @@
+cargo clippy --workspace --all-targets --locked -- -D warnings
+    Checking editor-app v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-app)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.05s

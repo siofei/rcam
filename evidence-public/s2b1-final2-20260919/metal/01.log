@@ -1,0 +1,74 @@
+cargo test --locked -p editor-app native_metal -- --ignored --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+     Running unittests src/main.rs (target/debug/deps/editor_app-a76862b0a6d86b59)
+
+running 2 tests
+S2-A.3 GPU AdapterInfo { name: "Apple M1", vendor: 0, device: 0, device_type: IntegratedGpu, driver: "", driver_info: "", backend: Metal }
+S2-A.3 GPU AdapterInfo { name: "Apple M1", vendor: 0, device: 0, device_type: IntegratedGpu, driver: "", driver_info: "", backend: Metal }
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s2a3/gui_primitives.gbr 899 Metal/semantic coverage probes
+PASS s2a3/gui_primitives.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/standard_hole_over_line.gbr 903 Metal/semantic coverage probes
+PASS s1a/standard_hole_over_line.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/macro_hole_over_line.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/macro_hole_over_line.gbr 903 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/ordered_local_hole.gbr 899 Metal/semantic coverage probes
+PASS s1a/ordered_local_hole.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/macro_rotated_circle.gbr 899 Metal/semantic coverage probes
+PASS s1a/macro_rotated_circle.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/macro_rotated_rectangle.gbr 899 Metal/semantic coverage probes
+PASS s1a/macro_rotated_rectangle.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/region_cutin.gbr 899 Metal/semantic coverage probes
+PASS s1a/region_cutin.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a/nested_region_union.gbr 899 Metal/semantic coverage probes
+PASS s1a/nested_region_union.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s0c/rectangular_draw.gbr 899 Metal/semantic coverage probes
+PASS s0c/rectangular_draw.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a1/g75_exact.gbr 899 Metal/semantic coverage probes
+PASS s1a1/g75_exact.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a1/g75_small_deviation.gbr 899 Metal/semantic coverage probes
+PASS s1a1/g75_small_deviation.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a1/g75_full.gbr 899 Metal/semantic coverage probes
+PASS s1a1/g75_full.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a1/g74_zero.gbr 899 Metal/semantic coverage probes
+PASS s1a1/g74_zero.gbr 899 Metal/semantic coverage probes
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+PASS s1a1/g75_region_deviation_safe.gbr 899 Metal/semantic coverage probes
+PASS s1a1/g75_region_deviation_safe.gbr 899 Metal/semantic coverage probes
+test display_tests::native_metal_semantic_renderer ... ok
+test display_tests::native_metal_drag_preview ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 1.19s
+
+     Running unittests src/s0_demo.rs (target/debug/examples/s0_demo-00f18eeaaa6a2ecd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

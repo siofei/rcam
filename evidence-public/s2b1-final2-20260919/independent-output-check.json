@@ -1,0 +1,16 @@
+{
+  "source_unchanged": true,
+  "expected_flash_centers_mm": [
+    [
+      15.022645,
+      23.025691
+    ],
+    [
+      18.956041,
+      25.143672
+    ]
+  ],
+  "normalized_output_coordinate_assertions": "PASS",
+  "native_reopened_objects": 14,
+  "scope": "independent known-coordinate assertions, not full external-viewer acceptance"
+}

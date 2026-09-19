@@ -1,0 +1,2 @@
+python3 scripts/source_manifest.py --check
+PASS current source manifest: 1208 files
