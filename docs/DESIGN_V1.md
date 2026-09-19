@@ -9,6 +9,8 @@
 
 **1.1 修订：只支持 Windows／macOS，取消 Linux 构建、CI、打包与兼容性门槛；新增无 GUI 的统一业务服务与脚本扩展契约。V1 验收接口预留的真实可用性，不要求交付脚本引擎、正式 CLI 或网络控制服务。** 变更及用例迁移见 `CHANGELOG.md`。
 
+**2026-09-16 架构补充：**冻结未来多格式交换方向：Gerber 继续直接进入制造语义模型；DXF／SVG／HP-GL(PLT) 等非 Gerber 矢量格式先进入独立 `VectorScene`，再经显式 Manufacturing Conversion 转换为制造模型。该补充不扩大 V1 需求、能力声明或 96 个有效验收用例；正式实现时需另立阶段、需求和验收。设计决策见 [ADR 0017](adr/0017-vector-scene-and-format-interchange.md)。
+
 建议阅读路径：先读第 1–4 节确定范围，再读第 5–12 节实现架构与正确性，最后按第 14–18 节建立性能、测试和分阶段交付。第一版最终判定以配套验收文档为准。
 
 ## 1. V1 到底要交付什么
@@ -54,7 +56,7 @@
 
 **必须有：**打开和拖放、独立图层列表、显隐和锁定、鼠标与触控板导航、坐标／单位／网格、单选／多选／方向性框选、移动／复制／删除／旋转／镜像、数值属性编辑、Undo/Redo、中英文矢量加字、测距、Gerber 另存为、重新打开验证、结构化诊断、基础性能与 Windows／macOS 双平台实测，以及 GUI 共用的无界面业务调用与契约测试。
 
-**V1 不作为必交功能：**任意光圈宏编辑、AB／SR 的交互式解组、图层合并、阵列／自动拼板、Excellon 编辑、线段拟合圆弧、钢网开孔自动识别与聚类、布尔开孔编辑、自动文字搭桥、二维码、Gerber 差异检索、SVG／PDF／PNG 正式导出、专有工程保存、崩溃后完整会话恢复、插件系统、自动更新、浏览器版、脚本解释器、脚本编辑／录制回放、正式自动化 CLI、HTTP／JSON-RPC 控制服务。
+**V1 不作为必交功能：**任意光圈宏编辑、AB／SR 的交互式解组、图层合并、阵列／自动拼板、Excellon 编辑、线段拟合圆弧、钢网开孔自动识别与聚类、布尔开孔编辑、自动文字搭桥、二维码、Gerber 差异检索、DXF／SVG／HP-GL(PLT) 等非 Gerber 矢量导入、SVG／PDF／PNG／DXF 正式导出、通用 `VectorScene` 交换核心、专有工程保存、崩溃后完整会话恢复、插件系统、自动更新、浏览器版、脚本解释器、脚本编辑／录制回放、正式自动化 CLI、HTTP／JSON-RPC 控制服务。
 
 这些能力应保留扩展位置，但不能以“未来要做”为理由在 V1 引入一个未完成的通用 CAM 引擎。脚本扩展以第 5.2 节与 `AUTOMATION_API.md` 的最小业务边界为准：只把既有功能解耦并验证调用闭环，不提前实现脚本产品。**自动把碎线重组为一个开孔并不属于基础框选；V1 可以手动多选，但不得宣传已经实现开孔语义识别。**
 
@@ -175,6 +177,8 @@ S0-C 局部审计通过不代表完整 AT 或 CORE10 往返通过。
 ## 5. 总体架构与模块依赖
 
 ```text
+当前 V1 Gerber 路径
+────────────────────────────────────────────────────────────────────
 GUI 操作（现有）       无界面测试（V1）       脚本／CLI（未来）
      └───────────────────┼──────────────────────┘
                          ▼
@@ -184,9 +188,8 @@ GUI 操作（现有）       无界面测试（V1）       脚本／CLI（未来
          ┌───────────────┼───────────────────┐
          ▼               ▼                   ▼
      gerber-io       editor-core          editor-text
- 格式／parser／语义   毫米模型／稳定 ID     字形与局部轮廓
- 能力扫描／writer    事务／Undo／空间索引   固定制造误差
-         └───────────────┼───────────────────┘
+ parser／语义解释     Manufacturing         字形与局部轮廓
+ 能力扫描／writer     Model／稳定 ID         固定制造误差
                          │
              ┌───────────┴──────────────────┐
              ▼                              ▼
@@ -196,6 +199,18 @@ GUI 操作（现有）       无界面测试（V1）       脚本／CLI（未来
     缓存／层掩膜                            │
              │                     结构化结果／诊断
         egui / eframe
+
+未来多格式交换路径（Post-V1；未实现，不属于当前能力）
+────────────────────────────────────────────────────────────────────
+DXF ── import-dxf ──┐
+SVG ── import-svg ──┼──► VectorScene ──► Manufacturing Conversion ──► Manufacturing Model
+PLT ── import-hpgl ─┘          │                    │
+                               │                    └─ 单位／层映射／线宽／填充／拟合策略
+                               └─ 通用矢量几何，不承载 Gerber Dark/Clear/Aperture 语义
+
+Manufacturing Model ──► Gerber Writer
+                    ├─► Vector Export Adapter ──► SVG / PDF / DXF
+                    └─► Raster Export Adapter ──► PNG
 ```
 
 `editor-core` 和 `editor-service` 不依赖 egui、wgpu、窗口句柄和操作系统 UI API。`gerber-io` 通过适配层连接第三方类型，不让第三方 AST 变成所有模块的公共 ABI。渲染层只读文档快照或变更集，所有正式修改由应用服务提交到核心命令系统。
@@ -262,6 +277,60 @@ gerber-editor/
 | 真实证明 | 无窗口、无 GPU 的测试完成打开 → 查询 → 编辑／文字 → Undo／Redo → 导出 → 重开复核，且与 GUI 业务结果一致 |
 
 接口预留不包括 Python／Lua 绑定、远程鉴权、CLI 产品、脚本管理或插件运行时。不得只写空接口冒充完成，也不得为预留接口过度扩张第一版范围。Windows 和 macOS 分别运行上述无界面测试；这不增加 Linux 支持义务。
+
+### 5.3 未来多格式交换架构：`VectorScene`（Post-V1）
+
+本节冻结长期架构方向，**不是 V1 已实现能力，也不新增当前验收门槛**。具体决策以 [ADR 0017](adr/0017-vector-scene-and-format-interchange.md) 为准。
+
+`VectorScene` 是非制造语义的通用矢量交换模型，用于承接 DXF、SVG、HP-GL/PLT 等格式解析后的几何；它不是 `SemanticDocument`／Manufacturing Model 的替代品。两者职责必须分离：
+
+| 模型 | 负责 | 明确不负责 |
+|---|---|---|
+| `VectorScene` | 通用二维矢量几何、层/组、局部变换、路径、线、圆/圆弧、椭圆、Bezier/Spline、Polyline/ClosedPath、源格式属性 | Gerber Dark/Clear、Aperture 状态、DCode、Region 曝光顺序、加工安全承诺 |
+| Manufacturing Model | 可制造语义、曝光顺序、Dark/Clear、Aperture/Region、稳定对象身份、编辑事务、Gerber 安全写回 | 还原任意源格式的全部版式/样式语义 |
+
+导入方向固定为：
+
+```text
+Gerber
+  └─► gerber-parser / gerber-io semantic interpreter
+       └─► Manufacturing Model
+
+DXF / SVG / HP-GL(PLT)
+  └─► 各自 parser / importer
+       └─► VectorScene
+            └─► Manufacturing Conversion
+                 └─► Manufacturing Model
+```
+
+Gerber **不得为了形式统一而强制先转换到 `VectorScene`**。这样会削弱或丢失已经验证的 Dark/Clear、Aperture、Region、旧命令兼容和曝光顺序语义。
+
+`Manufacturing Conversion` 必须显式接收导入策略，而不能猜测。至少包括：单位、源 Layer 到目标 Layer 的映射、无宽中心线的制造线宽、ClosedPath 的 stroke/fill/Region 策略、颜色/笔号映射、Bezier/Spline 的拟合误差、无法精确表达图元的拒绝策略。歧义不能静默选择默认值后直接生成生产 Gerber。
+
+未来建议模块（名称为规划，不表示 crate 已存在）：
+
+```text
+crates/
+├── vector-core/             # VectorScene / Path / Arc / Bezier / Polygon / Transform
+├── import-dxf/              # DXF -> VectorScene
+├── import-svg/              # SVG -> VectorScene
+├── import-hpgl/             # HP-GL/PLT -> VectorScene
+├── vector-to-manufacturing/ # VectorScene -> Manufacturing Model
+└── vector-export/           # Manufacturing/VectorScene -> SVG/PDF/DXF；PNG 走 raster adapter
+```
+
+导出也必须从语义/几何模型出发：
+
+```text
+Manufacturing Model
+  ├─► Gerber Writer
+  ├─► Vector Export Adapter ─► SVG / PDF / DXF
+  └─► Raster Export Adapter ─► PNG
+```
+
+**禁止 `renderer mesh / GPU tessellation / 屏幕像素 -> Gerber/SVG/PDF/DXF`。** Renderer 产生的数据只用于显示；圆弧、Bezier、Region 等原始几何身份不能因为显示细分而丢失。PNG 作为栅格输出可以使用离屏渲染，但必须冻结物理窗口、DPI、背景、抗锯齿和 Dark/Clear 合成语义。
+
+在真正开始某种格式实现前，先单独建立该格式的需求编号、能力矩阵、样本与验收；不得把本节规划写入 `CAPABILITIES.md` 的已支持列表，也不得提前把 `AUTOMATION_API.md` 冻结成未验证的多格式协议。
 
 ## 6. 数据模型与不可破坏的约束
 
@@ -574,6 +643,15 @@ GUI 选择路径和确认后，将显式策略交给应用服务；服务不弹�
 
 文件读取、字体和写入经主机提供的路径权限入口；不允许接口默认访问任意路径。长时间导出可保存冻结 revision 的快照，结果返回 `exported_revision`；若用户已产生更新内容，不得把当前内容误标为已保存。具体文件冲突、取消、错误码和访问边界见 `AUTOMATION_API.md` 第 6—7 节。
 
+### 12.7 非 Gerber 导出边界（未来）
+
+SVG／PDF／DXF／PNG 不属于 V1 必交。未来实现时，格式编码器可以使用审查过的第三方库，但“制造几何如何映射到目标格式”的转换规则由 RCam 自己掌握并测试。
+
+- SVG/PDF/DXF：优先保留圆弧、路径和闭合轮廓等矢量身份；不能先走显示 Mesh 再导出折线近似。
+- DXF：必须区分“保留中心线可编辑性”和“保留最终制造轮廓”两种语义；不得把有宽 Gerber stroke 无说明地降级成零宽 `LINE/ARC`。
+- PNG：允许从冻结的离屏渲染路径产生 RGBA，再交给成熟编码器；输出参数必须显式包含物理范围、像素尺寸/DPI、背景和透明度。
+- 任何格式的第三方 writer/encoder 只负责目标文件编码，不替代 RCam 的几何/制造语义验证。
+
 ## 13. 异步执行、内存与异常恢复
 
 文件读取、解析、能力扫描、复杂几何生成、字体轮廓转换、大批量索引构建、导出和验证都应离开 UI 主线程。后台任务返回带 `DocumentVersion` 的结果；关闭文档或版本变化后，不得把过期结果写回当前画布。
@@ -726,6 +804,8 @@ S0 冻结至少 30 份经授权的真实 Gerber，覆盖多个生成工具／年
 
 若 S0 发现核心样本依赖 AM／SR 等范围外功能，先修改范围并加一个专项阶段，再进入后续阶段；不能留到 S6 才解释用户文件为什么打不开。
 
+**Post-V1 多格式交换不插入 S0–S6 当前门禁。** 完成 V1 后按 `IMPLEMENTATION_PLAN.md` 的 F1–F5 路线另立基线：先做 `VectorScene` 与转换契约，再依次接 DXF、SVG、HP-GL/PLT 和多格式导出。正式进入某一 F 阶段前，新增对应需求/验收，而不是复用或改写现有 AT-xxx。
+
 ### 17.1 每次交给 Codex 的任务格式
 
 ```text
@@ -808,6 +888,8 @@ cargo test --locked -p editor-service --test headless_workflow
 - 只有 Windows 能编译，就把 macOS 标为已验收；或在本基线中偷偷重新加入 Linux 支持门槛。
 - 只有空自动化接口；无界面编辑需要启动窗口／GPU；未来脚本只能模拟 GUI 点击。
 - GUI 与服务各写一套变换／writer，批次失败留下部分修改，或自动化保存绕过确认／文件安全。
+- 非 Gerber importer 直接把 DXF／SVG／PLT AST 硬塞进 Gerber parser/AST 或绕过显式 Manufacturing Conversion。
+- 从 renderer Mesh、GPU 三角形、当前缩放路径或屏幕像素反向生成 Gerber／SVG／PDF／DXF 矢量制造数据。
 - 自动更新验收阈值、删除失败样本或将必测项改为可选。
 
 ## 20. 交付物与验收签署
@@ -889,3 +971,5 @@ S2 hit-test/bounds 仅冻结精确 f64 边界，本轮不开放；其余 V1 门�
 偏差/径向接线及 canonical Region；数值歧义/资源超限整次拒绝。
 RectangularSweep 斜向仅作为独立查询算法验证，不改变轴向制造/导入/导出支持范围。
 本轮停止在 S2-A.2 无 GUI 服务，S2-A.3 GUI 与双平台完整 V1 门槛保留。
+
+当前活动开发阶段为 Mac-first S2-B1，Windows deferred / not executed；最终双平台 V1 要求保持不变。

@@ -12,6 +12,7 @@ pub struct Uniforms {
     pub view: [f32; 4],
     pub camera: [f32; 4],
     pub counts: [u32; 4],
+    pub preview: [f32; 4],
 }
 pub fn uniforms(
     scene: &Scene,
@@ -20,6 +21,25 @@ pub fn uniforms(
     ppp: f32,
     selected: Option<&str>,
 ) -> Result<Uniforms, String> {
+    uniforms_preview(
+        scene,
+        camera,
+        rect,
+        ppp,
+        selected,
+        editor_core::MmPoint::new(0., 0.),
+    )
+}
+pub fn uniforms_preview(
+    scene: &Scene,
+    camera: Camera,
+    rect: egui::Rect,
+    ppp: f32,
+    selected: Option<&str>,
+    delta: editor_core::MmPoint,
+) -> Result<Uniforms, String> {
+    let preview = [scene.scalar(delta.x_mm)?, scene.scalar(delta.y_mm)?, 0., 0.];
+    let selected_index = selected.and_then(|id| scene.ids.iter().position(|x| x == id));
     let width = rect.width() * ppp;
     let height = rect.height() * ppp;
     let pixels = f64::from(width) * f64::from(height);
@@ -27,11 +47,19 @@ pub fn uniforms(
     let cx = camera.center.x_mm - scene.anchor.x_mm;
     let cy = camera.center.y_mm - scene.anchor.y_mm;
     let mut work = pixels * scene.objects.len() as f64;
-    for object in &scene.objects {
+    for (index, object) in scene.objects.iter().enumerate() {
         if object.meta[3] == 0 {
             continue;
         }
-        let b = object.bounds;
+        let mut b = object.bounds;
+        if selected_index == Some(index) {
+            for i in 0..4 {
+                b[i] += preview[i % 2];
+            }
+            for v in b {
+                scene.scalar(f64::from(v))?;
+            }
+        }
         let left =
             ((f64::from(b[0]) - cx) * ppm + f64::from(width) / 2.).clamp(0., f64::from(width));
         let right =
@@ -59,6 +87,7 @@ pub fn uniforms(
         );
     }
     Ok(Uniforms {
+        preview,
         view: [rect.left() * ppp, rect.top() * ppp, width, height],
         camera: [
             scene.scalar(camera.center.x_mm - scene.anchor.x_mm)?,
@@ -120,7 +149,7 @@ impl Resources {
         );
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("camera"),
-            size: 48,
+            size: std::mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

@@ -43,7 +43,7 @@ S0 整体退出还要求：REAL30/CORE10 预先冻结、规范差异审查、许
 下一轮 S1-A 先完成目标子集语义及 writer；S1-B 实现 Open→Query→Move→Undo/Redo→Export→Reopen。
 Move 是首个编辑动作，不提前同时铺开旋转/文字/完整GUI。阶段正式切换受 S0-C 退出门禁约束。
 
-## 当前任务 S1-A：语义核心与安全 Writer
+## 历史任务 S1-A：语义核心与安全 Writer
 
 授权任务书：`RCam_S1A_NEXT_TASK.md`。允许在 Windows 证据等待期间开展核心开发；
 S0-C platform gate 仍为 blocked，不能据本机结果标记双平台通过。
@@ -56,3 +56,20 @@ Luna 负责产品代码，按 core/io 和 service 划分文件边界；主代理
 只读 CORE10 核验、构建门禁与交付结论。新闭环为 Open → Query → Validate →
 Export(new path) → Reopen，范围严格按 ADR 0005；Move/Undo/Redo 留待 S1-B。
 证据另存 `evidence/s1-a-20260915-implementation/`，包含早期失败，不覆盖历史。
+
+## 当前任务 S2-B1：单对象直接操作（Mac-first）
+
+需求 R07/R08/R09/R10/R11/R14/R15/R18/R19/R21/R22；局部 AT-022/025/026/030/032/035/036/038/040/041/043/054/086/087/090/091。
+允许修改 editor-app 状态、输入、显示 uniform/shader、测试，以及阶段文档和源码清单；保留 core/io/service 契约与制造算法。
+已选对象按下时后台 exact hit_test 确认，4 physical px 后预览；预览仅 GPU translation，release 一次真实 Move。
+Esc、PointerGone、失焦、文档/任务切换取消。Cmd+D 原位复制选中新 ID；Delete/Backspace 删除；文本焦点不抢快捷键。
+Windows 延后，本轮不代表双平台 V1 通过。保留所有原96用例及门槛。
+
+### S2-B2 待启动
+
+现有 contains 是对象包含查询矩形，不能反用为窗口选择。先新增 exact within/window relation（或专用 selection query）与完整 exact intersects；
+再实施多选、左到右 window、右到左 crossing、Rotate/Mirror GUI、Grid/Snap、测距。Arc/Region 等不支持时整次拒绝，不用 AABB 或跳过代替。
+
+### Post-V1 交换边界
+
+见 ADR 0017：Gerber 直接进入 Manufacturing Model；非 Gerber 经 VectorScene 和显式 Manufacturing Conversion；本轮不新增格式依赖/API/菜单。

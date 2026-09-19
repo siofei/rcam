@@ -28,6 +28,16 @@
 - 所有修改通过原子命令。一次拖动／粘贴／文字生成是一个 Undo 事务；Esc 取消不修改内容。不得靠反复逆旋转实现无损撤销。
 - 图形复制为应用内几何剪贴板；输入框仍走系统文本剪贴板。快捷键必须尊重焦点和 Windows／macOS 差异。
 
+## 多格式交换与 `VectorScene` 预留
+
+当前 V1 仍是 Gerber 编辑器；DXF／SVG／HP-GL(PLT) 导入和 SVG／PDF／PNG／DXF 正式导出属于 Post-V1。长期架构按 `docs/DESIGN_V1.md` 第 5.3 节和 `docs/adr/0017-vector-scene-and-format-interchange.md` 执行。
+
+- Gerber 继续由 `gerber-io` 语义解释后直接进入 Manufacturing Model；**禁止为了统一而强制经过 `VectorScene`**，不得丢失 Dark/Clear、Aperture、Region、曝光顺序和兼容语义。
+- 非 Gerber 矢量导入统一采用 `source parser -> VectorScene -> explicit Manufacturing Conversion -> Manufacturing Model`。DXF/SVG/PLT importer 不得直接修改 `SemanticDocument` 或复用 Gerber parser AST 作为公共模型。
+- `VectorScene` 只表达通用矢量几何/层/变换，不承诺可制造语义。单位、默认线宽、Layer 映射、ClosedPath stroke/fill/Region、Pen/颜色映射、Bezier/Spline 拟合误差必须由 Manufacturing Conversion 显式处理；歧义要拒绝或要求用户选择，不能静默猜测。
+- **严禁从 renderer Mesh、GPU tessellation、当前缩放路径或屏幕像素反推 Gerber/SVG/PDF/DXF 矢量数据。** 矢量导出读取语义/几何模型；PNG 可走受控离屏 raster adapter。
+- 在专门 F 阶段启动前，不新增 DXF/SVG/PLT 产品依赖、菜单空壳、公共 API 或“已支持”能力声明。开始实现时先更新需求/验收/ADR，并审查第三方 parser/writer 的许可证与输入安全。
+
 ## 脚本自动化扩展边界
 
 V1 只预留并验收业务 API，不实现 Python／Lua／JavaScript 引擎、脚本控制台、正式 CLI、HTTP／JSON-RPC 服务或插件运行时。
@@ -83,3 +93,5 @@ cargo build --release --locked -p editor-app
 验收数据使用 schema_version=2；96 个有效用例在 `cases`，AT-079 仅在退役记录中且编号不得复用。按逐项 `required_platforms` 检查证据，不能混用 1.0 基线的用例含义。
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
+
+当前活动开发阶段为 Mac-first S2-B1，Windows deferred / not executed；最终双平台 V1 要求保持不变。

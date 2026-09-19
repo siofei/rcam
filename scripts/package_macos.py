@@ -22,7 +22,7 @@ def main():
     info = dict(CFBundleName='RCam', CFBundleDisplayName='RCam',
                 CFBundleIdentifier='local.rcam.editor', CFBundleExecutable='editor-app',
                 CFBundlePackageType='APPL', CFBundleShortVersionString='0.1.0',
-                CFBundleVersion='203', NSHighResolutionCapable=True,
+                CFBundleVersion='211', NSHighResolutionCapable=True,
                 LSMinimumSystemVersion='15.0', NSPrincipalClass='NSApplication')
     (bundle / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     print(bundle.resolve())

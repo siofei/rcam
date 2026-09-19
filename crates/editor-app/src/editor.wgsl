@@ -1,4 +1,4 @@
-struct Uniforms { view:vec4<f32>, camera:vec4<f32>, counts:vec4<u32> }
+struct Uniforms { view:vec4<f32>, camera:vec4<f32>, counts:vec4<u32>, preview:vec4<f32> }
 struct Object { tag:vec4<u32>, bounds:vec4<f32> }
 struct Primitive { tag:vec4<u32>, a:vec4<f32>, b:vec4<f32> }
 @group(0) @binding(0) var<uniform> u:Uniforms;
@@ -41,8 +41,10 @@ fn sample_scene(p:vec2<f32>)->vec3<f32> {
     for(var i=0u;i<u.counts.x;i++) {
         let o=objects[i];if o.tag.w==0u {continue;}
         if o.tag.w!=layer {if covered {color=mix(color,palette[(layer-1u)%4u],0.90);}layer=o.tag.w;covered=false;}
-        if p.x<o.bounds.x || p.y<o.bounds.y || p.x>o.bounds.z || p.y>o.bounds.w {continue;}
-        if object_material(o,p) {covered=o.tag.z==1u;}
+        var local_p=p;
+        if i+1u==u.counts.y {local_p-=u.preview.xy;}
+        if local_p.x<o.bounds.x || local_p.y<o.bounds.y || local_p.x>o.bounds.z || local_p.y>o.bounds.w {continue;}
+        if object_material(o,local_p) {covered=o.tag.z==1u;}
     }
     if covered {color=mix(color,palette[(layer-1u)%4u],0.90);}return color;
 }
@@ -52,7 +54,7 @@ fn sample_scene(p:vec2<f32>)->vec3<f32> {
     let q=0.25/u.camera.z;
     var color=(sample_scene(p+vec2(q,q))+sample_scene(p+vec2(q,-q))+sample_scene(p+vec2(-q,q))+sample_scene(p-vec2(q,q)))*0.25;
     if u.counts.y>0u {
-        let o=objects[u.counts.y-1u];let e=1.5/u.camera.z;
+        let o=objects[u.counts.y-1u];let p=p-u.preview.xy;let e=1.5/u.camera.z;
         if o.tag.w>0u && all(p>=o.bounds.xy-vec2(e)) && all(p<=o.bounds.zw+vec2(e)) {
         let a=object_material(o,p+vec2(e,0.));let b=object_material(o,p-vec2(e,0.));
         let c=object_material(o,p+vec2(0.,e));let d=object_material(o,p-vec2(0.,e));

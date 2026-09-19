@@ -251,3 +251,272 @@ fn selection_uses_hit_test_order_topmost_layer() {
     .unwrap();
     assert_eq!(hit, Some(("bottom".into(), "bottom-hit".into())));
 }
+
+fn armed(m: &mut Model, ppp: f32) -> crate::drag::Drag {
+    use eframe::egui::{Pos2, Rect, Vec2};
+    select(m);
+    let mut drag = crate::drag::Drag::arm(
+        &m.view,
+        Pos2::new(100., 100.),
+        crate::camera::Camera::default(),
+        Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.)),
+        ppp,
+    )
+    .unwrap();
+    m.run(Action::ProbeDrag(MmPoint::new(10., 20.), 0.));
+    assert!(m.view.drag_hit);
+    drag.confirmed = m.view.drag_hit;
+    drag
+}
+#[test]
+fn drag_preview_does_not_change_revision_dirty_or_history() {
+    let (mut m, _) = setup();
+    let mut d = armed(&mut m, 2.);
+    let before = m.view.info.clone();
+    let scene = m.view.scene.clone().unwrap();
+    for x in 101..150 {
+        d.update(eframe::egui::pos2(x as f32, 110.));
+    }
+    assert!(d.dragging);
+    assert_eq!(m.view.info, before);
+    assert!(std::sync::Arc::ptr_eq(
+        &scene,
+        m.view.scene.as_ref().unwrap()
+    ));
+    assert_eq!(center(&m), MmPoint::new(10., 20.));
+}
+#[test]
+fn drag_release_commits_exactly_one_move_transaction() {
+    let (mut m, _) = setup();
+    let mut d = armed(&mut m, 2.);
+    d.update(eframe::egui::pos2(150., 130.));
+    m.run(d.release().unwrap());
+    assert!(m.view.error.is_none());
+    assert_eq!(center(&m), MmPoint::new(15., 17.));
+    let info = m.view.info.unwrap();
+    assert_eq!(info.revision, "1");
+    assert_eq!(info.undo_entries, 1);
+}
+#[test]
+fn drag_zero_delta_is_noop() {
+    let (mut m, _) = setup();
+    let mut d = armed(&mut m, 2.);
+    let before = m.view.info.clone();
+    d.update(eframe::egui::pos2(120., 100.));
+    d.update(eframe::egui::pos2(100., 100.));
+    assert!(d.release().is_none());
+    assert_eq!(m.view.info, before);
+}
+fn cancel_case(escape: bool, focused: bool, gone: bool, down: bool, released: bool) {
+    let (mut m, _) = setup();
+    let mut d = armed(&mut m, 2.);
+    let before = m.view.info.clone();
+    d.update(eframe::egui::pos2(150., 130.));
+    let mut preview = Some(d);
+    if crate::drag::cancelled(escape, focused, gone, down, released) {
+        preview = None;
+    }
+    assert!(preview.is_none());
+    assert_eq!(m.view.info, before);
+    assert_eq!(center(&m), MmPoint::new(10., 20.));
+}
+#[test]
+fn drag_escape_cancels_without_side_effects() {
+    cancel_case(true, true, false, true, false);
+}
+#[test]
+fn drag_capture_loss_cancels_without_side_effects() {
+    cancel_case(false, true, true, true, false);
+    cancel_case(false, false, false, true, false);
+    cancel_case(false, true, false, false, false);
+    cancel_case(false, true, true, false, true);
+}
+#[test]
+fn locked_layer_cannot_drag() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    patch(&mut m, None, Some(true), None);
+    assert!(!crate::drag::editable_selection(&m.view));
+    assert!(
+        crate::drag::Drag::arm(
+            &m.view,
+            eframe::egui::Pos2::ZERO,
+            crate::camera::Camera::default(),
+            eframe::egui::Rect::EVERYTHING,
+            2.
+        )
+        .is_none()
+    );
+    m.run(Action::ProbeDrag(MmPoint::new(10., 20.), 0.));
+    assert!(!m.view.drag_hit);
+}
+#[test]
+fn service_failure_clears_preview_and_preserves_geometry() {
+    let (mut m, _) = setup();
+    let mut d = armed(&mut m, 2.);
+    d.update(eframe::egui::pos2(150., 130.));
+    d.revision = "999".into();
+    let before = m.view.info.clone();
+    let geometry = center(&m);
+    let mut preview = Some(d);
+    let action = preview.take().unwrap().release().unwrap();
+    m.run(action);
+    assert!(preview.is_none());
+    assert_eq!(m.view.error.as_ref().unwrap().code, "REVISION_CONFLICT");
+    assert_eq!(m.view.info, before);
+    assert_eq!(center(&m), geometry);
+}
+#[test]
+fn undo_redo_after_drag_preserves_selection() {
+    let (mut m, _) = setup();
+    let mut d = armed(&mut m, 2.);
+    let id = d.object.clone();
+    d.update(eframe::egui::pos2(150., 130.));
+    m.run(d.release().unwrap());
+    m.run(Action::History(false));
+    assert_eq!(center(&m), MmPoint::new(10., 20.));
+    m.run(Action::History(true));
+    assert_eq!(center(&m), MmPoint::new(15., 17.));
+    assert_eq!(m.view.selected.unwrap().object.object_id, id);
+}
+#[test]
+fn retina_drag_threshold_is_physical_pixel_stable() {
+    for ppp in [1., 2., 3.] {
+        let (mut m, _) = setup();
+        let mut d = armed(&mut m, ppp);
+        d.update(eframe::egui::pos2(100. + 3.9 / ppp, 100.));
+        assert!(!d.dragging);
+        d.update(eframe::egui::pos2(100. + 4.1 / ppp, 100.));
+        assert!(d.dragging);
+    }
+}
+#[test]
+fn cmd_d_duplicates_in_place_and_selects_new_object() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    let source = m.view.selected.clone().unwrap();
+    m.run(Action::Duplicate);
+    assert!(m.view.error.is_none());
+    assert_ne!(
+        m.view.selected.as_ref().unwrap().object.object_id,
+        source.object.object_id
+    );
+    assert_eq!(center(&m), MmPoint::new(10., 20.));
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+    let original = m
+        .service
+        .objects_get(
+            &m.view.info.as_ref().unwrap().document_id,
+            editor_service::ObjectParams {
+                layer_id: source.layer_id.clone(),
+                object_id: source.object.object_id.clone(),
+            },
+        )
+        .unwrap();
+    assert_eq!(original, source);
+}
+#[test]
+fn duplicate_undo_redo_preserves_generated_id() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    m.run(Action::Duplicate);
+    let copy = m.view.selected.clone().unwrap();
+    m.run(Action::History(false));
+    assert_eq!(m.view.layers[0].object_count, 2);
+    m.run(Action::History(true));
+    assert_eq!(m.view.layers[0].object_count, 3);
+    let restored = m
+        .service
+        .objects_get(
+            &m.view.info.as_ref().unwrap().document_id,
+            editor_service::ObjectParams {
+                layer_id: copy.layer_id.clone(),
+                object_id: copy.object.object_id.clone(),
+            },
+        )
+        .unwrap();
+    assert_eq!(restored, copy);
+}
+#[test]
+fn delete_selected_clears_selection_and_undo_restores() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    let before = m
+        .service
+        .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
+        .unwrap();
+    m.run(Action::Delete);
+    assert!(m.view.error.is_none());
+    assert!(m.view.selected.is_none());
+    m.run(Action::History(false));
+    let after = m
+        .service
+        .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
+        .unwrap();
+    assert_eq!(before.layers, after.layers);
+    m.run(Action::History(true));
+    assert_eq!(m.view.layers[0].object_count, 1);
+}
+#[test]
+fn text_focus_blocks_manufacturing_delete_duplicate_undo() {
+    assert!(!crate::drag::shortcuts_allowed(true, false, false));
+    assert!(!crate::drag::shortcuts_allowed(false, true, false));
+    assert!(!crate::drag::shortcuts_allowed(false, false, true));
+    assert!(crate::drag::shortcuts_allowed(false, false, false));
+}
+#[test]
+fn locked_duplicate_delete_fail_without_losing_selection() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    patch(&mut m, None, Some(true), None);
+    let selected = m.view.selected.clone();
+    let before = m.view.info.clone();
+    for action in [Action::Duplicate, Action::Delete] {
+        m.run(action);
+        assert_eq!(m.view.error.as_ref().unwrap().code, "LAYER_LOCKED");
+        assert_eq!(m.view.selected, selected);
+        assert_eq!(m.view.info, before);
+    }
+}
+#[test]
+fn drag_probe_uses_exact_hole_and_selects_other_without_arming() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    m.run(Action::ProbeDrag(MmPoint::new(21.5, 20.), 0.));
+    assert!(!m.view.drag_hit);
+    assert_eq!(center(&m), MmPoint::new(20., 20.));
+    m.run(Action::ProbeDrag(MmPoint::new(20., 20.), 0.));
+    assert!(!m.view.drag_hit);
+    assert!(m.view.selected.is_none());
+}
+#[test]
+fn direct_manipulation_save_reopen_preserves_final_geometry() {
+    let (mut m, dir) = setup();
+    select(&mut m);
+    m.run(Action::Duplicate);
+    let mut d = crate::drag::Drag::arm(
+        &m.view,
+        eframe::egui::pos2(100., 100.),
+        crate::camera::Camera::default(),
+        eframe::egui::Rect::from_min_max(eframe::egui::Pos2::ZERO, eframe::egui::pos2(400., 400.)),
+        2.,
+    )
+    .unwrap();
+    m.run(Action::ProbeDrag(MmPoint::new(10., 20.), 0.));
+    d.confirmed = m.view.drag_hit;
+    d.update(eframe::egui::pos2(150., 130.));
+    m.run(d.release().unwrap());
+    m.run(Action::Delete);
+    m.run(Action::History(false));
+    let path = dir.join("direct-final.gbr");
+    m.save(&path, m.view.layers[0].layer_id.clone(), None)
+        .unwrap();
+    m.open(&path).unwrap();
+    assert_eq!(m.view.layers[0].object_count, 3);
+    m.select(MmPoint::new(15., 17.), 0.).unwrap();
+    assert_eq!(center(&m), MmPoint::new(15., 17.));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("中文 # source.gbx")).unwrap(),
+        SOURCE
+    );
+}

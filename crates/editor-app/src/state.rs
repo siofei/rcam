@@ -18,6 +18,7 @@ pub struct View {
     pub error: Option<ServiceError>,
     pub message: String,
     pub render_ppm: f64,
+    pub drag_hit: bool,
 }
 pub struct Model {
     pub service: ApplicationService,
@@ -30,6 +31,10 @@ pub enum Action {
     Open(PathBuf),
     Select(MmPoint, f64),
     Move(String, String),
+    ProbeDrag(MmPoint, f64),
+    DragMove(crate::drag::Drag),
+    Duplicate,
+    Delete,
     History(bool),
     Layer(LayerUpdateParams),
     Save(PathBuf, String, Option<Vec<String>>),
@@ -315,6 +320,90 @@ impl Model {
             Action::Open(path) => self.open(&path),
             Action::Select(p, t) => self.select(p, t),
             Action::Move(dx, dy) => self.numeric_move(&dx, &dy),
+            Action::ProbeDrag(p, tolerance_mm) => {
+                self.view.drag_hit = false;
+                self.editable()?;
+                let d = self.info()?;
+                if crate::drag::editable_selection(&self.view) {
+                    let o = self.view.selected.as_ref().unwrap();
+                    self.view.drag_hit = self
+                        .service
+                        .objects_hit_test(
+                            &d.document_id,
+                            HitTestParams {
+                                layer_id: o.layer_id.clone(),
+                                point: HitTestPoint {
+                                    x_mm: p.x_mm,
+                                    y_mm: p.y_mm,
+                                },
+                                tolerance_mm,
+                            },
+                        )?
+                        .object_ids
+                        .contains(&o.object.object_id);
+                    if !self.view.drag_hit {
+                        self.select(p, tolerance_mm)?;
+                    }
+                }
+                Ok(())
+            }
+            Action::DragMove(drag) => {
+                self.editable()?;
+                self.service.objects_move(
+                    &drag.document,
+                    &drag.revision,
+                    MoveParams {
+                        layer_id: drag.layer,
+                        object_ids: vec![drag.object],
+                        dx_mm: drag.delta.x_mm,
+                        dy_mm: drag.delta.y_mm,
+                    },
+                )?;
+                self.view.message =
+                    format!("已拖动 ΔX {} / ΔY {} mm", drag.delta.x_mm, drag.delta.y_mm);
+                self.refresh(true)
+            }
+            Action::Duplicate | Action::Delete => {
+                self.editable()?;
+                let d = self.info()?;
+                let o = self
+                    .view
+                    .selected
+                    .clone()
+                    .ok_or_else(|| error("NOT_FOUND", "请先选择一个对象"))?;
+                if matches!(action, Action::Duplicate) {
+                    let result = self.service.objects_duplicate(
+                        &d.document_id,
+                        &d.revision,
+                        DuplicateParams {
+                            layer_id: o.layer_id.clone(),
+                            object_ids: vec![o.object.object_id],
+                            dx_mm: 0.,
+                            dy_mm: 0.,
+                        },
+                    )?;
+                    self.view.selected = Some(self.service.objects_get(
+                        &d.document_id,
+                        ObjectParams {
+                            layer_id: o.layer_id,
+                            object_id: result.changed_object_ids[0].clone(),
+                        },
+                    )?);
+                    self.view.message = "已原位复制，可拖动副本".into();
+                } else {
+                    self.service.objects_delete(
+                        &d.document_id,
+                        &d.revision,
+                        DeleteParams {
+                            layer_id: o.layer_id,
+                            object_ids: vec![o.object.object_id],
+                        },
+                    )?;
+                    self.view.selected = None;
+                    self.view.message = "已删除对象".into();
+                }
+                self.refresh(true)
+            }
             Action::History(redo) => {
                 let d = self.info()?;
                 if redo {

@@ -4,6 +4,7 @@ mod camera;
 mod display;
 #[cfg(test)]
 mod display_tests;
+mod drag;
 mod gpu;
 mod platform;
 mod state;
@@ -38,6 +39,7 @@ struct EditorApp {
     last_title: String,
     canvas_rect: egui::Rect,
     display_error: Option<String>,
+    drag: Option<drag::Drag>,
 }
 impl EditorApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -83,7 +85,7 @@ impl EditorApp {
             .as_ref()
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
-        eprintln!("RCam S2-A.3 native GPU: {adapter}");
+        eprintln!("RCam S2-B1 native GPU: {adapter}");
         Self {
             tx,
             rx,
@@ -105,11 +107,15 @@ impl EditorApp {
             last_title: String::new(),
             canvas_rect: egui::Rect::NOTHING,
             display_error: None,
+            drag: None,
         }
     }
     fn send(&mut self, a: Action) {
         if self.busy {
             return;
+        }
+        if !matches!(a, Action::ProbeDrag(..)) {
+            self.drag = None;
         }
         self.sequence += 1;
         match self.tx.try_send((self.sequence, a)) {
@@ -168,6 +174,21 @@ impl EditorApp {
             self.allow_quit = true;
         }
     }
+    fn object_buttons(&mut self, ui: &mut egui::Ui) {
+        let enabled = self.usable() && drag::editable_selection(&self.view);
+        if ui
+            .add_enabled(enabled, egui::Button::new("原位复制  ⌘D"))
+            .clicked()
+        {
+            self.send(Action::Duplicate);
+        }
+        if ui
+            .add_enabled(enabled && !self.busy, egui::Button::new("删除对象  ⌫"))
+            .clicked()
+        {
+            self.send(Action::Delete);
+        }
+    }
     fn history_buttons(&mut self, ui: &mut egui::Ui) {
         let undo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0);
         let redo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.redo_entries > 0);
@@ -194,7 +215,15 @@ impl eframe::App for EditorApp {
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
             self.busy = false;
+            if let Some(drag) = &mut self.drag {
+                if self.view.drag_hit && self.view.error.is_none() {
+                    drag.confirmed = true;
+                } else {
+                    self.drag = None;
+                }
+            }
             if changed {
+                self.drag = None;
                 self.fit = self.view.info.is_some();
                 self.layer = self.view.layers.first().map(|l| l.layer_id.clone());
                 self.rename = self
@@ -266,7 +295,21 @@ impl eframe::App for EditorApp {
             || self.view.error.as_ref().is_some_and(|e| {
                 e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
             });
-        if !ctx.wants_keyboard_input() && !self.busy && !modal_open {
+        let cancel_drag = ctx.input(|i| {
+            drag::cancelled(
+                i.key_pressed(egui::Key::Escape),
+                i.focused,
+                i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::PointerGone)),
+                i.pointer.primary_down(),
+                i.pointer.primary_released(),
+            )
+        });
+        if cancel_drag || modal_open || self.display_error.is_some() {
+            self.drag = None;
+        }
+        if drag::shortcuts_allowed(ctx.wants_keyboard_input(), self.busy, modal_open) {
             ctx.input_mut(|i| {
                 if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) {
                     self.open();
@@ -291,7 +334,17 @@ impl eframe::App for EditorApp {
                 {
                     self.send(Action::History(false));
                 }
+                if self.usable() && drag::editable_selection(&self.view) {
+                    if i.consume_key(egui::Modifiers::COMMAND, egui::Key::D) {
+                        self.send(Action::Duplicate);
+                    } else if i.consume_key(egui::Modifiers::NONE, egui::Key::Delete)
+                        || i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
+                    {
+                        self.send(Action::Delete);
+                    }
+                }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::F) {
+                    self.drag = None;
                     self.fit = true;
                 }
             });
@@ -328,6 +381,7 @@ impl eframe::App for EditorApp {
                 });
                 ui.menu_button("编辑", |ui| {
                     self.history_buttons(ui);
+                    self.object_buttons(ui);
                 });
                 ui.menu_button("视图", |ui| {
                     if ui.button("适合窗口  F").clicked() {
@@ -336,8 +390,8 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("帮助", |ui| {
-                    ui.label("S2-A.3 · Mac 单文件编辑预览");
-                    ui.label("几何单选包括 Clear 和锁定对象；仅数值移动。");
+                    ui.label("S2-B1 · Mac 单对象编辑");
+                    ui.label("几何单选包括 Clear；已选对象可拖动、原位复制和删除。");
                     ui.label("中键拖动 / 双指滚动平移；捏合 / Cmd+滚动缩放。");
                     ui.label("另存为必须选择新文件名。Windows 延后验收。");
                     ui.separator();
@@ -505,6 +559,7 @@ impl eframe::App for EditorApp {
                         }
                         let locked = layer.is_some_and(|l| l.locked);
                         ui.separator();
+                        self.object_buttons(ui);
                         ui.strong("数值移动");
                         if locked {
                             ui.colored_label(Color32::YELLOW, "图层已锁定，请先解锁再移动。");
@@ -557,13 +612,17 @@ impl eframe::App for EditorApp {
                 let (r, painter) =
                     ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
                 let rect = r.rect;
+                if self.canvas_rect != rect || self.fit {
+                    self.drag = None;
+                }
                 self.canvas_rect = rect;
                 if self.fit {
                     self.camera.fit(self.view.bounds, rect);
                     self.fit = false;
                 }
-                if r.dragged_by(egui::PointerButton::Middle)
-                    || r.drag_stopped_by(egui::PointerButton::Middle)
+                if self.drag.is_none()
+                    && (r.dragged_by(egui::PointerButton::Middle)
+                        || r.drag_stopped_by(egui::PointerButton::Middle))
                 {
                     self.camera.pan(ctx.input(|i| i.pointer.delta()));
                 }
@@ -572,15 +631,47 @@ impl eframe::App for EditorApp {
                 {
                     let (scroll, zoom) = ctx.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
 
-                    self.camera.pan(scroll);
-                    self.camera.zoom(f64::from(zoom), pos, rect);
+                    if self.drag.is_none() {
+                        self.camera.pan(scroll);
+                        self.camera.zoom(f64::from(zoom), pos, rect);
+                    }
                     let w = self.camera.world(pos, rect);
                     cursor_label = Some(format!("X {:.6}  Y {:.6} mm", w.x_mm, w.y_mm));
-                    if r.clicked_by(egui::PointerButton::Primary) && self.usable() {
+                    if ctx.input(|i| i.pointer.primary_pressed()) && self.usable() && !modal_open {
+                        self.drag = drag::Drag::arm(
+                            &self.view,
+                            pos,
+                            self.camera,
+                            rect,
+                            ctx.pixels_per_point(),
+                        );
+                        if self.drag.is_some() {
+                            self.send(Action::ProbeDrag(
+                                w,
+                                self.camera.tolerance(ctx.pixels_per_point()),
+                            ));
+                        }
+                    }
+                    if r.clicked_by(egui::PointerButton::Primary)
+                        && self.usable()
+                        && self.drag.is_none()
+                        && !cancel_drag
+                    {
                         self.send(Action::Select(
                             w,
                             self.camera.tolerance(ctx.pixels_per_point()),
                         ));
+                    }
+                }
+                if let Some(drag) = &mut self.drag {
+                    if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                        drag.update(pos);
+                    }
+                    if ctx.input(|i| i.pointer.primary_released()) {
+                        let drag = self.drag.take().unwrap();
+                        if let Some(action) = drag.release() {
+                            self.send(action);
+                        }
                     }
                 }
                 let ppm = self.camera.scale * f64::from(ctx.pixels_per_point());
@@ -593,7 +684,7 @@ impl eframe::App for EditorApp {
                 if let Some(scene) = &self.view.scene
                     && !needs_lod
                 {
-                    match gpu::uniforms(
+                    match gpu::uniforms_preview(
                         scene,
                         self.camera,
                         rect,
@@ -602,6 +693,9 @@ impl eframe::App for EditorApp {
                             .selected
                             .as_ref()
                             .map(|o| o.object.object_id.as_str()),
+                        self.drag
+                            .as_ref()
+                            .map_or(editor_core::MmPoint::new(0., 0.), |d| d.delta),
                     ) {
                         Ok(uniforms) => {
                             self.display_error = None;
@@ -616,6 +710,7 @@ impl eframe::App for EditorApp {
                         }
                         Err(e) => {
                             self.display_error = Some(e);
+                            self.drag = None;
                         }
                     }
                 }
@@ -631,7 +726,17 @@ impl eframe::App for EditorApp {
                 if let Some(o) = &self.view.selected
                     && let editor_core::SemanticGeometry::Flash { center, .. } = o.object.geometry
                 {
-                    let p = self.camera.screen(center, rect);
+                    let delta = self
+                        .drag
+                        .as_ref()
+                        .map_or(editor_core::MmPoint::new(0., 0.), |d| d.delta);
+                    let p = self.camera.screen(
+                        editor_core::MmPoint::new(
+                            center.x_mm + delta.x_mm,
+                            center.y_mm + delta.y_mm,
+                        ),
+                        rect,
+                    );
                     if rect.contains(p) {
                         painter.circle_stroke(
                             p,

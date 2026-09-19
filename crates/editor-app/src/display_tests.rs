@@ -100,6 +100,14 @@ fn renderer_refuses_numeric_precision_and_resource_overflow() {
 #[test]
 #[ignore = "requires native Metal hardware; retain raw output"]
 fn native_metal_semantic_renderer() {
+    metal_probes(false);
+}
+#[test]
+#[ignore = "requires native Metal hardware; retain raw output"]
+fn native_metal_drag_preview() {
+    metal_probes(true);
+}
+fn metal_probes(preview: bool) {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::METAL,
         ..Default::default()
@@ -153,7 +161,7 @@ fn native_metal_semantic_renderer() {
         let scene = Scene::build(&s, &l, MmPoint::new(0., 0.), 1000., 1).unwrap();
         // Create the actual render pipeline too: compute probes alone do not validate fragment IO.
         let _render = crate::gpu::Resources::new(&device, wgpu::TextureFormat::Rgba8Unorm, &scene);
-        let doc = SemanticDocument {
+        let mut doc = SemanticDocument {
             id: s.document_id.clone(),
             unit: "mm".into(),
             format: SemanticFormat {
@@ -166,6 +174,13 @@ fn native_metal_semantic_renderer() {
             apertures: s.apertures,
             source: Default::default(),
         };
+        if preview {
+            let layer = doc.layers[0].id.clone();
+            let id = doc.layers[0].objects[0].object_id.clone();
+            editor_core::edit::EditHistory::default()
+                .move_objects(&mut doc, &layer, &[id], 3., -2.)
+                .unwrap();
+        }
         let b = doc.manufacturing_bounds(None).unwrap().unwrap();
         let mut probes = Vec::<[f32; 2]>::new();
         let mut expected = Vec::<bool>::new();
@@ -186,7 +201,7 @@ fn native_metal_semantic_renderer() {
             }
         }
         // Independent known truth for a standard or macro hole over a preexisting line.
-        if name.ends_with("hole_over_line.gbr") {
+        if !preview && name.ends_with("hole_over_line.gbr") {
             for (x, y, hit) in [
                 (0., 0., true),
                 (0., 0.5, false),
@@ -198,9 +213,10 @@ fn native_metal_semantic_renderer() {
             }
         }
         let uniform = Uniforms {
+            preview: if preview { [3., -2., 0., 0.] } else { [0.; 4] },
             view: [0.; 4],
             camera: [0.; 4],
-            counts: [scene.objects.len() as u32, 0, 0, 0],
+            counts: [scene.objects.len() as u32, u32::from(preview), 0, 0],
         };
         let buf = |bytes: &[u8], usage| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
