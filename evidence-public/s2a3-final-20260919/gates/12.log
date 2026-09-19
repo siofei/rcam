@@ -1,0 +1,13 @@
+cargo test --locked -p editor-service --test automation_contract
+   Compiling editor-service v0.1.0 (/private/tmp/rcam-s2a3-acceptance/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.11s
+     Running tests/automation_contract.rs (/Volumes/外接硬盘/rcam/target/debug/deps/automation_contract-12fa4319a144ef31)
+
+running 4 tests
+test s1_json_contract_publishes_only_authorized_real_operations ... ok
+test s1_json_contract_rejects_implicit_authority_and_nested_unknown_fields ... ok
+test s0_json_contract_rejects_unknown_fields_and_unimplemented_edits ... ok
+test s0_json_contract_uses_real_parser_and_read_only_snapshot ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

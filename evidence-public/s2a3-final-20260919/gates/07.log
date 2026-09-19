@@ -1,0 +1,16 @@
+cargo test --locked -p editor-service --test s2a_bounds_workflow
+   Compiling editor-service v0.1.0 (/private/tmp/rcam-s2a3-acceptance/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.76s
+     Running tests/s2a_bounds_workflow.rs (/Volumes/外接硬盘/rcam/target/debug/deps/s2a_bounds_workflow-d19f17c6afc7b91f)
+
+running 7 tests
+test bounds_dto_roundtrip_preserves_f64_and_large_revision ... ok
+test bounds_workspace_visibility_does_not_change_manufacturing_bounds ... ok
+test bounds_capabilities_match_handlers_and_close_invalidates_document ... ok
+test delete_all_bounds_are_null_undo_restores ... ok
+test strict_bounds_contract_and_failures_leave_state_unchanged ... ok
+test bounds_after_move_undo_redo_export_reopen_and_source_preservation ... ok
+test layer_bounds_real_parser_flash_line_arc_region_and_cutin ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

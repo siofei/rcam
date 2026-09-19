@@ -1,0 +1,107 @@
+{
+  "schema_version": 2,
+  "stage": "S2-A.3",
+  "run_id": "s2a3-final-20260919",
+  "tested_code_commit": "728e31be719c294b42666811a4cd2c0c44bae5ab",
+  "status": "MAC_STAGE_PASS",
+  "platform": "macOS26.5.1(25F80), arm64, Apple M1 Metal",
+  "workspace_tests": {
+    "passed": 256,
+    "failed": 0,
+    "ignored": 3
+  },
+  "native_metal_tests": {
+    "passed": 2,
+    "failed": 0
+  },
+  "native_checks": [
+    {
+      "step": "01 Cold start",
+      "status": "PASS",
+      "evidence": "01-cold-start.jpg"
+    },
+    {
+      "step": "02 Native Open .gbr",
+      "status": "PASS",
+      "evidence": "02-open-fit.jpg"
+    },
+    {
+      "step": "03 Finder drop",
+      "status": "PASS_USER_CONFIRMED",
+      "evidence": "gui/user-confirmation.md, 15-after-user-native-check.jpg, native.log"
+    },
+    {
+      "step": "04 Fit",
+      "status": "PASS",
+      "evidence": "02-open-fit.jpg"
+    },
+    {
+      "step": "05 Physical trackpad Pan/Zoom",
+      "status": "PASS_USER_CONFIRMED",
+      "evidence": "gui/user-confirmation.md, 15-after-user-native-check.jpg, native.log"
+    },
+    {
+      "step": "06 Flash selection",
+      "status": "PASS",
+      "evidence": "04-move.jpg"
+    },
+    {
+      "step": "07 Hole center miss",
+      "status": "PASS",
+      "evidence": "03-hole-no-selection.jpg"
+    },
+    {
+      "step": "08 Last exposure hit",
+      "status": "PASS",
+      "evidence": "13-overlap-last-exposure.jpg: object-13"
+    },
+    {
+      "step": "09 Hidden layer cannot be selected",
+      "status": "PASS",
+      "evidence": "10-hidden-unselectable.jpg"
+    },
+    {
+      "step": "10 Locked selection, Move disabled",
+      "status": "PASS",
+      "evidence": "11-locked-reselect.jpg"
+    },
+    {
+      "step": "11 Move dx=5 dy=-3",
+      "status": "PASS",
+      "evidence": "04-move.jpg: center10,20 ->15,17; revision1"
+    },
+    {
+      "step": "12 Cmd+Z",
+      "status": "PASS",
+      "evidence": "05-undo.jpg: revision2, dirty=false"
+    },
+    {
+      "step": "13 Shift+Cmd+Z",
+      "status": "PASS",
+      "evidence": "06-redo.jpg: revision3, dirty=true"
+    },
+    {
+      "step": "14 Native Save As",
+      "status": "PASS",
+      "evidence": "07-saved-source-and-target.jpg: dirty=false"
+    },
+    {
+      "step": "15 Reopen export",
+      "status": "PASS",
+      "evidence": "08-reopened-position.jpg: center15,17"
+    },
+    {
+      "step": "16 Workspace name/visibility does not dirty",
+      "status": "PASS",
+      "evidence": "12-renamed-clean.jpg: revision0, workspace4"
+    },
+    {
+      "step": "17 Chinese/space/#/.gbr/.gbx paths",
+      "status": "PASS",
+      "evidence": "Chinese/space/# .gbr native Save As/reopen; GBX native Finder drop user-confirmed and observed window title."
+    }
+  ],
+  "windows": "deferred / not executed",
+  "v1": "not passed",
+  "screen_scale": "system_profiler: main UP27R3 backing3840x2160 / logical1920x1080 @144Hz; ratio2. Camera uses egui pixels_per_point; CUA JPEG normalized1182x768 is not a framebuffer."
+}

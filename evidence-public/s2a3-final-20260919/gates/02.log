@@ -1,0 +1,6 @@
+cargo check --workspace --all-targets --locked
+    Checking editor-core v0.1.0 (/private/tmp/rcam-s2a3-acceptance/crates/editor-core)
+    Checking gerber-io v0.1.0 (/private/tmp/rcam-s2a3-acceptance/crates/gerber-io)
+    Checking editor-service v0.1.0 (/private/tmp/rcam-s2a3-acceptance/crates/editor-service)
+    Checking editor-app v0.1.0 (/private/tmp/rcam-s2a3-acceptance/crates/editor-app)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.84s

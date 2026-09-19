@@ -1,0 +1,61 @@
+RCam S2-A.3 native GPU: AdapterInfo { name: "Apple M1", vendor: 0, device: 0, device_type: IntegratedGpu, driver: "", driver_info: "", backend: Metal }
+display_rebuild=1 document=doc-1 revision=0 ppm=20 blocked=None
+state document=doc-1 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=1 elapsed_ms=6
+display_rebuild=2 document=doc-1 revision=0 ppm=64 blocked=None
+state document=doc-1 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=2 elapsed_ms=0
+state document=doc-1 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=3 elapsed_ms=0
+state document=doc-1 revision=0 workspace=0 dirty=false selected=Some("object-1") saved=None
+gui_job=4 elapsed_ms=0
+2026-09-19 22:54:12.801 editor-app[73210:25623396] TSM AdjustCapsLockLEDForKeyTransitionHandling - _ISSetPhysicalKeyboardCapsLockLED Inhibit
+display_rebuild=3 document=doc-1 revision=1 ppm=64 blocked=None
+state document=doc-1 revision=1 workspace=0 dirty=true selected=Some("object-1") saved=None
+gui_job=5 elapsed_ms=0
+display_rebuild=4 document=doc-1 revision=2 ppm=64 blocked=None
+state document=doc-1 revision=2 workspace=0 dirty=false selected=Some("object-1") saved=None
+gui_job=6 elapsed_ms=0
+display_rebuild=5 document=doc-1 revision=3 ppm=64 blocked=None
+state document=doc-1 revision=3 workspace=0 dirty=true selected=Some("object-1") saved=None
+gui_job=7 elapsed_ms=0
+state document=doc-1 revision=3 workspace=0 dirty=false selected=Some("object-1") saved=Some("/private/tmp/rcam-s2a3-acceptance/evidence/s2a3-final-20260919/gui/中文 # 输出.gbr")
+gui_job=8 elapsed_ms=11
+display_rebuild=6 document=doc-2 revision=0 ppm=20 blocked=None
+state document=doc-2 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=9 elapsed_ms=3
+display_rebuild=7 document=doc-2 revision=0 ppm=64 blocked=None
+state document=doc-2 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=10 elapsed_ms=0
+state document=doc-2 revision=0 workspace=0 dirty=false selected=Some("object-1") saved=None
+gui_job=11 elapsed_ms=0
+display_rebuild=8 document=doc-2 revision=0 ppm=64 blocked=None
+state document=doc-2 revision=0 workspace=1 dirty=false selected=Some("object-1") saved=None
+gui_job=12 elapsed_ms=6
+display_rebuild=9 document=doc-2 revision=0 ppm=64 blocked=None
+state document=doc-2 revision=0 workspace=2 dirty=false selected=None saved=None
+gui_job=13 elapsed_ms=0
+state document=doc-2 revision=0 workspace=2 dirty=false selected=None saved=None
+gui_job=14 elapsed_ms=0
+display_rebuild=10 document=doc-2 revision=0 ppm=64 blocked=None
+state document=doc-2 revision=0 workspace=3 dirty=false selected=None saved=None
+gui_job=15 elapsed_ms=9
+state document=doc-2 revision=0 workspace=3 dirty=false selected=Some("object-1") saved=None
+gui_job=16 elapsed_ms=0
+display_rebuild=11 document=doc-2 revision=0 ppm=64 blocked=None
+state document=doc-2 revision=0 workspace=4 dirty=false selected=Some("object-1") saved=None
+gui_job=17 elapsed_ms=1
+state document=doc-2 revision=0 workspace=4 dirty=false selected=Some("object-13") saved=None
+gui_job=18 elapsed_ms=0
+state document=doc-2 revision=0 workspace=4 dirty=false selected=Some("object-12") saved=None
+gui_job=19 elapsed_ms=0
+state document=doc-2 revision=0 workspace=4 dirty=false selected=None saved=None
+gui_job=20 elapsed_ms=1
+display_rebuild=12 document=doc-3 revision=0 ppm=20 blocked=None
+state document=doc-3 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=21 elapsed_ms=4
+display_rebuild=13 document=doc-3 revision=0 ppm=64 blocked=None
+state document=doc-3 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=22 elapsed_ms=0
+state document=doc-3 revision=0 workspace=0 dirty=false selected=None saved=None
+gui_job=23 elapsed_ms=0
