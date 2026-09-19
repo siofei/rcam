@@ -1,0 +1,10 @@
+{
+  "source_zip": "/Volumes/\u5916\u63a5\u786c\u76d8/rcam/exports/RCam_S2B31_04c0cbf_source.zip",
+  "sha256": "dd6b0ea8c0ae7304ff330d11337013d8425c70601c70e7b8a0e05f8e5bf30ad3",
+  "zip_integrity": "PASS",
+  "python_extractall": "PASS",
+  "package_manifest": "PASS",
+  "source_manifest": "PASS current source manifest: 1539 files",
+  "non_ascii_entries": 135,
+  "utf8_flags": "PASS"
+}

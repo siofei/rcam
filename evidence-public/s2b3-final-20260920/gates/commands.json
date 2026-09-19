@@ -1,0 +1,140 @@
+[
+  {
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "seconds": 0.459079709,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo check --workspace --all-targets --locked",
+    "exit_code": 0,
+    "seconds": 7.301209083,
+    "log": "02.log"
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 0.7137460840000003,
+    "log": "03.log"
+  },
+  {
+    "command": "cargo test --workspace --locked",
+    "exit_code": 0,
+    "seconds": 40.390781625,
+    "log": "04.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-core --test s2a_hit_test",
+    "exit_code": 0,
+    "seconds": 1.8932971660000035,
+    "log": "05.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-core --test s2b_rect_selection",
+    "exit_code": 0,
+    "seconds": 1.048504207999997,
+    "log": "06.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s2b_select_rect_workflow",
+    "exit_code": 0,
+    "seconds": 4.123829624999999,
+    "log": "07.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b_edit_workflow",
+    "exit_code": 0,
+    "seconds": 2.007313040999996,
+    "log": "08.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2_edit_workflow",
+    "exit_code": 0,
+    "seconds": 2.3487599999999986,
+    "log": "09.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2b_transform_workflow",
+    "exit_code": 0,
+    "seconds": 2.526091207999997,
+    "log": "10.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2c_workspace_workflow",
+    "exit_code": 0,
+    "seconds": 1.3135163330000026,
+    "log": "11.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s2a_hit_test_workflow",
+    "exit_code": 0,
+    "seconds": 1.4400104999999996,
+    "log": "12.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s2a_bounds_workflow",
+    "exit_code": 0,
+    "seconds": 1.2176442499999922,
+    "log": "13.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test automation_contract",
+    "exit_code": 0,
+    "seconds": 1.410507832999997,
+    "log": "14.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test headless_workflow",
+    "exit_code": 0,
+    "seconds": 1.202126665999998,
+    "log": "15.log"
+  },
+  {
+    "command": "cargo tree --locked -p editor-service --edges normal",
+    "exit_code": 0,
+    "seconds": 0.10654062499999384,
+    "log": "16.log"
+  },
+  {
+    "command": "cargo build --release --locked -p editor-app",
+    "exit_code": 0,
+    "seconds": 13.07224645800001,
+    "log": "17.log"
+  },
+  {
+    "command": "python3 scripts/source_manifest.py --check",
+    "exit_code": 0,
+    "seconds": 0.4518512089999973,
+    "log": "18.log"
+  },
+  {
+    "command": "python3 scripts/test_audit_core10.py",
+    "exit_code": 0,
+    "seconds": 0.10609812499998839,
+    "log": "19.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-core --test geometry_metrics",
+    "exit_code": 0,
+    "seconds": 0.2723404580000022,
+    "log": "20.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test metrics_workflow",
+    "exit_code": 0,
+    "seconds": 1.4739905830000026,
+    "log": "21.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-app --bin editor-app",
+    "exit_code": 0,
+    "seconds": 0.4965052080000021,
+    "log": "22.log"
+  },
+  {
+    "command": "python3 scripts/test_package_source.py",
+    "exit_code": 0,
+    "seconds": 2.354450459000006,
+    "log": "23.log"
+  }
+]

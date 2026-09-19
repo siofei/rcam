@@ -1,0 +1,7 @@
+{
+  "platform": "macOS-26.5.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80\n",
+  "rustc": "rustc 1.89.0 (29483883e 2025-08-04)\n",
+  "candidate": "working-tree (uncommitted S2-B2 changes)"
+}

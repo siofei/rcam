@@ -1,0 +1,27 @@
+cargo test --locked -p editor-core --test s2a_hit_test
+   Compiling editor-core v0.1.0 (/private/tmp/rcam-s2b3-final-20260920/crates/editor-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.12s
+     Running tests/s2a_hit_test.rs (/Volumes/外接硬盘/rcam/.tools/target/debug/deps/s2a_hit_test-3d8b8f38638e6e1a)
+
+running 18 tests
+test hit_test_arc_direction_and_sweep ... ok
+test hit_test_line_width_and_tolerance ... ok
+test hit_test_arc_full_zero_and_deviation ... ok
+test hit_test_clear_object_returns_object_geometry_and_order ... ok
+test hit_test_flash_circle_hole ... ok
+test hit_test_invalid_params_and_budget_are_fail_closed ... ok
+test hit_test_rectangular_sweep_exact_not_aabb ... ok
+test hit_test_rectangle_obround_polygon_local_transform ... ok
+test hit_test_zero_length_line_and_tiny_nonzero_segment ... ok
+test macro_near_coincident_boundary_is_rejected_not_guessed ... ok
+test hit_test_region_inside_outside_hole_cutin ... ok
+test hit_test_macro_dark_clear_primitives ... ok
+test macro_overlapping_circles_and_complete_multi_clear_erasure ... ok
+test tiny_hole_center_is_not_filled_by_a_fixed_numeric_selection_band ... ok
+test region_real_arc_edges_and_independent_contour_union ... ok
+test macro_rotated_outline_offset_and_local_mirror ... ok
+test macro_overlap_corner_tolerance_uses_final_exposed_edges ... ok
+test macro_rectangles_match_independent_cell_distance_truth ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+

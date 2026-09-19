@@ -13,13 +13,14 @@ pub struct Uniforms {
     pub camera: [f32; 4],
     pub counts: [u32; 4],
     pub preview: [f32; 4],
+    pub grid: [f32; 4],
 }
 pub fn uniforms(
     scene: &Scene,
     camera: Camera,
     rect: egui::Rect,
     ppp: f32,
-    selected: Option<&str>,
+    selected: &[&str],
 ) -> Result<Uniforms, String> {
     uniforms_preview(
         scene,
@@ -35,24 +36,43 @@ pub fn uniforms_preview(
     camera: Camera,
     rect: egui::Rect,
     ppp: f32,
-    selected: Option<&str>,
+    selected: &[&str],
     delta: editor_core::MmPoint,
 ) -> Result<Uniforms, String> {
+    prepare(scene, camera, rect, ppp, selected, delta).map(|v| v.0)
+}
+pub fn prepare(
+    scene: &Scene,
+    camera: Camera,
+    rect: egui::Rect,
+    ppp: f32,
+    selected: &[&str],
+    delta: editor_core::MmPoint,
+) -> Result<(Uniforms, Arc<crate::render_index::RenderIndex>), String> {
     let preview = [scene.scalar(delta.x_mm)?, scene.scalar(delta.y_mm)?, 0., 0.];
-    let selected_index = selected.and_then(|id| scene.ids.iter().position(|x| x == id));
+    let selected_flags = selection_flags(scene, selected);
     let width = rect.width() * ppp;
     let height = rect.height() * ppp;
     let pixels = f64::from(width) * f64::from(height);
     let ppm = camera.scale * f64::from(ppp);
     let cx = camera.center.x_mm - scene.anchor.x_mm;
     let cy = camera.center.y_mm - scene.anchor.y_mm;
-    let mut work = pixels * scene.objects.len() as f64;
+    let index = if delta.x_mm == 0. && delta.y_mm == 0. {
+        scene.index.clone()
+    } else {
+        Arc::new(crate::render_index::RenderIndex::build(
+            &scene.objects,
+            &selected_flags,
+            [preview[0], preview[1]],
+        )?)
+    };
+    let mut work = pixels * index.max_candidates as f64 * 20.;
     for (index, object) in scene.objects.iter().enumerate() {
         if object.meta[3] == 0 {
             continue;
         }
         let mut b = object.bounds;
-        if selected_index == Some(index) {
+        if selected_flags[index] != 0 {
             for i in 0..4 {
                 b[i] += preview[i % 2];
             }
@@ -78,38 +98,50 @@ pub fn uniforms_preview(
                 }
             })
             .sum();
-        work += (right - left).max(0.) * (top - bottom).max(0.) * cost as f64;
+        work += ((right - left).max(0.) + 4.) * ((top - bottom).max(0.) + 4.) * cost as f64 * 20.;
     }
     // Four coverage samples plus four selected-edge samples, conservatively bounded.
-    if !work.is_finite() || work * 8. > 2_000_000_000. {
-        return Err(
-            "RESOURCE_LIMIT: display pixel/object budget; use a smaller window or sample".into(),
-        );
+    if !work.is_finite() || work > 2_000_000_000. {
+        return Err(format!(
+            "RESOURCE_LIMIT: resource=candidate_sample_work limit=2000000000 actual={work}"
+        ));
     }
-    Ok(Uniforms {
-        preview,
-        view: [rect.left() * ppp, rect.top() * ppp, width, height],
-        camera: [
-            scene.scalar(camera.center.x_mm - scene.anchor.x_mm)?,
-            scene.scalar(camera.center.y_mm - scene.anchor.y_mm)?,
-            (camera.scale * f64::from(ppp)) as f32,
-            0.,
-        ],
-        counts: [
-            scene.objects.len() as u32,
-            selected
-                .and_then(|id| scene.ids.iter().position(|x| x == id))
-                .map_or(0, |i| i as u32 + 1),
-            0,
-            0,
-        ],
-    })
+    Ok((
+        Uniforms {
+            grid: index.grid,
+            preview,
+            view: [rect.left() * ppp, rect.top() * ppp, width, height],
+            camera: [
+                scene.scalar(camera.center.x_mm - scene.anchor.x_mm)?,
+                scene.scalar(camera.center.y_mm - scene.anchor.y_mm)?,
+                (camera.scale * f64::from(ppp)) as f32,
+                0.,
+            ],
+            counts: [scene.objects.len() as u32, index.cols, index.rows, 0],
+        },
+        index,
+    ))
+}
+pub fn selection_flags(scene: &Scene, selected: &[&str]) -> Vec<u32> {
+    let ids: std::collections::HashSet<_> = selected.iter().copied().collect();
+    scene
+        .ids
+        .iter()
+        .map(|id| u32::from(ids.contains(id.as_str())))
+        .collect()
 }
 pub struct Resources {
     pub pipeline: wgpu::RenderPipeline,
     pub uniform: wgpu::Buffer,
+    pub selected: wgpu::Buffer,
     pub bind: wgpu::BindGroup,
     pub serial: u64,
+    pub index: Arc<crate::render_index::RenderIndex>,
+    pub bins: wgpu::Buffer,
+    layout: wgpu::BindGroupLayout,
+    objects: wgpu::Buffer,
+    shapes: wgpu::Buffer,
+    points: wgpu::Buffer,
 }
 impl Resources {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, scene: &Scene) -> Self {
@@ -153,7 +185,14 @@ impl Resources {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let entries: Vec<_> = (0..4)
+        let selected = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("selected-object-flags"),
+            size: (scene.objects.len().max(1) * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bins = storage("world-bins", bytemuck::cast_slice(&scene.index.data));
+        let entries: Vec<_> = (0..6)
             .map(|i| wgpu::BindGroupLayoutEntry {
                 binding: i,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -173,7 +212,7 @@ impl Resources {
             label: Some("editor-display"),
             entries: &entries,
         });
-        let entries: Vec<_> = [&uniform, &objects, &shapes, &points]
+        let entries: Vec<_> = [&uniform, &objects, &shapes, &points, &selected, &bins]
             .iter()
             .enumerate()
             .map(|(i, b)| wgpu::BindGroupEntry {
@@ -223,14 +262,23 @@ impl Resources {
         Self {
             pipeline,
             uniform,
+            selected,
             bind,
             serial: scene.serial,
+            index: scene.index.clone(),
+            bins,
+            layout,
+            objects,
+            shapes,
+            points,
         }
     }
 }
 pub struct Callback {
     pub scene: Arc<Scene>,
+    pub index: Arc<crate::render_index::RenderIndex>,
     pub uniforms: Uniforms,
+    pub selected: Vec<u32>,
     pub format: wgpu::TextureFormat,
 }
 impl egui_wgpu::CallbackTrait for Callback {
@@ -248,8 +296,39 @@ impl egui_wgpu::CallbackTrait for Callback {
         {
             resources.insert(Resources::new(device, self.format, &self.scene));
         }
-        if let Some(r) = resources.get::<Resources>() {
+        if let Some(r) = resources.get_mut::<Resources>() {
+            if !Arc::ptr_eq(&r.index, &self.index) {
+                r.bins = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("preview-world-bins"),
+                    contents: bytemuck::cast_slice(&self.index.data),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
+                let entries: Vec<_> = [
+                    &r.uniform,
+                    &r.objects,
+                    &r.shapes,
+                    &r.points,
+                    &r.selected,
+                    &r.bins,
+                ]
+                .iter()
+                .enumerate()
+                .map(|(i, b)| wgpu::BindGroupEntry {
+                    binding: i as u32,
+                    resource: b.as_entire_binding(),
+                })
+                .collect();
+                r.bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("preview-display"),
+                    layout: &r.layout,
+                    entries: &entries,
+                });
+                r.index = self.index.clone();
+            }
             queue.write_buffer(&r.uniform, 0, bytemuck::bytes_of(&self.uniforms));
+            if !self.selected.is_empty() {
+                queue.write_buffer(&r.selected, 0, bytemuck::cast_slice(&self.selected));
+            }
         }
         vec![]
     }

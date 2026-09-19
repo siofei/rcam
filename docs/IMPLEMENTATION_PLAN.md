@@ -1,7 +1,7 @@
 # 实施计划与职责
 
 基线：DESIGN_V1 1.1，acceptance_cases schema 2；2026-09-14 开始。
-历史阶段采用主代理规划/验收、Luna 实现的分工；本次 S2-B1 由当前主代理实现并核验，未启动子代理。每轮仅交付一个阶段内的小闭环。
+历史阶段采用主代理规划/验收、Luna 实现的分工；S2-B1 由主代理实现并核验；本次 S2-B2 由主代理实现/自动测试/审核，用户已取消全部 CUA 交给 Luna 的临时安排，恢复默认执行。每轮仅交付一个阶段内的小闭环。
 
 ## 历史任务 S0-A：技术风险验证
 
@@ -57,7 +57,7 @@ Luna 负责产品代码，按 core/io 和 service 划分文件边界；主代理
 Export(new path) → Reopen，范围严格按 ADR 0005；Move/Undo/Redo 留待 S1-B。
 证据另存 `evidence/s1-a-20260915-implementation/`，包含早期失败，不覆盖历史。
 
-## 当前任务 S2-B1：单对象直接操作（Mac-first）
+## 历史任务 S2-B1：单对象直接操作（Mac-first）
 
 需求 R07/R08/R09/R10/R11/R14/R15/R18/R19/R21/R22；局部 AT-022/025/026/030/032/035/036/038/040/041/043/054/086/087/090/091。
 允许修改 editor-app 状态、输入、显示 uniform/shader、测试，以及阶段文档和源码清单；保留 core/io/service 契约与制造算法。
@@ -65,11 +65,29 @@ Export(new path) → Reopen，范围严格按 ADR 0005；Move/Undo/Redo 留待 S
 Esc、PointerGone、失焦、文档/任务切换取消。Cmd+D 原位复制选中新 ID；Delete/Backspace 删除；文本焦点不抢快捷键。
 Windows 延后，本轮不代表双平台 V1 通过。保留所有原96用例及门槛。
 
-### S2-B2 待启动
+## 历史任务 S2-B2：精确框选与多选
 
-现有 contains 是对象包含查询矩形，不能反用为窗口选择。先新增 exact within/window relation（或专用 selection query）与完整 exact intersects；
-再实施多选、左到右 window、右到左 crossing、Rotate/Mirror GUI、Grid/Snap、测距。Arc/Region 等不支持时整次拒绝，不用 AABB 或跳过代替。
+任务 RCam_MAC_FIRST_S2B2_MULTISELECT_NEXT_TASK.md；需求/AT/允许修改模块见 ADR 0019。
+专用 objects.select_rect 的 Window/Crossing、SelectionSet、Ctrl-click 加选/Shift-click 减选、空白按下框选、
+同层整组 Move/Duplicate/Delete 与 Undo/Redo，后台一次精确查询和 UI-only 预览。
+Macro 复用材料边界，Region/Arc 复用制造解析几何，不使用 AABB 冒充相交。
+锁定/跨层整批拒绝；当前几何选择模式保留 Clear/locked 可查看的阶段边界。
+GeometryMetrics 只冻结 ADR 0018，本轮不实现实际指标。
+Windows deferred / not executed，最终双平台 V1/CORE10 要求不变。
+
+下一轮明确为 **S2-B3 GeometryMetrics + 属性面板**，本轮完成后停止。
+Rotate/Mirror GUI、Grid/Snap、测距、文字、生产renderer及格式交换均不加入本轮。
 
 ### Post-V1 交换边界
 
 见 ADR 0017：Gerber 直接进入 Manufacturing Model；非 Gerber 经 VectorScene 和显式 Manufacturing Conversion；本轮不新增格式依赖/API/菜单。
+
+## 历史任务 S2-B3
+
+主代理实施与核验，范围见S2_B3_PLAN.md。GeometryMetrics解析计算、lazy cache、独立查询与属性面板、UTF-8源码包回归。
+Mac-first；Windows deferred / not executed。完成后停止，不扩展最终Layer Area或后续阶段。
+
+## 当前任务 S2-B3.1
+GeometryMetrics已实现，完整S2-B3在renderer修复前被1000对象显示预算阻塞。
+按S2_B3_1_PLAN.md和ADR0020推进有界world bins、reference parity与P1K原生门禁。
+保持原验收阈值，原生十秒拖动三轮缺证据时继续B1，不扩展后续功能。

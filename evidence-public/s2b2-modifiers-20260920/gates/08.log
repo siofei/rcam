@@ -1,0 +1,3 @@
+cargo build --release --locked -p editor-app
+   Compiling editor-app v0.1.0 (/Volumes/外接硬盘/rcam/crates/editor-app)
+    Finished `release` profile [optimized] target(s) in 5.72s

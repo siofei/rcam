@@ -1,47 +1,52 @@
 6e0df73c5b2a63e92d9a0511eb3acd2d148512eaa2b497c6faef9da562b194b5  .github/workflows/s0.yml
 8c04dca40e8b6d3435fa806e2b567eab6bb9d8be737ec3403786817054ee343b  .gitignore
-2480c65c2e344b053b434ff2704394182592843df8120dc921cde682e1cd9a26  AGENTS.md
+aa8bb0084228af9f74ba80c9235b0e309bdafb96d29f58e5a1f6d2cae477c23c  AGENTS.md
 b9af4e7f35f984aea632246caf22866616e5a45c5d78bea06a540e8e244c89dc  Cargo.lock
 70d95accc54616a45fcd97410ac519cad62b9542c227a7782680f0ce9bb89cd7  Cargo.toml
-76fb5ff04b697327974a2efdcd6660c517771840717666cd2c4be809928d29b9  RCam_MAC_FIRST_S2A2_HITTEST_NEXT_TASK.md
-2cae47255567d290c1e94a7886ddea3f6303e00a5408b7992a062fc1db0994ae  RCam_MAC_FIRST_S2A3_GUI_NEXT_TASK.md
-6e8ead67c104e3cd8ad3a263f8013fd297eaa4ea1734c9f25f94b205398f6ad7  RCam_MAC_FIRST_S2A_GUI_NEXT_TASK.md
-683d7a6b4a1e0a00088c6dd11c74ae8b10e5ce424d692d176998ac14ad03f946  RCam_MAC_FIRST_S2B1_DIRECT_MANIPULATION_NEXT_TASK.md
-d1ed58aab146c5fa26df44571ada8918302d83f435800bf2464d8b8a403fce07  RCam_S1B2c_8ac82a0_Review.md
-a93224ecad56dadfe79a9192bcb153fd3c32bc994657a3dbcc7d62ac4b21a5bc  README.md
+378c11e91adbdf900eeaec34cf9f3266b67de567fd417b348529e6f1ddcd0f5a  README.md
 7f561d44783d8151c4859c8e326bcd4944fb5353aa751bad30b1638f5d006833  THIRD_PARTY_NOTICES.md
 bf395c1c6322ef2785f1f1b83b99903b29754068aefde1c526232b16f60668ec  crates/editor-app/Cargo.toml
-f58d11eadf14d61da686ac75894bc0e34367fd6068db0103c3e47d98e0ceb5fd  crates/editor-app/src/app_tests.rs
+3c142e34957187dff3991174d5e7fc16978cfb248ffe169bfc9da3ba37e2d400  crates/editor-app/src/app_tests.rs
 0456747897676bd3d3ba5b7abea112e991a42f055352f709097c97e8d5873c6e  crates/editor-app/src/camera.rs
 6d677c15835eb774701a9852635fed5273af1e8099e35e1c8bed5cb81f8c0143  crates/editor-app/src/canvas.wgsl
-858bd365b9c8b70c01a555ad9699a0ec6399ef63bf3ac2a28d8ac8d5ab6fc820  crates/editor-app/src/display.rs
-22fe4e471777a6511e219ce0c92fe6d1bcafff4f7c9d5a8862e04ad6745dc52a  crates/editor-app/src/display_tests.rs
-1de7acfeba25c71920c5452e45c0a21d20ce24b4df9f4f7af1b7c6076d2dcf47  crates/editor-app/src/drag.rs
-06d5a7d6555210911414cfa58066cc2b542723ad27b012ea7da12da1d33a919e  crates/editor-app/src/editor.wgsl
-b4b8978e9147d794539be437410f8b0511384e6de2f6193537b7bb7c363ca0a3  crates/editor-app/src/gpu.rs
+95fb84c17f2984bb2f0577aadb53f007b07f86bd6b0a09d45e2077d2336dc55b  crates/editor-app/src/display.rs
+44dcde5cdfe542cb04aae30a93a80c06de3e33575ff32c4fc5f74a534cf81efd  crates/editor-app/src/display_tests.rs
+5e5ad2d7fcca9a0b12aecd82761b3d52c49baca0c904306db93f17658ae29586  crates/editor-app/src/drag.rs
+bec17788ab832b91a383fb4eba2a6b002be3dbeb70d3586c8d2b7722f0136643  crates/editor-app/src/editor.wgsl
+a88a19b417de351d979cfb83f1a451416f790b4ea87a36533873a9c66cb80049  crates/editor-app/src/gpu.rs
 91cbb5439520e03766ad930ff13419332f7d66fd018f392648008a27b4864846  crates/editor-app/src/gpu_tests.rs
-52b4f8f645661d72a027cfc8e050c1f26babc603caa419c2c7bd0899d92e46b5  crates/editor-app/src/main.rs
+b0c84ce08108ac72b64d92c9e875da2b57dac75a17e297a72d94021f78bf9fa7  crates/editor-app/src/main.rs
+cc8ddcc92e4ccc66d1d6eee14c629c45ac59761b89348d4a30472a2102c578f0  crates/editor-app/src/metrics_panel.rs
 30da55a042ca6c2db9712412c3827baaea67248aaf631bc4c0a40d7ef2b23406  crates/editor-app/src/navigation_tests.rs
 ebc515440b68c0e43c9197862957797f956d62ca46b06af0f0ba7517e2bb65fb  crates/editor-app/src/platform.rs
+d52ed78a7dd1c4f1e928720034e191df3ec27429215e8575b6086dcd20b0076d  crates/editor-app/src/reference.wgsl
+ed2a84204cc9cee51cbfbba4a4fcc64a2de2533fbee11188e63bab976c6dfaff  crates/editor-app/src/render_index.rs
 f15700ebfcfb9b7b323208b27a5712714550b5c59e92b970b00b67e700ab516d  crates/editor-app/src/s0_demo.rs
-a92a355c50e0b2e6753848397fd13f5ac939b29e6c570d4dfe225552bb222919  crates/editor-app/src/state.rs
+d15ca6428cc33845bd2890b155b1c2c6908772142d30c03cbf2dc3236bd8e469  crates/editor-app/src/selection.rs
+646efabb4505f6de5fce3a906d20aac73667aac289eec01ab174c46c7c0a3803  crates/editor-app/src/state.rs
 345b2f9c4aef9968d0919d180f3ab97269edf4dbd0ec0d79bfa58fb83abafd66  crates/editor-core/Cargo.toml
 6d593f1649201e16ac54a6bf08f845ebd3187ba158ee5aa7fb320b8b6fdfdbf3  crates/editor-core/src/bounds.rs
 7839fc7accd3b7539bde7a77086018e712fbc0d2cb6c1afabce7eee24e7cd81e  crates/editor-core/src/edit.rs
-19600e8797919a6b1361a00f2f5112cb585ff788b4a2697a4f25bc23906f8071  crates/editor-core/src/hit_test.rs
-67dd49ac1640a609d1260298ccbe22c9dc5b69d059cb4ced9ebb002cd49c678e  crates/editor-core/src/hit_test/material.rs
-28ce07a67d222a4730b391ab59fbf85dbbeef2986c0b1a932857353d1c3b69d6  crates/editor-core/src/lib.rs
+6e4d90bbec8502d27cafe6e94fad8f1526e4973dc4a0226dd2e2c53af20413f1  crates/editor-core/src/hit_test.rs
+d8f0dbc1839fca39db1b8e6b9c39b58164e5aa9dbe2b2b31d07f80a80a1bdebc  crates/editor-core/src/hit_test/material.rs
+2324397b0cd1be4a38960a128347a89fc332e99fb1db6d4504f941c73a008c03  crates/editor-core/src/hit_test/select_rect.rs
+188c872212bb00b8975c0ae3ab00aa7fb65f617ef228f2e174df005a5842f999  crates/editor-core/src/lib.rs
+cabed617e29d1bb4bab83158c7ac5f3e878916442750a496a226fa4613079c6b  crates/editor-core/src/metrics.rs
 81374fcee580bd926a6d1dd13cdd0916bf2b7e5d7d9aa24bc95d9fa2e20d0cf6  crates/editor-core/src/transform.rs
+5cd4a81af804178ebfea64e4f1fd693da8fa2fc3c65ef017c3fa7376a07e5d8e  crates/editor-core/tests/geometry_metrics.rs
 a574203b7fac690b7d959d23f5987d7613810c934779a9ea800a18ffea4bcf91  crates/editor-core/tests/review_geometry_regressions.rs
 aaaa2e4d94b342234536340fe15c65ef0fafb5a039a3d81f69449f74fbd983b9  crates/editor-core/tests/s1a_independent_geometry.rs
 d8274a6485027c2b00fb0e40b7ed493d097b05e4dd76348e0648e6ea2d660a85  crates/editor-core/tests/s2a_bounds.rs
 087af6f7f02836311681f29ade956d0adc28de30ffee46f6836a23c230ba8055  crates/editor-core/tests/s2a_hit_test.rs
+70b38c4f7dc61fbf3bcf02f33f0ee95c7cba4342fa1ca7e67b980ecfe81bfca5  crates/editor-core/tests/s2b_rect_selection.rs
 67a8aba569a95fbad583d47a3f456e38eef3bef33dc831e5c5416770279291ad  crates/editor-service/Cargo.toml
-ee74593eca04325eccb8dcb4d2d1e5274def2b5741c4fa1fb5131425109db7b5  crates/editor-service/src/lib.rs
+9a6514a5c893b51b6421f58280f7ff9d5b6caab44a9b4db51ee785f305db05a0  crates/editor-service/src/lib.rs
+aca88832f8ce5c6001c61afb83ee5bfcae8b5012e521d9bedce232ec26400720  crates/editor-service/src/metrics.rs
 e6b4e1fdbefe0a9e6689b2ea0a4c0affe7849e13f263e68943dd654647e214a9  crates/editor-service/tests/automation_contract.rs
 756b4479ff9043c57a74d3199f6975fc6465a016f73801609e3f685371c8c3d5  crates/editor-service/tests/dependency_boundary.rs
 42a65aecc1c68319aaffddb92b775484a12cb2792100c69ddb1d3d048367bf25  crates/editor-service/tests/headless_workflow.rs
 1fb7d0b505788a27d9611990ac2bbde1a80d554a08e3a66787dc5d738b880d8c  crates/editor-service/tests/historical_audit.rs
+b03b6f534b347a5e3aa484d089a301423cfa3172d24465315618fda758297b5e  crates/editor-service/tests/metrics_workflow.rs
 3d19cea71058c00921dda22082e835b0db0d586df5131af33a7646183205227b  crates/editor-service/tests/review_service_regressions.rs
 8680f146f95046870fe943d6b46764d676f58fcc53d9b9f7b5c76b85170116c0  crates/editor-service/tests/s0c_scope_boundary.rs
 01734592ae3df9bb63d252c6071d16ce1b44e31b563a542f640df8d80f455ef2  crates/editor-service/tests/s1a1_arcs.rs
@@ -53,20 +58,21 @@ ba8dd121c2e846bc8d101b6be2462ccd1d476e05e0c07c2266b7eb355956b199  crates/editor-
 7c5444cd7488bb024468bce268c85174df85813be0e0ca5a312d173fdcb89523  crates/editor-service/tests/s1b_edit_workflow.rs
 7533336bd3e8d202d27ac02b9ddb9dc5805954b1b07b68567ab1c8accecc95fe  crates/editor-service/tests/s2a_bounds_workflow.rs
 118120716e6704b500b361e99bdf1d3b9ddc2941c77d039b9abcd681eb305cff  crates/editor-service/tests/s2a_hit_test_workflow.rs
+3301926578a49553ec9a120e998d3857c7cfdce2337ec5c622038d9ea54c629c  crates/editor-service/tests/s2b_select_rect_workflow.rs
 3eaa4dcf16032f67c128f368f835af0e9818d8036ca7b481aad7f7204ddf84ca  crates/gerber-io/Cargo.toml
 baf56efb80556b9105a810190e8c25446e047a3d5ca8061a776e099a1aa129c8  crates/gerber-io/src/lib.rs
 69a5940fb9172be4b246bafd322d942c966e1d74cf51c43384f679734be9ca4f  crates/gerber-io/src/s1.rs
 2953ee742011b0e78716282a55477b5c7f8da38b526281bfbbf507f8fcc4bf2f  crates/gerber-io/tests/review_parser_regressions.rs
 3d984b1f213da5b8e45433eb4da0890fefc84feb9e20c22f6bcf3ba7e0159954  crates/gerber-io/tests/s1_adapter.rs
 6635d9d0ec68c93e5ef69cfbe0764861e8fba51697f19654991317549b8d6359  docs/ACCEPTANCE_V1.md
-c4d9cd8e24dbf260340fa99e94dca5575e74fceac9318438acdfffbdb19b4c96  docs/AUTOMATION_API.md
+0a7f02598e2efb2f7d59f240748b976bb36fb24f9a4d0dcce797020443f9e757  docs/AUTOMATION_API.md
 d0953ecb719518c93159b5a48ed27ee0c44e30c82db9b423434436f0904e9bfc  docs/BASELINE.md
-04f5d6280247517209eba96f2e0a535d127410838d30cc08ae3623b0512799f0  docs/CAPABILITIES.md
-f5d8df95f874301d851c0e86173ba46c924f9fe8f63efbd01b47a51a331024b7  docs/CHANGELOG.md
+4bfc88f0fcc87fcdd427516f58c7a251983f9f1c04b19c8c97a42e1ea60a2105  docs/CAPABILITIES.md
+b327d9b7c7915819457d1d1f2bf9eec2bd9960b3d948e99be28fcfba72f482d5  docs/CHANGELOG.md
 cf78bb0d1a1992fb0822c2a349218c331d417177037c9dd849c11f103a72631a  docs/DEPENDENCIES.md
-2f63d61378967dcfe09e6ba8eaf0c6920ea7991aa8ce6112a092f13e657739f2  docs/DESIGN_V1.md
+209d44e33b9db79ddb726c3915a2434f4537b56604042c5338e5b7072f5bc2c9  docs/DESIGN_V1.md
 110c5ee63cf0c109ee988f152cd791f8139629e416d1eeb38502b805b4f25c04  docs/DRAG_FIX_REVIEW.md
-5ac53decee2ba7d334628038b292defac17d3ee74e0f8cd11a80d7beebc8decd  docs/IMPLEMENTATION_PLAN.md
+a40d08189a8d1b7309e78eb6ed2907813f5b4ef33c9e71895d712b893c3dd9af  docs/IMPLEMENTATION_PLAN.md
 a1bf887e336fa77cae788649f7fc94a87b2c2f2a5fa7e6eb87e5a18ec2821bfb  docs/README.md
 c9d8e99b3dff752d6dc291ea0fbdc613dc9d2e3b8d06b0e537ee59809da9e163  docs/S0_B_REVIEW.md
 3b8923f7631eeed247d19b6b2d6aa108d69672c624c8ae60e7a985d0cdaf2980  docs/S0_C_REVIEW.md
@@ -81,6 +87,10 @@ f1eaae4143684b1680fd5ebc12a400bd84d04d1465e260b8b67fe8beb694d409  docs/S2_A1_REV
 ac0c280dd8c08c476f53e60515dae1c5d839aa155fb2bbd850042b4251019b19  docs/S2_A2_REVIEW.md
 858f00764215197e2598a2d301b9623633ccca1b7c5e2fee9771b2672c3c8aa0  docs/S2_A3_REVIEW.md
 1eafcf6e7fd7104e0850a3744157e56cc36f363fe59365081815b80440e2068b  docs/S2_B1_REVIEW.md
+af290f36d185ac7e3cdd40d7c57e895f8bb4679c67cb40699290a22dd9726561  docs/S2_B2_REVIEW.md
+152114143becb2db7e5f9c2667703a4205628c093c8be65c2c62414974893c3c  docs/S2_B3_1_PLAN.md
+27cc2c9dedb6cf706cafd88de9dc397964dd1808ea00569cfe9537de25248d94  docs/S2_B3_PLAN.md
+f4d1c70f520648a58493ec58914f3318f3ce9da3e7bb52c83edcd07f980cf23b  docs/S2_B3_REVIEW.md
 03aad33dae0fbefb3bae4d5ca8b03b8ac605bbfe1cb90b6d5e7598f1363caac9  docs/acceptance_cases.json
 1a29c3b10acd29d7fd2dd07f56f4b7f1f04c4bded87538892cede6a84248e974  docs/adr/0001-s0-boundaries.md
 c4f89eff24d787e78c2fcb6335e7e6d0b6395ec32424c9a9a2ae7b9fe78b9ce8  docs/adr/0002-real-sample-scope-risk.md
@@ -98,6 +108,9 @@ f18be81c27d1c70fb3b0dee5074e4633acf58d295713a1029314e8bcf0ac151d  docs/adr/0013-
 edae934dd62cf264d15c36995219ae73171130a3c08653ac628296da4618c9c3  docs/adr/0014-s2a2-hit-test.md
 12c84da8b64579cda549bf765ad04fa4334f61de465bb9637bef06834d223f9b  docs/adr/0016-s2a3-gui.md
 39d8c2e6286574cba562072942cf14d3d1490f2c1f219e8619d1acd62c5f73af  docs/adr/0017-vector-scene-and-format-interchange.md
+814f2945eca9540cdcf8720ed37cf7d54f86961947d82ec05b0dd4be62830470  docs/adr/0018-geometry-metrics-cache.md
+e0bb709ebe6268b11fdff2c80a34ede9064fa3e0fbbbabf41c57e6e0cf94ed62  docs/adr/0019-s2b2-selection.md
+118092de8275283f3905d3064409a79781c634fd1f8fecda93dbb0b0645b6f66  docs/adr/0020-scalable-render-index.md
 9a9c33c6705608abcef01c8a901d2436d59536f3c67934998b6a2f6a52bd3e8b  docs/archive/README.md
 bdf14f96ef31fb1ab9c7b8e7bf7d24929683779fa91f63db477466126fb87355  docs/archive/design-package-1.1.sha256
 e511f7af3c94d7b43b943e35dc18b8d159a4c78910342ceaa56d367b3060edba  docs/archive/tasks/RCam_CODEX_NEXT_TASK.md
@@ -107,6 +120,7 @@ fde9a6060637d96fd96f559b0b7d8ab4f9bc0fd5c8ae3bea45233ee6e33b182f  docs/archive/t
 e2e063d700007e4c1ceed6abf44d466be298edb310e978baea97559d7bc23e36  docs/automation_request_examples.json
 01ca3007752ae1404b81847fe68fd43fc31d9a5fcfc741a0e2f839954fb2a3e0  docs/handoffs/RCam_MAC_FIRST_PRE_GUI_NEXT_TASK.md
 c7edd1140230e0c87b1c7c5e139185b6995678c6c96f06229228378c5e753fd3  docs/handoffs/RCam_S1B2b_23046c0_Review.md
+1970805789637d5565d10be4aecf1469a7af3fc0d09b852936b18d780b9a332a  docs/reviews/RCam_S2B3_dbde56e_Review.md
 ed996a1f6ec487c269d816b78083cb672fb730ade193a269668333860f501c8c  evidence-public/s1-a1/arc-fixture-results.json
 e0935bbe5392f11d3e72d76bf06ed9247e36dfd1850949519215ab8140837da5  evidence-public/s1-a1/cargo-test-summary.txt
 03c2a0d753ce76ba6442104c484bc50b0f530836ed8ceb90ef1f0768a4d6bba0  evidence-public/s1-a1/core10-redacted-summary.json
@@ -1192,6 +1206,274 @@ a4cc19bec1f5ed54ab4a6059a9dc9cf49aab87bb18f687124a9d6f89dcead628  evidence-publi
 15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-7/中文 # source.gbx
 15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-8/中文 # source.gbx
 15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b1-final2-20260919/workflow/gui-state-84375-9/中文 # source.gbx
+28c87769b2e5fcc4e6a64975a5cd599603e973c1458bf69a213484f205ec0332  evidence-public/s2b2-modifiers-20260920/artifact-hashes.json
+bdb84f615276b8376e6568bbaacd49ea6ad369cd99c5b05f24f0fae3e5f0a7e4  evidence-public/s2b2-modifiers-20260920/binary.json
+126e38848d1c73233cd9439de33fe8023ab351ae1ca3a24ee614707c7b7c126d  evidence-public/s2b2-modifiers-20260920/environment.json
+b6e19c16e0d5f97094745b63c78c4f15238111c4de91b081bba774a71abff1e8  evidence-public/s2b2-modifiers-20260920/gates/01.log
+f5d7c1a8598157a6f0f54d47362d34d3fc0f1603e6210190e85a6ee97b4c31ac  evidence-public/s2b2-modifiers-20260920/gates/02.log
+ac2d7f6db6a7c2e29a2c7b2ae9196963b63c69429730dd45e90fb9c85751295e  evidence-public/s2b2-modifiers-20260920/gates/03.log
+1cd00019691664b86b678227f153ca3a2058dd9abc7df22db3e1f95467b9c84e  evidence-public/s2b2-modifiers-20260920/gates/04.log
+e86f58e197d903e189b09c1c5a2d4bb432fc05d58a2f081a2c87dab554c58e2e  evidence-public/s2b2-modifiers-20260920/gates/05.log
+ff13b9241f2c905bdbbd182bb13899e386d9fb0253688da4642c61bb8b9278e1  evidence-public/s2b2-modifiers-20260920/gates/06.log
+b5605928b0c573ce93183786d1b008820d6566051cd974d82b8453d92c426a23  evidence-public/s2b2-modifiers-20260920/gates/07.log
+4ac3c786fabbf7143143b2644128bc5bdee9e9e4856134631df36bf598871f79  evidence-public/s2b2-modifiers-20260920/gates/08.log
+25667d1052fbc765c181ea6cdd888f68f7fbaffd4ad75d2306aa012d17101e88  evidence-public/s2b2-modifiers-20260920/gates/09.log
+bce86fa978169d3446e155949e6c7d537c96dce163a32f974b4f21b6b3771877  evidence-public/s2b2-modifiers-20260920/gates/commands.json
+09f34258114144ddb716f5f9a93e0531156e08ec250921b7a679a7f89ab7c9b3  evidence-public/s2b2-modifiers-20260920/gui/01-open.png
+1627fc1c997a3701f38e552b4c9e0bc9b7c4242982924865cae6208e7424a2d0  evidence-public/s2b2-modifiers-20260920/gui/02-window-three.png
+9f710d6d28deff4984c54eaab7ac5aa6c9d33ce221a863de2b04d22cb08855ba  evidence-public/s2b2-modifiers-20260920/gui/03-move-three.png
+1e7e04d9f16f6c4a48ace5a8d667a8e0ff60edf14b403e461dbf65836b9c7b68  evidence-public/s2b2-modifiers-20260920/gui/04-undo-group.png
+0bfebe86cff1019bcff0618dbf0199c57736b89544fbee1141eb63daa6807532  evidence-public/s2b2-modifiers-20260920/gui/05-redo-group.png
+0ab668ef6dff9832bf021cc66ab4766dea4829ce27d837801831a70730addbc3  evidence-public/s2b2-modifiers-20260920/gui/06-duplicate-three.png
+824b798f4fec1176d7de97041c39c6245f6b723487fc3c00a41b44f47853beb4  evidence-public/s2b2-modifiers-20260920/gui/07-delete-group.png
+e23347a3e10fbd0703cba66dab654479960b918bc72058c39f3ab1b07b087fa5  evidence-public/s2b2-modifiers-20260920/gui/08-undo-delete.png
+9ef9b934321a73d4f6ef53369b12f165806b59fc9ae76da7620e641045329317  evidence-public/s2b2-modifiers-20260920/gui/09-crossing-three.png
+dad87eba47e82fcab43d64b27b0b20e03a86221740d5ecb530d0e8ab5f634169  evidence-public/s2b2-modifiers-20260920/gui/10-locked-edit-blocked.png
+8b085b017e134eafd28accc29e9d64c7f94e7665cdb6d17960d7898d89bb7b93  evidence-public/s2b2-modifiers-20260920/gui/11-text-focus.png
+c1755775959bd9ddad418fe7bd843228a448b1693064dc32902d4a5351ae3d4f  evidence-public/s2b2-modifiers-20260920/gui/12-arc-empty-box.png
+f23dab8d0978a0c0b5edd4491a8d595f24bd464c7a1d6bb6611259a466fe50b2  evidence-public/s2b2-modifiers-20260920/gui/13-hole-empty-box.png
+7db47f0fb11fb8661c77c41fa46de46f0317a3d9651c91c4c89dd72073a01bc2  evidence-public/s2b2-modifiers-20260920/gui/14-save-as.png
+ca781477de19eed71343876bbb1f65919685684faf12384b2ae3607b7893f2fa  evidence-public/s2b2-modifiers-20260920/gui/15-reopened.png
+9e532bbfc96cfae76338213e624f3213a2e1c0c4db79e94f52543fd501dbaaf0  evidence-public/s2b2-modifiers-20260920/gui/16-reopened-coordinate.png
+86776cfdd381ebe381629bc9a267dd037e1f2052723eb73c9ab9e50d3a3f5235  evidence-public/s2b2-modifiers-20260920/gui/gui_group_edited.gbr
+0b5dbd1c6985c92ddb22fc056ba624817d977b9ab5060db4c754a8b40e16eed3  evidence-public/s2b2-modifiers-20260920/gui/observations.md
+5469e8349ebcfa79881d432538aa3ab637271e4083d95c69c55b732db60ce3a8  evidence-public/s2b2-modifiers-20260920/independent-output-check.json
+4914fbcb62e4f8af05cde7d2ce64f1a0b9e4da7840ca6f43fd757a42213b86ac  evidence-public/s2b2-modifiers-20260920/metal/01.log
+4a1f823e2ee77e47a078d57a4f590850ac4885dbcb2d8af1735f7100fc8e91b6  evidence-public/s2b2-modifiers-20260920/metal/02.log
+f25eba16468acb7d60b719b03cfa1400679bd714a34690ec61ff4b0f509353df  evidence-public/s2b2-modifiers-20260920/metal/commands.json
+521fb12edde50786f4798752ddcc4dbb582ffaa3365ec3a2d1ef0728ff1fba10  evidence-public/s2b2-modifiers-20260920/regression/01.log
+367f432316213abe5d22ec9b185919ddc902218d2cdb94ba2fa9dad02cd28bd3  evidence-public/s2b2-modifiers-20260920/regression/02.log
+8a63b02a2d91b1278f2c483df9908b211f7263e0c5be1b2e4fde49875b705228  evidence-public/s2b2-modifiers-20260920/regression/03.log
+255a6f1d3ed106bcbe5f1388a029daee08a347b5624f182b82ed6e22af25e83d  evidence-public/s2b2-modifiers-20260920/regression/04.log
+f2e6fff09a23eb607e97bff74f8e16128f809255bfcf9fe11b220ee654e33a5e  evidence-public/s2b2-modifiers-20260920/regression/05.log
+2e82bf737830148ea641838437ae2729371c4f12ea341ab467c5ecad3609fc2f  evidence-public/s2b2-modifiers-20260920/regression/06.log
+26f107ceb4295cdd882aa3c63f2a3220cb1081441994627e499416b67fdd3b9f  evidence-public/s2b2-modifiers-20260920/regression/07.log
+272e730a7af23fcff00e914b33ad4845527a0fa1b0e3b929b288fb8d77e6e418  evidence-public/s2b2-modifiers-20260920/regression/08.log
+363fa545f781a4791124583aaed67cd97df4b79f0b892f73c6dd3577a22ed210  evidence-public/s2b2-modifiers-20260920/regression/09.log
+80d182328d007391ce4346a2cbf7a0f924c373fcc4fe2875307c47590cd45b31  evidence-public/s2b2-modifiers-20260920/regression/10.log
+87d639f12d833f60d86fc3ad295dbb031050f5affe1c8e83a5c8f195750df922  evidence-public/s2b2-modifiers-20260920/regression/11.log
+4111abfb15ff7b218b190ddb4ab19d29106fa31a148f7ce639b66f6bab752fed  evidence-public/s2b2-modifiers-20260920/regression/commands.json
+878c6cefc593ba6aed0c68db9234adc925f3a9aaa24d71637abff8e2814499fd  evidence-public/s2b2-modifiers-20260920/results.json
+d4c13f31695d6f842d98802acce06a5e31bd14c181217d118aadd873536e453b  evidence-public/s2b2-modifiers-20260920/source-after-gates.json
+d4c13f31695d6f842d98802acce06a5e31bd14c181217d118aadd873536e453b  evidence-public/s2b2-modifiers-20260920/source-after-gui.json
+4994ac7394604f6e4b4921605275b8891313745b43e53bfc92afe5c4e8e89995  evidence-public/s2b2-modifiers-20260920/source-before.json
+1cd65826612a5573a32fb23143a3c714197be24d8f4a5038d61b7dcc49096dcc  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/PROVENANCE.md
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-0/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-1/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-10/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-11/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-12/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-13/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-14/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-15/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-16/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-17/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-18/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-19/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-2/中文 # source.gbx
+f0dde75909f5715e6e693377382a347fecc5285e8e66a55c793cb10fa13b17d2  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-20/multi.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-20/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-21/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-22/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-23/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-24/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-25/中文 # source.gbx
+2475cf87b36de87a2e0ac9c0ea4b56be3d328b7714e306086c50f40f254aac6e  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-26/bad.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-26/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-27/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-28/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-29/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-3/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-30/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-31/中文 # source.gbx
+97da4f79959d4aef65faa2d92e372a34b6e06ecdd8bbc3550649210fe002d209  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-31/输出 # 1.gbr
+6ca7ea2feefc88ecb5ed6356ed963f47dc9137f82526fdd25d618ea626d0803f  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-32/exists.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-32/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-33/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-34/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-35/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-36/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-37/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-38/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-39/中文 # source.gbx
+68eea68f23fc7af46ff56690b0e6549439d3ee871e0c989c27afbc1a10fe5c3b  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-4/direct-final.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-4/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-40/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-41/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-42/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-43/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-44/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-45/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-46/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-5/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-6/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-7/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-8/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96265-9/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-0/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-1/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-10/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-11/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-12/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-13/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-14/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-15/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-16/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-17/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-18/中文 # source.gbx
+f0dde75909f5715e6e693377382a347fecc5285e8e66a55c793cb10fa13b17d2  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-19/multi.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-19/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-2/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-20/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-21/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-22/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-23/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-24/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-25/中文 # source.gbx
+2475cf87b36de87a2e0ac9c0ea4b56be3d328b7714e306086c50f40f254aac6e  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-26/bad.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-26/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-27/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-28/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-29/中文 # source.gbx
+68eea68f23fc7af46ff56690b0e6549439d3ee871e0c989c27afbc1a10fe5c3b  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-3/direct-final.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-3/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-30/中文 # source.gbx
+97da4f79959d4aef65faa2d92e372a34b6e06ecdd8bbc3550649210fe002d209  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-30/输出 # 1.gbr
+6ca7ea2feefc88ecb5ed6356ed963f47dc9137f82526fdd25d618ea626d0803f  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-31/exists.gbr
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-31/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-32/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-33/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-34/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-35/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-36/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-37/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-38/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-39/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-4/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-40/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-41/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-42/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-43/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-44/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-45/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-46/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-5/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-6/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-7/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-8/中文 # source.gbx
+15e1727478d6ba0679cd483d3f1ccfe9a7d72a37a464540f619b626766320e85  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/gui-state-96355-9/中文 # source.gbx
+26fa300a938237ae7192d82492a260a77cdfe30c15159208828da2eb31918505  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/rect-workflow-96297/output.gbr
+28f5122885ace30c43d8e9c51bf702a1958e92858f0c4945f905a40e5522e177  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/rect-workflow-96297/requests.json
+fbf03f68f6dd8f950d0a8e57e92c2b6c2dd12e14f9b069732f80c608db6c4a28  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/rect-workflow-96297/source.gbr
+26fa300a938237ae7192d82492a260a77cdfe30c15159208828da2eb31918505  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/rect-workflow-96353/output.gbr
+a274432739e3ef70b4e90eebd740d828758c0e4cf3cd18a48d753f9e670ed578  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/rect-workflow-96353/requests.json
+fbf03f68f6dd8f950d0a8e57e92c2b6c2dd12e14f9b069732f80c608db6c4a28  evidence-public/s2b2-modifiers-20260920/workflow-prior-run/rect-workflow-96353/source.gbr
+f4d1c70f520648a58493ec58914f3318f3ce9da3e7bb52c83edcd07f980cf23b  evidence-public/s2b3-final-20260920/ACCEPTANCE_REPORT.md
+075520464cbdf6a127d1ae8a9fa0f639a700a3cf4baae2e0126bb7d46acbeb91  evidence-public/s2b3-final-20260920/EVIDENCE.sha256
+6ec3f45d7e65b16219b07299f93309d15db1c2d3bf4752c8a836430c387fb0ed  evidence-public/s2b3-final-20260920/artifact-hashes.json
+f52f80b288ce49fe993bfc1246b18e7d84ff60030e026f928286c21ff699dca4  evidence-public/s2b3-final-20260920/binary-sha256.txt
+9c998cdd0653a72e986becad4833af98adb3e28c5827fad54f4e4a1e26707855  evidence-public/s2b3-final-20260920/environment.json
+b6e19c16e0d5f97094745b63c78c4f15238111c4de91b081bba774a71abff1e8  evidence-public/s2b3-final-20260920/gates/01.log
+7ee9cc9efe1fac57e784f5580d595c4d57a1f55677f3ba4c08ac874372775361  evidence-public/s2b3-final-20260920/gates/02.log
+ff6ecc4e835b495819d7ba80909dfce2b278f8a81c9ce9ec7d85655cd5f8351a  evidence-public/s2b3-final-20260920/gates/03.log
+fec01282533042f4b69f67b286e3e5d49e85751d594751286af77e333891eac1  evidence-public/s2b3-final-20260920/gates/04.log
+73b8f081ca3043fa0bee1b38dd8ac0a2316495dfb300e9736952426c6733d531  evidence-public/s2b3-final-20260920/gates/05.log
+88ce1aad70d2d92a65bb5f1abc79f3243f0edcb5bc335e815f02d4b1733b3df3  evidence-public/s2b3-final-20260920/gates/06.log
+804c088192cd8e1ff11aeb4fec27c4c2288607d85aeed987e64b367f893e9232  evidence-public/s2b3-final-20260920/gates/07.log
+eb497cccebe6562138024ff30e5a6cf23ee165c2f5505b4a3d1fff4fe1262d27  evidence-public/s2b3-final-20260920/gates/08.log
+de8c9729844b76d6fcbe82c09bc4aa20d66ea4cfcf8d1c8c1bca37c0360c98b2  evidence-public/s2b3-final-20260920/gates/09.log
+c11d95ca0b46e0a4fc3ee6d9275a49b6a9b9d44ba2dfe19666670ee6fe0713dd  evidence-public/s2b3-final-20260920/gates/10.log
+d27cd4be57c9e455679a144a5536ea40e6fca6fb46e8a037acdbebace3cc481a  evidence-public/s2b3-final-20260920/gates/11.log
+b817d36ccbb58f3aed7962589cf4cdd605ae6221288cbeda1603ff37728e5fe8  evidence-public/s2b3-final-20260920/gates/12.log
+b4f3eaca0ffed8e65922ebaf42367adae6ee75fdaac96c18ec8d13e88ac77a0f  evidence-public/s2b3-final-20260920/gates/13.log
+116a21098b48edaef197e561b16e37ec228fe341c66582cd4b426ad1e5cb086c  evidence-public/s2b3-final-20260920/gates/14.log
+cf9c3482837275961bee9063b710d3a8e3e98b31567fba701eb49cc2cc6933c5  evidence-public/s2b3-final-20260920/gates/15.log
+1a2b0e3bbb94f5b1dd8e13d520c7498b0a7760705e699155ddf66993130d868b  evidence-public/s2b3-final-20260920/gates/16.log
+e73a1c85518b89cd52e2f02910a634f98eefa2eb4057b6967a3ce9e934ca4868  evidence-public/s2b3-final-20260920/gates/17.log
+5f356a50d125974a343fe0d96a63c57d9c299dc336e0d4664adae93351ae0350  evidence-public/s2b3-final-20260920/gates/18.log
+9ec4dc95fa2cd74d1b169e5d7f5af56569091c940f0b3a9cb2618c7ac193a291  evidence-public/s2b3-final-20260920/gates/19.log
+e6180a705b6427f4805655902170f91faaf0f8c90831afed0be4b25d32f3de87  evidence-public/s2b3-final-20260920/gates/20.log
+20a2d2cf6c7588d6ee483992e637987fbd709d2a8173ac8bac8272517783eabc  evidence-public/s2b3-final-20260920/gates/21.log
+b44298c04c15b9129f5893a5a00916b7401b3f282c7e8e0a792c20874c1dc8d8  evidence-public/s2b3-final-20260920/gates/22.log
+35602bb9b87e936030f4fd4a350a436dc9917a4154dd4a5c711a5477c663568d  evidence-public/s2b3-final-20260920/gates/23.log
+5399b46bc452a5013b27bf02c521ff991e81a014cf7baa57292eba920539e452  evidence-public/s2b3-final-20260920/gates/commands.json
+eb30d17489617ac04f2991a424e612b3f704966c8744d762d6a4ad5a108b11ca  evidence-public/s2b3-final-20260920/gui/01-open.jpg
+3cd9e2cf62c56c70bd9f12ff3bcc341bd17e7f0e4913f32c447c03419aa7f763  evidence-public/s2b3-final-20260920/gui/02-circle.jpg
+1a195eb322cf28d09873ca1245a1e6f8a9f0152ad7721aa6c0e48ac82c364afe  evidence-public/s2b3-final-20260920/gui/03-ring.jpg
+b8ff05baaa32f9ba1193065f095464c1b667ba044620221d0b26526966612b6e  evidence-public/s2b3-final-20260920/gui/04-rectangle.jpg
+7e196278105e93970260b48ae74cde3127f8b029a7a47be0cbf40cc51d1a2c1e  evidence-public/s2b3-final-20260920/gui/05-obround.jpg
+843a8082a278fee8d1a100e423031e851940f41d2de7b34f56c85e47efddc9cb  evidence-public/s2b3-final-20260920/gui/06-polygon.jpg
+a072d744a0c325b47f2fbe26cfb82a5fc957315a807829603908b7fbb9ba0121  evidence-public/s2b3-final-20260920/gui/07-line.jpg
+ecc7d7c07ec8158b0d92302294b2269b443d0e63e04dbb02b85d8d7f92b17a56  evidence-public/s2b3-final-20260920/gui/08-arc.jpg
+ab018d94921405ad8df0575e2f9475d158dba0418f9d4529cccb04b35a6e64be  evidence-public/s2b3-final-20260920/gui/09-sweep.jpg
+7cc0efd03dc330712187d8014b05535eb90568946826960df0766ad5cb97098b  evidence-public/s2b3-final-20260920/gui/10-region.jpg
+f722f464509721874325cee66265014da5cb18f2ce13d2d13f72d3f1559442fb  evidence-public/s2b3-final-20260920/gui/11-unsupported-macro.jpg
+79ed43b9932e1e2901bab59dd4a24cb572e70d1c47d876c200d239f22ba3dacb  evidence-public/s2b3-final-20260920/gui/12-move.jpg
+2f94e4368453373290bf8fa4df5b2297e9efb84539cd4fee1a299d5dfa2c30d4  evidence-public/s2b3-final-20260920/gui/13-duplicate.jpg
+38164cfc120bba1cef531ef656ebd35c987708c518d79da4becdf6904764ca13  evidence-public/s2b3-final-20260920/gui/14-delete.jpg
+de356875c676756dd3ba92a38528f3892011c6f5e52a694eb5a6821e6f412f00  evidence-public/s2b3-final-20260920/gui/15-delete-undo.jpg
+a9ad7cf47e5857b1a1bebc009a70a0c2ebcc40e107d41a54aa0482a6e333e064  evidence-public/s2b3-final-20260920/gui/16-multiple-exact.jpg
+08c08187e7cf75ca75937eb4b6c9e4ea4b8bb906d163ca1935ce51ffd0b9fd40  evidence-public/s2b3-final-20260920/gui/17-multiple-partial.jpg
+89ab7cdba26fde1776094effbb21d11ca4b86db5193ca88bc9dd71d80472cd49  evidence-public/s2b3-final-20260920/gui/18-save.jpg
+66321f9facf06919ae448e2c18760a3318926f167bf46406b3fb40ed80774ade  evidence-public/s2b3-final-20260920/gui/19-reopen.jpg
+471edd1707a0a2314e51e269c9085920abffca7b2899748b87cfb979517877fb  evidence-public/s2b3-final-20260920/gui/20-large-open.jpg
+6b0f824bd062c20cb0c7c675c22435fd6943dbbdf9ce245f1147a04c10378c5b  evidence-public/s2b3-final-20260920/gui/21-final.jpg
+a3a6858a8a87005d304e7c02f3a83caba0568124e64829cf72b5beb8d79bb379  evidence-public/s2b3-final-20260920/gui/independent-expected.json
+3e6bb23c653a77eb23a3f64d4844838b8543938c5625d629ba6b8163eeb23baa  evidence-public/s2b3-final-20260920/gui/metrics_1000.gbr
+a06bc0e8fde3e788ee377aa7cdaedc076c7c576172dc423fba1ce13a80f30338  evidence-public/s2b3-final-20260920/gui/metrics_edited.gbr
+98ccae969fbb9820892d65b6cfedd87e62e5f7ca4a5539ce417eac078760004e  evidence-public/s2b3-final-20260920/gui/native.log
+a099157311ce050277887bd5ffa2ecc0bbe67e8ea829acabfbc2021a694d48d9  evidence-public/s2b3-final-20260920/gui/observations.md
+513b1997e5e960a81b6227610962cba62d644df8138e35fa803b37d6f902ada1  evidence-public/s2b3-final-20260920/metal/01.log
+8408edb8f9b760e323ec9092745790942bed014eba466db1e2f3d1dc801daade  evidence-public/s2b3-final-20260920/metal/02.log
+8b70846346c221e26654b953f32e19dc4d13410f25ea74631d67f79a2fe43d3f  evidence-public/s2b3-final-20260920/metal/commands.json
+dc10bb5ff138f6aa9d0b04cbba6aa65f98beb521ba3dd172f60a8585984d6794  evidence-public/s2b3-final-20260920/package-verification.json
+0da752e0eea93fd534ff63fd5f3188b6b274b6b9d510f1472211f1ac5b74081a  evidence-public/s2b3-final-20260920/results.json
+3464b8c3ea0adcd1f5c8d6be4ff07d05617b8214b86c173591dd186cef311ddd  evidence-public/s2b3-final-20260920/source-after-gates.json
+3464b8c3ea0adcd1f5c8d6be4ff07d05617b8214b86c173591dd186cef311ddd  evidence-public/s2b3-final-20260920/source-after-native.json
+3464b8c3ea0adcd1f5c8d6be4ff07d05617b8214b86c173591dd186cef311ddd  evidence-public/s2b3-final-20260920/source-before.json
+a6f154000ffe193b0d34ed0caffa1f43f2e810fad7929a4af0b8d089116989fb  evidence-public/s2b31-final-20260920/1000-selection-metrics.json
+f7bd8279f3ab12bed4288e945953576113ae43e16ee23000925053bc2d0f09ae  evidence-public/s2b31-final-20260920/ACCEPTANCE_REPORT.md
+2cd1aada3aaba9de0eb2bb44e76596cef0598787318a6de997ca44ee7d1a70d9  evidence-public/s2b31-final-20260920/EVIDENCE.sha256
+7acdb5d84e190f261a01057d13f38fdde99b0eb5e5c5cbd6211296743b1a64fb  evidence-public/s2b31-final-20260920/P1K-manifest.json
+3e6bb23c653a77eb23a3f64d4844838b8543938c5625d629ba6b8163eeb23baa  evidence-public/s2b31-final-20260920/P1K_CIRCLES.gbr
+d7ec57d8aa69f6bd71df02f90a69737a7a19f419d6856612328a49ac08e663b2  evidence-public/s2b31-final-20260920/binary-sha256.txt
+c7ddd16613388e22e091327127394fa6bd6dc31f8847b21daf67d4a5b1ff3d85  evidence-public/s2b31-final-20260920/commands.json
+4db492fe4967c96e9c5fa2ae2b8507eb154c829bafde58147d9e9610a009ca60  evidence-public/s2b31-final-20260920/environment.json
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  evidence-public/s2b31-final-20260920/gates/01.log
+4732c3b62c71025a54ce510243f1f140435d3ccaa4d169b2a99bc68b097a82e1  evidence-public/s2b31-final-20260920/gates/02.log
+5604fc8f0c276397a55db4bd7008236712075c0ad37d3b3a0f1fe362b1b85a36  evidence-public/s2b31-final-20260920/gates/03.log
+09f1827c90fef9ab2288bad7df51cd6cc7ed206b288aae5cc17e7f1b9eef259b  evidence-public/s2b31-final-20260920/gates/04.log
+96c243bff451136889f5a4dae34b4df7aa0a209057a1e3efed7d049c64b21ad4  evidence-public/s2b31-final-20260920/gates/05.log
+ec58a711b9c9203c1cec46f7207a8c9511e54fcecb6b9a4ea5ede18da02f0aad  evidence-public/s2b31-final-20260920/gates/06.log
+9b791698b65fd60b5e3e272d2aa0fb0dc3e32fee02e1db31af256fccecdd34b8  evidence-public/s2b31-final-20260920/gates/07.log
+635f09bd57ed95de21e471bcf0c54652c1f45957dd0c9a900c433a4ca92d954d  evidence-public/s2b31-final-20260920/gates/08.log
+63b308da10c3d93f67668e0b8b44d7183adb997e169c1600c427fe5302fbbc97  evidence-public/s2b31-final-20260920/gates/09.log
+22edcad2400e9bd7584e0baa81aeaefc56d28b4c39e80668de5949e12b07a073  evidence-public/s2b31-final-20260920/gates/10.log
+d9ec5b95507abb878f3f411c8f20297eca7829cce2a94967e0cc6ea4b2bacaac  evidence-public/s2b31-final-20260920/gates/11.log
+f06bd77696bff067bc4f97b06858843eaf2413f5a61c3201e9581e5a1cbcfa70  evidence-public/s2b31-final-20260920/gates/12.log
+f5544580550057fee6979d73dfd447dde43c08ca7409519c7f96962a12cf0970  evidence-public/s2b31-final-20260920/gates/13.log
+520d0cfbbce38d4b89dfc9d5760405202712d63d2ea6569a44d45f8443075c55  evidence-public/s2b31-final-20260920/gates/14.log
+c236da767eb5bd4f35b89ea7c710c7bb0ba9e677a9799d494bc97e985308836b  evidence-public/s2b31-final-20260920/gates/15.log
+a2f9f7889e88ba38ddcfecdb5afc8516742ad9186965960a94adbbe4ac21b5ad  evidence-public/s2b31-final-20260920/gates/16.log
+930b18b09e522042f2f080bd4c84125abe343fb40c5a9d407fe3d2d9d7f65c48  evidence-public/s2b31-final-20260920/gates/17.log
+e586fc0f3bb2a05f4c80f07d1b4c6171e830592f6c7aaf70d4af3b0aa3ebd072  evidence-public/s2b31-final-20260920/gates/18.log
+92425b318964ea9790c2103fd6825876b45d08da29a993fe2d3deaa9937c155d  evidence-public/s2b31-final-20260920/gates/19.log
+55c11232542946275898a62e3ffb894fdfd79b3443da7d621b1b932a5a1e7290  evidence-public/s2b31-final-20260920/gates/20.log
+3280de99496d4994caa25d1da390411bef2278ad20c54bab7b29a68e6ed25ac1  evidence-public/s2b31-final-20260920/gui/01-open.jpg
+d520d360141cf3e6b02c0e06b7b6081b3f2c5866e182f4ce7ed4e9fbf3cb7a07  evidence-public/s2b31-final-20260920/gui/02-1000-exact.jpg
+1f43d6af54fe12b8c61ebeeaefa0abb0654ca6951be9c230af817cd683378de2  evidence-public/s2b31-final-20260920/gui/03-drag-one.jpg
+3dd4d85d8b8364cf4d817e418da8d8a81b6487fa6289c45e6978d8857dc6556a  evidence-public/s2b31-final-20260920/gui/04-three-drags-undone.jpg
+72130b7bbccd79ea0d8e3f735749c28fa93fabccded61fcddfaf4ec83c6d72f7  evidence-public/s2b31-final-20260920/gui/05-fit-after-pan.jpg
+ccfebd7f1e581d1a6b27cb74f4b019e32a8670327c8f3a429e8bd1a867807092  evidence-public/s2b31-final-20260920/metal-native.log
+d1f066401177e99b27dedab3963cfb2f91ebf21c97752c88e25777216a76d2af  evidence-public/s2b31-final-20260920/metal-s0.log
+54b50dbccd87c840d3ccf30889fe35d3eed68d80986a4407a0386a92a8431741  evidence-public/s2b31-final-20260920/native-commands.json
+fa518a64366fdd5638162596ad15205a8d42b58428aff4cfaf58a1c69d501484  evidence-public/s2b31-final-20260920/native.log
+f6efa0502f76e0de499bb307ea825acd1e09f6d6ac27ed57d31e2019cd1b6f4a  evidence-public/s2b31-final-20260920/offscreen-frames.json
+5e9db5bdd0ba6a99612228f5f5334d3ebc5e509d4c90ab2b8b79f28de10b7acb  evidence-public/s2b31-final-20260920/package-verification.json
+6e4ac0e4201261d38d9a200dcf7516674c2677a0f393973d01c7877505062efe  evidence-public/s2b31-final-20260920/results.json
+efeab8dd9d271356928b580eab33b7de268da0b72d774d36ac257e386312e930  evidence-public/s2b31-final-20260920/source-after-gates.json
+efeab8dd9d271356928b580eab33b7de268da0b72d774d36ac257e386312e930  evidence-public/s2b31-final-20260920/source-after-native.json
+efeab8dd9d271356928b580eab33b7de268da0b72d774d36ac257e386312e930  evidence-public/s2b31-final-20260920/source-before.json
 d0da84b84063b2419d56b6b59f39234644481ac845e330d9090dbbe45dbea58a  fixtures/synthetic/manifest.json
 fe00fd9ab0668d3d31ac8fe15344854f27d0ddd778ffc26a465036b03f13b43c  fixtures/synthetic/s0_polarity.gbr
 3c50e57dceeac36b4de4599e005981a2f4617abf492258193f89f53eb57dbc84  fixtures/synthetic/s0c/am_1.gbr
@@ -1283,13 +1565,18 @@ c1293a93bc7cc0a11b46217fdbb2e2b4a639a167dead024b6f24a3227f550529  fixtures/synth
 86acda282a09822e5f6bdafeef68e79bb4b34b11344b869abf44ae7d12e601f7  fixtures/synthetic/s1a1/manifest.json
 3b0682db8e992e8d7f70fe11ce1587c5ca0a15b345e9563c51586709f0000fe3  fixtures/synthetic/s1a1/ucamco_full_circle_geometry.gbr
 eca20f1392c007b97edfbc669aa0a6250118cc960aa5efb70df6ade49b8c2991  fixtures/synthetic/s2a3/gui_primitives.gbr
+3e6bb23c653a77eb23a3f64d4844838b8543938c5625d629ba6b8163eeb23baa  fixtures/synthetic/s2b3_1/P1K_CIRCLES.gbr
+7acdb5d84e190f261a01057d13f38fdde99b0eb5e5c5cbd6211296743b1a64fb  fixtures/synthetic/s2b3_1/manifest.json
 53bb02e8b6feacc498601210c27e159d09bfb4045555428a0f85ab22c269fe19  rust-toolchain.toml
 b47fedbe98bc0535bff7c5800864cf11c6308f921614c6165c15b4333879000d  scripts/audit_core10.py
 b86623a5a23771b2a0e55f0811052d81ba2c432ca55ef04d4fe33e9562ccc3b8  scripts/check_s0c_reference.py
 3ba04a16e37cc0c10792f06fead80a70b4df3f8d4fa96fc83ba92d3c27f3fcbf  scripts/check_s1a_reference.py
-858e43daf666c18edc5e8e924bfe1dcba4cdcc186f8c30add08fcd8ba3713675  scripts/package_macos.py
+3b11325e19e497e6b0f5182d77513d2782a6371f5c37761db2d60f91b1091254  scripts/generate_p1k.py
+cc05ccb37c368c1e7b99b6b97d8fe22f2285977fc345b138818e55791484c145  scripts/package_macos.py
+dd87edf431b017b8b8ef9d00cf0ebe9e20e38f270cc14c1c712361d71dfa7614  scripts/package_source.py
 cdb69b3ea9da223a116b5d55b0bc53051fdebad5ee05785e9371062d11c7963b  scripts/record_source_identity.py
 d103df95decad6ab077cabf34c747117630ed1bf78f5d40a0cbbfe017373d342  scripts/run_checks.py
 59336f1360ee5db3bdc85a97bb22c47971d0c838a493ecb45a453886166eab9a  scripts/scan_s1a1_core10.py
-7bc0d75dc6492f75adbd44459d6a12663046af40d9dea6d8c70fccd934f8b589  scripts/source_manifest.py
+a59ef2a1864a9fb0c6a0c0d106d4fb900492986acfb4c79f3ae2020f14c5b919  scripts/source_manifest.py
 e60cd5f00e2313bad496c825adbf271ddfd00b6509e436279d6a167f62be876a  scripts/test_audit_core10.py
+f57f6ab7ad267304e41d9818fe50bcd1e4f475a9154780731ff40b3863c2e0ec  scripts/test_package_source.py

@@ -1,0 +1,250 @@
+{
+  "schema_version": 2,
+  "run_id": "s2b2-modifiers-20260920",
+  "scope": "S2-B2 local substeps, not full V1 cases",
+  "tested_code_commit": null,
+  "working_tree_identity": "source-before.json",
+  "status": "IMPLEMENTED_WITH_NATIVE_EVIDENCE_GAPS",
+  "platform": "macOS arm64 Apple M1 Metal",
+  "windows": "deferred / not executed",
+  "cases": [
+    {
+      "case_id": "AT-022",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-026",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-027",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-028",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-029",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-030",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-032",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-035",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-036",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-038",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-039",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-040",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-041",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-043",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-054",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-086",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-088",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-089",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-090",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-091",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    },
+    {
+      "case_id": "AT-095",
+      "status": "PARTIAL_PASS",
+      "full_case_pass": false,
+      "evidence": [
+        "gates/commands.json",
+        "regression/commands.json",
+        "metal/commands.json",
+        "gui/observations.md"
+      ]
+    }
+  ],
+  "open_items": [
+    "Native Ctrl-click/Shift-click and held-drag cancel inputs unavailable through current CUA API",
+    "Complete native process logs / per-step history counts not captured",
+    "Diagonal RectangularSweep native parser support out of scope",
+    "Windows and full CORE10 not executed"
+  ],
+  "v1_pass": false
+}

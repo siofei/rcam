@@ -1,0 +1,9 @@
+{
+  "archive": "/Volumes/外接硬盘/rcam/exports/RCam_S2B3_dbde56e_source.zip",
+  "sha256": "055445b0a3e20547817f03dc517342199d9bc44f95129edaaa224b8a9ba974d7",
+  "bytes": 5191544,
+  "utf8_entries": 135,
+  "source_manifest_check": "PASS current source manifest: 1474 files",
+  "package_manifest_check": "PASS",
+  "tested_head": "dbde56e777a8b5176a552b84739efb3db3aa032b"
+}

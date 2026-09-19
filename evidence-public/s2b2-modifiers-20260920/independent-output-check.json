@@ -1,0 +1,25 @@
+{
+  "source_sha256": "eca20f1392c007b97edfbc669aa0a6250118cc960aa5efb70df6ade49b8c2991",
+  "output_sha256": "86776cfdd381ebe381629bc9a267dd037e1f2052723eb73c9ab9e50d3a3f5235",
+  "flash_count": 9,
+  "first_three_centers_mm": [
+    [
+      11.996955,
+      21.936443
+    ],
+    [
+      21.996955,
+      21.936443
+    ],
+    [
+      31.996955,
+      21.936443
+    ]
+  ],
+  "remaining_flash_centers_unchanged": true,
+  "arc_command_preserved": true,
+  "gui_reopen_objects": 13,
+  "pre_save_revision": 7,
+  "post_reopen_revision": 0,
+  "native_history_counts": "not captured; one-step restoration demonstrated by screenshots; exact counts covered by app/service tests"
+}

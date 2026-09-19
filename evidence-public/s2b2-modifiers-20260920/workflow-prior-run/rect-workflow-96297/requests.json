@@ -1,0 +1,1138 @@
+[
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "source.gbr"
+      },
+      "request_id": "rect-0"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-0",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2b2-final-20260920/workflow/rect-workflow-96297/source.gbr",
+        "source_sha256": "fbf03f68f6dd8f950d0a8e57e92c2b6c2dd12e14f9b069732f80c608db6c4a28",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "rect-1"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-1",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2b2-final-20260920/workflow/rect-workflow-96297/source.gbr",
+        "source_sha256": "fbf03f68f6dd8f950d0a8e57e92c2b6c2dd12e14f9b069732f80c608db6c4a28",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        }
+      },
+      "request_id": "rect-2"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-2",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2"
+        ],
+        "revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "contains",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        }
+      },
+      "request_id": "rect-3"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "diagnostic": "unknown variant `contains`, expected `window` or `crossing`",
+          "field": "params"
+        },
+        "message": "invalid params: unknown variant `contains`, expected `window` or `crossing`"
+      },
+      "job_id": null,
+      "request_id": "rect-3",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "extra": 0,
+          "max_x_mm": 7,
+          "max_y_mm": 4,
+          "min_x_mm": 1,
+          "min_y_mm": 2
+        }
+      },
+      "request_id": "rect-4"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "diagnostic": "unknown field `extra`, expected one of `min_x_mm`, `min_y_mm`, `max_x_mm`, `max_y_mm`",
+          "field": "params"
+        },
+        "message": "invalid params: unknown field `extra`, expected one of `min_x_mm`, `min_y_mm`, `max_x_mm`, `max_y_mm`"
+      },
+      "job_id": null,
+      "request_id": "rect-4",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        },
+        "visible": true
+      },
+      "request_id": "rect-5"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "diagnostic": "unknown field `visible`, expected one of `layer_id`, `rect_mm`, `mode`",
+          "field": "params"
+        },
+        "message": "invalid params: unknown field `visible`, expected one of `layer_id`, `rect_mm`, `mode`"
+      },
+      "job_id": null,
+      "request_id": "rect-5",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        }
+      },
+      "request_id": "rect-6"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "details": {
+          "field": "expected_revision"
+        },
+        "message": "read-only operation does not accept expected_revision"
+      },
+      "job_id": null,
+      "request_id": "rect-6",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "missing",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        }
+      },
+      "request_id": "rect-7"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "missing",
+      "error": {
+        "code": "NOT_FOUND",
+        "details": {
+          "entity": "document",
+          "id": "missing"
+        },
+        "message": "document \"missing\" was not found"
+      },
+      "job_id": null,
+      "request_id": "rect-7",
+      "result": null,
+      "revision": null,
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "document.get",
+      "params": {},
+      "request_id": "rect-8"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-8",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2b2-final-20260920/workflow/rect-workflow-96297/source.gbr",
+        "source_sha256": "fbf03f68f6dd8f950d0a8e57e92c2b6c2dd12e14f9b069732f80c608db6c4a28",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "layer.update",
+      "params": {
+        "expected_workspace_revision": "0",
+        "layer_id": "layer-1",
+        "locked": true,
+        "visible": false
+      },
+      "request_id": "rect-9"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-9",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2b2-final-20260920/workflow/rect-workflow-96297/source.gbr",
+        "source_sha256": "fbf03f68f6dd8f950d0a8e57e92c2b6c2dd12e14f9b069732f80c608db6c4a28",
+        "undo_entries": 0,
+        "workspace_revision": "1"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        }
+      },
+      "request_id": "rect-10"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-10",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2"
+        ],
+        "revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.move",
+      "params": {
+        "dx_mm": 5.0,
+        "dy_mm": -1.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2"
+        ]
+      },
+      "request_id": "rect-11"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": {
+        "code": "LAYER_LOCKED",
+        "details": {
+          "entity": "layer",
+          "id": "layer-1"
+        },
+        "message": "图层已锁定。"
+      },
+      "job_id": null,
+      "request_id": "rect-11",
+      "result": null,
+      "revision": "0",
+      "status": "error",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "layer.update",
+      "params": {
+        "expected_workspace_revision": "1",
+        "layer_id": "layer-1",
+        "locked": false,
+        "visible": true
+      },
+      "request_id": "rect-12"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-12",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2b2-final-20260920/workflow/rect-workflow-96297/source.gbr",
+        "source_sha256": "fbf03f68f6dd8f950d0a8e57e92c2b6c2dd12e14f9b069732f80c608db6c4a28",
+        "undo_entries": 0,
+        "workspace_revision": "2"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "0",
+      "op": "objects.move",
+      "params": {
+        "dx_mm": 5.0,
+        "dy_mm": -1.0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2"
+        ]
+      },
+      "request_id": "rect-13"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-13",
+      "result": {
+        "changed_object_ids": [
+          "object-1",
+          "object-2"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "1",
+        "undo_entries": 1,
+        "undo_entries_added": 1
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 12.0,
+          "max_y_mm": 3.0,
+          "min_x_mm": 6.0,
+          "min_y_mm": 1.0
+        }
+      },
+      "request_id": "rect-14"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-14",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2"
+        ],
+        "revision": "1"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        }
+      },
+      "request_id": "rect-15"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-15",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [],
+        "revision": "1"
+      },
+      "revision": "1",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "1",
+      "op": "history.undo",
+      "params": {},
+      "request_id": "rect-16"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-16",
+      "result": {
+        "changed_object_ids": [
+          "object-1",
+          "object-2"
+        ],
+        "dirty": false,
+        "document_id": "doc-1",
+        "redo_entries": 1,
+        "revision": "2",
+        "undo_entries": 0,
+        "undo_entries_added": 0
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 7.0,
+          "max_y_mm": 4.0,
+          "min_x_mm": 1.0,
+          "min_y_mm": 2.0
+        }
+      },
+      "request_id": "rect-17"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-17",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2"
+        ],
+        "revision": "2"
+      },
+      "revision": "2",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "2",
+      "op": "history.redo",
+      "params": {},
+      "request_id": "rect-18"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-18",
+      "result": {
+        "changed_object_ids": [
+          "object-1",
+          "object-2"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "3",
+        "undo_entries": 1,
+        "undo_entries_added": 0
+      },
+      "revision": "3",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "3",
+      "op": "objects.duplicate",
+      "params": {
+        "dx_mm": 0,
+        "dy_mm": 0,
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2"
+        ]
+      },
+      "request_id": "rect-19"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-19",
+      "result": {
+        "changed_object_ids": [
+          "doc-1-generated-object-0",
+          "doc-1-generated-object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "4",
+        "undo_entries": 2,
+        "undo_entries_added": 1
+      },
+      "revision": "4",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 12.0,
+          "max_y_mm": 3.0,
+          "min_x_mm": 6.0,
+          "min_y_mm": 1.0
+        }
+      },
+      "request_id": "rect-20"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-20",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "doc-1-generated-object-0",
+          "object-2",
+          "doc-1-generated-object-1"
+        ],
+        "revision": "4"
+      },
+      "revision": "4",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "4",
+      "op": "objects.delete",
+      "params": {
+        "layer_id": "layer-1",
+        "object_ids": [
+          "doc-1-generated-object-0",
+          "doc-1-generated-object-1"
+        ]
+      },
+      "request_id": "rect-21"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-21",
+      "result": {
+        "changed_object_ids": [
+          "doc-1-generated-object-0",
+          "doc-1-generated-object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 0,
+        "revision": "5",
+        "undo_entries": 3,
+        "undo_entries_added": 1
+      },
+      "revision": "5",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "5",
+      "op": "history.undo",
+      "params": {},
+      "request_id": "rect-22"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-22",
+      "result": {
+        "changed_object_ids": [
+          "doc-1-generated-object-0",
+          "doc-1-generated-object-1"
+        ],
+        "dirty": true,
+        "document_id": "doc-1",
+        "redo_entries": 1,
+        "revision": "6",
+        "undo_entries": 2,
+        "undo_entries_added": 0
+      },
+      "revision": "6",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 12.0,
+          "max_y_mm": 3.0,
+          "min_x_mm": 6.0,
+          "min_y_mm": 1.0
+        }
+      },
+      "request_id": "rect-23"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-23",
+      "result": {
+        "document_id": "doc-1",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "doc-1-generated-object-0",
+          "object-2",
+          "doc-1-generated-object-1"
+        ],
+        "revision": "6"
+      },
+      "revision": "6",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "expected_revision": "6",
+      "op": "gerber.export_layer",
+      "params": {
+        "layer_id": "layer-1",
+        "metadata_policy": {
+          "mode": "require_confirmation"
+        },
+        "overwrite": {
+          "mode": "deny"
+        },
+        "path": "output.gbr"
+      },
+      "request_id": "rect-24"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-1",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-24",
+      "result": {
+        "api_version": 1,
+        "bytes": 344,
+        "current_revision": "6",
+        "document_id": "doc-1",
+        "exported_revision": "6",
+        "layer_id": "layer-1",
+        "path": "/Volumes/外接硬盘/rcam/evidence/s2b2-final-20260920/workflow/rect-workflow-96297/output.gbr",
+        "sha256": "26fa300a938237ae7192d82492a260a77cdfe30c15159208828da2eb31918505"
+      },
+      "revision": "6",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "op": "document.open",
+      "params": {
+        "path": "output.gbr"
+      },
+      "request_id": "rect-25"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": null,
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-25",
+      "result": {
+        "api_version": 1,
+        "diagnostics": [
+          "S1 normalized semantic model"
+        ],
+        "dirty": false,
+        "document_id": "doc-2",
+        "last_saved_path": null,
+        "layer_ids": [
+          "layer-1"
+        ],
+        "redo_entries": 0,
+        "revision": "0",
+        "source_path": "/Volumes/外接硬盘/rcam/evidence/s2b2-final-20260920/workflow/rect-workflow-96297/output.gbr",
+        "source_sha256": "26fa300a938237ae7192d82492a260a77cdfe30c15159208828da2eb31918505",
+        "undo_entries": 0,
+        "workspace_revision": "0"
+      },
+      "revision": null,
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-2",
+      "op": "render.snapshot",
+      "params": {},
+      "request_id": "rect-26"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-2",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-26",
+      "result": {
+        "apertures": [
+          {
+            "id": "aperture-10",
+            "shape": {
+              "Circle": {
+                "diameter_mm": 2.0,
+                "hole_diameter_mm": null
+              }
+            },
+            "source_dcode": 10
+          }
+        ],
+        "document_id": "doc-2",
+        "layers": [
+          {
+            "id": "layer-1",
+            "objects": [
+              {
+                "exposure": "dark",
+                "geometry": {
+                  "Flash": {
+                    "aperture_id": "aperture-10",
+                    "center": {
+                      "x_mm": 7.0,
+                      "y_mm": 2.0
+                    },
+                    "transform": {
+                      "mirror": "None",
+                      "rotation_deg": 0.0,
+                      "scale": 1.0
+                    }
+                  }
+                },
+                "object_id": "object-1",
+                "origin": {
+                  "command_index": 8,
+                  "kind": "imported"
+                }
+              },
+              {
+                "exposure": "dark",
+                "geometry": {
+                  "Flash": {
+                    "aperture_id": "aperture-10",
+                    "center": {
+                      "x_mm": 7.0,
+                      "y_mm": 2.0
+                    },
+                    "transform": {
+                      "mirror": "None",
+                      "rotation_deg": 0.0,
+                      "scale": 1.0
+                    }
+                  }
+                },
+                "object_id": "object-2",
+                "origin": {
+                  "command_index": 16,
+                  "kind": "imported"
+                }
+              },
+              {
+                "exposure": "dark",
+                "geometry": {
+                  "Flash": {
+                    "aperture_id": "aperture-10",
+                    "center": {
+                      "x_mm": 11.0,
+                      "y_mm": 2.0
+                    },
+                    "transform": {
+                      "mirror": "None",
+                      "rotation_deg": 0.0,
+                      "scale": 1.0
+                    }
+                  }
+                },
+                "object_id": "object-3",
+                "origin": {
+                  "command_index": 24,
+                  "kind": "imported"
+                }
+              },
+              {
+                "exposure": "dark",
+                "geometry": {
+                  "Flash": {
+                    "aperture_id": "aperture-10",
+                    "center": {
+                      "x_mm": 11.0,
+                      "y_mm": 2.0
+                    },
+                    "transform": {
+                      "mirror": "None",
+                      "rotation_deg": 0.0,
+                      "scale": 1.0
+                    }
+                  }
+                },
+                "object_id": "object-4",
+                "origin": {
+                  "command_index": 32,
+                  "kind": "imported"
+                }
+              }
+            ]
+          }
+        ],
+        "revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  },
+  {
+    "request": {
+      "api_version": 1,
+      "document_id": "doc-2",
+      "op": "objects.select_rect",
+      "params": {
+        "layer_id": "layer-1",
+        "mode": "window",
+        "rect_mm": {
+          "max_x_mm": 12.0,
+          "max_y_mm": 3.0,
+          "min_x_mm": 6.0,
+          "min_y_mm": 1.0
+        }
+      },
+      "request_id": "rect-27"
+    },
+    "response": {
+      "api_version": 1,
+      "document_id": "doc-2",
+      "error": null,
+      "job_id": null,
+      "request_id": "rect-27",
+      "result": {
+        "document_id": "doc-2",
+        "layer_id": "layer-1",
+        "object_ids": [
+          "object-1",
+          "object-2",
+          "object-3",
+          "object-4"
+        ],
+        "revision": "0"
+      },
+      "revision": "0",
+      "status": "completed",
+      "warnings": []
+    }
+  }
+]

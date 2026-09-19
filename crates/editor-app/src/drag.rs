@@ -12,24 +12,28 @@ pub struct Drag {
     pub document: String,
     pub revision: String,
     pub layer: String,
-    pub object: String,
+    pub objects: Vec<String>,
     start: Pos2,
     camera: Camera,
     rect: Rect,
     ppp: f32,
     pub confirmed: bool,
     pub last: Pos2,
-    pub released: bool,
     pub dragging: bool,
     pub delta: MmPoint,
 }
 pub fn editable_selection(view: &View) -> bool {
     view.blocked.is_none()
         && view.scene.is_some()
-        && view.selected.as_ref().is_some_and(|o| {
-            view.layers
-                .iter()
-                .any(|l| l.layer_id == o.layer_id && l.visible && !l.locked)
+        && !view.selected.ordered.is_empty()
+        && view.selected.ordered.iter().all(|o| {
+            view.selected
+                .primary()
+                .is_some_and(|p| p.layer_id == o.layer_id)
+                && view
+                    .layers
+                    .iter()
+                    .any(|l| l.layer_id == o.layer_id && l.visible && !l.locked)
         })
 }
 impl Drag {
@@ -38,19 +42,23 @@ impl Drag {
             return None;
         }
         let d = view.info.as_ref()?;
-        let o = view.selected.as_ref()?;
+        let o = view.selected.primary()?;
         Some(Self {
             document: d.document_id.clone(),
             revision: d.revision.clone(),
             layer: o.layer_id.clone(),
-            object: o.object.object_id.clone(),
+            objects: view
+                .selected
+                .ordered
+                .iter()
+                .map(|o| o.object.object_id.clone())
+                .collect(),
             start,
             camera,
             rect,
             ppp,
             confirmed: false,
             last: start,
-            released: false,
             dragging: false,
             delta: MmPoint::new(0., 0.),
         })
@@ -84,4 +92,107 @@ pub fn cancelled(
 }
 pub fn shortcuts_allowed(text_focus: bool, busy: bool, modal: bool) -> bool {
     !text_focus && !busy && !modal
+}
+
+/// The pending hit retains press/release coordinates across the worker reply.
+/// Selection changes only on release, so cancelling never loses the old set.
+pub struct Gesture {
+    pub start: Pos2,
+    pub last: Pos2,
+    pub released: bool,
+    pub confirmed: bool,
+    pub delta: MmPoint,
+    pub box_select: bool,
+    moved: bool,
+    camera: Camera,
+    rect: Rect,
+    ppp: f32,
+    mode: crate::selection::SelectionMode,
+    object_drag: Option<Drag>,
+}
+impl Gesture {
+    pub fn arm(
+        view: &View,
+        start: Pos2,
+        camera: Camera,
+        rect: Rect,
+        ppp: f32,
+        mode: crate::selection::SelectionMode,
+    ) -> Self {
+        Self {
+            start,
+            last: start,
+            released: false,
+            confirmed: false,
+            delta: MmPoint::new(0., 0.),
+            box_select: false,
+            moved: false,
+            camera,
+            rect,
+            ppp,
+            mode,
+            object_drag: if mode != crate::selection::SelectionMode::Replace {
+                None
+            } else {
+                Drag::arm(view, start, camera, rect, ppp)
+            },
+        }
+    }
+    pub fn confirm(&mut self, view: &View) {
+        self.confirmed = true;
+        self.box_select = view.press_hit.is_none();
+        if !view.drag_hit {
+            self.object_drag = None;
+        }
+        if let Some(d) = &mut self.object_drag {
+            d.confirmed = true;
+        }
+        self.update(self.last);
+    }
+    pub fn update(&mut self, pos: Pos2) {
+        self.last = pos;
+        self.moved |= pos.distance(self.start) * self.ppp >= THRESHOLD_PX;
+        if let Some(d) = &mut self.object_drag {
+            d.update(pos);
+            self.delta = d.delta;
+        }
+    }
+    pub fn preview_rect(&self) -> Option<(Rect, bool)> {
+        (self.confirmed && self.box_select && self.moved).then_some((
+            Rect::from_two_pos(self.start, self.last),
+            self.last.x >= self.start.x,
+        ))
+    }
+    pub fn release(self) -> Option<Action> {
+        if !self.confirmed {
+            return None;
+        }
+        if self.box_select && self.moved {
+            let a = self.camera.world(self.start, self.rect);
+            let b = self.camera.world(self.last, self.rect);
+            return Some(Action::SelectRect(
+                editor_core::BoundsMm {
+                    min_x_mm: a.x_mm.min(b.x_mm),
+                    min_y_mm: a.y_mm.min(b.y_mm),
+                    max_x_mm: a.x_mm.max(b.x_mm),
+                    max_y_mm: a.y_mm.max(b.y_mm),
+                },
+                if self.last.x >= self.start.x {
+                    editor_core::hit_test::SelectRectMode::Window
+                } else {
+                    editor_core::hit_test::SelectRectMode::Crossing
+                },
+            ));
+        }
+        if let Some(d) = self.object_drag
+            && d.dragging
+        {
+            return d.release();
+        }
+        Some(Action::Select(
+            self.camera.world(self.start, self.rect),
+            self.camera.tolerance(self.ppp),
+            self.mode,
+        ))
+    }
 }

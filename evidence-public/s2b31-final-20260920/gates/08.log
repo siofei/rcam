@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/s2b_select_rect_workflow.rs (/Volumes/外接硬盘/rcam/.tools/target/debug/deps/s2b_select_rect_workflow-9468a46694b3d77e)
+
+running 1 test
+test select_rect_contract_edit_history_export_reopen ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

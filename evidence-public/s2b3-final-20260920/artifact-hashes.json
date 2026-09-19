@@ -1,0 +1,6 @@
+{
+  "fixtures/synthetic/s2a3/gui_primitives.gbr": "eca20f1392c007b97edfbc669aa0a6250118cc960aa5efb70df6ade49b8c2991",
+  "evidence/s2b3-final-20260920/gui/metrics_edited.gbr": "a06bc0e8fde3e788ee377aa7cdaedc076c7c576172dc423fba1ce13a80f30338",
+  "evidence/s2b3-final-20260920/gui/metrics_1000.gbr": "3e6bb23c653a77eb23a3f64d4844838b8543938c5625d629ba6b8163eeb23baa",
+  "evidence/s2b3-final-20260920/package/RCam.app/Contents/MacOS/editor-app": "f2ff4ea2431d16abe5eefb5ad49848de1c4eef8b0cbf2c52470f093291b45891"
+}

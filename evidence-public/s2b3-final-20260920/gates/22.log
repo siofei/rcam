@@ -1,0 +1,68 @@
+cargo test --locked -p editor-app --bin editor-app
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src/main.rs (/Volumes/外接硬盘/rcam/.tools/target/debug/deps/editor_app-a76862b0a6d86b59)
+
+running 60 tests
+test app_tests::ctrl_add_and_shift_remove_are_idempotent_and_stable ... ok
+test app_tests::cross_layer_selection_refuses_whole_edit ... ok
+test app_tests::drag_escape_cancels_without_side_effects ... ok
+test app_tests::dirty_open_refused_and_close_requires_confirmation ... ok
+test app_tests::cmd_d_duplicates_in_place_and_selects_new_object ... ok
+test app_tests::delete_selected_clears_selection_and_undo_restores ... ok
+test app_tests::drag_release_before_async_hit_retains_endpoint ... ok
+test app_tests::drag_zero_delta_is_noop ... ok
+test app_tests::drag_preview_does_not_change_revision_dirty_or_history ... ok
+test app_tests::drag_probe_uses_exact_hole_without_mutating_selection ... ok
+test app_tests::drag_capture_loss_cancels_without_side_effects ... ok
+test app_tests::locked_duplicate_delete_fail_without_losing_selection ... ok
+test app_tests::drag_release_commits_exactly_one_move_transaction ... ok
+test app_tests::locked_history_still_restores ... ok
+test app_tests::locked_layer_cannot_drag ... ok
+test app_tests::modifier_click_gestures_preserve_press_intent_without_starting_move ... ok
+test app_tests::duplicate_undo_redo_preserves_generated_id ... ok
+test app_tests::metrics_worker_selection_edit_and_close_identity ... ok
+test app_tests::multi_delete_is_atomic_and_undo_restores_order ... ok
+test app_tests::multi_duplicate_is_one_transaction_and_redo_restores_ids ... ok
+test app_tests::numeric_invalid_not_submitted ... ok
+test app_tests::numeric_zero_move_not_submitted ... ok
+test app_tests::multi_drag_locked_member_rejects_entire_batch ... ok
+test app_tests::multi_selection_panel_labels_object_sum_not_layer_area ... ok
+test app_tests::numeric_move_is_one_history_entry ... ok
+test app_tests::save_failure_preserves_dirty_and_selection ... ok
+test app_tests::press_on_any_selected_member_can_drag_beneath_unselected_overlap ... ok
+test app_tests::direct_manipulation_save_reopen_preserves_final_geometry ... ok
+test app_tests::render_snapshot_contract_is_owned_revision_bound ... ok
+test app_tests::open_failure_keeps_current_document ... ok
+test app_tests::selection_box_cancel_has_no_side_effect ... ok
+test app_tests::selection_allows_locked_but_move_rejected ... ok
+test app_tests::selection_clear_on_empty_click ... ok
+test app_tests::retina_drag_threshold_is_physical_pixel_stable ... ok
+test app_tests::multi_drag_commits_one_transaction ... ok
+test app_tests::selection_box_preview_has_no_manufacturing_side_effect ... ok
+test app_tests::selection_cleanup_after_delete_undo_redo ... ok
+test app_tests::selection_uses_hit_test_order_topmost_layer ... ok
+test app_tests::selection_skips_hidden_layers ... ok
+test app_tests::text_focus_blocks_manufacturing_delete_duplicate_undo ... ok
+test app_tests::selection_gesture_async_release_and_plain_click_on_selected ... ok
+test camera::tests::camera_fit_uses_f64_bounds ... ok
+test camera::tests::camera_zoom_keeps_cursor_world_point ... ok
+test app_tests::service_failure_clears_preview_and_preserves_geometry ... ok
+test camera::tests::screen_world_roundtrip_retina_scale ... ok
+test camera::tests::selection_tolerance_is_pixel_stable ... ok
+test display_tests::native_metal_drag_preview ... ignored, requires native Metal hardware; retain raw output
+test display_tests::native_metal_multi_drag_preview ... ignored, requires native Metal hardware; retain raw output
+test display_tests::native_metal_semantic_renderer ... ignored, requires native Metal hardware; retain raw output
+test app_tests::selection_hole_center_not_selected ... ok
+test app_tests::save_as_keeps_source_and_last_saved_identity ... ok
+test app_tests::workspace_changes_do_not_mark_dirty ... ok
+test display_tests::invalid_zero_length_rectangle_remains_rejected ... ok
+test app_tests::undo_redo_after_drag_preserves_selection ... ok
+test app_tests::selection_survives_move_undo_redo ... ok
+test display_tests::renderer_refuses_numeric_precision_and_resource_overflow ... ok
+test display_tests::region_refines_with_zoom_without_changing_semantics ... ok
+test display_tests::renderer_refuses_partial_unsupported_document ... ok
+test display_tests::public_gui_sample_has_real_standard_and_macro_geometry ... ok
+test display_tests::renderer_builds_all_existing_semantic_variants ... ok
+
+test result: ok. 57 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.09s
+

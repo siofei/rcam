@@ -6,7 +6,10 @@ mod display;
 mod display_tests;
 mod drag;
 mod gpu;
+mod metrics_panel;
 mod platform;
+mod render_index;
+mod selection;
 mod state;
 
 use camera::Camera;
@@ -39,7 +42,9 @@ struct EditorApp {
     last_title: String,
     canvas_rect: egui::Rect,
     display_error: Option<String>,
-    drag: Option<drag::Drag>,
+    drag: Option<drag::Gesture>,
+    timing: bool,
+    last_frame: Instant,
 }
 impl EditorApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -85,7 +90,7 @@ impl EditorApp {
             .as_ref()
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
-        eprintln!("RCam S2-B1 native GPU: {adapter}");
+        eprintln!("RCam S2-B3.1 native GPU: {adapter}");
         Self {
             tx,
             rx,
@@ -108,6 +113,8 @@ impl EditorApp {
             canvas_rect: egui::Rect::NOTHING,
             display_error: None,
             drag: None,
+            timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
+            last_frame: Instant::now(),
         }
     }
     fn send(&mut self, a: Action) {
@@ -208,6 +215,23 @@ impl EditorApp {
 }
 impl eframe::App for EditorApp {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        let now = Instant::now();
+        if self.timing {
+            eprintln!(
+                "render_frame interval_ms={:.6} canvas_physical={:.0}x{:.0} selected={} preview={} revision={}",
+                now.duration_since(self.last_frame).as_secs_f64() * 1000.,
+                self.canvas_rect.width() * ctx.pixels_per_point(),
+                self.canvas_rect.height() * ctx.pixels_per_point(),
+                self.view.selected.ordered.len(),
+                self.drag.is_some(),
+                self.view
+                    .info
+                    .as_ref()
+                    .map_or("none", |i| i.revision.as_str())
+            );
+        }
+        self.last_frame = now;
+
         if let Ok((id, view)) = self.rx.try_recv()
             && id == self.sequence
         {
@@ -216,9 +240,8 @@ impl eframe::App for EditorApp {
             self.view = view;
             self.busy = false;
             if let Some(drag) = &mut self.drag {
-                if self.view.drag_hit && self.view.error.is_none() {
-                    drag.confirmed = true;
-                    drag.update(drag.last);
+                if self.view.error.is_none() {
+                    drag.confirm(&self.view);
                 } else {
                     self.drag = None;
                 }
@@ -285,10 +308,7 @@ impl eframe::App for EditorApp {
                 self.camera,
                 self.canvas_rect,
                 ctx.pixels_per_point(),
-                self.view
-                    .selected
-                    .as_ref()
-                    .map(|o| o.object.object_id.as_str()),
+                &self.view.selected.ids(),
             )
             .err()
         });
@@ -391,8 +411,10 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("帮助", |ui| {
-                    ui.label("S2-B1 · Mac 单对象编辑");
-                    ui.label("几何单选包括 Clear；已选对象可拖动、原位复制和删除。");
+                    ui.label("S2-B2 · Mac 多对象编辑");
+                    ui.label(
+                        "几何选择包括 Clear；Ctrl 点击加选，Shift 点击减选，双向框选，整组编辑。",
+                    );
                     ui.label("中键拖动 / 双指滚动平移；捏合 / Cmd+滚动缩放。");
                     ui.label("另存为必须选择新文件名。Windows 延后验收。");
                     ui.separator();
@@ -412,7 +434,7 @@ impl eframe::App for EditorApp {
                 ui.separator();
                 self.history_buttons(ui);
                 ui.separator();
-                ui.label(RichText::new("几何单选").color(Color32::from_rgb(100, 206, 183)));
+                ui.label(RichText::new("几何多选").color(Color32::from_rgb(100, 206, 183)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .add_enabled(self.usable(), egui::Button::new("另存为…"))
@@ -437,7 +459,7 @@ impl eframe::App for EditorApp {
                     ui.separator();
                 }
                 ui.label(format!("{:.2} 点/mm", self.camera.scale));
-                if let Some(o) = &self.view.selected {
+                if let Some(o) = self.view.selected.primary() {
                     ui.label(format!("选中 {}", o.object.object_id));
                 }
                 ui.label(&self.view.message);
@@ -538,7 +560,20 @@ impl eframe::App for EditorApp {
                 ui.heading("对象属性");
                 ui.add_space(8.);
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    if let Some(o) = self.view.selected.clone() {
+                    ui.label(format!(
+                        "已选择 {} 个对象",
+                        self.view.selected.ordered.len()
+                    ));
+                    ui.label("Ctrl 点击加选，Shift 点击减选；空白处拖框：左→右包含，右→左相交");
+                    if !self.view.selected.ordered.is_empty()
+                        && !drag::editable_selection(&self.view)
+                    {
+                        ui.label("选择含锁定层或跨层：整组编辑禁止（仅可查看）");
+                    }
+                    for line in metrics_panel::lines(&self.view) {
+                        ui.label(line);
+                    }
+                    if let Some(o) = self.view.selected.primary().cloned() {
                         ui.label(RichText::new(&o.object.object_id).monospace());
                         let layer = self.view.layers.iter().find(|l| l.layer_id == o.layer_id);
                         ui.label(format!(
@@ -566,23 +601,26 @@ impl eframe::App for EditorApp {
                             ui.colored_label(Color32::YELLOW, "图层已锁定，请先解锁再移动。");
                         }
                         let mut enter = false;
-                        ui.add_enabled_ui(self.usable() && !locked, |ui| {
-                            ui.label("ΔX · mm");
-                            let x = ui.add(
-                                egui::TextEdit::singleline(&mut self.dx)
-                                    .desired_width(f32::INFINITY),
-                            );
-                            ui.label("ΔY · mm");
-                            let y = ui.add(
-                                egui::TextEdit::singleline(&mut self.dy)
-                                    .desired_width(f32::INFINITY),
-                            );
-                            enter = (x.lost_focus() || y.lost_focus())
-                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                            if ui.button("应用位移").clicked() {
-                                enter = true;
-                            }
-                        });
+                        ui.add_enabled_ui(
+                            self.usable() && drag::editable_selection(&self.view),
+                            |ui| {
+                                ui.label("ΔX · mm");
+                                let x = ui.add(
+                                    egui::TextEdit::singleline(&mut self.dx)
+                                        .desired_width(f32::INFINITY),
+                                );
+                                ui.label("ΔY · mm");
+                                let y = ui.add(
+                                    egui::TextEdit::singleline(&mut self.dy)
+                                        .desired_width(f32::INFINITY),
+                                );
+                                enter = (x.lost_focus() || y.lost_focus())
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                if ui.button("应用位移").clicked() {
+                                    enter = true;
+                                }
+                            },
+                        );
                         if enter {
                             self.send(Action::Move(self.dx.clone(), self.dy.clone()));
                         }
@@ -638,43 +676,35 @@ impl eframe::App for EditorApp {
                     }
                     let w = self.camera.world(pos, rect);
                     cursor_label = Some(format!("X {:.6}  Y {:.6} mm", w.x_mm, w.y_mm));
-                    if let Some(press) = ctx.input(|i| {
+                    if let Some((press, modifiers)) = ctx.input(|i| {
                         i.events.iter().find_map(|e| match e {
                             egui::Event::PointerButton {
                                 pos,
                                 button: egui::PointerButton::Primary,
                                 pressed: true,
-                                ..
-                            } => Some(*pos),
+                                modifiers,
+                            } => Some((*pos, *modifiers)),
                             _ => None,
                         })
                     }) && self.usable()
+                        && !cancel_drag
                         && !modal_open
                         && rect.contains(press)
                     {
-                        self.drag = drag::Drag::arm(
+                        self.drag = Some(drag::Gesture::arm(
                             &self.view,
                             press,
                             self.camera,
                             rect,
                             ctx.pixels_per_point(),
-                        );
+                            selection::SelectionMode::from_modifiers(modifiers),
+                        ));
                         if self.drag.is_some() {
                             self.send(Action::ProbeDrag(
                                 self.camera.world(press, rect),
                                 self.camera.tolerance(ctx.pixels_per_point()),
                             ));
                         }
-                    }
-                    if r.clicked_by(egui::PointerButton::Primary)
-                        && self.usable()
-                        && self.drag.is_none()
-                        && !cancel_drag
-                    {
-                        self.send(Action::Select(
-                            w,
-                            self.camera.tolerance(ctx.pixels_per_point()),
-                        ));
                     }
                 }
                 if let Some(drag) = &mut self.drag {
@@ -701,25 +731,27 @@ impl eframe::App for EditorApp {
                 if let Some(scene) = &self.view.scene
                     && !needs_lod
                 {
-                    match gpu::uniforms_preview(
+                    match gpu::prepare(
                         scene,
                         self.camera,
                         rect,
                         ctx.pixels_per_point(),
-                        self.view
-                            .selected
-                            .as_ref()
-                            .map(|o| o.object.object_id.as_str()),
+                        &self.view.selected.ids(),
                         self.drag
                             .as_ref()
                             .map_or(editor_core::MmPoint::new(0., 0.), |d| d.delta),
                     ) {
-                        Ok(uniforms) => {
+                        Ok((uniforms, index)) => {
                             self.display_error = None;
                             painter.add(egui_wgpu::Callback::new_paint_callback(
                                 rect,
                                 gpu::Callback {
+                                    index,
                                     scene: scene.clone(),
+                                    selected: gpu::selection_flags(
+                                        scene,
+                                        &self.view.selected.ids(),
+                                    ),
                                     uniforms,
                                     format: self.format,
                                 },
@@ -731,6 +763,33 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                if let Some((selection_rect, window)) =
+                    self.drag.as_ref().and_then(|d| d.preview_rect())
+                {
+                    let color = if window {
+                        Color32::LIGHT_BLUE
+                    } else {
+                        Color32::LIGHT_GREEN
+                    };
+                    painter.rect_filled(selection_rect, 0., color.gamma_multiply(0.12));
+                    painter.rect_stroke(
+                        selection_rect,
+                        0.,
+                        egui::Stroke::new(1., color),
+                        egui::StrokeKind::Inside,
+                    );
+                    painter.text(
+                        selection_rect.left_top(),
+                        egui::Align2::LEFT_BOTTOM,
+                        if window {
+                            "Window · 完整包含"
+                        } else {
+                            "Crossing · 相交"
+                        },
+                        egui::FontId::proportional(12.),
+                        color,
+                    );
+                }
                 if let Some(label) = cursor_label {
                     painter.text(
                         rect.left_bottom() + Vec2::new(12., -14.),
@@ -740,7 +799,7 @@ impl eframe::App for EditorApp {
                         Color32::LIGHT_GRAY,
                     );
                 }
-                if let Some(o) = &self.view.selected
+                if let Some(o) = self.view.selected.primary()
                     && let editor_core::SemanticGeometry::Flash { center, .. } = o.object.geometry
                 {
                     let delta = self
@@ -786,7 +845,7 @@ impl eframe::App for EditorApp {
                 painter.text(
                     rect.left_top() + Vec2::new(12., 12.),
                     egui::Align2::LEFT_TOP,
-                    "几何单选  ·  中键 / 双指平移  ·  捏合缩放",
+                    "几何多选  ·  中键 / 双指平移  ·  捏合缩放",
                     egui::FontId::proportional(12.),
                     Color32::LIGHT_GRAY,
                 );

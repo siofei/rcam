@@ -100,14 +100,20 @@ fn renderer_refuses_numeric_precision_and_resource_overflow() {
 #[test]
 #[ignore = "requires native Metal hardware; retain raw output"]
 fn native_metal_semantic_renderer() {
-    metal_probes(false);
+    metal_probes(0);
 }
 #[test]
 #[ignore = "requires native Metal hardware; retain raw output"]
 fn native_metal_drag_preview() {
-    metal_probes(true);
+    metal_probes(1);
 }
-fn metal_probes(preview: bool) {
+#[test]
+#[ignore = "requires native Metal hardware; retain raw output"]
+fn native_metal_multi_drag_preview() {
+    metal_probes(usize::MAX);
+}
+fn metal_probes(selected_count: usize) {
+    let preview = selected_count > 0;
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::METAL,
         ..Default::default()
@@ -120,10 +126,10 @@ fn metal_probes(preview: bool) {
         block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
     let source = format!(
         "{}\n{}",
-        include_str!("editor.wgsl"),
+        include_str!("reference.wgsl"),
         r#"
-@group(0) @binding(4) var<storage,read> probes:array<vec2<f32>>;
-@group(0) @binding(5) var<storage,read_write> results:array<u32>;
+@group(0) @binding(5) var<storage,read> probes:array<vec2<f32>>;
+@group(0) @binding(6) var<storage,read_write> results:array<u32>;
 @compute @workgroup_size(1) fn probe(@builtin(global_invocation_id) id:vec3<u32>) {
     results[id.x]=select(0u,1u,length(sample_scene(probes[id.x])-vec3(0.055,0.072,0.085))>0.01);
 }
@@ -176,9 +182,14 @@ fn metal_probes(preview: bool) {
         };
         if preview {
             let layer = doc.layers[0].id.clone();
-            let id = doc.layers[0].objects[0].object_id.clone();
+            let ids: Vec<_> = doc.layers[0]
+                .objects
+                .iter()
+                .take(selected_count)
+                .map(|o| o.object_id.clone())
+                .collect();
             editor_core::edit::EditHistory::default()
-                .move_objects(&mut doc, &layer, &[id], 3., -2.)
+                .move_objects(&mut doc, &layer, &ids, 3., -2.)
                 .unwrap();
         }
         let b = doc.manufacturing_bounds(None).unwrap().unwrap();
@@ -213,6 +224,7 @@ fn metal_probes(preview: bool) {
             }
         }
         let uniform = Uniforms {
+            grid: [0.; 4],
             preview: if preview { [3., -2., 0., 0.] } else { [0.; 4] },
             view: [0.; 4],
             camera: [0.; 4],
@@ -240,11 +252,15 @@ fn metal_probes(preview: bool) {
         } else {
             scene.points.clone()
         };
+        let selected: Vec<u32> = (0..objects.len())
+            .map(|i| u32::from(i < selected_count))
+            .collect();
         let buffers = [
             buf(bytemuck::bytes_of(&uniform), wgpu::BufferUsages::UNIFORM),
             buf(bytemuck::cast_slice(&objects), wgpu::BufferUsages::STORAGE),
             buf(bytemuck::cast_slice(&shapes), wgpu::BufferUsages::STORAGE),
             buf(bytemuck::cast_slice(&points), wgpu::BufferUsages::STORAGE),
+            buf(bytemuck::cast_slice(&selected), wgpu::BufferUsages::STORAGE),
             buf(bytemuck::cast_slice(&probes), wgpu::BufferUsages::STORAGE),
         ];
         let out = device.create_buffer(&wgpu::BufferDescriptor {
@@ -268,7 +284,7 @@ fn metal_probes(preview: bool) {
             })
             .collect();
         entries.push(wgpu::BindGroupEntry {
-            binding: 5,
+            binding: 6,
             resource: out.as_entire_binding(),
         });
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -330,4 +346,464 @@ fn public_gui_sample_has_real_standard_and_macro_geometry() {
             .any(|a| matches!(a.shape, ApertureShape::Obround { .. }))
     );
     assert!(Scene::build(&s, &l, MmPoint::new(30., 30.), 1000., 1).is_ok());
+}
+
+#[test]
+#[ignore = "requires native Metal; exact RGBA parity including AA and selection"]
+fn native_metal_reference_production_pixel_parity() {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::METAL,
+        ..Default::default()
+    });
+    let adapter = block_on(instance.request_adapter(&Default::default())).unwrap();
+    println!("parity adapter {:?}", adapter.get_info());
+    let (device, queue) = block_on(adapter.request_device(&Default::default())).unwrap();
+    let sources = [include_str!("reference.wgsl"), include_str!("editor.wgsl")];
+    let pipelines: Vec<_> = sources
+        .iter()
+        .map(|source| {
+            let source = source.replace(
+                "@fragment fn fs_main(@builtin(position) pos:vec4<f32>)->@location(0) vec4<f32>",
+                "fn shade(pos:vec4<f32>)->vec4<f32>",
+            );
+            let source = format!(
+                "{source}\n{}",
+                r#"
+@group(0) @binding(6) var<storage,read_write> rgba:array<vec4<f32>>;
+@compute @workgroup_size(8,8) fn parity(@builtin(global_invocation_id) id:vec3<u32>) {
+ if id.x>=128u || id.y>=128u {return;}
+ rgba[id.y*128u+id.x]=shade(vec4<f32>(vec2<f32>(id.xy)+vec2(0.5),0.,1.));
+}"#
+            );
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("parity"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: None,
+                module: &shader,
+                entry_point: Some("parity"),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        })
+        .collect();
+    for name in [
+        "s2b3_1/P1K_CIRCLES.gbr",
+        "s2a3/gui_primitives.gbr",
+        "s1a/standard_hole_over_line.gbr",
+        "s1a/macro_hole_over_line.gbr",
+        "s1a/ordered_local_hole.gbr",
+        "s1a/macro_rotated_circle.gbr",
+        "s1a/macro_rotated_rectangle.gbr",
+        "s1a/region_cutin.gbr",
+        "s1a/nested_region_union.gbr",
+        "s0c/rectangular_draw.gbr",
+        "s1a1/g75_exact.gbr",
+        "s1a1/g75_small_deviation.gbr",
+        "s1a1/g75_full.gbr",
+        "s1a1/g74_zero.gbr",
+        "s1a1/g75_region_deviation_safe.gbr",
+    ] {
+        let (mut snapshot, mut layers) = fixture(name);
+        // Add a separate layer with Clear over the first layer's Dark.
+        let mut upper = snapshot.layers[0].clone();
+        upper.id = "parity-upper".into();
+        for object in &mut upper.objects {
+            object.object_id = format!("upper-{}", object.object_id);
+            object.exposure = Exposure::Clear;
+        }
+        snapshot.layers.push(upper);
+        let mut info = layers[0].clone();
+        info.layer_id = "parity-upper".into();
+        layers.push(info);
+        let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 1000., 1).unwrap();
+        let _render = crate::gpu::Resources::new(&device, wgpu::TextureFormat::Rgba8Unorm, &scene);
+        let b = scene.objects.iter().fold(
+            [
+                f32::INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::NEG_INFINITY,
+            ],
+            |mut b, o| {
+                for i in 0..2 {
+                    b[i] = b[i].min(o.bounds[i]);
+                    b[i + 2] = b[i + 2].max(o.bounds[i + 2]);
+                }
+                b
+            },
+        );
+        for selection in [0, 1, scene.ids.len()] {
+            for delta in [MmPoint::new(0., 0.), MmPoint::new(3., -2.)] {
+                let camera = crate::camera::Camera {
+                    center: MmPoint::new(
+                        f64::from((b[0] + b[2]) / 2.),
+                        f64::from((b[1] + b[3]) / 2.),
+                    ),
+                    scale: 90. / f64::from((b[2] - b[0]).max(b[3] - b[1]).max(1.)),
+                };
+                let ids: Vec<_> = scene
+                    .ids
+                    .iter()
+                    .take(selection)
+                    .map(String::as_str)
+                    .collect();
+                let (uniform, index) = crate::gpu::prepare(
+                    &scene,
+                    camera,
+                    eframe::egui::Rect::from_min_size(
+                        eframe::egui::Pos2::ZERO,
+                        eframe::egui::vec2(128., 128.),
+                    ),
+                    1.,
+                    &ids,
+                    delta,
+                )
+                .unwrap();
+                let flags = crate::gpu::selection_flags(&scene, &ids);
+                let buf = |data: &[u8], usage| {
+                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: None,
+                        contents: if data.is_empty() { &[0; 16] } else { data },
+                        usage,
+                    })
+                };
+                let buffers = [
+                    buf(bytemuck::bytes_of(&uniform), wgpu::BufferUsages::UNIFORM),
+                    buf(
+                        bytemuck::cast_slice(&scene.objects),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                    buf(
+                        bytemuck::cast_slice(&scene.primitives),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                    buf(
+                        bytemuck::cast_slice(&scene.points),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                    buf(bytemuck::cast_slice(&flags), wgpu::BufferUsages::STORAGE),
+                    buf(
+                        bytemuck::cast_slice(&index.data),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                ];
+                let mut images = Vec::new();
+                for (mode, pipeline) in pipelines.iter().enumerate() {
+                    let output = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: None,
+                        size: 128 * 128 * 16,
+                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                        mapped_at_creation: false,
+                    });
+                    let read = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: None,
+                        size: output.size(),
+                        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    let mut entries: Vec<_> = buffers
+                        .iter()
+                        .take(if mode == 0 { 5 } else { 6 })
+                        .enumerate()
+                        .map(|(i, b)| wgpu::BindGroupEntry {
+                            binding: i as u32,
+                            resource: b.as_entire_binding(),
+                        })
+                        .collect();
+                    entries.push(wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: output.as_entire_binding(),
+                    });
+                    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: None,
+                        layout: &pipeline.get_bind_group_layout(0),
+                        entries: &entries,
+                    });
+                    let mut encoder = device.create_command_encoder(&Default::default());
+                    {
+                        let mut pass = encoder.begin_compute_pass(&Default::default());
+                        pass.set_pipeline(pipeline);
+                        pass.set_bind_group(0, &group, &[]);
+                        pass.dispatch_workgroups(16, 16, 1);
+                    }
+                    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, output.size());
+                    queue.submit([encoder.finish()]);
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    read.slice(..)
+                        .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
+                    device
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: None,
+                            timeout: Some(Duration::from_secs(30)),
+                        })
+                        .unwrap();
+                    rx.recv().unwrap().unwrap();
+                    images.push(read.slice(..).get_mapped_range().to_vec());
+                }
+                let differences = images[0]
+                    .chunks_exact(16)
+                    .zip(images[1].chunks_exact(16))
+                    .filter(|(a, b)| a != b)
+                    .count();
+                if differences > 0 {
+                    for (i, (a, b)) in images[0]
+                        .chunks_exact(16)
+                        .zip(images[1].chunks_exact(16))
+                        .enumerate()
+                        .filter(|(_, (a, b))| a != b)
+                        .take(8)
+                    {
+                        println!(
+                            "DIFF {i} {:?} {:?}",
+                            bytemuck::cast_slice::<u8, f32>(a),
+                            bytemuck::cast_slice::<u8, f32>(b)
+                        );
+                    }
+                }
+                assert_eq!(
+                    differences, 0,
+                    "{name} selection={selection} delta={delta:?}"
+                );
+                println!(
+                    "PASS exact RGBA parity {name} selection={selection} delta={delta:?} pixels=16384"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn thousand_circles_metrics_writer_navigation_preview_and_history() {
+    use crate::{camera::Camera, gpu, state::Action};
+    use eframe::egui::{Rect, pos2, vec2};
+    let mut model = Model::default();
+    model
+        .open(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s2b3_1/P1K_CIRCLES.gbr"),
+        )
+        .unwrap();
+    model.run(Action::SelectRect(
+        model.view.bounds.unwrap(),
+        editor_core::hit_test::SelectRectMode::Window,
+    ));
+    assert_eq!(model.view.selected.ordered.len(), 1000);
+    let info = model.view.info.clone().unwrap();
+    let layer = model.view.layers[0].layer_id.clone();
+    let ids: Vec<_> = model
+        .view
+        .selected
+        .ids()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let request=serde_json::json!({"api_version":1,"request_id":"renderer-invariance","op":"objects.metrics","document_id":info.document_id,"params":{"layer_id":layer,"object_ids":ids}}).to_string();
+    let before = model.service.execute_json(&request);
+    assert_eq!(before["result"]["summary"]["exact_count"], 1000);
+    assert_eq!(before["result"]["summary"]["unsupported_count"], 0);
+    assert!(
+        (before["result"]["summary"]["object_area_sum_mm2"]
+            .as_f64()
+            .unwrap()
+            - 1000. * std::f64::consts::PI / 16.)
+            .abs()
+            < 1e-8
+    );
+    assert!(
+        (before["result"]["summary"]["object_perimeter_sum_mm"]
+            .as_f64()
+            .unwrap()
+            - 500. * std::f64::consts::PI)
+            .abs()
+            < 1e-8
+    );
+    let dir = std::env::temp_dir().join(format!("rcam-render-invariance-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let export = |model: &mut Model, name: &str| {
+        let path = dir.join(name);
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        model.run(Action::Save(path.clone(), layer.clone(), None));
+        assert!(model.view.error.is_none(), "{:?}", model.view.error);
+        std::fs::read(path).unwrap()
+    };
+    let bytes = export(&mut model, "before.gbr");
+    let rect = Rect::from_min_size(pos2(0., 0.), vec2(1600., 900.));
+    let mut camera = Camera::default();
+    camera.fit(model.view.bounds, rect);
+    let index = model.view.scene.as_ref().unwrap().index.clone();
+    let baseline = model.view.info.clone();
+    for n in 0..60 {
+        camera.pan(vec2(1., -1.));
+        camera.zoom(if n % 2 == 0 { 1.1 } else { 1. / 1.1 }, rect.center(), rect);
+        model.run(Action::Rebuild(camera.scale * 2.));
+        let scene = model.view.scene.as_ref().unwrap();
+        assert!(Arc::ptr_eq(&index, &scene.index));
+        gpu::prepare(
+            scene,
+            camera,
+            rect,
+            1.,
+            &model.view.selected.ids(),
+            MmPoint::new(n as f64 / 10., -2.),
+        )
+        .unwrap();
+        assert_eq!(model.view.info, baseline);
+    }
+    assert_eq!(model.service.execute_json(&request), before);
+    assert_eq!(export(&mut model, "after.gbr"), bytes);
+    let snapshot = model.service.render_snapshot(&info.document_id).unwrap();
+    let mut drag = crate::drag::Drag::arm(&model.view, rect.center(), camera, rect, 1.).unwrap();
+    drag.confirmed = true;
+    drag.update(rect.center() + vec2(100., -50.));
+    let delta = drag.delta;
+    model.run(drag.release().unwrap());
+    assert!(model.view.error.is_none());
+    assert_eq!(
+        model.view.info.as_ref().unwrap().undo_entries,
+        info.undo_entries + 1
+    );
+    let moved = model.service.render_snapshot(&info.document_id).unwrap();
+    for (old, new) in snapshot.layers[0]
+        .objects
+        .iter()
+        .zip(&moved.layers[0].objects)
+    {
+        if let (
+            SemanticGeometry::Flash { center: a, .. },
+            SemanticGeometry::Flash { center: b, .. },
+        ) = (&old.geometry, &new.geometry)
+        {
+            assert!((b.x_mm - a.x_mm - delta.x_mm).abs() < 1e-10);
+            assert!((b.y_mm - a.y_mm - delta.y_mm).abs() < 1e-10);
+        } else {
+            panic!("expected circle");
+        }
+    }
+    model.run(Action::History(false));
+    assert_eq!(
+        model
+            .service
+            .render_snapshot(&info.document_id)
+            .unwrap()
+            .layers,
+        snapshot.layers
+    );
+    println!(
+        "P1K 1600x900 candidate_max={} metrics={}",
+        index.max_candidates, before
+    );
+}
+
+#[test]
+#[ignore = "native Metal release-only offscreen performance supplement, not GUI AT-075"]
+fn native_metal_p1k_offscreen_timing() {
+    assert!(!cfg!(debug_assertions), "run --release");
+    use eframe::egui::{Rect, pos2, vec2};
+    use egui_wgpu::CallbackTrait;
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::METAL,
+        ..Default::default()
+    });
+    let adapter = block_on(instance.request_adapter(&Default::default())).unwrap();
+    println!("P1K offscreen adapter {:?}", adapter.get_info());
+    let (device, queue) = block_on(adapter.request_device(&Default::default())).unwrap();
+    let (snapshot, layers) = fixture("s2b3_1/P1K_CIRCLES.gbr");
+    let scene = Arc::new(Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1).unwrap());
+    let rect = Rect::from_min_size(pos2(0., 0.), vec2(1600., 900.));
+    let camera = crate::camera::Camera {
+        center: MmPoint::new(20.5, 13.),
+        scale: 30.,
+    };
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("P1K 1600x900"),
+        size: wgpu::Extent3d {
+            width: 1600,
+            height: 900,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = target.create_view(&Default::default());
+    let mut resources = egui_wgpu::CallbackResources::default();
+    let selected: Vec<_> = scene.ids.iter().map(String::as_str).collect();
+    for round in 0..3 {
+        let start = std::time::Instant::now();
+        let mut frames = Vec::new();
+        while start.elapsed().as_secs_f64() < 10. {
+            let frame = std::time::Instant::now();
+            let delta = MmPoint::new((start.elapsed().as_secs_f64() * 2.).sin() * 2., 1.);
+            let (uniforms, index) =
+                crate::gpu::prepare(&scene, camera, rect, 1., &selected, delta).unwrap();
+            let callback = crate::gpu::Callback {
+                scene: scene.clone(),
+                index,
+                uniforms,
+                selected: vec![1; 1000],
+                format: wgpu::TextureFormat::Rgba8Unorm,
+            };
+            let mut encoder = device.create_command_encoder(&Default::default());
+            callback.prepare(
+                &device,
+                &queue,
+                &egui_wgpu::ScreenDescriptor {
+                    size_in_pixels: [1600, 900],
+                    pixels_per_point: 1.,
+                },
+                &mut encoder,
+                &mut resources,
+            );
+            let prepared = frame.elapsed().as_secs_f64() * 1000.;
+            {
+                let r = resources.get::<crate::gpu::Resources>().unwrap();
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&r.pipeline);
+                pass.set_bind_group(0, &r.bind, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            let submission = queue.submit([encoder.finish()]);
+            device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: Some(submission),
+                    timeout: Some(Duration::from_secs(30)),
+                })
+                .unwrap();
+            let ms = frame.elapsed().as_secs_f64() * 1000.;
+            frames.push(ms);
+            println!(
+                "P1K_RAW round={round} frame={} cpu_prepare_ms={prepared:.6} cpu_plus_gpu_fence_ms={ms:.6}",
+                frames.len()
+            );
+        }
+        frames.sort_by(f64::total_cmp);
+        let p95 = frames[(frames.len() as f64 * 0.95).ceil() as usize - 1];
+        println!(
+            "P1K_OFFSCREEN round={round} frames={} p95_ms={p95:.6} threshold_50ms_met={}",
+            frames.len(),
+            p95 <= 50.
+        );
+    }
 }

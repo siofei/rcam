@@ -3,6 +3,7 @@
 
 mod bounds;
 pub mod hit_test;
+pub mod metrics;
 pub use bounds::BoundsMm;
 pub mod edit;
 mod transform;

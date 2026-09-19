@@ -1,0 +1,26 @@
+cargo test --locked -p editor-service --test s1b2c_workspace_workflow
+   Compiling editor-service v0.1.0 (/private/tmp/rcam-s2b3-final-20260920/crates/editor-service)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+     Running tests/s1b2c_workspace_workflow.rs (/Volumes/外接硬盘/rcam/.tools/target/debug/deps/s1b2c_workspace_workflow-8ae46464b13b1e48)
+
+running 17 tests
+test manufacturing_edit_still_changes_dirty ... ok
+test locked_layer_rejects_new_move_atomically ... ok
+test lock_after_move_does_not_block_undo ... ok
+test layer_update_unknown_layer_is_typed_not_found ... ok
+test locked_layer_rejects_duplicate_delete_rotate_mirror ... ok
+test lock_after_undo_does_not_block_redo ... ok
+test layer_update_strict_json_fields ... ok
+test workspace_lock_does_not_change_manufacturing_dirty ... ok
+test workspace_noop_does_not_increment_revision ... ok
+test workspace_only_change_does_not_require_close_confirmation ... ok
+test workspace_capability_and_dto_roundtrip ... ok
+test workspace_update_increments_only_workspace_revision ... ok
+test workspace_rename_does_not_change_manufacturing_dirty ... ok
+test export_after_manufacturing_edit_clears_dirty ... ok
+test workspace_stale_requests_preserve_state_and_history ... ok
+test workspace_visibility_does_not_change_manufacturing_dirty ... ok
+test workspace_state_not_written_to_export ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

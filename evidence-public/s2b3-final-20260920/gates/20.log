@@ -1,0 +1,29 @@
+cargo test --locked -p editor-core --test geometry_metrics
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests/geometry_metrics.rs (/Volumes/外接硬盘/rcam/.tools/target/debug/deps/geometry_metrics-5fb828025487ba2d)
+
+running 21 tests
+test line_stroke_metrics_exact ... ok
+test local_rotation_and_mirror_preserve_metrics ... ok
+test local_scale_updates_metrics_by_s2_and_abs_s ... ok
+test circle_flash_metrics_exact ... ok
+test invalid_scale_and_hole_fail_closed ... ok
+test circle_flash_hole_counts_inner_perimeter ... ok
+test arc_full_circle_metrics_exact ... ok
+test arc_safe_open_metrics_exact ... ok
+test arc_zero_sweep_metrics_exact ... ok
+test arc_unsafe_overlap_is_unsupported_not_approximate ... ok
+test obround_metrics_exact ... ok
+test polygon_metrics_exact ... ok
+test rectangle_flash_metrics_exact ... ok
+test rectangular_sweep_uses_real_polygon_not_aabb ... ok
+test unsupported_macro_is_not_zero ... ok
+test zero_length_line_is_circle_metrics ... ok
+test region_cutin_does_not_double_count_perimeter ... ok
+test region_hole_area_and_perimeter ... ok
+test region_line_arc_green_area_exact ... ok
+test multiple_disjoint_region_contours_and_overlap_refusal ... ok
+test region_budget_is_bounded ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

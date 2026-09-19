@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "spec_document_version": "1.1",
+  "run_id": "s2b3-final-20260920",
+  "build_sha": "dbde56e777a8b5176a552b84739efb3db3aa032b",
+  "platform": "macos-arm64",
+  "stage_status": "未完成",
+  "scope": "S2-B3 local subchecks, not full AT pass",
+  "results": [
+    {
+      "check_id": "automated_gates",
+      "status": "通过",
+      "actual_result": "23 commands exit 0",
+      "evidence_paths": [
+        "gates/commands.json"
+      ]
+    },
+    {
+      "check_id": "native_metal",
+      "status": "通过",
+      "actual_result": "4 ignored GPU tests explicitly passed",
+      "evidence_paths": [
+        "metal/commands.json"
+      ]
+    },
+    {
+      "check_id": "native_metrics_and_edit_save_reopen",
+      "status": "通过",
+      "actual_result": "21 screenshot records; excludes blocked large selection",
+      "evidence_paths": [
+        "gui/observations.md"
+      ]
+    },
+    {
+      "check_id": "native_large_selection_1000",
+      "status": "阻塞",
+      "actual_result": "existing renderer pixel/object budget prevents metrics interaction",
+      "evidence_paths": [
+        "gui/20-large-open.jpg"
+      ]
+    },
+    {
+      "check_id": "native_s2b2_modifiers_cancel",
+      "status": "阻塞",
+      "actual_result": "NOT TESTABLE with available native input API",
+      "evidence_paths": [
+        "gui/observations.md"
+      ]
+    },
+    {
+      "check_id": "windows",
+      "status": "未执行",
+      "actual_result": "deferred; V1 requirements unchanged",
+      "evidence_paths": [
+        "environment.json"
+      ]
+    }
+  ]
+}

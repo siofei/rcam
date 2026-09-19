@@ -1,14 +1,16 @@
-# RCam Gerber editor — Mac-first S2-B1
+# RCam Gerber editor — Mac-first S2-B3.1
+
+S2-B3 增加独立对象解析面积/周长、会话lazy cache和后台属性面板。多选只显示对象合计；复杂几何明确不可计算，不代表图层最终开口面积。任务范围见 [S2-B3计划](docs/S2_B3_PLAN.md)。
 
 默认应用现已接入真实 Gerber 文件：原生打开、Finder 拖放、图层工作区、f64 导航、
-精确几何单选、属性、数值移动、已选对象直接拖动、原位复制、删除、撤销/重做与新路径另存为。
-范围和限制见 [ADR 0016](docs/adr/0016-s2a3-gui.md)。本轮范围见 [S2-B1任务](RCam_MAC_FIRST_S2B1_DIRECT_MANIPULATION_NEXT_TASK.md)，验收与证据边界见 [S2-B1报告](docs/S2_B1_REVIEW.md)。Windows与完整V1仍未通过。
+精确几何点选/框选、多选、属性、数值移动、整组拖动、原位复制、删除、撤销/重做与新路径另存为。
+范围和限制见 [ADR 0016](docs/adr/0016-s2a3-gui.md)。本轮范围见 [S2-B3.1计划](docs/S2_B3_1_PLAN.md)，上一阶段证据边界见 [S2-B3报告](docs/S2_B3_REVIEW.md)。Windows与完整V1仍未通过。
 
 Mac 启动：`cargo run --release --locked -p editor-app`。
 测试应用包：先构建 release，再运行 `python3 scripts/package_macos.py --out target/gui-package`。
 应用包未签名/公证，仅供本阶段本机验证。S0 演示保留为 `cargo run --release --locked -p editor-app --example s0-demo`。
 
-单文件/单选，Clear 和锁定对象也可选。中键拖动或双指滚动平移，捏合或 Cmd+滚动缩放，F 适合窗口。
+单文件，Ctrl-click 加选，Shift-click 减选；空白拖框左→右 Window、右→左 Crossing。Clear 和锁定对象可查看，制造编辑仅同层且无锁定成员。中键拖动或双指滚动平移，捏合或 Cmd+滚动缩放，F 适合窗口。
 移动只使用 ΔX/ΔY 毫米；Cmd+Z 撤销，Shift+Cmd+Z / Cmd+Y 重做。文本字段保留文本撤销。
 另存为必须使用新路径；源文件不会被覆盖。元数据丢弃必须按提示确认。
 显隐、锁定和显示名只在本次会话保留，不产生制造 dirty 或历史。
@@ -29,7 +31,7 @@ See ADR 0012 and `docs/S1_B2C_REVIEW.md` for scope and evidence.
 ```text
 crates/editor-core/       f64/mm geometry and layer coverage
 crates/gerber-io/         strict finite parser adapter
-crates/editor-service/    UI-free S2-A.3 service and JSON request envelope
+crates/editor-service/    UI-free S2-B3 service and JSON request envelope
 crates/editor-app/        eframe + egui-wgpu editor and S0 regression example
 fixtures/synthetic/       immutable S0-C inputs and independent S1-A truth
 docs/DEPENDENCIES.md      locked dependency and alternative record
@@ -92,3 +94,6 @@ is preserved under `docs/archive/`. Binaries have separate per-run hashes.
 
 The S0 canvas release-frame drag fix and its regression/runtime evidence are
 recorded in `docs/DRAG_FIX_REVIEW.md`.
+
+S2-B3 GeometryMetrics implemented；完整 S2-B3 在 renderer 修复前受 1000 对象原生门禁阻塞。
+S2-B3.1 active：生产显示改用有序 world-space bins，原 renderer 保留为 reference；见 [ADR0020](docs/adr/0020-scalable-render-index.md)。最终 native 门禁以本轮独立 evidence 报告为准，不由代码实现推断通过。

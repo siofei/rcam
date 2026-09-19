@@ -1,0 +1,20 @@
+cargo test --locked -p editor-core --test s2b_rect_selection
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/s2b_rect_selection.rs (.tools/target/debug/deps/s2b_rect_selection-bc8e327129062f9f)
+
+running 12 tests
+test arc_window_and_crossing_use_real_sweep ... ok
+test closed_rect_contact_degenerate_rect_and_submicron_gap ... ok
+test crossing_select_uses_exact_geometry_intersection ... ok
+test macro_rectangle_relation_is_not_bounds_only ... ok
+test empty_macro_and_clear_objects_have_stable_selection_order ... ok
+test arc_directions_full_zero_and_deviation ... ok
+test rectangular_sweep_does_not_select_by_aabb_only ... ok
+test rect_invalid_numerical_and_budget_failure_is_atomic ... ok
+test region_hole_and_cutin_rectangle_relations ... ok
+test window_select_requires_exact_full_containment ... ok
+test transformed_standard_flash_holes_and_exact_extrema ... ok
+test macro_rectangles_match_independent_cell_relation_truth ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

@@ -1,0 +1,12 @@
+{
+  "generator": "generate_p1k.py v1",
+  "object_count": 1000,
+  "bounds_mm": [
+    0.75,
+    0.75,
+    40.25,
+    25.25
+  ],
+  "diameter_mm": 0.5,
+  "sha256": "3e6bb23c653a77eb23a3f64d4844838b8543938c5625d629ba6b8163eeb23baa"
+}

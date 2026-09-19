@@ -1,0 +1,12 @@
+[
+  {
+    "command": "cargo test --release --locked -p editor-app native_metal -- --ignored --nocapture --test-threads=1",
+    "exit_code": 0,
+    "log": "metal-native.log"
+  },
+  {
+    "command": "cargo test --release --locked -p editor-app --example s0-demo native_gpu_coverage_regressions -- --ignored --nocapture",
+    "exit_code": 0,
+    "log": "metal-s0.log"
+  }
+]

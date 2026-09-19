@@ -508,7 +508,7 @@ GPU 可以批量绘制，但只能在已证明结果等价的连续范围和合�
 
 左向右：对象完整覆盖范围落在矩形内才选中。右向左：对象覆盖与矩形有实际交集即选中。边界相切的容差策略固定并提供样本。
 
-Shift 增选，约定键移除／切换选择；菜单显示实际快捷键。在文字输入框获得焦点时，删除和复制只作用于输入框，不能误删画布对象。
+Ctrl-click 加选，Shift-click 减选（两者同时按下时减选优先）；菜单显示实际快捷键。在文字输入框获得焦点时，删除和复制只作用于输入框，不能误删画布对象。
 
 ### 9.3 吸附与测距
 
@@ -972,4 +972,17 @@ S2 hit-test/bounds 仅冻结精确 f64 边界，本轮不开放；其余 V1 门�
 RectangularSweep 斜向仅作为独立查询算法验证，不改变轴向制造/导入/导出支持范围。
 本轮停止在 S2-A.2 无 GUI 服务，S2-A.3 GUI 与双平台完整 V1 门槛保留。
 
-当前活动开发阶段为 Mac-first S2-B1，Windows deferred / not executed；最终双平台 V1 要求保持不变。
+当前活动开发阶段为 Mac-first S2-B3，Windows deferred / not executed；最终双平台 V1 要求保持不变。
+
+### S2-B2 精确框选与多选
+
+依据 ADR 0019，专用 objects.select_rect 保留 query contains 的原含义，新增 Window/Crossing
+对象材料闭包关系。GUI SelectionSet 与预览不进入制造模型；同层多对象编辑复用一个原子事务。
+跨层选择仅查看，制造操作整批拒绝；保持阶段几何选择的 Clear/locked 查看规则。
+GeometryMetrics 的派生真值、lazy cache 和 Object/Layer Area 分界见 ADR 0018；本轮只冻结设计。
+
+### S2-B3 对象指标
+
+依 ADR0018，从制造几何计算独立对象面积/周长并lazy缓存，经objects.metrics与后台属性面板展示。
+局部孔边计入周长；复杂union不可证明时明确unsupported。Object Metrics合计不代表最终Layer Area。
+实现范围与局部AT映射见S2_B3_PLAN.md，不降低最终双平台/CORE10门槛。

@@ -1,0 +1,25 @@
+cargo test --locked -p editor-app --example s0-demo native_gpu_coverage_regressions -- --ignored --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/s0_demo.rs (/Volumes/外接硬盘/rcam/.tools/target/debug/examples/s0_demo-00f18eeaaa6a2ecd)
+
+running 1 test
+Native GPU: Apple M1 / Metal / IntegratedGpu
+short line (0, 0): expected=true cpu=true gpu=1
+short line (0.0001, 0): expected=true cpu=true gpu=1
+short line (0.0001, 0.0001): expected=false cpu=false gpu=0
+zero length (0, 0): expected=true cpu=true gpu=1
+zero length (0.000005, 0): expected=true cpu=true gpu=1
+zero length (0.0001, 0): expected=false cpu=false gpu=0
+tiny hole (0, 0): expected=false cpu=false gpu=0
+tiny hole (0.00000002, 0): expected=false cpu=false gpu=0
+tiny hole (0.0000002, 0): expected=true cpu=true gpu=1
+ordered local and cross-layer exposure (0, 0): expected=true cpu=true gpu=1
+ordered local and cross-layer exposure (2, 0): expected=false cpu=false gpu=0
+ordered local and cross-layer exposure (4, 0): expected=true cpu=true gpu=1
+ordered local and cross-layer exposure (12, 0): expected=true cpu=true gpu=1
+ordered local and cross-layer exposure (12, 1.5): expected=false cpu=false gpu=0
+ordered local and cross-layer exposure (-12, 0): expected=true cpu=true gpu=1
+test gpu_tests::native_gpu_coverage_regressions ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.15s
+

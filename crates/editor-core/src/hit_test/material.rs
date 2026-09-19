@@ -4,7 +4,7 @@ use super::*;
 use std::f64::consts::TAU;
 
 #[derive(Clone, Copy)]
-enum Curve {
+pub(super) enum Curve {
     Line(MmPoint, MmPoint),
     Circle(MmPoint, f64),
 }
@@ -110,7 +110,7 @@ struct Primitive {
 }
 pub(super) struct Material {
     primitives: Vec<Primitive>,
-    boundary: Vec<RegionEdge>,
+    pub(super) boundary: Vec<RegionEdge>,
     source_edges: Vec<Curve>,
     precision: f64,
 }
@@ -324,7 +324,11 @@ impl Material {
     }
 }
 
-fn intersections(a: Curve, b: Curve, precision: f64) -> Result<Vec<MmPoint>, HitTestError> {
+pub(super) fn intersections(
+    a: Curve,
+    b: Curve,
+    precision: f64,
+) -> Result<Vec<MmPoint>, HitTestError> {
     let mut points = Vec::new();
     match (a, b) {
         (Curve::Line(p, q), Curve::Line(r, s)) => {

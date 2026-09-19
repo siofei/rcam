@@ -1,0 +1,19 @@
+cargo test --locked -p editor-service --test s2a_hit_test_workflow
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/s2a_hit_test_workflow.rs (.tools/target/debug/deps/s2a_hit_test_workflow-51e8a648df37b2f7)
+
+running 11 tests
+test hit_test_after_rotate_mirror_tracks_real_geometry ... ok
+test hit_test_capability_empty_layer_and_closed_document ... ok
+test hit_test_result_json_preserves_large_revision_and_stable_ids ... ok
+test hit_test_after_duplicate_delete_and_restored_id_order ... ok
+test hit_test_invalid_params_are_atomic_and_nested_fields_strict ... ok
+test hit_test_workspace_and_queries_do_not_change_history_or_revisions ... ok
+test hit_test_rectangular_rotation_swap_and_arc_mirror_direction ... ok
+test hit_test_macro_clear_and_global_clear_are_distinct_parser_semantics ... ok
+test hit_test_after_move_undo_redo_export_reopen ... ok
+test hit_test_real_parser_region_cutin_arc_deviation_and_rectangular_sweep ... ok
+test hit_test_resource_limit_returns_no_partial_ids_and_no_side_effects ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+

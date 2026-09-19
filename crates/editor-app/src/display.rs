@@ -21,6 +21,7 @@ pub struct Primitive {
 #[derive(Clone)]
 pub struct Scene {
     pub serial: u64,
+    pub index: std::sync::Arc<crate::render_index::RenderIndex>,
     pub anchor: MmPoint,
     pub objects: Vec<Object>,
     pub primitives: Vec<Primitive>,
@@ -55,6 +56,7 @@ fn rectangle(c: MmPoint, w: f64, h: f64) -> Vec<MmPoint> {
     ]
 }
 impl Scene {
+    #[cfg(test)]
     pub fn build(
         snapshot: &RenderSnapshot,
         layers: &[LayerInfo],
@@ -62,10 +64,21 @@ impl Scene {
         ppm: f64,
         serial: u64,
     ) -> Result<Self, String> {
+        Self::build_cached(snapshot, layers, anchor, ppm, serial, None)
+    }
+    pub fn build_cached(
+        snapshot: &RenderSnapshot,
+        layers: &[LayerInfo],
+        anchor: MmPoint,
+        ppm: f64,
+        serial: u64,
+        previous: Option<&Scene>,
+    ) -> Result<Self, String> {
         if !ppm.is_finite() || ppm <= 0. {
             return Err("VALIDATION_FAILED: invalid display scale".into());
         }
         let mut scene = Self {
+            index: Default::default(),
             serial,
             anchor,
             objects: vec![],
@@ -215,7 +228,50 @@ impl Scene {
                     return Err("RESOURCE_LIMIT: display items (200000)".into());
                 }
                 let end = scene.primitives.len();
-                let bounds = scene.primitive_bounds(start, end);
+                let mut bounds = scene.primitive_bounds(start, end);
+                // Region envelope must be LOD-independent; full-circle envelopes are conservative.
+                if let SemanticGeometry::Region { contours } = &object.geometry {
+                    bounds = [
+                        f32::INFINITY,
+                        f32::INFINITY,
+                        f32::NEG_INFINITY,
+                        f32::NEG_INFINITY,
+                    ];
+                    for contour in contours {
+                        let contour = canonical_region_contour(contour)
+                            .map_err(|e| format!("VALIDATION_FAILED: {e}"))?;
+                        for edge in contour.edges {
+                            let (lo, hi) = match edge {
+                                RegionEdge::Line { start, end } => (
+                                    MmPoint::new(
+                                        start.x_mm.min(end.x_mm),
+                                        start.y_mm.min(end.y_mm),
+                                    ),
+                                    MmPoint::new(
+                                        start.x_mm.max(end.x_mm),
+                                        start.y_mm.max(end.y_mm),
+                                    ),
+                                ),
+                                RegionEdge::Arc(a) => (
+                                    MmPoint::new(
+                                        a.center.x_mm - a.radius(),
+                                        a.center.y_mm - a.radius(),
+                                    ),
+                                    MmPoint::new(
+                                        a.center.x_mm + a.radius(),
+                                        a.center.y_mm + a.radius(),
+                                    ),
+                                ),
+                            };
+                            let lo = scene.point(lo)?;
+                            let hi = scene.point(hi)?;
+                            for k in 0..2 {
+                                bounds[k] = bounds[k].min(lo[k]);
+                                bounds[k + 2] = bounds[k + 2].max(hi[k]);
+                            }
+                        }
+                    }
+                }
                 scene.objects.push(Object {
                     meta: [
                         start as u32,
@@ -232,6 +288,24 @@ impl Scene {
                 scene.ids.push(object.object_id.clone());
             }
         }
+        scene.index = if let Some(old) = previous.filter(|old| {
+            old.anchor == scene.anchor
+                && old.ids == scene.ids
+                && old.objects.len() == scene.objects.len()
+                && old
+                    .objects
+                    .iter()
+                    .zip(&scene.objects)
+                    .all(|(a, b)| a.bounds == b.bounds && a.meta[3] == b.meta[3])
+        }) {
+            old.index.clone()
+        } else {
+            std::sync::Arc::new(crate::render_index::RenderIndex::build(
+                &scene.objects,
+                &[],
+                [0.; 2],
+            )?)
+        };
         Ok(scene)
     }
     pub fn scalar(&self, n: f64) -> Result<f32, String> {

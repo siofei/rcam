@@ -1,0 +1,122 @@
+[
+  {
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "seconds": 0.746167333,
+    "log": "gates/01.log"
+  },
+  {
+    "command": "cargo check --workspace --all-targets --locked",
+    "exit_code": 0,
+    "seconds": 3.2665476249999994,
+    "log": "gates/02.log"
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 0.3542010420000006,
+    "log": "gates/03.log"
+  },
+  {
+    "command": "cargo test --workspace --locked",
+    "exit_code": 0,
+    "seconds": 12.986469957999997,
+    "log": "gates/04.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-core --test geometry_metrics",
+    "exit_code": 0,
+    "seconds": 0.15055245799999994,
+    "log": "gates/05.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test metrics_workflow",
+    "exit_code": 0,
+    "seconds": 0.22485341600000197,
+    "log": "gates/06.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-core --test s2b_rect_selection",
+    "exit_code": 0,
+    "seconds": 0.1397459579999989,
+    "log": "gates/07.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s2b_select_rect_workflow",
+    "exit_code": 0,
+    "seconds": 0.27198033299999835,
+    "log": "gates/08.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b_edit_workflow",
+    "exit_code": 0,
+    "seconds": 0.4187595000000002,
+    "log": "gates/09.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2_edit_workflow",
+    "exit_code": 0,
+    "seconds": 0.9787711250000015,
+    "log": "gates/10.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2b_transform_workflow",
+    "exit_code": 0,
+    "seconds": 0.973523667000002,
+    "log": "gates/11.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test s1b2c_workspace_workflow",
+    "exit_code": 0,
+    "seconds": 0.20989633399999974,
+    "log": "gates/12.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test automation_contract",
+    "exit_code": 0,
+    "seconds": 0.16688100000000006,
+    "log": "gates/13.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-service --test headless_workflow",
+    "exit_code": 0,
+    "seconds": 0.17092920800000044,
+    "log": "gates/14.log"
+  },
+  {
+    "command": "cargo tree --locked -p editor-service --edges normal",
+    "exit_code": 0,
+    "seconds": 0.11063933399999826,
+    "log": "gates/15.log"
+  },
+  {
+    "command": "cargo build --release --locked -p editor-app",
+    "exit_code": 0,
+    "seconds": 0.4209711669999976,
+    "log": "gates/16.log"
+  },
+  {
+    "command": "python3 scripts/source_manifest.py --check",
+    "exit_code": 0,
+    "seconds": 0.44047483399999976,
+    "log": "gates/17.log"
+  },
+  {
+    "command": "python3 scripts/test_audit_core10.py",
+    "exit_code": 0,
+    "seconds": 0.10064483300000049,
+    "log": "gates/18.log"
+  },
+  {
+    "command": "python3 scripts/test_package_source.py",
+    "exit_code": 0,
+    "seconds": 2.693136709000001,
+    "log": "gates/19.log"
+  },
+  {
+    "command": "cargo test --release --locked -p editor-app thousand_circles_metrics_writer_navigation_preview_and_history -- --nocapture",
+    "exit_code": 0,
+    "seconds": 0.8351277920000015,
+    "log": "gates/20.log"
+  }
+]

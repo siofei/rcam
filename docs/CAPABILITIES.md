@@ -113,3 +113,22 @@ GUI/文字/edit.batch/完整 CORE10/Windows 未完成，production export 仍不
 Cmd+D 原位复制并选中新对象；Delete/Backspace 删除，菜单和按钮共用同一服务，文本焦点不触发制造快捷键。
 单选、原位复制、同层曝光顺序边界不变；不含多选/框选/Grid/Snap/测距/Rotate-Mirror GUI。
 Mac 原生及证据限制见 S2_B1_REVIEW.md；不声明 Windows、完整 V1 或任何 Post-V1 格式支持。
+
+## S2-B2 精确框选与多选
+
+objects.select_rect 支持当前语义子集的精确 Window/Crossing，错误/超预算整次拒绝。
+GUI Ctrl-click 加选/Shift-click 减选、双向框选、整组同层拖动/原位复制/删除使用确定顺序的 SelectionSet 和服务原子事务。
+多对象选择轮廓与预览使用显示选中标志缓冲，不改变制造数据或曝光顺序。
+斜 RectangularSweep 仅算法测试，导入/编辑范围不变；无生产性能声明。
+GeometryMetrics 仅 ADR 0018 设计；Rotate/Mirror GUI、Grid/Snap/测距/文字/Windows仍不在本轮。
+实际阶段通过状态以 S2_B2_REVIEW.md 和对应运行ID证据为准，不扩大完整AT/V1能力声明。
+
+S2-B3 GeometryMetrics implemented：objects.metrics 独立只读查询单对象解析面积/周长，标准C/R/O/P孔洞、Line、
+RectangularSweep、安全Arc子集与可证明Region；Macro/不确定union返回unsupported，不以0冒充。
+多选属性只显示对象指标合计（部分支持时明确已精确项），无最终Layer Boolean Area能力。
+Windows deferred / not executed；具体门禁与原生证据以本阶段报告为准。
+
+## S2-B3.1 active
+生产 renderer 使用有界有序 world-space bins，选择边缘也查候选，reference renderer 保留。
+S2-B3 full stage blocked before renderer fix；本次是否关闭由原生1000 selection/drag证据决定。
+不新增 Grid/Snap、文字、Final Layer Area、多格式；Windows deferred / not executed。

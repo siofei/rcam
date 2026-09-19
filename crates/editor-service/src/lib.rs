@@ -3,6 +3,7 @@
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+mod metrics;
 pub use editor_core::edit::MirrorAxis;
 use editor_core::edit::{
     EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
@@ -12,6 +13,7 @@ use editor_core::{
     MmPoint, SemanticDocument, SemanticGeometry, SemanticObject,
 };
 use gerber_io::{S0Error, S0Scene, S1Error, S1Scene, export_s1_new_path, parse_s0, parse_s1};
+pub use metrics::{MetricValue, MetricsItem, MetricsParams, MetricsResult, MetricsSummary};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, hash_map::DefaultHasher};
@@ -41,6 +43,8 @@ pub struct Capabilities {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceLimits {
     pub max_hit_test_work: usize,
+    pub max_metrics_work: usize,
+    pub max_metrics_objects: usize,
     pub max_source_bytes: usize,
     pub max_objects: usize,
     pub max_query_results: usize,
@@ -261,6 +265,14 @@ pub struct HitTestResult {
     pub object_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SelectRectParams {
+    pub layer_id: String,
+    pub rect_mm: editor_core::BoundsMm,
+    pub mode: editor_core::hit_test::SelectRectMode,
+}
+
 /// Revision-bound read-only manufacturing envelope, including Clear objects.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -340,6 +352,7 @@ pub struct ExportResult {
 
 #[derive(Debug, Clone)]
 struct S1DocumentRecord {
+    metrics: metrics::MetricsCache,
     workspace_revision: u64,
     workspace: HashMap<String, LayerWorkspaceState>,
     document: SemanticDocument,
@@ -562,6 +575,8 @@ impl ApplicationService {
                 ],
                 resource_limits: ResourceLimits {
                     max_hit_test_work: 0,
+                    max_metrics_work: 0,
+                    max_metrics_objects: 0,
                     max_source_bytes: gerber_io::MAX_SOURCE_BYTES,
                     max_objects: gerber_io::MAX_OBJECTS,
                     max_query_results: 0,
@@ -579,7 +594,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S2-A.3 GUI service boundary".into(),
+            stage: "S2-B2 exact rectangle selection".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -600,6 +615,8 @@ impl ApplicationService {
                 "layers.list".into(),
                 "layer.update".into(),
                 "objects.hit_test".into(),
+                "objects.select_rect".into(),
+                "objects.metrics".into(),
                 "layer.bounds".into(),
                 "document.bounds".into(),
                 "objects.query".into(),
@@ -638,6 +655,8 @@ impl ApplicationService {
             ],
             resource_limits: ResourceLimits {
                     max_hit_test_work: editor_core::hit_test::MAX_HIT_TEST_WORK,
+                    max_metrics_work: editor_core::metrics::MAX_METRICS_WORK,
+                    max_metrics_objects: metrics::MAX_METRICS_OBJECTS,
                 max_source_bytes: gerber_io::S1_MAX_SOURCE_BYTES,
                 max_objects: gerber_io::S1_MAX_OBJECTS,
                 max_query_results: 1000,
@@ -753,6 +772,7 @@ impl ApplicationService {
             })
             .collect();
         let record = S1DocumentRecord {
+            metrics: metrics::MetricsCache::default(),
             workspace,
             workspace_revision: 0,
             saved_content_hash: content_hash(&scene.document),
@@ -907,6 +927,34 @@ impl ApplicationService {
                     HitTestError::Geometry(error) => map_semantic_error(error),
                     HitTestError::ResourceLimit { limit, attempted } => ServiceError::resource("hit_test_work", limit, attempted),
                     HitTestError::Unsupported(reason) => ServiceError { code: "UNSUPPORTED_FEATURE".into(), message: reason.into(), details: serde_json::json!({"operation":"objects.hit_test","reason":reason}) },
+                }
+            })?;
+        Ok(HitTestResult {
+            document_id: document_id.into(),
+            revision: record.revision.to_string(),
+            layer_id: params.layer_id,
+            object_ids,
+        })
+    }
+
+    pub fn objects_select_rect(
+        &self,
+        document_id: &str,
+        params: SelectRectParams,
+    ) -> Result<HitTestResult, ServiceError> {
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        let object_ids = record.document.select_rect(&params.layer_id, params.rect_mm, params.mode)
+            .map_err(|error| {
+                use editor_core::hit_test::HitTestError;
+                match error {
+                    HitTestError::InvalidArgument(field) => ServiceError::invalid_field(field, "invalid selection parameter"),
+                    HitTestError::MissingLayer(id) => ServiceError::not_found("layer", &id),
+                    HitTestError::Geometry(error) => map_semantic_error(error),
+                    HitTestError::ResourceLimit { limit, attempted } => ServiceError::resource("select_rect_work", limit, attempted),
+                    HitTestError::Unsupported(reason) => ServiceError { code: "UNSUPPORTED_FEATURE".into(), message: reason.into(), details: serde_json::json!({"operation":"objects.select_rect","reason":reason}) },
                 }
             })?;
         Ok(HitTestResult {
@@ -1125,6 +1173,16 @@ impl ApplicationService {
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         check_workspace_edit(record, &params.layer_id)?;
+        let source_set: std::collections::HashSet<_> = params.object_ids.iter().collect();
+        let sources: Vec<_> = record
+            .document
+            .layers
+            .iter()
+            .filter(|l| l.id == params.layer_id)
+            .flat_map(|l| &l.objects)
+            .filter(|o| source_set.contains(&o.object_id))
+            .map(|o| o.object_id.clone())
+            .collect();
         let ids = record
             .history
             .duplicate_objects(
@@ -1135,6 +1193,7 @@ impl ApplicationService {
                 params.dy_mm,
             )
             .map_err(map_edit_error)?;
+        record.metrics.duplicate(&sources, &ids);
         record.revision += 1;
         Ok(edit_result(document_id, record, ids, 1))
     }
@@ -1151,6 +1210,7 @@ impl ApplicationService {
             .history
             .delete_objects(&mut record.document, &params.layer_id, &params.object_ids)
             .map_err(map_edit_error)?;
+        record.metrics.reconcile(&record.document, &ids);
         record.revision += 1;
         Ok(edit_result(document_id, record, ids, 1))
     }
@@ -1165,6 +1225,7 @@ impl ApplicationService {
             .history
             .undo(&mut record.document)
             .map_err(map_edit_error)?;
+        record.metrics.reconcile(&record.document, &ids);
         record.revision += 1;
         Ok(edit_result(document_id, record, ids, 0))
     }
@@ -1179,6 +1240,7 @@ impl ApplicationService {
             .history
             .redo(&mut record.document)
             .map_err(map_edit_error)?;
+        record.metrics.reconcile(&record.document, &ids);
         record.revision += 1;
         Ok(edit_result(document_id, record, ids, 0))
     }
@@ -1428,6 +1490,28 @@ impl ApplicationService {
                 let document_id = required_document_id(request)?;
                 let layers = self.layers_list(document_id)?;
                 serde_json::to_value(layers).map_err(serialize_error)?
+            }
+            "objects.metrics" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                let id = required_document_id(request)?;
+                serde_json::to_value(self.objects_metrics(id, parse_params(&request.params)?)?)
+                    .map_err(serialize_error)?
+            }
+            "objects.select_rect" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                let id = required_document_id(request)?;
+                serde_json::to_value(self.objects_select_rect(id, parse_params(&request.params)?)?)
+                    .map_err(serialize_error)?
             }
             "objects.hit_test" => {
                 if request.expected_revision.is_some() {

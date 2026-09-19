@@ -458,3 +458,37 @@ GUI 在后台转换显示数据，命中只调用 `objects.hit_test`，不从显
 不是 JSON operation。读取授权为规范化后的单个文件，写授权为选择的目录。服务没有窗口依赖。
 Hit Test RESOURCE_LIMIT.details.actual 现在为本次 charge 后尝试的累计工作量（饱和加法），
 limit 仍为 2000000，不再固定为 limit+1。GUI 能力边界见 ADR 0016。
+
+## S2-B2：精确矩形选择
+
+新增只读 `objects.select_rect`，显式 `layer_id`，不读取工作区的显隐/锁定或 GUI selection。
+
+```json
+{"layer_id":"实际图层ID","rect_mm":{"min_x_mm":0,"min_y_mm":0,"max_x_mm":10,"max_y_mm":20},"mode":"window"}
+```
+
+mode 仅 `window` 或 `crossing`。使用既有请求信封，拒绝 expected_revision 和未知嵌套字段。
+返回与 hit_test 同形 `{document_id,revision,layer_id,object_ids}`，ID 按当前曝光顺序；无分页、无部分结果。
+矩形坐标有限且每轴绝对值≤1e9，min≤max，可退化为线/点；倒置拒绝 INVALID_ARGUMENT。
+Window：非空对象的全部材料在闭矩形内；Crossing：材料闭包与闭矩形接触/相交。
+孔洞不作为材料；Clear 作为独立对象参与；不是最终图层曝光合成的可见选择。
+真实线段/圆弧边界极值、交点和内部点判断；Macro 使用顺序布尔后材料边界。
+数值可靠性与 hit_test 一致，仅允许 f64 舍入量级边界余量，超过制造容差拒绝 UNSUPPORTED_FEATURE。
+单次工作预算2,000,000，失败为RESOURCE_LIMIT，GUI多层调用全部成功才更新选择。
+查询不改变两种revision/dirty/history/保存身份；`objects.query relation=contains` 仍是对象包含矩形。
+GUI 编辑仍只允许同层选择，一个服务事务；跨层/锁定整批拒绝。详见 ADR 0019。
+
+## S2-B3：独立对象面积/周长
+
+只读 `objects.metrics` params `{layer_id,object_ids:[]}`，不接受 expected_revision/未知字段。
+结果 `{document_id,revision,layer_id,items,summary}`。items 与请求顺序相同，每项含 object_id、
+status=`exact` + area_mm2/perimeter_mm，或 status=`unsupported` + reason（无数值字段）。
+summary 包含 exact_count、unsupported_count、object_area_sum_mm2、object_perimeter_sum_mm，
+数值仅为 exact 项合计；不代表最终 Dark/Clear 图层开口面积。空请求返回空合计；重复ID拒绝。
+未知文档/层/对象 NOT_FOUND；超过10000对象或2000000累计解析工作量 RESOURCE_LIMIT，整次无部分结果。
+读查询不变更 revision/dirty/history/输出字节。GUI通过现有串行worker调用，任务序号校验后发布视图。
+标准C/R/O/P及孔洞、Line、矩形扫掠、无重叠安全Arc子集、可证明Region边界解析计算。
+偏差Arc连接、内偏移/端帽重叠、复杂Macro、无法证明拓扑的Region返回unsupported。
+会话非序列化shape token与有界lazy cache复用Move/Rotate/Mirror/Duplicate和历史恢复。
+缓存最多4096固定大小结果；身份最多20000项/2MiB保守计费，超限可淘汰，关闭文档全部释放。
+未来尺寸/光圈/节点编辑必须携带前后新shape identity，不能延用当前仅刚性编辑的ID映射。

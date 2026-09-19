@@ -3,6 +3,8 @@ use crate::*;
 use std::collections::HashMap;
 
 mod material;
+mod select_rect;
+pub use select_rect::SelectRectMode;
 pub const MAX_HIT_TEST_WORK: usize = 2_000_000;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -276,6 +278,41 @@ fn aperture_distance(
     Ok(outer.max(hole.map_or(0., |d| (d / 2. - p.x_mm.hypot(p.y_mm)).max(0.))))
 }
 
+pub(crate) fn rectangular_sweep_points(
+    start: MmPoint,
+    end: MmPoint,
+    width_mm: f64,
+    height_mm: f64,
+) -> Vec<MmPoint> {
+    let mut points: Vec<_> = [start, end]
+        .into_iter()
+        .flat_map(|center| {
+            rectangle_points(width_mm, height_mm)
+                .into_iter()
+                .map(move |p| MmPoint::new(p.x_mm + center.x_mm, p.y_mm + center.y_mm))
+        })
+        .collect();
+    points.sort_by(|a, b| a.x_mm.total_cmp(&b.x_mm).then(a.y_mm.total_cmp(&b.y_mm)));
+    points.dedup();
+    let mut hull: Vec<MmPoint> = Vec::new();
+    for point in &points {
+        while hull.len() >= 2 && cross(hull[hull.len() - 2], hull[hull.len() - 1], *point) <= 0. {
+            hull.pop();
+        }
+        hull.push(*point);
+    }
+    let lower = hull.len();
+    for point in points.iter().rev().skip(1) {
+        while hull.len() > lower && cross(hull[hull.len() - 2], hull[hull.len() - 1], *point) <= 0.
+        {
+            hull.pop();
+        }
+        hull.push(*point);
+    }
+    hull.pop();
+    hull
+}
+
 fn geometry_distance(
     g: &SemanticGeometry,
     p: MmPoint,
@@ -292,38 +329,10 @@ fn geometry_distance(
             end,
             width_mm,
             height_mm,
-        } => {
-            let mut points: Vec<_> = [*start, *end]
-                .into_iter()
-                .flat_map(|center| {
-                    rectangle_points(*width_mm, *height_mm)
-                        .into_iter()
-                        .map(move |p| MmPoint::new(p.x_mm + center.x_mm, p.y_mm + center.y_mm))
-                })
-                .collect();
-            points.sort_by(|a, b| a.x_mm.total_cmp(&b.x_mm).then(a.y_mm.total_cmp(&b.y_mm)));
-            points.dedup();
-            let mut hull: Vec<MmPoint> = Vec::new();
-            for point in &points {
-                while hull.len() >= 2
-                    && cross(hull[hull.len() - 2], hull[hull.len() - 1], *point) <= 0.
-                {
-                    hull.pop();
-                }
-                hull.push(*point);
-            }
-            let lower = hull.len();
-            for point in points.iter().rev().skip(1) {
-                while hull.len() > lower
-                    && cross(hull[hull.len() - 2], hull[hull.len() - 1], *point) <= 0.
-                {
-                    hull.pop();
-                }
-                hull.push(*point);
-            }
-            hull.pop();
-            polygon_distance(&hull, p)
-        }
+        } => polygon_distance(
+            &rectangular_sweep_points(*start, *end, *width_mm, *height_mm),
+            p,
+        ),
         SemanticGeometry::Arc { path, width_mm } => {
             if !path.is_valid() {
                 return Err(HitTestError::Unsupported("invalid manufacturing arc"));

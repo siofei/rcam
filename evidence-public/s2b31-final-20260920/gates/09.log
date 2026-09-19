@@ -1,0 +1,24 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/s1b_edit_workflow.rs (/Volumes/外接硬盘/rcam/.tools/target/debug/deps/s1b_edit_workflow-f85c31bdcb2a54ca)
+
+running 17 tests
+test geometry_query_tracks_move_and_undo ... ok
+test close_discards_history_and_does_not_reuse_ids ... ok
+test failed_move_is_atomic ... ok
+test move_flash_roundtrip ... ok
+test multi_object_move_is_one_transaction ... ok
+test new_edit_clears_redo_branch ... ok
+test export_reopen_matches_edited_document ... ok
+test redo_restores_moved_geometry ... ok
+test move_line_roundtrip ... ok
+test stale_revision_returns_revision_conflict ... ok
+test undo_restores_original_geometry ... ok
+test source_file_is_never_modified ... ok
+test rejected_json_and_failed_export_preserve_geometry_history_and_saved_baseline ... ok
+test move_region_preserves_topology ... ok
+test rectangular_sweep_and_local_macro_aperture_roundtrip ... ok
+test history_budget_rejects_without_changing_document ... ok
+test move_arc_preserves_arc_semantics ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+

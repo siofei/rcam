@@ -1,5 +1,13 @@
 # 文档变更记录
 
+## 2026-09-20 · Mac-first S2-B2
+
+新增 exact objects.select_rect Window/Crossing、确定顺序 SelectionSet、框选与整组原子编辑。
+按用户最新修订：Ctrl-click 只加选，Shift-click 只减选，普通 click 单选；覆盖初始任务单的 Shift 切换规则。
+ADR 0018 仅冻结下一阶段 GeometryMetrics 缓存设计，ADR 0019 记录本轮边界。
+原生主要交互及自动门禁已验证；修饰键鼠标实测和完整原生日志仍有缺口，不签署阶段全部通过。
+Windows deferred / not executed，96 用例及双平台完整 V1 门槛保持不变。
+
 ## 2026-09-16 · S2-A.2 精确 Hit Test
 
 新增 objects.hit_test、严格 DTO/错误/资源契约、f64 材料距离和有序 Macro 边界查询，
@@ -115,3 +123,13 @@ ADR 0012：移除 SemanticLayer UI字段；新增 layer.update 和独立 workspa
 精确单选/数值 Move/历史/新路径另存为。HitTest 资源错误报告实际尝试工作量。
 锁定与选择策略、6 physical px 容差、显示预算及未完成项见 ADR 0016。
 96 用例及 required_platforms 不变；未授予 Windows 或完整 V1 通过。
+
+## 2026-09-20 S2-B3
+
+新增独立制造Object Metrics解析查询、会话缓存、后台单选/多选指标面板及UTF-8确定性源码打包。
+未知union明确拒绝，不改变parser/writer语义、96个用例身份或双平台V1门槛。
+
+### 2026-09-20 S2-B3.1 active
+- 主renderer使用有序world-space候选；保留reference、原AA/局部材料/跨层合成。
+- 预览独立索引，LOD导航复用基础索引；冻结原1000圆样本，增加像素parity和指标/writer/history不变性检查。
+- 不改96用例/阈值或双平台门槛；最终门禁结果单独证据交付。

@@ -1,0 +1,14 @@
+[
+  {
+    "command": "cargo test --locked -p editor-app native_metal -- --ignored --nocapture",
+    "exit_code": 0,
+    "seconds": 1.8392795419999999,
+    "log": "01.log"
+  },
+  {
+    "command": "cargo test --locked -p editor-app --example s0-demo native_gpu_coverage_regressions -- --ignored --nocapture",
+    "exit_code": 0,
+    "seconds": 0.349099166,
+    "log": "02.log"
+  }
+]

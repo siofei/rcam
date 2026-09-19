@@ -1,0 +1,7 @@
+python3 scripts/test_package_source.py
+PASS current source manifest: 1474 files
+.
+----------------------------------------------------------------------
+Ran 1 test in 2.242s
+
+OK
