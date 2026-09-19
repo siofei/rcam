@@ -218,6 +218,7 @@ impl eframe::App for EditorApp {
             if let Some(drag) = &mut self.drag {
                 if self.view.drag_hit && self.view.error.is_none() {
                     drag.confirmed = true;
+                    drag.update(drag.last);
                 } else {
                     self.drag = None;
                 }
@@ -302,7 +303,7 @@ impl eframe::App for EditorApp {
                 i.events
                     .iter()
                     .any(|e| matches!(e, egui::Event::PointerGone)),
-                i.pointer.primary_down(),
+                i.pointer.primary_down() || self.drag.as_ref().is_some_and(|d| d.released),
                 i.pointer.primary_released(),
             )
         });
@@ -637,17 +638,30 @@ impl eframe::App for EditorApp {
                     }
                     let w = self.camera.world(pos, rect);
                     cursor_label = Some(format!("X {:.6}  Y {:.6} mm", w.x_mm, w.y_mm));
-                    if ctx.input(|i| i.pointer.primary_pressed()) && self.usable() && !modal_open {
+                    if let Some(press) = ctx.input(|i| {
+                        i.events.iter().find_map(|e| match e {
+                            egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Primary,
+                                pressed: true,
+                                ..
+                            } => Some(*pos),
+                            _ => None,
+                        })
+                    }) && self.usable()
+                        && !modal_open
+                        && rect.contains(press)
+                    {
                         self.drag = drag::Drag::arm(
                             &self.view,
-                            pos,
+                            press,
                             self.camera,
                             rect,
                             ctx.pixels_per_point(),
                         );
                         if self.drag.is_some() {
                             self.send(Action::ProbeDrag(
-                                w,
+                                self.camera.world(press, rect),
                                 self.camera.tolerance(ctx.pixels_per_point()),
                             ));
                         }
@@ -664,10 +678,13 @@ impl eframe::App for EditorApp {
                     }
                 }
                 if let Some(drag) = &mut self.drag {
-                    if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                    if !drag.released
+                        && let Some(pos) = ctx.input(|i| i.pointer.interact_pos())
+                    {
                         drag.update(pos);
                     }
-                    if ctx.input(|i| i.pointer.primary_released()) {
+                    drag.released |= ctx.input(|i| i.pointer.primary_released());
+                    if drag.released && drag.confirmed {
                         let drag = self.drag.take().unwrap();
                         if let Some(action) = drag.release() {
                             self.send(action);

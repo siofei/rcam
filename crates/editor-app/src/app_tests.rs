@@ -520,3 +520,19 @@ fn direct_manipulation_save_reopen_preserves_final_geometry() {
         SOURCE
     );
 }
+
+#[test]
+fn drag_release_before_async_hit_retains_endpoint() {
+    let (mut m, _) = setup();
+    let mut d = armed(&mut m, 2.);
+    d.confirmed = false;
+    d.update(eframe::egui::pos2(150., 130.));
+    d.released = true;
+    assert!(!d.dragging);
+    assert_eq!(d.delta, MmPoint::new(0., 0.));
+    d.confirmed = true;
+    d.update(d.last);
+    m.run(d.release().unwrap());
+    assert_eq!(center(&m), MmPoint::new(15., 17.));
+    assert_eq!(m.view.info.unwrap().undo_entries, 1);
+}

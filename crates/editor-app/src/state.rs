@@ -439,11 +439,13 @@ impl Model {
         }
         if let Some(d) = &self.view.info {
             eprintln!(
-                "state document={} revision={} workspace={} dirty={} selected={:?} saved={:?}",
+                "state document={} revision={} workspace={} dirty={} undo={} redo={} selected={:?} saved={:?}",
                 d.document_id,
                 d.revision,
                 d.workspace_revision,
                 d.dirty,
+                d.undo_entries,
+                d.redo_entries,
                 self.view.selected.as_ref().map(|o| &o.object.object_id),
                 d.last_saved_path
             );

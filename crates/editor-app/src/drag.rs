@@ -18,6 +18,8 @@ pub struct Drag {
     rect: Rect,
     ppp: f32,
     pub confirmed: bool,
+    pub last: Pos2,
+    pub released: bool,
     pub dragging: bool,
     pub delta: MmPoint,
 }
@@ -47,11 +49,14 @@ impl Drag {
             rect,
             ppp,
             confirmed: false,
+            last: start,
+            released: false,
             dragging: false,
             delta: MmPoint::new(0., 0.),
         })
     }
     pub fn update(&mut self, pos: Pos2) {
+        self.last = pos;
         if !self.confirmed {
             return;
         }
