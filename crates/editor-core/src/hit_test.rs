@@ -11,7 +11,7 @@ pub enum HitTestError {
     MissingLayer(String),
     Geometry(SemanticError),
     Unsupported(&'static str),
-    ResourceLimit,
+    ResourceLimit { limit: usize, attempted: usize },
 }
 impl std::fmt::Display for HitTestError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -28,7 +28,10 @@ impl From<SemanticError> for HitTestError {
 struct Budget(usize);
 impl Budget {
     fn charge(&mut self, n: usize) -> Result<(), HitTestError> {
-        self.0 = self.0.checked_sub(n).ok_or(HitTestError::ResourceLimit)?;
+        self.0 = self.0.checked_sub(n).ok_or(HitTestError::ResourceLimit {
+            limit: MAX_HIT_TEST_WORK,
+            attempted: (MAX_HIT_TEST_WORK - self.0).saturating_add(n),
+        })?;
         Ok(())
     }
 }
@@ -358,4 +361,22 @@ fn geometry_distance(
         }
         SemanticGeometry::Flash { .. } => unreachable!("handled with aperture lookup"),
     })
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    #[test]
+    fn reports_attempted_work_and_preserves_remaining_budget_on_failure() {
+        let mut budget = Budget(MAX_HIT_TEST_WORK);
+        budget.charge(123).unwrap();
+        assert_eq!(
+            budget.charge(MAX_HIT_TEST_WORK),
+            Err(HitTestError::ResourceLimit {
+                limit: MAX_HIT_TEST_WORK,
+                attempted: MAX_HIT_TEST_WORK + 123,
+            })
+        );
+        assert_eq!(budget.0, MAX_HIT_TEST_WORK - 123);
+    }
 }

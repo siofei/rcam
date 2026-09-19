@@ -282,6 +282,15 @@ pub struct ObjectInfo {
     pub object: SemanticObject,
 }
 
+/// Owned, revision-bound display input. Never a mutable reference into a document.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RenderSnapshot {
+    pub document_id: String,
+    pub revision: String,
+    pub layers: Vec<editor_core::SemanticLayer>,
+    pub apertures: Vec<editor_core::ApertureDefinition>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QueryRegion {
@@ -570,7 +579,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S2-A.2 exact object hit-test".into(),
+            stage: "S2-A.3 GUI service boundary".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -579,6 +588,7 @@ impl ApplicationService {
                 "document.analyze_s0".into(),
                 "document.open".into(),
                 "document.get".into(),
+                "render.snapshot".into(),
                 "document.close".into(),
                 "objects.move".into(),
                 "objects.rotate".into(),
@@ -767,6 +777,44 @@ impl ApplicationService {
             .ok_or_else(|| ServiceError::not_found("document", document_id))
     }
 
+    pub fn render_snapshot(&self, document_id: &str) -> Result<RenderSnapshot, ServiceError> {
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        Ok(RenderSnapshot {
+            document_id: document_id.into(),
+            revision: record.revision.to_string(),
+            layers: record.document.layers.clone(),
+            apertures: record.document.apertures.clone(),
+        })
+    }
+
+    /// Trusted host only; not exposed through request DTOs. The GUI calls this
+    /// after the user chooses a file/directory. Existing document state is kept.
+    pub fn grant_file_access(
+        &mut self,
+        path: &Path,
+        write_directory: bool,
+    ) -> Result<(), ServiceError> {
+        let path = fs::canonicalize(path).map_err(|e| ServiceError::io("authorize", path, e))?;
+        if write_directory && !path.is_dir() {
+            return Err(ServiceError::permission(&path, "write directory"));
+        }
+        let access = self.file_access.get_or_insert_with(|| {
+            FileAccessPolicy::new(path.parent().unwrap_or(&path), Vec::new(), Vec::new())
+        });
+        let roots = if write_directory {
+            &mut access.write_roots
+        } else {
+            &mut access.read_roots
+        };
+        if !roots.contains(&path) {
+            roots.push(path);
+        }
+        Ok(())
+    }
+
     pub fn layers_list(&self, document_id: &str) -> Result<Vec<LayerInfo>, ServiceError> {
         let record = self
             .documents
@@ -857,7 +905,7 @@ impl ApplicationService {
                     HitTestError::InvalidArgument(field) => ServiceError::invalid_field(field, "invalid hit-test parameter"),
                     HitTestError::MissingLayer(id) => ServiceError::not_found("layer", &id),
                     HitTestError::Geometry(error) => map_semantic_error(error),
-                    HitTestError::ResourceLimit => ServiceError::resource("hit_test_work", editor_core::hit_test::MAX_HIT_TEST_WORK, editor_core::hit_test::MAX_HIT_TEST_WORK + 1),
+                    HitTestError::ResourceLimit { limit, attempted } => ServiceError::resource("hit_test_work", limit, attempted),
                     HitTestError::Unsupported(reason) => ServiceError { code: "UNSUPPORTED_FEATURE".into(), message: reason.into(), details: serde_json::json!({"operation":"objects.hit_test","reason":reason}) },
                 }
             })?;
@@ -1357,6 +1405,17 @@ impl ApplicationService {
                 }
                 let document_id = required_document_id(request)?;
                 serde_json::to_value(self.document_get(document_id)?).map_err(serialize_error)?
+            }
+            "render.snapshot" => {
+                parse_empty_params(&request.params)?;
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation",
+                    ));
+                }
+                serde_json::to_value(self.render_snapshot(required_document_id(request)?)?)
+                    .map_err(serialize_error)?
             }
             "layers.list" => {
                 parse_empty_params(&request.params)?;

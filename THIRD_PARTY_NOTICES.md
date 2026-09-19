@@ -37,3 +37,18 @@ which remains outside the current supported subset.
 The separately installed local gerbv is used as a reference process only; it is not linked,
 copied, or distributed with the application. Its actual version and binary hash accompany
 the reference results. Differences and unsupported reference behavior remain in the report.
+
+## S2-A.3 native dialogs
+
+App-only direct dependencies, already present transitively in Cargo.lock:
+
+| Dependency | Locked version | Source | License | Use / alternative / platform |
+|---|---|---|---|---|
+| objc2 | 0.6.4 | https://github.com/madsmtm/objc2 | MIT | Main-thread marker and retained AppKit objects; macOS only. Avoid hand-written Objective-C FFI. |
+| objc2-app-kit | 0.3.2 | https://github.com/madsmtm/objc2 | Zlib OR Apache-2.0 OR MIT | NSOpenPanel/NSSavePanel; macOS only, minimal features. Avoid an additional file-dialog framework. |
+| objc2-foundation | 0.3.2 | https://github.com/madsmtm/objc2 | MIT | NSString/NSURL conversion; macOS only. |
+
+API signatures and feature gates checked against the locked crates' generated official
+bindings in the local Cargo source cache; license declarations inspected in each locked Cargo manifest.
+No third-party source copied. The UI loads a local macOS system CJK font in memory;
+no user/system font is copied into Git, source archives or app bundles.

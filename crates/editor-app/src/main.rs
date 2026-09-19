@@ -1,443 +1,832 @@
-use editor_core::{DocumentSnapshot, Geometry};
-use editor_service::{AnalysisResult, ApplicationService};
-use eframe::egui::{self, Color32, Rect, Stroke, Vec2};
+#[cfg(test)]
+mod app_tests;
+mod camera;
+mod display;
+#[cfg(test)]
+mod display_tests;
+mod gpu;
+mod platform;
+mod state;
 
-const SAMPLE: &[u8] = include_bytes!("../../../fixtures/synthetic/s0_polarity.gbr");
+use camera::Camera;
+use eframe::egui::{self, Color32, RichText, Vec2};
+use state::{Action, Model, View};
+use std::{
+    path::Path,
+    sync::mpsc::{self, Receiver, SyncSender},
+    time::Instant,
+};
 
-struct S0App {
-    service: ApplicationService,
-    snapshot: DocumentSnapshot,
-    analysis: AnalysisResult,
-    zoom: f32,
-    origin: Vec2,
-    adapter_info: String,
-    target_format: egui_wgpu::wgpu::TextureFormat,
+struct EditorApp {
+    tx: SyncSender<(u64, Action)>,
+    rx: Receiver<(u64, View)>,
+    view: View,
+    busy: bool,
+    sequence: u64,
+    camera: Camera,
+    fit: bool,
+    dx: String,
+    dy: String,
+    layer: Option<String>,
+    rename: String,
+    close_prompt: bool,
+    quit_after_close: bool,
+    allow_quit: bool,
+    format: egui_wgpu::wgpu::TextureFormat,
+    adapter: String,
+    ui_error: Option<String>,
+    last_title: String,
+    canvas_rect: egui::Rect,
+    display_error: Option<String>,
 }
-
-impl S0App {
-    fn new(cc: &eframe::CreationContext<'_>) -> Result<Self, String> {
-        let mut service = ApplicationService::new();
-        service
-            .open_demo_s0("s0-demo", SAMPLE)
-            .map_err(|error| error.to_string())?;
-        let snapshot = service
-            .snapshot("s0-demo")
-            .map_err(|error| error.to_string())?;
-        let analysis = service
-            .analyze_s0("s0-demo")
-            .map_err(|error| error.to_string())?;
-        let adapter_info = cc
+impl EditorApp {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        cc.egui_ctx.set_visuals(egui::Visuals::dark());
+        // System font used in memory only; never copied into source or distribution.
+        #[cfg(target_os = "macos")]
+        for path in [
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+        ] {
+            if let Ok(bytes) = std::fs::read(path) {
+                let mut fonts = egui::FontDefinitions::default();
+                fonts.font_data.insert(
+                    "system-cjk".into(),
+                    egui::FontData::from_owned(bytes).into(),
+                );
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .push("system-cjk".into());
+                cc.egui_ctx.set_fonts(fonts);
+                break;
+            }
+        }
+        let (tx, request) = mpsc::sync_channel::<(u64, Action)>(1);
+        let (reply, rx) = mpsc::sync_channel(1);
+        let ctx = cc.egui_ctx.clone();
+        std::thread::spawn(move || {
+            let mut model = Model::default();
+            while let Ok((id, action)) = request.recv() {
+                let start = Instant::now();
+                model.run(action);
+                eprintln!("gui_job={id} elapsed_ms={}", start.elapsed().as_millis());
+                if reply.send((id, model.view.clone())).is_err() {
+                    break;
+                }
+                ctx.request_repaint();
+            }
+        });
+        let gpu = cc
             .wgpu_render_state
             .as_ref()
-            .map(|state| {
-                let info = state.adapter.get_info();
-                format!(
-                    "{} / {:?} / {:?}",
-                    info.name, info.backend, info.device_type
-                )
-            })
-            .unwrap_or_else(|| "wgpu adapter unavailable".into());
-        let target_format = cc
-            .wgpu_render_state
-            .as_ref()
-            .map(|state| state.target_format)
-            .unwrap_or(egui_wgpu::wgpu::TextureFormat::Bgra8UnormSrgb);
-        Ok(Self {
-            service,
-            snapshot,
-            analysis,
-            zoom: 18.0,
-            origin: Vec2::ZERO,
-            adapter_info,
-            target_format,
-        })
+            .expect("eframe wgpu renderer required");
+        let adapter = format!("{:?}", gpu.adapter.get_info());
+        eprintln!("RCam S2-A.3 native GPU: {adapter}");
+        Self {
+            tx,
+            rx,
+            view: View::default(),
+            busy: false,
+            sequence: 0,
+            camera: Camera::default(),
+            fit: false,
+            dx: "0".into(),
+            dy: "0".into(),
+            layer: None,
+            rename: String::new(),
+            close_prompt: false,
+            quit_after_close: false,
+            allow_quit: false,
+            format: gpu.target_format,
+            adapter,
+            ui_error: None,
+            last_title: String::new(),
+            canvas_rect: egui::Rect::NOTHING,
+            display_error: None,
+        }
+    }
+    fn send(&mut self, a: Action) {
+        if self.busy {
+            return;
+        }
+        self.sequence += 1;
+        match self.tx.try_send((self.sequence, a)) {
+            Ok(()) => {
+                self.busy = true;
+                self.ui_error = None;
+            }
+            Err(e) => self.ui_error = Some(format!("后台任务不可用：{e}")),
+        }
+    }
+    fn usable(&self) -> bool {
+        !self.busy
+            && self.view.info.is_some()
+            && self.view.blocked.is_none()
+            && self.view.scene.is_some()
+            && !self.fit
+            && self.display_error.is_none()
+    }
+    fn open(&mut self) {
+        match platform::choose_path(false, "") {
+            Ok(Some(path)) => self.send(Action::Open(path)),
+            Ok(None) => {}
+            Err(e) => self.ui_error = Some(e),
+        }
+    }
+    fn save(&mut self) {
+        if let Some(l) = self.layer.clone() {
+            let name = self
+                .view
+                .info
+                .as_ref()
+                .map(|d| {
+                    format!(
+                        "{}_edited.gbr",
+                        Path::new(&d.source_path)
+                            .file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                    )
+                })
+                .unwrap_or("edited.gbr".into());
+            match platform::choose_path(true, &name) {
+                Ok(Some(path)) => self.send(Action::Save(path, l, None)),
+                Ok(None) => {}
+                Err(e) => self.ui_error = Some(e),
+            }
+        }
+    }
+    fn close(&mut self, quit: bool) {
+        self.quit_after_close = quit;
+        if self.view.info.as_ref().is_some_and(|d| d.dirty) {
+            self.close_prompt = true;
+        } else if self.view.info.is_some() {
+            self.send(Action::Close(false));
+        } else if quit {
+            self.allow_quit = true;
+        }
+    }
+    fn history_buttons(&mut self, ui: &mut egui::Ui) {
+        let undo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0);
+        let redo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.redo_entries > 0);
+        if ui
+            .add_enabled(undo, egui::Button::new("撤销  ⌘Z"))
+            .clicked()
+        {
+            self.send(Action::History(false));
+        }
+        if ui
+            .add_enabled(redo, egui::Button::new("重做  ⇧⌘Z"))
+            .clicked()
+        {
+            self.send(Action::History(true));
+        }
     }
 }
-
-impl eframe::App for S0App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("s0_status").show(ctx, |ui| {
-            ui.heading("Gerber editor - S0 validation");
-            ui.label("S0 read-only technology demo");
-            ui.label("No editing or export capability");
-            ui.label(format!("wgpu adapter: {}", self.adapter_info));
-        });
-        egui::SidePanel::left("s0_capabilities")
-            .resizable(false)
-            .default_width(250.0)
-            .show(ctx, |ui| {
-                ui.heading("S0 capabilities");
-                ui.label(format!(
-                    "API v{} · revision {}",
-                    self.service.capabilities().api_version,
-                    self.snapshot.revision
-                ));
-                let object_total: usize = self
-                    .snapshot
+impl eframe::App for EditorApp {
+    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if let Ok((id, view)) = self.rx.try_recv()
+            && id == self.sequence
+        {
+            let changed = self.view.info.as_ref().map(|d| &d.document_id)
+                != view.info.as_ref().map(|d| &d.document_id);
+            self.view = view;
+            self.busy = false;
+            if changed {
+                self.fit = self.view.info.is_some();
+                self.layer = self.view.layers.first().map(|l| l.layer_id.clone());
+                self.rename = self
+                    .view
                     .layers
-                    .iter()
-                    .map(|layer| layer.objects.len())
-                    .sum();
-                ui.label(format!("objects (snapshot total): {}", object_total));
-                ui.separator();
-                ui.label("Supported: FS / MO / C aperture / LPD-LPC / D03");
-                ui.label("Rejected: D01/D02, Region, AM/AB/SR, export");
-                ui.separator();
-                ui.label("Coverage samples (mm)");
-                for sample in &self.analysis.samples {
-                    ui.label(format!(
-                        "({:.1}, {:.1}) -> {}",
-                        sample.point.x_mm,
-                        sample.point.y_mm,
-                        if sample.covered { "Dark" } else { "Clear" }
-                    ));
+                    .first()
+                    .map_or(String::new(), |l| l.display_name.clone());
+                self.dx = "0".into();
+                self.dy = "0".into();
+            }
+            if self.quit_after_close && self.view.info.is_none() {
+                self.allow_quit = true;
+            }
+        }
+        if ctx.input(|i| i.viewport().close_requested()) && !self.allow_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            if !self.busy {
+                self.close(true);
+            }
+        }
+        if self.allow_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        let title = self.view.info.as_ref().map_or("RCam".into(), |d| {
+            format!(
+                "RCam — {}{}",
+                Path::new(&d.source_path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
+                if d.dirty { " *" } else { "" }
+            )
+        });
+        if self.last_title != title {
+            self.last_title = title.clone();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        }
+        if !self.busy {
+            let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+            if dropped.len() == 1 {
+                if let Some(p) = &dropped[0].path {
+                    self.send(Action::Open(p.clone()));
                 }
-                ui.add(egui::Slider::new(&mut self.zoom, 8.0..=50.0).text("zoom"));
+            } else if dropped.len() > 1 {
+                self.ui_error = Some("本阶段每次打开一个文件，请拖入单个 Gerber。".into());
+            }
+        }
+        // Validate the current view before enabling manufacturing actions.
+        self.display_error = self.view.scene.as_ref().and_then(|scene| {
+            if !self.canvas_rect.is_positive() {
+                return Some("正在准备画布".into());
+            }
+            if self.camera.scale * f64::from(ctx.pixels_per_point()) > self.view.render_ppm {
+                return Some("正在准备当前缩放的完整图形".into());
+            }
+            gpu::uniforms(
+                scene,
+                self.camera,
+                self.canvas_rect,
+                ctx.pixels_per_point(),
+                self.view
+                    .selected
+                    .as_ref()
+                    .map(|o| o.object.object_id.as_str()),
+            )
+            .err()
+        });
+        let modal_open = self.close_prompt
+            || self.view.error.as_ref().is_some_and(|e| {
+                e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
             });
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let available = ui.available_size();
-            let (response, painter) = ui.allocate_painter(available, egui::Sense::drag());
-            self.origin += canvas_pan_delta(&response);
-            let rect = response.rect;
-            painter.rect_stroke(
-                rect,
-                0.0,
-                Stroke::new(1.0, Color32::from_gray(90)),
-                egui::StrokeKind::Inside,
-            );
-            match gpu_objects(&self.snapshot) {
-                Ok((objects, object_count)) => {
-                    let callback = egui_wgpu::Callback::new_paint_callback(
-                        rect,
-                        ClipCallback {
-                            zoom: self.zoom,
-                            pan: self.origin,
-                            rect,
-                            format: self.target_format,
-                            object_count,
-                            objects,
-                        },
-                    );
-                    painter.add(egui::Shape::Callback(callback));
+        if !ctx.wants_keyboard_input() && !self.busy && !modal_open {
+            ctx.input_mut(|i| {
+                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) {
+                    self.open();
                 }
-                Err(error) => {
+                if i.consume_key(
+                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                    egui::Key::S,
+                ) && self.usable()
+                {
+                    self.save();
+                }
+                if i.consume_key(
+                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                    egui::Key::Z,
+                ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
+                {
+                    if self.view.info.as_ref().is_some_and(|d| d.redo_entries > 0) {
+                        self.send(Action::History(true));
+                    }
+                } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)
+                    && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0)
+                {
+                    self.send(Action::History(false));
+                }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::F) {
+                    self.fit = true;
+                }
+            });
+        }
+        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                ui.strong("RCam");
+                ui.separator();
+                ui.menu_button("文件", |ui| {
+                    if ui
+                        .add_enabled(!self.busy, egui::Button::new("打开…  ⌘O"))
+                        .clicked()
+                    {
+                        self.open();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(self.usable(), egui::Button::new("另存为当前图层…  ⇧⌘S"))
+                        .clicked()
+                    {
+                        self.save();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(
+                            !self.busy && self.view.info.is_some(),
+                            egui::Button::new("关闭文件…"),
+                        )
+                        .clicked()
+                    {
+                        self.close(false);
+                        ui.close();
+                    }
+                });
+                ui.menu_button("编辑", |ui| {
+                    self.history_buttons(ui);
+                });
+                ui.menu_button("视图", |ui| {
+                    if ui.button("适合窗口  F").clicked() {
+                        self.fit = true;
+                        ui.close();
+                    }
+                });
+                ui.menu_button("帮助", |ui| {
+                    ui.label("S2-A.3 · Mac 单文件编辑预览");
+                    ui.label("几何单选包括 Clear 和锁定对象；仅数值移动。");
+                    ui.label("中键拖动 / 双指滚动平移；捏合 / Cmd+滚动缩放。");
+                    ui.label("另存为必须选择新文件名。Windows 延后验收。");
+                    ui.separator();
+                    ui.label(&self.adapter);
+                });
+            });
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(!self.busy, egui::Button::new("打开…"))
+                    .clicked()
+                {
+                    self.open();
+                }
+                if ui.button("适合窗口").clicked() {
+                    self.fit = true;
+                }
+                ui.separator();
+                self.history_buttons(ui);
+                ui.separator();
+                ui.label(RichText::new("几何单选").color(Color32::from_rgb(100, 206, 183)));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(self.usable(), egui::Button::new("另存为…"))
+                        .clicked()
+                    {
+                        self.save();
+                    }
+                    if self.busy {
+                        ui.spinner();
+                        ui.label("处理中…");
+                    }
+                });
+            });
+        });
+        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if let Some(d) = &self.view.info {
+                    ui.label(format!(
+                        "制造版本 {}  ·  工作区 {}",
+                        d.revision, d.workspace_revision
+                    ));
+                    ui.separator();
+                }
+                ui.label(format!("{:.2} 点/mm", self.camera.scale));
+                if let Some(o) = &self.view.selected {
+                    ui.label(format!("选中 {}", o.object.object_id));
+                }
+                ui.label(&self.view.message);
+            });
+            if let Some(error) = &self.view.error {
+                ui.colored_label(
+                    Color32::LIGHT_RED,
+                    format!("{} · {}", error.code, error.message),
+                );
+                ui.collapsing("错误详情", |ui| {
+                    ui.label(error.details.to_string());
+                });
+            }
+            if let Some(e) = self.ui_error.clone() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.colored_label(Color32::LIGHT_RED, e);
+                    if ui.small_button("关闭提示").clicked() {
+                        self.ui_error = None;
+                    }
+                });
+            }
+        });
+        egui::SidePanel::left("layers")
+            .default_width(210.)
+            .width_range(170.0..=320.)
+            .show(ctx, |ui| {
+                ui.add_space(8.);
+                ui.heading("图层");
+                ui.add_space(8.);
+                let layers = self.view.layers.clone();
+                for l in layers {
+                    ui.group(|ui| {
+                        if ui
+                            .selectable_label(
+                                self.layer.as_ref() == Some(&l.layer_id),
+                                &l.display_name,
+                            )
+                            .clicked()
+                        {
+                            self.layer = Some(l.layer_id.clone());
+                            self.rename = l.display_name.clone();
+                        }
+                        ui.label(format!("{} 个对象", l.object_count));
+                        let mut visible = l.visible;
+                        let mut locked = l.locked;
+                        ui.add_enabled_ui(!self.busy, |ui| {
+                            ui.horizontal(|ui| {
+                                let v = ui.checkbox(&mut visible, "显示").changed();
+                                let k = ui.checkbox(&mut locked, "锁定").changed();
+                                if (v || k)
+                                    && let Some(d) = &self.view.info
+                                {
+                                    self.send(Action::Layer(editor_service::LayerUpdateParams {
+                                        layer_id: l.layer_id.clone(),
+                                        expected_workspace_revision: d.workspace_revision.clone(),
+                                        display_name: None,
+                                        visible: Some(visible),
+                                        locked: Some(locked),
+                                    }));
+                                }
+                            });
+                        });
+                    });
+                    ui.add_space(4.);
+                }
+                if self.layer.is_some() {
+                    ui.separator();
+                    ui.label("显示名称");
+                    ui.add_enabled(
+                        !self.busy,
+                        egui::TextEdit::singleline(&mut self.rename).desired_width(f32::INFINITY),
+                    );
+                    if ui
+                        .add_enabled(!self.busy, egui::Button::new("应用名称"))
+                        .clicked()
+                        && let (Some(d), Some(layer)) = (&self.view.info, &self.layer)
+                    {
+                        self.send(Action::Layer(editor_service::LayerUpdateParams {
+                            layer_id: layer.clone(),
+                            expected_workspace_revision: d.workspace_revision.clone(),
+                            display_name: Some(self.rename.clone()),
+                            visible: None,
+                            locked: None,
+                        }));
+                    }
+                    ui.label(
+                        RichText::new("显隐、锁定和名称仅在本次会话保留。")
+                            .small()
+                            .weak(),
+                    );
+                }
+            });
+        egui::SidePanel::right("properties")
+            .default_width(260.)
+            .width_range(230.0..=380.)
+            .show(ctx, |ui| {
+                ui.add_space(8.);
+                ui.heading("对象属性");
+                ui.add_space(8.);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    if let Some(o) = self.view.selected.clone() {
+                        ui.label(RichText::new(&o.object.object_id).monospace());
+                        let layer = self.view.layers.iter().find(|l| l.layer_id == o.layer_id);
+                        ui.label(format!(
+                            "图层：{}",
+                            layer.map_or(o.layer_id.as_str(), |l| l.display_name.as_str())
+                        ));
+                        ui.label(format!("曝光：{:?}", o.object.exposure));
+                        ui.label(format!("来源：{:?}", o.object.origin));
+                        geometry_properties(ui, &o.object.geometry);
+                        if let editor_core::SemanticGeometry::Flash { aperture_id, .. } =
+                            &o.object.geometry
+                        {
+                            ui.label(format!("光圈：{aperture_id}"));
+                            if let Some(a) =
+                                self.view.apertures.iter().find(|a| &a.id == aperture_id)
+                            {
+                                aperture_properties(ui, &a.shape);
+                            }
+                        }
+                        let locked = layer.is_some_and(|l| l.locked);
+                        ui.separator();
+                        ui.strong("数值移动");
+                        if locked {
+                            ui.colored_label(Color32::YELLOW, "图层已锁定，请先解锁再移动。");
+                        }
+                        let mut enter = false;
+                        ui.add_enabled_ui(self.usable() && !locked, |ui| {
+                            ui.label("ΔX · mm");
+                            let x = ui.add(
+                                egui::TextEdit::singleline(&mut self.dx)
+                                    .desired_width(f32::INFINITY),
+                            );
+                            ui.label("ΔY · mm");
+                            let y = ui.add(
+                                egui::TextEdit::singleline(&mut self.dy)
+                                    .desired_width(f32::INFINITY),
+                            );
+                            enter = (x.lost_focus() || y.lost_focus())
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            if ui.button("应用位移").clicked() {
+                                enter = true;
+                            }
+                        });
+                        if enter {
+                            self.send(Action::Move(self.dx.clone(), self.dy.clone()));
+                        }
+                    } else {
+                        ui.label("点击图形查看对象，并输入毫米位移。");
+                    }
+                    ui.separator();
+                    if let Some(d) = &self.view.info {
+                        ui.strong(if d.dirty {
+                            "存在未保存的制造修改"
+                        } else {
+                            "制造内容未修改"
+                        });
+                        ui.label("打开来源");
+                        ui.label(&d.source_path);
+                        if let Some(p) = &d.last_saved_path {
+                            ui.add_space(6.);
+                            ui.label("最后另存为");
+                            ui.label(p);
+                        }
+                    }
+                });
+            });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(Color32::from_rgb(14, 18, 22)))
+            .show(ctx, |ui| {
+                let mut cursor_label = None;
+                let (r, painter) =
+                    ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
+                let rect = r.rect;
+                self.canvas_rect = rect;
+                if self.fit {
+                    self.camera.fit(self.view.bounds, rect);
+                    self.fit = false;
+                }
+                if r.dragged_by(egui::PointerButton::Middle)
+                    || r.drag_stopped_by(egui::PointerButton::Middle)
+                {
+                    self.camera.pan(ctx.input(|i| i.pointer.delta()));
+                }
+                if r.hovered()
+                    && let Some(pos) = r.hover_pos()
+                {
+                    let (scroll, zoom) = ctx.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
+
+                    self.camera.pan(scroll);
+                    self.camera.zoom(f64::from(zoom), pos, rect);
+                    let w = self.camera.world(pos, rect);
+                    cursor_label = Some(format!("X {:.6}  Y {:.6} mm", w.x_mm, w.y_mm));
+                    if r.clicked_by(egui::PointerButton::Primary) && self.usable() {
+                        self.send(Action::Select(
+                            w,
+                            self.camera.tolerance(ctx.pixels_per_point()),
+                        ));
+                    }
+                }
+                let ppm = self.camera.scale * f64::from(ctx.pixels_per_point());
+                let needs_lod = self.view.info.is_some()
+                    && (ppm > self.view.render_ppm
+                        || (self.view.blocked.is_some() && ppm < self.view.render_ppm / 2.));
+                if needs_lod && !self.busy {
+                    self.send(Action::Rebuild(2f64.powf(ppm.log2().ceil())));
+                }
+                if let Some(scene) = &self.view.scene
+                    && !needs_lod
+                {
+                    match gpu::uniforms(
+                        scene,
+                        self.camera,
+                        rect,
+                        ctx.pixels_per_point(),
+                        self.view
+                            .selected
+                            .as_ref()
+                            .map(|o| o.object.object_id.as_str()),
+                    ) {
+                        Ok(uniforms) => {
+                            self.display_error = None;
+                            painter.add(egui_wgpu::Callback::new_paint_callback(
+                                rect,
+                                gpu::Callback {
+                                    scene: scene.clone(),
+                                    uniforms,
+                                    format: self.format,
+                                },
+                            ));
+                        }
+                        Err(e) => {
+                            self.display_error = Some(e);
+                        }
+                    }
+                }
+                if let Some(label) = cursor_label {
+                    painter.text(
+                        rect.left_bottom() + Vec2::new(12., -14.),
+                        egui::Align2::LEFT_BOTTOM,
+                        label,
+                        egui::FontId::monospace(12.),
+                        Color32::LIGHT_GRAY,
+                    );
+                }
+                if let Some(o) = &self.view.selected
+                    && let editor_core::SemanticGeometry::Flash { center, .. } = o.object.geometry
+                {
+                    let p = self.camera.screen(center, rect);
+                    if rect.contains(p) {
+                        painter.circle_stroke(
+                            p,
+                            3.,
+                            egui::Stroke::new(1., Color32::from_rgb(255, 185, 50)),
+                        );
+                    }
+                }
+                let message =
+                    if let Some(e) = self.view.blocked.as_ref().or(self.display_error.as_ref()) {
+                        format!("无法安全显示 / 编辑\n{e}\n可撤销、缩小视图或关闭文件")
+                    } else if needs_lod {
+                        "正在准备当前缩放的完整图形…".into()
+                    } else if self.view.info.is_none() {
+                        "打开 Gerber 开始编辑\n使用“打开…”或从 Finder 拖入单个文件".into()
+                    } else if self.view.layers.iter().all(|l| !l.visible) {
+                        "所有图层已隐藏".into()
+                    } else {
+                        String::new()
+                    };
+                if !message.is_empty() {
                     painter.text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
-                        error,
-                        egui::TextStyle::Body.resolve(ui.style()),
-                        Color32::RED,
+                        message,
+                        egui::FontId::proportional(17.),
+                        Color32::LIGHT_GRAY,
                     );
                 }
-            }
-            painter.text(
-                rect.left_top() + Vec2::new(12.0, 12.0),
-                egui::Align2::LEFT_TOP,
-                "Drag to pan · Slider controls zoom · Clip is canvas-local",
-                egui::TextStyle::Small.resolve(ui.style()),
-                Color32::LIGHT_GRAY,
-            );
-        });
-    }
-}
-
-fn canvas_pan_delta(response: &egui::Response) -> Vec2 {
-    if response.dragged() || response.drag_stopped() {
-        // drag_delta() becomes zero on release, even if that frame also moved.
-        response.ctx.input(|input| input.pointer.delta())
-    } else {
-        Vec2::ZERO
-    }
-}
-
-struct ClipCallback {
-    zoom: f32,
-    pan: Vec2,
-    rect: Rect,
-    format: egui_wgpu::wgpu::TextureFormat,
-    object_count: u32,
-    objects: [[f32; 4]; 48],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct CanvasUniforms {
-    canvas_px: [f32; 2],
-    viewport_min_px: [f32; 2],
-    pixels_per_point: f32,
-    zoom: f32,
-    pan: [f32; 2],
-    object_count: u32,
-    _padding: u32,
-    _padding2: [u32; 2],
-    objects: [[f32; 4]; 48],
-}
-
-// S0 has no floating origin yet. Refuse an unrepresentable preview while
-// preserving the f64 document. This is not an import/manufacturing size limit.
-fn checked_gpu_mm(value: f64, feature: f64) -> Result<f32, String> {
-    let converted = value as f32;
-    let tolerance = editor_core::EPSILON_MM.min(feature / 16.0);
-    if !value.is_finite()
-        || !feature.is_finite()
-        || feature < f64::from(f32::MIN_POSITIVE).sqrt() * 16.0
-        || !converted.is_finite()
-        || converted.abs() > 1e18
-        || (value != 0.0 && !converted.is_normal())
-        || (f64::from(converted) - value).abs() > tolerance
-        || f64::from(converted.abs()) * f64::from(f32::EPSILON) > feature / 16.0
-    {
-        return Err("S0 GPU precision cannot preserve geometry; preview refused".into());
-    }
-    Ok(converted)
-}
-
-fn gpu_objects(snapshot: &DocumentSnapshot) -> Result<([[f32; 4]; 48], u32), String> {
-    let mut objects = [[0.0; 4]; 48];
-    let mut count = 0_usize;
-    for (layer_index, layer) in snapshot.layers.iter().enumerate() {
-        if layer_index >= 4 {
-            return Err("S0 GPU preview limit is 4 layers; preview refused".into());
+                painter.text(
+                    rect.left_top() + Vec2::new(12., 12.),
+                    egui::Align2::LEFT_TOP,
+                    "几何单选  ·  中键 / 双指平移  ·  捏合缩放",
+                    egui::FontId::proportional(12.),
+                    Color32::LIGHT_GRAY,
+                );
+            });
+        if self.close_prompt {
+            egui::Modal::new(egui::Id::new("close-confirmation")).show(ctx, |ui| {
+                ui.heading("保留未保存修改？");
+                ui.label("当前制造修改尚未保存。放弃后无法恢复。");
+                ui.horizontal(|ui| {
+                    if ui.button("取消").clicked() {
+                        self.close_prompt = false;
+                        self.quit_after_close = false;
+                    }
+                    if ui.button("先另存为…").clicked() {
+                        self.close_prompt = false;
+                        self.quit_after_close = false;
+                        self.save();
+                    }
+                    if ui.button("放弃修改并关闭").clicked() {
+                        self.close_prompt = false;
+                        self.send(Action::Close(true));
+                    }
+                });
+            });
         }
-        for object in &layer.objects {
-            if count + 2 >= objects.len() {
-                return Err("S0 GPU preview limit is 16 objects; preview refused".into());
-            }
-            match object.geometry {
-                Geometry::CircleFlash { center, aperture } => {
-                    editor_core::CircleAperture::new(
-                        aperture.diameter_mm,
-                        aperture.hole_diameter_mm,
+        if let Some(e) = self.view.error.clone()
+            && e.code == "CONFIRMATION_REQUIRED"
+            && e.details.get("categories").is_some()
+        {
+            egui::Modal::new(egui::Id::new("metadata-confirmation")).show(ctx, |ui| {
+                ui.heading("确认导出为几何文件");
+                ui.label("导出将移除以下来源元数据：");
+                ui.label(e.details["categories"].to_string());
+                if ui.button("取消").clicked() {
+                    self.view.error = None;
+                }
+                if ui.button("确认移除并导出").clicked()
+                    && self.view.info.as_ref().is_some_and(|d| {
+                        e.details["gui_document_id"] == d.document_id
+                            && e.details["gui_revision"] == d.revision
+                    })
+                    && let (Some(path), Some(layer)) = (
+                        e.details["gui_target_path"].as_str(),
+                        e.details["gui_layer_id"].as_str(),
                     )
-                    .map_err(|error| error.to_string())?;
-                    let radius = aperture.diameter_mm / 2.0;
-                    let hole = aperture.hole_diameter_mm.unwrap_or(0.0) / 2.0;
-                    let feature = if hole > 0.0 {
-                        hole.min(radius - hole)
-                    } else {
-                        radius
-                    };
-                    let x = checked_gpu_mm(center.x_mm, feature)?;
-                    let y = checked_gpu_mm(center.y_mm, feature)?;
-                    let radius = checked_gpu_mm(radius, feature)?;
-                    let hole = checked_gpu_mm(hole, feature)?;
-                    if aperture.hole_diameter_mm.is_some() && (hole <= 0.0 || hole >= radius) {
-                        return Err(
-                            "S0 GPU preview cannot preserve aperture hole; preview refused".into(),
-                        );
-                    }
-                    objects[count] = [x, y, 0.0, layer_index as f32];
-                    objects[count + 1] = [radius, hole, 0.0, 0.0];
+                {
+                    let categories = serde_json::from_value(e.details["categories"].clone()).ok();
+                    self.view.error = None;
+                    self.send(Action::Save(path.into(), layer.into(), categories));
                 }
-                Geometry::Line {
-                    start,
-                    end,
-                    width_mm,
-                } => {
-                    if !width_mm.is_finite()
-                        || width_mm <= 0.0
-                        || !start.is_finite()
-                        || !end.is_finite()
-                    {
-                        return Err("S0 GPU preview requires finite valid line geometry".into());
-                    }
-                    let length = start.distance_mm(end);
-                    let feature = if length > editor_core::EPSILON_MM {
-                        (width_mm / 2.0).min(length)
-                    } else {
-                        width_mm / 2.0
-                    };
-                    let start_x = checked_gpu_mm(start.x_mm, feature)?;
-                    let start_y = checked_gpu_mm(start.y_mm, feature)?;
-                    let end_x = checked_gpu_mm(end.x_mm, feature)?;
-                    let end_y = checked_gpu_mm(end.y_mm, feature)?;
-                    let radius = checked_gpu_mm(width_mm / 2.0, feature)?;
-                    let dx = end_x - start_x;
-                    let dy = end_y - start_y;
-                    if ((dx * dx + dy * dy) <= 1e-12) != (length <= editor_core::EPSILON_MM) {
-                        return Err(
-                            "S0 GPU rounding changes line degeneracy; preview refused".into()
-                        );
-                    }
-                    objects[count] = [start_x, start_y, 1.0, layer_index as f32];
-                    objects[count + 1] = [end_x, end_y, radius, 0.0];
-                }
-            }
-            objects[count + 2][0] = match object.exposure {
-                editor_core::Exposure::Dark => 1.0,
-                editor_core::Exposure::Clear => 0.0,
-            };
-            count += 3;
-        }
-    }
-    Ok((objects, (count / 3) as u32))
-}
-
-struct CanvasGpu {
-    pipeline: egui_wgpu::wgpu::RenderPipeline,
-    uniform_buffer: egui_wgpu::wgpu::Buffer,
-    bind_group: egui_wgpu::wgpu::BindGroup,
-}
-
-impl egui_wgpu::CallbackTrait for ClipCallback {
-    fn prepare(
-        &self,
-        device: &egui_wgpu::wgpu::Device,
-        queue: &egui_wgpu::wgpu::Queue,
-        _screen_descriptor: &egui_wgpu::ScreenDescriptor,
-        _egui_encoder: &mut egui_wgpu::wgpu::CommandEncoder,
-        callback_resources: &mut egui_wgpu::CallbackResources,
-    ) -> Vec<egui_wgpu::wgpu::CommandBuffer> {
-        use bytemuck::Zeroable;
-        use egui_wgpu::wgpu::util::DeviceExt;
-        if callback_resources.get::<CanvasGpu>().is_none() {
-            let shader = device.create_shader_module(egui_wgpu::wgpu::ShaderModuleDescriptor {
-                label: Some("s0-canvas-shader"),
-                source: egui_wgpu::wgpu::ShaderSource::Wgsl(include_str!("canvas.wgsl").into()),
             });
-            let uniform_buffer =
-                device.create_buffer_init(&egui_wgpu::wgpu::util::BufferInitDescriptor {
-                    label: Some("s0-canvas-uniform"),
-                    contents: bytemuck::bytes_of(&CanvasUniforms::zeroed()),
-                    usage: egui_wgpu::wgpu::BufferUsages::UNIFORM
-                        | egui_wgpu::wgpu::BufferUsages::COPY_DST,
-                });
-            let bind_group_layout =
-                device.create_bind_group_layout(&egui_wgpu::wgpu::BindGroupLayoutDescriptor {
-                    label: Some("s0-canvas-bind-layout"),
-                    entries: &[egui_wgpu::wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: egui_wgpu::wgpu::ShaderStages::FRAGMENT
-                            | egui_wgpu::wgpu::ShaderStages::VERTEX,
-                        ty: egui_wgpu::wgpu::BindingType::Buffer {
-                            ty: egui_wgpu::wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                });
-            let bind_group = device.create_bind_group(&egui_wgpu::wgpu::BindGroupDescriptor {
-                label: Some("s0-canvas-bind-group"),
-                layout: &bind_group_layout,
-                entries: &[egui_wgpu::wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                }],
-            });
-            let pipeline_layout =
-                device.create_pipeline_layout(&egui_wgpu::wgpu::PipelineLayoutDescriptor {
-                    label: Some("s0-canvas-pipeline-layout"),
-                    bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
-                });
-            let pipeline =
-                device.create_render_pipeline(&egui_wgpu::wgpu::RenderPipelineDescriptor {
-                    label: Some("s0-canvas-pipeline"),
-                    layout: Some(&pipeline_layout),
-                    vertex: egui_wgpu::wgpu::VertexState {
-                        module: &shader,
-                        entry_point: Some("vs_main"),
-                        buffers: &[],
-                        compilation_options: Default::default(),
-                    },
-                    fragment: Some(egui_wgpu::wgpu::FragmentState {
-                        module: &shader,
-                        entry_point: Some("fs_main"),
-                        targets: &[Some(egui_wgpu::wgpu::ColorTargetState {
-                            format: self.format,
-                            blend: None,
-                            write_mask: egui_wgpu::wgpu::ColorWrites::ALL,
-                        })],
-                        compilation_options: Default::default(),
-                    }),
-                    primitive: Default::default(),
-                    depth_stencil: None,
-                    multisample: Default::default(),
-                    multiview: None,
-                    cache: None,
-                });
-            callback_resources.insert(CanvasGpu {
-                pipeline,
-                uniform_buffer,
-                bind_group,
-            });
-        }
-        let Some(gpu) = callback_resources.get::<CanvasGpu>() else {
-            return Vec::new();
-        };
-        let uniform = CanvasUniforms {
-            canvas_px: [
-                self.rect.width() * _screen_descriptor.pixels_per_point,
-                self.rect.height() * _screen_descriptor.pixels_per_point,
-            ],
-            viewport_min_px: [
-                self.rect.min.x * _screen_descriptor.pixels_per_point,
-                self.rect.min.y * _screen_descriptor.pixels_per_point,
-            ],
-            pixels_per_point: _screen_descriptor.pixels_per_point,
-            zoom: self.zoom,
-            pan: [self.pan.x, self.pan.y],
-            object_count: self.object_count,
-            _padding: 0,
-            _padding2: [0; 2],
-            objects: self.objects,
-        };
-        queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        info: egui::PaintCallbackInfo,
-        render_pass: &mut egui_wgpu::wgpu::RenderPass<'static>,
-        callback_resources: &egui_wgpu::CallbackResources,
-    ) {
-        let viewport = info.viewport_in_pixels();
-        let clip = info.clip_rect_in_pixels();
-        let x = viewport.left_px.max(clip.left_px).max(0) as u32;
-        let y = viewport.top_px.max(clip.top_px).max(0) as u32;
-        let right = (viewport.left_px + viewport.width_px)
-            .min(clip.left_px + clip.width_px)
-            .max(0) as u32;
-        let bottom = (viewport.top_px + viewport.height_px)
-            .min(clip.top_px + clip.height_px)
-            .max(0) as u32;
-        let width = right.saturating_sub(x);
-        let height = bottom.saturating_sub(y);
-        if width == 0 || height == 0 {
-            return;
-        }
-        render_pass.set_scissor_rect(x, y, width, height);
-        if let Some(gpu) = callback_resources.get::<CanvasGpu>() {
-            render_pass.set_pipeline(&gpu.pipeline);
-            render_pass.set_bind_group(0, &gpu.bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
         }
     }
 }
-
-fn main() -> eframe::Result {
-    let native_options = eframe::NativeOptions {
-        renderer: eframe::Renderer::Wgpu,
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 760.0])
-            .with_min_inner_size([720.0, 480.0]),
-        ..Default::default()
+fn geometry_properties(ui: &mut egui::Ui, g: &editor_core::SemanticGeometry) {
+    use editor_core::SemanticGeometry::*;
+    let point = |ui: &mut egui::Ui, label: &str, p: editor_core::MmPoint| {
+        ui.label(format!("{label}  {:.6}, {:.6} mm", p.x_mm, p.y_mm));
     };
+    match g {
+        Flash {
+            center, transform, ..
+        } => {
+            ui.strong("Flash · 闪光对象");
+            point(ui, "中心", *center);
+            ui.label(format!(
+                "角度 {:.4}° / 比例 {} / {:?}",
+                transform.rotation_deg, transform.scale, transform.mirror
+            ));
+        }
+        Line {
+            start,
+            end,
+            width_mm,
+        } => {
+            ui.strong("Line · 线段");
+            point(ui, "起点", *start);
+            point(ui, "终点", *end);
+            ui.label(format!("线宽 {width_mm:.6} mm"));
+        }
+        RectangularSweep {
+            start,
+            end,
+            width_mm,
+            height_mm,
+        } => {
+            ui.strong("RectangularSweep");
+            point(ui, "起点", *start);
+            point(ui, "终点", *end);
+            ui.label(format!("截面 {width_mm:.6} × {height_mm:.6} mm"));
+        }
+        Arc { path, width_mm } => {
+            ui.strong("Arc · 圆弧");
+            point(ui, "起点", path.start);
+            point(ui, "终点", path.end);
+            point(ui, "圆心", path.center);
+            ui.label(format!("半径 {:.6} / 线宽 {width_mm:.6} mm", path.radius()));
+            ui.label(format!("{:?} / 全圆 {}", path.direction, path.full_circle));
+        }
+        Region { contours } => {
+            ui.strong("Region · 区域");
+            ui.label(format!(
+                "{} 条轮廓 / {} 条边",
+                contours.len(),
+                contours.iter().map(|c| c.edges.len()).sum::<usize>()
+            ));
+        }
+    }
+}
+fn main() -> eframe::Result {
     eframe::run_native(
-        "Gerber 编辑器 · S0 技术验证",
-        native_options,
-        Box::new(|cc| {
-            S0App::new(cc)
-                .map(|app| Box::new(app) as Box<dyn eframe::App>)
-                .map_err(|error| -> Box<dyn std::error::Error + Send + Sync> { error.into() })
-        }),
+        "RCam",
+        eframe::NativeOptions {
+            renderer: eframe::Renderer::Wgpu,
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([1280., 800.])
+                .with_min_inner_size([980., 620.]),
+            ..Default::default()
+        },
+        Box::new(|cc| Ok(Box::new(EditorApp::new(cc)))),
     )
 }
 
-#[cfg(test)]
-mod gpu_tests;
-
-#[cfg(test)]
-mod navigation_tests;
+fn aperture_properties(ui: &mut egui::Ui, a: &editor_core::ApertureShape) {
+    use editor_core::ApertureShape::*;
+    let hole = match a {
+        Circle {
+            diameter_mm,
+            hole_diameter_mm,
+        } => {
+            ui.label(format!("圆形 · 直径 {diameter_mm:.6} mm"));
+            *hole_diameter_mm
+        }
+        Rectangle {
+            width_mm,
+            height_mm,
+            hole_diameter_mm,
+        }
+        | Obround {
+            width_mm,
+            height_mm,
+            hole_diameter_mm,
+        } => {
+            ui.label(format!("宽 {width_mm:.6} / 高 {height_mm:.6} mm"));
+            *hole_diameter_mm
+        }
+        Polygon {
+            diameter_mm,
+            vertices,
+            rotation_deg,
+            hole_diameter_mm,
+        } => {
+            ui.label(format!("{vertices} 边形 · 外接直径 {diameter_mm:.6} mm"));
+            ui.label(format!("光圈角度 {rotation_deg}°"));
+            *hole_diameter_mm
+        }
+        Macro { primitives } => {
+            ui.label(format!("宏光圈 · {} 个局部原语", primitives.len()));
+            None
+        }
+    };
+    if let Some(h) = hole {
+        ui.label(format!("局部孔径 {h:.6} mm"));
+    }
+}

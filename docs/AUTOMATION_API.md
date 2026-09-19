@@ -444,3 +444,17 @@ Dark/Clear 对象均可命中；工作区显隐/锁定/名称不参与；不改�
 不使用 S2-A.1 保守包络作真值。capabilities.resource_limits.max_hit_test_work=2000000；
 普通几何线性扫描、Macro 每次查询共享准备且有边界组合预算，不宣传大规模实时性能。
 详细几何、舍入和失败规则见 ADR 0014。
+
+
+## S2-A.3：GUI 共用的只读显示快照
+
+`render.snapshot` 使用 api_version=1、request_id、document_id 和空 params `{}`，不接受
+expected_revision；返回 `{document_id, revision, layers, apertures}`。layers 内为有序语义对象，
+apertures 为自有光圈 DTO，均可 JSON 编解码；没有第三方 AST、可变文档引用或 GPU 资源。
+工作区显隐/锁定/名称仍由 `layers.list` 获取。快照不改变制造/工作区版本、历史或 dirty。
+GUI 在后台转换显示数据，命中只调用 `objects.hit_test`，不从显示几何推导制造数据。
+
+宿主 Rust 方法 `grant_file_access(path, write_directory)` 仅用于用户原生选文件/保存目录授权；
+不是 JSON operation。读取授权为规范化后的单个文件，写授权为选择的目录。服务没有窗口依赖。
+Hit Test RESOURCE_LIMIT.details.actual 现在为本次 charge 后尝试的累计工作量（饱和加法），
+limit 仍为 2000000，不再固定为 limit+1。GUI 能力边界见 ADR 0016。

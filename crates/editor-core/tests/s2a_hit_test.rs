@@ -521,10 +521,10 @@ fn hit_test_invalid_params_and_budget_are_fail_closed() {
             .map(|i| circle(Exposure::Dark, 1., p(f64::from(i) * 3., 0.)))
             .collect(),
     );
-    assert_eq!(
+    assert!(matches!(
         expensive.hit_test("layer", p(0., 0.), 0.),
-        Err(HitTestError::ResourceLimit)
-    );
+        Err(HitTestError::ResourceLimit { limit: 2_000_000, attempted }) if attempted > 2_000_000
+    ));
 }
 
 #[test]

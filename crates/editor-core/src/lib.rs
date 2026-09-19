@@ -996,7 +996,7 @@ fn validate_contour(contour: &RegionContour) -> Result<(), SemanticError> {
 /// A Region may use a circular interpretation only when its entire directed
 /// curve stays in the declared annulus. Major fuzzy arcs needing another curve
 /// remain unsupported here; stroke coverage handles them with radial joins.
-fn canonical_region_contour(contour: &RegionContour) -> Result<RegionContour, SemanticError> {
+pub fn canonical_region_contour(contour: &RegionContour) -> Result<RegionContour, SemanticError> {
     let mut result = contour.clone();
     for edge in &mut result.edges {
         let RegionEdge::Arc(input) = edge else {

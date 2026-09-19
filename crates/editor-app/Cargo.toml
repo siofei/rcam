@@ -11,3 +11,14 @@ editor-service.workspace = true
 eframe.workspace = true
 egui-wgpu.workspace = true
 bytemuck.workspace = true
+serde_json.workspace = true
+
+[[example]]
+name = "s0-demo"
+path = "src/s0_demo.rs"
+test = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.4"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSResponder"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSURL"] }
