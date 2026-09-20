@@ -313,7 +313,17 @@ fn move_arc_preserves_arc_semantics() {
         assert_eq!(run.objects(), original);
         run.history("history.redo", "2");
         assert_eq!(run.objects(), moved);
-        let scene = run.roundtrip("3");
+        // Preserve the historical sub-grid arc truth at its original FS resolution.
+        run.service
+            .set_manufacturing_precision(
+                &run.id,
+                "3",
+                editor_service::ManufacturingPrecision {
+                    resolution_mm: 0.000001,
+                },
+            )
+            .unwrap();
+        let scene = run.roundtrip("4");
         if name == "g74_zero" {
             assert!(
                 matches!(scene.document.layers[0].objects[0].geometry,SemanticGeometry::Line{start,end,..} if start==end)

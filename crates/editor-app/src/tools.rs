@@ -4,34 +4,7 @@ use editor_core::{MmPoint, grid::snap_scalar};
 use eframe::egui::{self, Color32, Rect, Stroke};
 use std::collections::HashSet;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum DisplayUnit {
-    #[default]
-    Mm,
-    Inch,
-}
-impl DisplayUnit {
-    fn value(self, millimetres: f64) -> f64 {
-        match self {
-            Self::Mm => millimetres,
-            Self::Inch => millimetres / 25.4,
-        }
-    }
-    pub fn suffix(self) -> &'static str {
-        match self {
-            Self::Mm => "mm",
-            Self::Inch => "in",
-        }
-    }
-    pub fn point_label(self, point: MmPoint) -> String {
-        format!(
-            "X {:.6}  Y {:.6} {}",
-            self.value(point.x_mm),
-            self.value(point.y_mm),
-            self.suffix()
-        )
-    }
-}
+pub use editor_core::units::DisplayUnit;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SnapKind {
@@ -283,47 +256,61 @@ impl MeasureState {
         .map(|(_, _, _, angle)| angle)
     }
     pub fn label(&self) -> String {
-        self.label_in(DisplayUnit::Mm)
+        self.label_in(DisplayUnit::Millimeter)
     }
     pub fn label_in(&self, unit: DisplayUnit) -> String {
+        self.label_with_resolution(unit, 0.0001)
+    }
+    pub fn label_with_resolution(&self, unit: DisplayUnit, resolution: f64) -> String {
         let retained = self.completed.len();
         let Some(a) = self.a else {
             return format!(
                 "两点直线测距 · 已保留 {retained} 条 · 点击 A，然后点击 B · Esc 清除全部"
             );
         };
+        let length = |v| unit.format_length(v, resolution);
         let mut label = format!(
-            "两点直线测距 · 已保留 {retained} 条 · +X 轴逆时针角度\nA ({:.6}, {:.6}) {}",
-            unit.value(a.x_mm),
-            unit.value(a.y_mm),
-            unit.suffix()
+            "两点直线测距 · 已保留 {retained} 条 · +X 轴逆时针角度\nA ({}, {})",
+            length(a.x_mm),
+            length(a.y_mm)
         );
         if let (Some(b), Some((dx, dy, d)), Some(angle)) = (self.b, self.values(), self.angle_deg())
         {
             label.push_str(&format!(
-                "\nB ({:.6}, {:.6}) {}\nΔX {:.6}  ΔY {:.6} {}\nDistance {:.6} {}  Angle {angle:.6}° · {}",
-                unit.value(b.x_mm),
-                unit.value(b.y_mm),
-                unit.suffix(),
-                unit.value(dx),
-                unit.value(dy),
-                unit.suffix(),
-                unit.value(d),
-                unit.suffix(),
+                "\nB ({}, {})\nΔX {}  ΔY {}\nDistance {}  Angle {angle:.6}° · {}",
+                length(b.x_mm),
+                length(b.y_mm),
+                length(dx),
+                length(dy),
+                length(d),
                 if self.fixed { "已固定" } else { "动态" }
             ));
         }
         label
     }
-    pub fn paint_in(&self, painter: &egui::Painter, camera: Camera, rect: Rect, unit: DisplayUnit) {
+    pub fn paint_in(
+        &self,
+        painter: &egui::Painter,
+        camera: Camera,
+        rect: Rect,
+        unit: DisplayUnit,
+        resolution: f64,
+    ) {
         for measurement in &self.completed {
-            paint_measurement(painter, camera, rect, *measurement, unit);
+            paint_measurement(painter, camera, rect, *measurement, unit, resolution);
         }
         if !self.fixed
             && let Some(a) = self.a
         {
             if let Some(b) = self.b {
-                paint_measurement(painter, camera, rect, Measurement { a, b }, unit);
+                paint_measurement(
+                    painter,
+                    camera,
+                    rect,
+                    Measurement { a, b },
+                    unit,
+                    resolution,
+                );
             } else {
                 painter.circle_filled(camera.screen(a, rect), 3., Color32::YELLOW);
             }
@@ -332,7 +319,7 @@ impl MeasureState {
             painter,
             rect.left_top() + egui::vec2(12., 36.),
             egui::Align2::LEFT_TOP,
-            self.label_in(unit),
+            self.label_with_resolution(unit, resolution),
             Color32::YELLOW,
         );
     }
@@ -344,6 +331,7 @@ fn paint_measurement(
     rect: Rect,
     measurement: Measurement,
     unit: DisplayUnit,
+    resolution: f64,
 ) {
     let (p, q) = (
         camera.screen(measurement.a, rect),
@@ -367,9 +355,8 @@ fn paint_measurement(
         p + delta * 0.5 + offset,
         egui::Align2::CENTER_CENTER,
         format!(
-            "{:.6} {}  ∠ {angle_deg:.6}°",
-            unit.value(distance),
-            unit.suffix()
+            "{}  ∠ {angle_deg:.6}°",
+            unit.format_length(distance, resolution)
         ),
         Color32::YELLOW,
     );
@@ -540,7 +527,7 @@ mod tests {
         assert!(
             measure
                 .label_in(DisplayUnit::Inch)
-                .contains("Distance 1.000000 in")
+                .contains("Distance 1.000000 inch")
         );
     }
 }

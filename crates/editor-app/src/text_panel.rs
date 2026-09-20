@@ -163,6 +163,11 @@ impl EditorApp {
         if self.ime_active || self.ime_event {
             return;
         }
+        let tolerance = self.precision().text_tolerance_mm().to_string();
+        if self.text.tolerance != tolerance {
+            self.text.tolerance = tolerance;
+            self.text.changed();
+        }
         if self.text.ready(now) {
             self.text.submitted = Some(self.text.generation);
             let Some(d) = &self.view.info else {
@@ -393,22 +398,42 @@ impl EditorApp {
             }
         });
         ui.separator();
-        changed |= field(ui, "可见字高 mm", &mut self.text.height);
+        changed |= field(
+            ui,
+            &format!("可见字高 {}", self.display_unit.suffix()),
+            &mut self.text.height,
+        );
         let builtin = self
             .text
             .font
             .as_ref()
             .is_some_and(|f| f.identity.path == editor_service::BUILTIN_STROKE_PATH);
         if builtin {
-            changed |= field(ui, "线条宽度 mm", &mut self.text.stroke_width);
+            changed |= field(
+                ui,
+                &format!("线条宽度 {}", self.display_unit.suffix()),
+                &mut self.text.stroke_width,
+            );
             ui.small("内置 ASCII 线条字体；中文请选择其他字型");
         } else {
-            changed |= field(ui, "轮廓补偿 Δ mm", &mut self.text.offset);
+            changed |= field(
+                ui,
+                &format!("轮廓补偿 Δ {}", self.display_unit.suffix()),
+                &mut self.text.offset,
+            );
             ui.small("正值加粗 / 负值减细；不是绝对笔画线宽");
         }
-        changed |= field(ui, "基线距离 mm", &mut self.text.baseline_spacing);
+        changed |= field(
+            ui,
+            &format!("基线距离 {}", self.display_unit.suffix()),
+            &mut self.text.baseline_spacing,
+        );
         ui.small("0 = 自动（1.3 × 字高）；换行向下排列");
-        changed |= field(ui, "字距 mm", &mut self.text.tracking);
+        changed |= field(
+            ui,
+            &format!("字距 {}", self.display_unit.suffix()),
+            &mut self.text.tracking,
+        );
         changed |= field(ui, "旋转 °", &mut self.text.rotation);
         ui.horizontal(|ui| {
             for (value, label) in [
@@ -433,25 +458,11 @@ impl EditorApp {
                     .changed();
             }
         });
-        ui.collapsing("制造精度…", |ui| {
-            ui.label("制造精度");
-            ui.horizontal(|ui| {
-                for (label, tol) in text_tool::PRESETS {
-                    if ui
-                        .selectable_label(
-                            self.text.tolerance.parse::<f64>().ok() == Some(tol),
-                            label,
-                        )
-                        .clicked()
-                    {
-                        self.text.tolerance = tol.to_string();
-                        changed = true;
-                    }
-                }
-            });
-            changed |= field(ui, "自定义曲线误差 mm", &mut self.text.tolerance);
-            ui.small("0.00001–0.00025 mm；越小边界节点越多，与缩放无关");
-        });
+        ui.label(format!(
+            "全局制造分辨率：{} µm",
+            self.precision().resolution_mm * 1000.
+        ));
+        ui.small("曲线误差由全局制造策略推导；独立于显示位数和缩放");
         let mut mode = self.text.placement;
         ui.horizontal(|ui| {
             ui.selectable_value(&mut mode, Placement::Mouse, "鼠标");
@@ -464,8 +475,16 @@ impl EditorApp {
         match self.text.placement {
             Placement::Mouse | Placement::Absolute => {
                 if mode == Placement::Absolute {
-                    changed |= field(ui, "X mm", &mut self.text.x);
-                    changed |= field(ui, "Y mm", &mut self.text.y);
+                    changed |= field(
+                        ui,
+                        &format!("X {}", self.display_unit.suffix()),
+                        &mut self.text.x,
+                    );
+                    changed |= field(
+                        ui,
+                        &format!("Y {}", self.display_unit.suffix()),
+                        &mut self.text.y,
+                    );
                 }
                 if mode == Placement::Mouse {
                     changed |= ui
@@ -475,14 +494,29 @@ impl EditorApp {
                 ui.small("基准：制造世界原点 (0, 0)");
             }
             Placement::Relative => {
-                let reference_changed = field(ui, "基点 Rx mm", &mut self.text.rx)
-                    | field(ui, "基点 Ry mm", &mut self.text.ry);
+                let reference_changed = field(
+                    ui,
+                    &format!("基点 Rx {}", self.display_unit.suffix()),
+                    &mut self.text.rx,
+                ) | field(
+                    ui,
+                    &format!("基点 Ry {}", self.display_unit.suffix()),
+                    &mut self.text.ry,
+                );
                 if reference_changed {
                     self.text.has_reference = true;
                     changed = true;
                 }
-                changed |= field(ui, "ΔX mm", &mut self.text.dx);
-                changed |= field(ui, "ΔY mm", &mut self.text.dy);
+                changed |= field(
+                    ui,
+                    &format!("ΔX {}", self.display_unit.suffix()),
+                    &mut self.text.dx,
+                );
+                changed |= field(
+                    ui,
+                    &format!("ΔY {}", self.display_unit.suffix()),
+                    &mut self.text.dy,
+                );
                 if ui
                     .button(if self.text.pick_reference {
                         "请点击画布基点…"
@@ -517,7 +551,11 @@ impl EditorApp {
         }
         match self.text.anchor() {
             Ok(p) => {
-                ui.label(format!("最终绝对坐标：{}, {} mm", p.x_mm, p.y_mm));
+                ui.label(format!(
+                    "最终绝对坐标：{}",
+                    self.display_unit
+                        .point_label(p, self.precision().resolution_mm)
+                ));
             }
             Err(e) => {
                 ui.colored_label(egui::Color32::YELLOW, e);

@@ -1,5 +1,12 @@
 # 文档变更记录
 
+## 2026-09-20 · Global Units / Manufacturing Precision
+
+四单位显示与后缀解析统一，默认制造分辨率 0.1 µm，与 FS 编码、显示位数、网格和曲线预算分开。
+服务增加文档精度及独立 export_policy_dirty；导出私有快照量化后仍通过原语义与重开验证。
+文字输入在当前会话中保留上次内容、字体、布局和定位参数；取消仅清除预览及提交状态。
+范围及实际证据见 GLOBAL_UNITS_PRECISION_PLAN / REVIEW。未启动 S4-B1；Windows deferred。
+
 ## 2026-09-20 · S4-A2.2
 
 按用户 CircuitCAM 交互参考添加默认原创 ASCII 线条字型、多行布局与基线距离，

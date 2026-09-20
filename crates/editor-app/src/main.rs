@@ -18,6 +18,7 @@ mod state;
 mod text_panel;
 mod text_tool;
 mod tools;
+mod units;
 #[cfg(test)]
 mod viewport_tests;
 mod world_index;
@@ -195,6 +196,13 @@ impl EditorApp {
         }
     }
     fn send(&mut self, a: Action) {
+        let a = match self.length_action(a) {
+            Ok(a) => a,
+            Err(e) => {
+                self.ui_error = Some(e);
+                return;
+            }
+        };
         if self.busy {
             return;
         }
@@ -211,6 +219,7 @@ impl EditorApp {
                     | Action::SetFlashSize(..)
                     | Action::TextCreate(..)
                     | Action::Layer(..)
+                    | Action::Precision(..)
             )
         {
             self.modal_pending = Some(self.sequence);
@@ -267,7 +276,12 @@ impl EditorApp {
         self.text.cancel();
         self.tool = tools::ActiveTool::Select;
         self.quit_after_close = quit;
-        if self.view.info.as_ref().is_some_and(|d| d.dirty) {
+        if self
+            .view
+            .info
+            .as_ref()
+            .is_some_and(|d| d.dirty || d.export_policy_dirty)
+        {
             self.close_prompt = true;
         } else if self.view.info.is_some() {
             self.send(Action::Close(false));
@@ -327,7 +341,10 @@ impl EditorApp {
                     "选择集制造边界中心",
                 );
                 if let Some(center) = center {
-                    ui.label(format!("X {:.6} / Y {:.6} mm", center.x_mm, center.y_mm));
+                    ui.label(
+                        self.display_unit
+                            .point_label(center, self.precision().resolution_mm),
+                    );
                 } else {
                     ui.colored_label(Color32::YELLOW, "选择集中心不可用，请使用明确 Pivot");
                 }
@@ -336,7 +353,11 @@ impl EditorApp {
                     PivotMode::WorldOrigin,
                     "世界原点 (0, 0)",
                 );
-                ui.radio_value(&mut self.pivot_mode, PivotMode::Custom, "自定义 X / Y mm");
+                ui.radio_value(
+                    &mut self.pivot_mode,
+                    PivotMode::Custom,
+                    format!("自定义 X / Y {}", self.display_unit.suffix()),
+                );
                 if self.pivot_mode == PivotMode::Custom {
                     ui.horizontal(|ui| {
                         ui.label("X");
@@ -392,15 +413,17 @@ impl EditorApp {
             ui.add_space(6.);
             ui.label("镜像轴（选择集制造边界中心）");
             if let Some(center) = center {
+                let horizontal = format!("水平镜像 · y = {}", self.length(center.y_mm));
+                let vertical = format!("垂直镜像 · x = {}", self.length(center.x_mm));
                 ui.radio_value(
                     &mut self.mirror_direction,
                     MirrorDirection::Horizontal,
-                    format!("水平镜像 · y = {:.6} mm", center.y_mm),
+                    horizontal,
                 );
                 ui.radio_value(
                     &mut self.mirror_direction,
                     MirrorDirection::Vertical,
-                    format!("垂直镜像 · x = {:.6} mm", center.x_mm),
+                    vertical,
                 );
                 if ui
                     .add_enabled(enabled, egui::Button::new("应用镜像"))
@@ -455,8 +478,8 @@ impl EditorApp {
             }
         };
         self.size_aperture_id = Some(aperture_id.clone());
-        self.size_width = width.to_string();
-        self.size_height = height.map_or_else(String::new, |value| value.to_string());
+        self.size_width = self.display_unit.input(width);
+        self.size_height = height.map_or_else(String::new, |value| self.display_unit.input(value));
     }
 
     fn flash_size_controls(&mut self, ui: &mut egui::Ui) {
@@ -491,11 +514,11 @@ impl EditorApp {
                 | editor_core::ApertureShape::Obround { .. }
         );
         ui.horizontal(|ui| {
-            ui.label(if rectangular {
-                "宽度 mm"
-            } else {
-                "直径 mm"
-            });
+            ui.label(format!(
+                "{} {}",
+                if rectangular { "宽度" } else { "直径" },
+                self.display_unit.suffix()
+            ));
             ui.add(
                 egui::TextEdit::singleline(&mut self.size_width)
                     .id(egui::Id::new("flash-size-width")),
@@ -503,7 +526,7 @@ impl EditorApp {
         });
         if rectangular {
             ui.horizontal(|ui| {
-                ui.label("高度 mm");
+                ui.label(format!("高度 {}", self.display_unit.suffix()));
                 ui.add(
                     egui::TextEdit::singleline(&mut self.size_height)
                         .id(egui::Id::new("flash-size-height")),
@@ -676,7 +699,11 @@ impl eframe::App for EditorApp {
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy(),
-                if d.dirty { " *" } else { "" }
+                if d.dirty || d.export_policy_dirty {
+                    " *"
+                } else {
+                    ""
+                }
             )
         });
         if self.last_title != title {
@@ -925,15 +952,7 @@ impl eframe::App for EditorApp {
                         self.open_modal(ActiveModal::Grid);
                         ui.close();
                     }
-                    ui.horizontal(|ui| {
-                        ui.label("坐标显示单位");
-                        ui.selectable_value(&mut self.display_unit, tools::DisplayUnit::Mm, "mm");
-                        ui.selectable_value(
-                            &mut self.display_unit,
-                            tools::DisplayUnit::Inch,
-                            "inch",
-                        );
-                    });
+                    self.unit_controls(ui);
                     if ui.button("适合窗口  F").clicked() {
                         self.fit = true;
                         ui.close();
@@ -987,7 +1006,12 @@ impl eframe::App for EditorApp {
                     ));
                     ui.separator();
                 }
-                ui.label(format!("{:.2} 点/mm", self.camera.scale));
+                ui.label(format!(
+                    "{:.2} 点/{}",
+                    self.camera.scale * self.display_unit.mm_per_unit(),
+                    self.display_unit.suffix()
+                ));
+                ui.label(format!("网格 {}", self.length(self.grid.spacing_mm)));
                 if let Some(o) = self.view.selected.primary() {
                     ui.label(format!("选中 {}", o.object.object_id));
                 }
@@ -1090,7 +1114,11 @@ impl eframe::App for EditorApp {
                     {
                         ui.label("选择含锁定层或跨层：整组编辑禁止（仅可查看）");
                     }
-                    for line in metrics_panel::lines(&self.view) {
+                    for line in metrics_panel::lines(
+                        &self.view,
+                        self.display_unit,
+                        self.precision().resolution_mm,
+                    ) {
                         ui.label(line);
                     }
                     if let Some(o) = self.view.selected.primary().cloned() {
@@ -1102,7 +1130,12 @@ impl eframe::App for EditorApp {
                         ));
                         ui.label(format!("曝光：{:?}", o.object.exposure));
                         ui.label(format!("来源：{:?}", o.object.origin));
-                        geometry_properties(ui, &o.object.geometry);
+                        geometry_properties(
+                            ui,
+                            &o.object.geometry,
+                            self.display_unit,
+                            self.precision().resolution_mm,
+                        );
                         if let editor_core::SemanticGeometry::Flash { aperture_id, .. } =
                             &o.object.geometry
                         {
@@ -1110,7 +1143,12 @@ impl eframe::App for EditorApp {
                             if let Some(a) =
                                 self.view.apertures.iter().find(|a| &a.id == aperture_id)
                             {
-                                aperture_properties(ui, &a.shape);
+                                aperture_properties(
+                                    ui,
+                                    &a.shape,
+                                    self.display_unit,
+                                    self.precision().resolution_mm,
+                                );
                             }
                         }
                         ui.separator();
@@ -1130,10 +1168,13 @@ impl eframe::App for EditorApp {
                             },
                         );
                     } else {
-                        ui.label("点击图形查看对象，并输入毫米位移或变换参数。");
+                        ui.label("点击图形查看对象，并输入当前单位的位移或变换参数。");
                     }
                     ui.separator();
                     if let Some(d) = &self.view.info {
+                        if d.export_policy_dirty {
+                            ui.label("导出制造精度策略有未保存更改");
+                        }
                         ui.strong(if d.dirty {
                             "存在未保存的制造修改"
                         } else {
@@ -1158,8 +1199,7 @@ impl eframe::App for EditorApp {
                 if ui.button("网格 / 吸附设置…").clicked() {
                     self.open_modal(ActiveModal::Grid);
                 }
-                ui.selectable_value(&mut self.display_unit, tools::DisplayUnit::Mm, "mm");
-                ui.selectable_value(&mut self.display_unit, tools::DisplayUnit::Inch, "inch");
+                self.unit_controls(ui);
                 let old = self.tool;
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Select, "选择");
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Measure, "测距");
@@ -1234,7 +1274,7 @@ impl eframe::App for EditorApp {
                         );
                     }
                     let w = self.camera.world(pos, rect);
-                    cursor_label = Some(self.display_unit.point_label(w));
+                    cursor_label = Some(format!("X {}  Y {}", self.length(w.x_mm), self.length(w.y_mm)));
                     if camera_before.center != self.camera.center
                         || camera_before.scale != self.camera.scale
                     {
@@ -1471,7 +1511,7 @@ impl eframe::App for EditorApp {
                 );
                 if self.tool == tools::ActiveTool::Measure {
                     self.measure
-                        .paint_in(&painter, self.camera, rect, self.display_unit);
+                        .paint_in(&painter, self.camera, rect, self.display_unit, self.precision().resolution_mm);
                 }
                 if let Some((selection_rect, window)) =
                     self.drag.as_ref().and_then(|d| d.preview_rect())
@@ -1621,10 +1661,16 @@ impl eframe::App for EditorApp {
         }
     }
 }
-fn geometry_properties(ui: &mut egui::Ui, g: &editor_core::SemanticGeometry) {
+fn geometry_properties(
+    ui: &mut egui::Ui,
+    g: &editor_core::SemanticGeometry,
+    unit: tools::DisplayUnit,
+    resolution: f64,
+) {
+    let length = |v| unit.format_length(v, resolution);
     use editor_core::SemanticGeometry::*;
     let point = |ui: &mut egui::Ui, label: &str, p: editor_core::MmPoint| {
-        ui.label(format!("{label}  {:.6}, {:.6} mm", p.x_mm, p.y_mm));
+        ui.label(format!("{label}  {}, {}", length(p.x_mm), length(p.y_mm)));
     };
     match g {
         Flash {
@@ -1645,7 +1691,7 @@ fn geometry_properties(ui: &mut egui::Ui, g: &editor_core::SemanticGeometry) {
             ui.strong("Line · 线段");
             point(ui, "起点", *start);
             point(ui, "终点", *end);
-            ui.label(format!("线宽 {width_mm:.6} mm"));
+            ui.label(format!("线宽 {}", length(*width_mm)));
         }
         RectangularSweep {
             start,
@@ -1656,14 +1702,22 @@ fn geometry_properties(ui: &mut egui::Ui, g: &editor_core::SemanticGeometry) {
             ui.strong("RectangularSweep");
             point(ui, "起点", *start);
             point(ui, "终点", *end);
-            ui.label(format!("截面 {width_mm:.6} × {height_mm:.6} mm"));
+            ui.label(format!(
+                "截面 {} × {}",
+                length(*width_mm),
+                length(*height_mm)
+            ));
         }
         Arc { path, width_mm } => {
             ui.strong("Arc · 圆弧");
             point(ui, "起点", path.start);
             point(ui, "终点", path.end);
             point(ui, "圆心", path.center);
-            ui.label(format!("半径 {:.6} / 线宽 {width_mm:.6} mm", path.radius()));
+            ui.label(format!(
+                "半径 {} / 线宽 {}",
+                length(path.radius()),
+                length(*width_mm)
+            ));
             ui.label(format!("{:?} / 全圆 {}", path.direction, path.full_circle));
         }
         Region { contours } => {
@@ -1708,14 +1762,20 @@ fn main() -> eframe::Result {
     result
 }
 
-fn aperture_properties(ui: &mut egui::Ui, a: &editor_core::ApertureShape) {
+fn aperture_properties(
+    ui: &mut egui::Ui,
+    a: &editor_core::ApertureShape,
+    unit: tools::DisplayUnit,
+    resolution: f64,
+) {
+    let length = |v| unit.format_length(v, resolution);
     use editor_core::ApertureShape::*;
     let hole = match a {
         Circle {
             diameter_mm,
             hole_diameter_mm,
         } => {
-            ui.label(format!("圆形 · 直径 {diameter_mm:.6} mm"));
+            ui.label(format!("圆形 · 直径 {}", length(*diameter_mm)));
             *hole_diameter_mm
         }
         Rectangle {
@@ -1728,7 +1788,11 @@ fn aperture_properties(ui: &mut egui::Ui, a: &editor_core::ApertureShape) {
             height_mm,
             hole_diameter_mm,
         } => {
-            ui.label(format!("宽 {width_mm:.6} / 高 {height_mm:.6} mm"));
+            ui.label(format!(
+                "宽 {} / 高 {}",
+                length(*width_mm),
+                length(*height_mm)
+            ));
             *hole_diameter_mm
         }
         Polygon {
@@ -1737,7 +1801,10 @@ fn aperture_properties(ui: &mut egui::Ui, a: &editor_core::ApertureShape) {
             rotation_deg,
             hole_diameter_mm,
         } => {
-            ui.label(format!("{vertices} 边形 · 外接直径 {diameter_mm:.6} mm"));
+            ui.label(format!(
+                "{vertices} 边形 · 外接直径 {}",
+                length(*diameter_mm)
+            ));
             ui.label(format!("光圈角度 {rotation_deg}°"));
             *hole_diameter_mm
         }
@@ -1747,6 +1814,6 @@ fn aperture_properties(ui: &mut egui::Ui, a: &editor_core::ApertureShape) {
         }
     };
     if let Some(h) = hole {
-        ui.label(format!("局部孔径 {h:.6} mm"));
+        ui.label(format!("局部孔径 {}", length(h)));
     }
 }

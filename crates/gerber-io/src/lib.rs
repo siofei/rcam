@@ -626,3 +626,6 @@ M02*
         ));
     }
 }
+
+mod precision;
+pub use precision::normalize_manufacturing;

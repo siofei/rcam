@@ -180,12 +180,16 @@ fn text_transaction_undo_redo_export_reopen_and_metrics() {
                     (
                         RegionEdge::Line { start: a, end: b },
                         RegionEdge::Line { start: c, end: d },
-                    ) => assert!(a.distance_mm(*c) < 1e-6 && b.distance_mm(*d) < 1e-6),
+                    ) => assert!(
+                        a.distance_mm(output_grid(*c)) < 1e-6
+                            && b.distance_mm(output_grid(*d)) < 1e-6
+                    ),
                     (RegionEdge::Arc(a), RegionEdge::Arc(b)) => {
                         assert!(
-                            a.start.distance_mm(b.start) < 1e-6 && a.end.distance_mm(b.end) < 1e-6
+                            a.start.distance_mm(output_grid(b.start)) < 1e-6
+                                && a.end.distance_mm(output_grid(b.end)) < 1e-6
                         );
-                        assert!(a.center.distance_mm(b.center) < 1e-6);
+                        assert!(a.center.distance_mm(output_grid(b.center)) < 1e-6);
                         assert_eq!(a.direction, b.direction);
                         assert_eq!(a.full_circle, b.full_circle);
                     }
@@ -409,7 +413,9 @@ fn multiline_stroke_and_outline_share_atomic_export_workflow() {
                     panic!()
                 };
                 assert!(
-                    a.distance_mm(*c) < 1e-6 && b.distance_mm(*d) < 1e-6 && (w - v).abs() < 1e-6
+                    a.distance_mm(output_grid(*c)) < 1e-6
+                        && b.distance_mm(output_grid(*d)) < 1e-6
+                        && (w - v).abs() < 1e-6
                 );
             }
             params.layout.text = "中文".into();
@@ -421,4 +427,12 @@ fn multiline_stroke_and_outline_share_atomic_export_workflow() {
             assert_eq!(r.service.document_get(&r.id).unwrap().revision, "3");
         }
     }
+}
+
+// Independent default manufacturing-grid oracle; encoding comparison stays 1 nm.
+fn output_grid(p: editor_core::MmPoint) -> editor_core::MmPoint {
+    editor_core::MmPoint::new(
+        (p.x_mm * 10000.).round() / 10000.,
+        (p.y_mm * 10000.).round() / 10000.,
+    )
 }

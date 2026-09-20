@@ -11,7 +11,7 @@ fn call(service: &mut ApplicationService, op: &str, id: Option<&str>, params: Va
         request["document_id"] = json!(id);
     }
     if op == "gerber.export_layer" {
-        request["expected_revision"] = json!("0");
+        request["expected_revision"] = json!(service.document_get(id.unwrap()).unwrap().revision);
     }
     service.execute_json(&request.to_string())
 }
@@ -83,6 +83,17 @@ fn public_truth_opens_or_rejects_and_normalizes_without_source_writes() {
         ));
         assert!(!query["objects"].as_array().unwrap().is_empty(), "{name}");
         successful(call(&mut service, "document.validate", Some(id), json!({})));
+        // This historical source-fidelity suite uses the original FS quantum.
+        // Coarser default topology rejection is covered by global_units_precision.
+        service
+            .set_manufacturing_precision(
+                id,
+                "0",
+                editor_service::ManufacturingPrecision {
+                    resolution_mm: 0.000001,
+                },
+            )
+            .unwrap();
         let target = out.join(format!("{name}.gbr"));
         let exported = call(
             &mut service,

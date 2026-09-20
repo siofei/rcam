@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发切片为 Mac-first S4-A2 服务前置闭环，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+当前开发切片为 Mac-first Global Units / Manufacturing Precision，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -162,9 +162,9 @@ P100K 或非 Gerber 格式。Mac 原生结果绑定 clean commit；Windows、双
 
 S4-A1 headless vector text core is implemented. S4-A2 foundation adds configurable
 manufacturing precision and read-only text.preview sharing create validation.
-Formal Text GUI/IME/Preview worker, material offset and placement remain pending.
+Text GUI/IME/Preview worker, material offset and floating placement passed the bounded S4-A2.1/A2.2 Mac-first gates.
 The retained high-precision thin-slab limitation is recorded in S4_A2_REVIEW.md.
-Full S4/V1, Windows and final S4-A2 acceptance are not claimed.
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Full S4/V1 and Windows are not claimed.
 
 
 ### S4-A2.1 — 参数弹窗、文字轮廓和浮动放置
@@ -177,8 +177,8 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-Global Units & Manufacturing Precision Foundation：**BLOCKED UNTIL S4-A2.1 PASS**。
-本轮不启动 Global Units、DXF/SVG/PLT、Final Layer Boolean Area 或 Windows。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
+Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
 
 ### S4-A2.2 — 多行文本和菜单交互
@@ -190,3 +190,11 @@ ASCII 线条字体；中文选择本地系统轮廓字体。文本支持多行�
 默认线条字体输出真实有限宽度 Line，轮廓字体继续使用 S4-A2.1 Region / Line / Arc 路径。
 基线距离 0 为自动 1.3 × 字高；128 字符上限保留。
 实际测试和未执行项见 [S4_A2_2_REVIEW](S4_A2_2_REVIEW.md)，Windows 未执行。
+
+
+### Global Units / Manufacturing Precision (current)
+
+See [plan](GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
+Windows deferred / not executed; full V1 not claimed; P100K not complete.

@@ -593,3 +593,17 @@ verifies this identity and emits real `Line` geometry, with positive width less
 than height. Its height is the capital-letter envelope, lowercase is proportionally
 smaller. Printable ASCII only; unsupported characters fail the entire operation.
 Local system fonts continue to require explicit file access and validated hashes.
+
+
+## Global Units manufacturing policy extension (API v1)
+
+`document.get` adds defaultable `manufacturing_precision: {resolution_mm: 0.0001}`
+and `export_policy_dirty: false`. `document.set_manufacturing_precision` accepts
+`params: {resolution_mm: number}`, requires document_id and expected_revision, and
+returns DocumentInfo. A changed policy increments revision once but leaves geometry,
+geometry dirty and content history unchanged. An identical policy is a no-op.
+Invalid/nonrepresentable precision and stale revisions fail atomically. Read the
+capability table for operation discovery. DisplayUnit is UI-only; all API values
+remain mm/mm². Existing export parameters remain unchanged and use the record's
+policy; successful export saves its baseline. See ADR 0026 for exact custom limits,
+rounding, text tolerance compatibility and policy behavior on reopen.

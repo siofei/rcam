@@ -108,7 +108,7 @@ pub(super) fn join(contours: Vec<Vec<Point>>) -> Result<Vec<Vec<Point>>, TextErr
 fn mm(p: Point) -> MmPoint {
     MmPoint::new(p[0], p[1])
 }
-fn arc(points: &[Point], tolerance: f64) -> Option<RegionEdge> {
+fn arc(points: &[Point], tolerance: f64, quantum: f64) -> Option<RegionEdge> {
     if points.len() < 4 {
         return None;
     }
@@ -128,11 +128,13 @@ fn arc(points: &[Point], tolerance: f64) -> Option<RegionEdge> {
         a[1] + (u[0] * vv - v[0] * uu) / (2. * cross),
     ];
     let base = [
-        (center[0] * 1e6).round() / 1e6,
-        (center[1] * 1e6).round() / 1e6,
+        (center[0] / quantum).round() * quantum,
+        (center[1] / quantum).round() * quantum,
     ];
     let center = (-3..=3)
-        .flat_map(|x| (-3..=3).map(move |y| [base[0] + x as f64 * 1e-6, base[1] + y as f64 * 1e-6]))
+        .flat_map(|x| {
+            (-3..=3).map(move |y| [base[0] + x as f64 * quantum, base[1] + y as f64 * quantum])
+        })
         .min_by(|a0, b0| {
             (distance(a, *a0) - distance(c, *a0))
                 .abs()
@@ -171,7 +173,11 @@ fn arc(points: &[Point], tolerance: f64) -> Option<RegionEdge> {
         let u = [w[1][0] - w[0][0], w[1][1] - w[0][1]];
         let v = [w[2][0] - w[1][0], w[2][1] - w[1][1]];
         let turn = (sign * (u[0] * v[1] - u[1] * v[0])).atan2(u[0] * v[0] + u[1] * v[1]);
-        turn <= 1e-10 || turn > 0.3
+        if quantum <= 1e-6 {
+            turn <= 1e-10 || turn > 0.3
+        } else {
+            turn.abs() > 0.3
+        }
     }) {
         return None;
     }
@@ -189,10 +195,19 @@ fn arc(points: &[Point], tolerance: f64) -> Option<RegionEdge> {
     };
     geometry.is_valid().then_some(RegionEdge::Arc(geometry))
 }
+#[cfg(test)]
 pub(super) fn fit(
     p: &[Point],
     tolerance: f64,
     work: &mut usize,
+) -> Result<Vec<RegionEdge>, TextError> {
+    fit_on_grid(p, tolerance, work, 1e-6)
+}
+pub(super) fn fit_on_grid(
+    p: &[Point],
+    tolerance: f64,
+    work: &mut usize,
+    quantum: f64,
 ) -> Result<Vec<RegionEdge>, TextError> {
     let mut result = vec![];
     let mut counts = std::collections::HashMap::new();
@@ -226,11 +241,14 @@ pub(super) fn fit(
         };
         if end == i + 1 && !matches!(result.last(), Some(RegionEdge::Arc(_))) {
             for next in i + 3..=stop {
+                if quantum > 1e-6 && next > i + 64 {
+                    break;
+                }
                 *work += next - i + 1;
                 if *work > MAX_WORK {
                     return Err(TextError::ResourceLimit);
                 }
-                if let Some(candidate) = arc(&p[i..=next], tolerance) {
+                if let Some(candidate) = arc(&p[i..=next], tolerance, quantum) {
                     let previous = if i > 0 {
                         Some(RegionEdge::Line {
                             start: mm(p[i - 1]),
@@ -250,11 +268,14 @@ pub(super) fn fit(
                             .as_ref()
                             .is_some_and(|e| !editor_core::region_join_is_simple(&candidate, e))
                     {
+                        if quantum > 1e-6 {
+                            continue;
+                        }
                         break;
                     }
                     edge = candidate;
                     end = next;
-                } else {
+                } else if quantum <= 1e-6 {
                     break;
                 }
             }

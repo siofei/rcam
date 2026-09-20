@@ -49,6 +49,7 @@ pub enum MirrorDirection {
     Vertical,
 }
 pub enum Action {
+    Precision(ManufacturingPrecision),
     Open(PathBuf),
     TextFont(u64, PathBuf, u32),
     FontCatalog,
@@ -441,7 +442,7 @@ impl Model {
                 dy_mm: dy,
             },
         )?;
-        self.view.message = format!("已移动 ΔX {dx} / ΔY {dy} mm");
+        self.view.message = "已移动所选对象".into();
         self.refresh(true)
     }
     pub fn numeric_rotate(&mut self, angle: &str, pivot: PivotInput) -> Result<(), ServiceError> {
@@ -469,10 +470,7 @@ impl Model {
                 },
             },
         )?;
-        self.view.message = format!(
-            "已旋转 {angle_deg}°，Pivot ({}, {}) mm",
-            pivot.x_mm, pivot.y_mm
-        );
+        self.view.message = format!("已旋转 {angle_deg}°");
         self.refresh(true)
     }
     pub fn set_flash_size(
@@ -505,13 +503,13 @@ impl Model {
                 MirrorAxis::Horizontal {
                     coordinate_mm: center.y_mm,
                 },
-                format!("水平轴 y = {} mm", center.y_mm),
+                "水平轴",
             ),
             MirrorDirection::Vertical => (
                 MirrorAxis::Vertical {
                     coordinate_mm: center.x_mm,
                 },
-                format!("垂直轴 x = {} mm", center.x_mm),
+                "垂直轴",
             ),
         };
         let document = self.info()?;
@@ -697,6 +695,17 @@ impl Model {
             Action::SetFlashSize(width, height) => self.set_flash_size(&width, height.as_deref()),
             Action::Rotate(angle, pivot) => self.numeric_rotate(&angle, pivot),
             Action::Mirror(direction) => self.mirror_selection(direction),
+            Action::Precision(precision) => {
+                let d = self
+                    .view
+                    .info
+                    .as_ref()
+                    .ok_or_else(|| error("NOT_FOUND", "请先打开文件"))?;
+                self.service
+                    .set_manufacturing_precision(&d.document_id, &d.revision, precision)?;
+                self.view.message = "制造导出策略已更新；现有几何未改变".into();
+                self.refresh(false)
+            }
             Action::ProbeDrag(p, tolerance_mm) => {
                 self.view.drag_hit = false;
                 self.view.press_hit = self.hit(p, tolerance_mm)?;
@@ -733,8 +742,7 @@ impl Model {
                         dy_mm: drag.delta.y_mm,
                     },
                 )?;
-                self.view.message =
-                    format!("已拖动 ΔX {} / ΔY {} mm", drag.delta.x_mm, drag.delta.y_mm);
+                self.view.message = "已拖动所选对象".into();
                 self.refresh(true)
             }
             Action::Duplicate | Action::Delete => {

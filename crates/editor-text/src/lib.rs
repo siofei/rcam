@@ -286,6 +286,20 @@ pub fn generate_timed(
     face_index: u32,
     layout: &Layout,
 ) -> Result<(Vec<SemanticGeometry>, GenerationTimings), TextError> {
+    generate_timed_on_grid(bytes, face_index, layout, 1e-6)
+}
+/// Manufacture text directly on the selected relative lattice before fitting.
+/// Existing public generation retains its FS-sized default for API compatibility.
+pub fn generate_timed_on_grid(
+    bytes: &[u8],
+    face_index: u32,
+    layout: &Layout,
+    resolution_mm: f64,
+) -> Result<(Vec<SemanticGeometry>, GenerationTimings), TextError> {
+    editor_core::units::ManufacturingPrecision { resolution_mm }
+        .validate()
+        .map_err(|_| TextError::UnsupportedOutline)?;
+    validate_layout(layout)?;
     let started = std::time::Instant::now();
     let mut timings = GenerationTimings::default();
     validate_layout(layout)?;
@@ -338,6 +352,14 @@ pub fn generate_timed(
     // ttf-parser supplies f32 font coordinates. Reserve a conservative conversion
     // allowance in addition to flattening; reject scales that cannot certify it.
     if !scale.is_finite() || scale <= 0. || scale * 65536. * f32::EPSILON as f64 * 4. > 0.00025 {
+        return Err(TextError::UnsupportedOutline);
+    }
+    let conversion_allowance = scale * 65536. * f32::EPSILON as f64 * 4.;
+    if conversion_allowance
+        + layout.curve_tolerance_mm * 0.9
+        + resolution_mm / std::f64::consts::SQRT_2
+        > 0.001
+    {
         return Err(TextError::UnsupportedOutline);
     }
     let mut outlines = Vec::new();
@@ -442,7 +464,7 @@ pub fn generate_timed(
         VerticalAlign::Top => ymax,
     };
     let (sin, cos) = layout.rotation_deg.to_radians().sin_cos();
-    // Rotation is frozen before fitting. Fit on the existing 1 nm writer lattice,
+    // Rotation is frozen before fitting. Fit on the document manufacturing lattice,
     // then apply the freely translated anchor once. Pointer motion cannot refit.
     let local = |p: Point| {
         let x = p[0] - anchor_x;
@@ -460,10 +482,20 @@ pub fn generate_timed(
         for polygon in contours::join(normalized)? {
             let mut points: Vec<_> = polygon
                 .into_iter()
-                .map(|p| [(p[0] * 1e6).round() / 1e6, (p[1] * 1e6).round() / 1e6])
+                .map(|p| {
+                    [
+                        (p[0] / resolution_mm).round() * resolution_mm,
+                        (p[1] / resolution_mm).round() * resolution_mm,
+                    ]
+                })
                 .collect();
             points.dedup();
-            let edges = contours::fit(&points, layout.curve_tolerance_mm * 0.5, &mut work)?;
+            let edges = contours::fit_on_grid(
+                &points,
+                layout.curve_tolerance_mm * 0.5,
+                &mut work,
+                resolution_mm,
+            )?;
             let contour = RegionContour {
                 role: RegionRole::Solid,
                 edges,

@@ -174,20 +174,23 @@ impl ApplicationService {
                 "font hash mismatch",
             ));
         }
-        let (geometries, geometry_timings) =
-            editor_text::generate_timed(&bytes, params.font.face_index, &params.layout).map_err(
-                |e| ServiceError {
-                    code: match e {
-                        TextError::InvalidTopology => "VALIDATION_FAILED",
-                        TextError::ResourceLimit => "RESOURCE_LIMIT",
-                        TextError::UnsupportedOutline => "UNSUPPORTED_FEATURE",
-                        _ => "INVALID_ARGUMENT",
-                    }
-                    .into(),
-                    message: format!("text generation rejected: {e:?}"),
-                    details: serde_json::json!({"field":"text"}),
-                },
-            )?;
+        let (geometries, geometry_timings) = editor_text::generate_timed_on_grid(
+            &bytes,
+            params.font.face_index,
+            &params.layout,
+            record.manufacturing_precision.resolution_mm,
+        )
+        .map_err(|e| ServiceError {
+            code: match e {
+                TextError::InvalidTopology => "VALIDATION_FAILED",
+                TextError::ResourceLimit => "RESOURCE_LIMIT",
+                TextError::UnsupportedOutline => "UNSUPPORTED_FEATURE",
+                _ => "INVALID_ARGUMENT",
+            }
+            .into(),
+            message: format!("text generation rejected: {e:?}"),
+            details: serde_json::json!({"field":"text"}),
+        })?;
         record
             .history
             .validate_generated(&record.document, &params.layer_id, &geometries)

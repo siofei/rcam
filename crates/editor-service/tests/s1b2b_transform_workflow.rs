@@ -255,6 +255,12 @@ fn rotate_line_roundtrip() {
     let mut r = Run::source(src);
     r.rotate("0", 37., MmPoint::new(2., 3.));
     let scene = r.roundtrip("1");
+    let grid = |p: MmPoint| {
+        MmPoint::new(
+            (p.x_mm * 10000.).round() / 10000.,
+            (p.y_mm * 10000.).round() / 10000.,
+        )
+    };
     if let SemanticGeometry::Line {
         start,
         end,
@@ -263,11 +269,11 @@ fn rotate_line_roundtrip() {
     {
         near(
             start,
-            rotated(MmPoint::new(0., 0.), 37., MmPoint::new(2., 3.)),
+            grid(rotated(MmPoint::new(0., 0.), 37., MmPoint::new(2., 3.))),
         );
         near(
             end,
-            rotated(MmPoint::new(10., 0.), 37., MmPoint::new(2., 3.)),
+            grid(rotated(MmPoint::new(10., 0.), 37., MmPoint::new(2., 3.))),
         );
         assert_eq!(width_mm, 0.2);
     } else {

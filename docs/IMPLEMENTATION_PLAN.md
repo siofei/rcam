@@ -146,7 +146,7 @@ Grid/Measure、GeometryMetrics 与 P1K 门禁。Mac-first；Windows deferred / n
 
 S4-A1 headless core 已实现。本次推进 S4-A2 Gate 0、精度参数和只读预览服务，
 允许模块、R/AT 对应、后续 GUI/IME/offset 闭环见 S4_A2_PLAN.md。
-完整 S4-A2 尚未完成；已知高精度窄片拒绝保留在 S4_A2_REVIEW.md。
+S4-A2.1/A2.2 已通过 Mac-first 阶段验收；历史 foundation 记录保留在 S4_A2_REVIEW.md。
 Windows deferred / not executed；不进入 S4-B/S5。
 
 
@@ -160,6 +160,14 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-Global Units & Manufacturing Precision Foundation：**BLOCKED UNTIL S4-A2.1 PASS**。
-本轮不启动 Global Units、DXF/SVG/PLT、Final Layer Boolean Area 或 Windows。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
+Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
+
+
+### Global Units / Manufacturing Precision (current)
+
+See [plan](GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
+Windows deferred / not executed; full V1 not claimed; P100K not complete.

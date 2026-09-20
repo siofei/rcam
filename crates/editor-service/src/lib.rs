@@ -6,6 +6,8 @@
 mod metrics;
 mod text;
 pub use editor_core::edit::MirrorAxis;
+pub use editor_core::units::ManufacturingPrecision;
+
 use editor_core::edit::{
     BatchEdit, EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
 };
@@ -213,6 +215,10 @@ fn is_under_any(path: &Path, roots: &[PathBuf]) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DocumentInfo {
+    #[serde(default)]
+    pub manufacturing_precision: ManufacturingPrecision,
+    #[serde(default)]
+    pub export_policy_dirty: bool,
     pub workspace_revision: String,
     pub api_version: u32,
     pub document_id: String,
@@ -368,6 +374,8 @@ pub struct ExportResult {
 
 #[derive(Debug, Clone)]
 struct S1DocumentRecord {
+    manufacturing_precision: ManufacturingPrecision,
+    saved_precision: ManufacturingPrecision,
     metrics: metrics::MetricsCache,
     workspace_revision: u64,
     workspace: HashMap<String, LayerWorkspaceState>,
@@ -639,6 +647,7 @@ impl ApplicationService {
                     "objects.delete".into(),
                     "history.undo".into(),
                     "gerber.export_layer".into(),
+                    "document.set_manufacturing_precision".into(),
                 ],
                 supported_gerber_subset: vec![
                     "FS absolute coordinates".into(),
@@ -708,6 +717,7 @@ impl ApplicationService {
                 "objects.get".into(),
                 "document.validate".into(),
                 "gerber.export_layer".into(),
+                    "document.set_manufacturing_precision".into(),
             ],
             unsupported_operations: vec![],
             supported_gerber_subset: vec![
@@ -855,6 +865,8 @@ impl ApplicationService {
             })
             .collect();
         let record = S1DocumentRecord {
+            manufacturing_precision: ManufacturingPrecision::default(),
+            saved_precision: ManufacturingPrecision::default(),
             metrics: metrics::MetricsCache::default(),
             workspace,
             workspace_revision: 0,
@@ -1448,7 +1460,10 @@ impl ApplicationService {
             .get(document_id)
             .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         check_revision(record.revision, expected_revision)?;
-        if !discard_changes && content_hash(&record.document) != record.saved_content_hash {
+        if !discard_changes
+            && (content_hash(&record.document) != record.saved_content_hash
+                || record.manufacturing_precision != record.saved_precision)
+        {
             return Err(ServiceError {
                 code: "CONFIRMATION_REQUIRED".into(),
                 message: "文档有未保存修改，需要明确放弃。".into(),
@@ -1472,6 +1487,32 @@ impl ApplicationService {
             valid: true,
             diagnostics: record.diagnostics.clone(),
         })
+    }
+
+    /// Export policy is separate from content history. Revision fences stale work.
+    pub fn set_manufacturing_precision(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        precision: ManufacturingPrecision,
+    ) -> Result<DocumentInfo, ServiceError> {
+        precision
+            .validate()
+            .map_err(|e| ServiceError::invalid_field("resolution_mm", &e))?;
+        let record = self
+            .documents
+            .get_mut(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        check_revision(record.revision, expected_revision)?;
+        if record.manufacturing_precision != precision {
+            let revision = record
+                .revision
+                .checked_add(1)
+                .ok_or_else(|| ServiceError::invalid("revision exhausted"))?;
+            record.manufacturing_precision = precision;
+            record.revision = revision;
+        }
+        Ok(document_info(document_id, record))
     }
 
     pub fn export_layer(
@@ -1506,7 +1547,8 @@ impl ApplicationService {
             return Err(ServiceError::not_found("layer", &params.layer_id));
         }
         document.layers.retain(|layer| layer.id == params.layer_id);
-        document.validate().map_err(map_semantic_error)?;
+        document = gerber_io::normalize_manufacturing(&document, record.manufacturing_precision)
+            .map_err(|e| ServiceError::invalid_field("manufacturing_precision", &e))?;
         let temp = temporary_output_path(&target)?;
         if temp.exists() {
             return Err(ServiceError {
@@ -1545,6 +1587,7 @@ impl ApplicationService {
         };
         let record = self.documents.get_mut(document_id).unwrap();
         record.saved_content_hash = saved_content_hash;
+        record.saved_precision = record.manufacturing_precision;
         record.last_saved_path = Some(result.path.clone());
         Ok(result)
     }
@@ -1858,6 +1901,17 @@ impl ApplicationService {
                 let document_id = required_document_id(request)?;
                 serde_json::to_value(self.validate(document_id)?).map_err(serialize_error)?
             }
+            "document.set_manufacturing_precision" => {
+                let id = required_document_id(request)?;
+                let revision = request
+                    .expected_revision
+                    .as_deref()
+                    .ok_or_else(|| ServiceError::invalid("expected_revision is required"))?;
+                let precision = serde_json::from_value(request.params.clone())
+                    .map_err(|e| ServiceError::invalid(e.to_string()))?;
+                serde_json::to_value(self.set_manufacturing_precision(id, revision, precision)?)
+                    .map_err(serialize_error)?
+            }
             "gerber.export_layer" => {
                 let document_id = required_document_id(request)?;
                 let expected_revision = request.expected_revision.as_deref().ok_or_else(|| {
@@ -2023,6 +2077,8 @@ fn check_workspace_edit(record: &S1DocumentRecord, layer_id: &str) -> Result<(),
 
 fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
     DocumentInfo {
+        manufacturing_precision: record.manufacturing_precision,
+        export_policy_dirty: record.manufacturing_precision != record.saved_precision,
         workspace_revision: record.workspace_revision.to_string(),
         api_version: API_VERSION,
         document_id: document_id.into(),

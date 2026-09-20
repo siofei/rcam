@@ -2,7 +2,7 @@ use crate::state::View;
 use editor_service::MetricValue;
 /// Presentation only; the worker queries ApplicationService when selection or
 /// manufacturing identity changes. The UI never computes manufacturing metrics.
-pub fn lines(view: &View) -> Vec<String> {
+pub fn lines(view: &View, unit: crate::tools::DisplayUnit, resolution: f64) -> Vec<String> {
     let count = view.selected.ordered.len();
     if count == 0 {
         return vec![];
@@ -19,8 +19,8 @@ pub fn lines(view: &View) -> Vec<String> {
                 area_mm2,
                 perimeter_mm,
             } => vec![
-                format!("面积：{area_mm2:.6} mm²"),
-                format!("周长：{perimeter_mm:.6} mm"),
+                format!("面积：{}", unit.format_area(*area_mm2, resolution)),
+                format!("周长：{}", unit.format_length(*perimeter_mm, resolution)),
             ],
             MetricValue::Unsupported { reason } => vec![
                 "面积/周长：暂不可精确计算".into(),
@@ -47,8 +47,14 @@ pub fn lines(view: &View) -> Vec<String> {
     };
     let mut lines = vec![
         format!("已精确：{exact} / {count}"),
-        format!("对象面积合计{suffix}：{area:.6} mm²"),
-        format!("对象制造边界周长合计{suffix}（含孔边）：{perimeter:.6} mm"),
+        format!(
+            "对象面积合计{suffix}：{}",
+            unit.format_area(area, resolution)
+        ),
+        format!(
+            "对象制造边界周长合计{suffix}（含孔边）：{}",
+            unit.format_length(perimeter, resolution)
+        ),
     ];
     if exact < count {
         lines.push(format!("{} 个对象暂不可计算", count - exact));

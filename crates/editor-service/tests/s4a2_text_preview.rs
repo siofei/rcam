@@ -397,12 +397,16 @@ fn accepted_custom_precision_exports_and_reopens_within_writer_budget() {
                     (
                         editor_core::RegionEdge::Line { start: a, end: b },
                         editor_core::RegionEdge::Line { start: c, end: d },
-                    ) => assert!(a.distance_mm(*c) < 1e-6 && b.distance_mm(*d) < 1e-6),
+                    ) => assert!(
+                        a.distance_mm(output_grid(*c)) < 1e-6
+                            && b.distance_mm(output_grid(*d)) < 1e-6
+                    ),
                     (editor_core::RegionEdge::Arc(a), editor_core::RegionEdge::Arc(b)) => {
                         assert!(
-                            a.start.distance_mm(b.start) < 1e-6 && a.end.distance_mm(b.end) < 1e-6
+                            a.start.distance_mm(output_grid(b.start)) < 1e-6
+                                && a.end.distance_mm(output_grid(b.end)) < 1e-6
                         );
-                        assert!(a.center.distance_mm(b.center) < 1e-6);
+                        assert!(a.center.distance_mm(output_grid(b.center)) < 1e-6);
                         assert_eq!(a.direction, b.direction);
                         assert_eq!(a.full_circle, b.full_circle);
                     }
@@ -459,4 +463,12 @@ fn material_offset_real_glyphs_are_dark_and_atomic() {
         "VALIDATION_FAILED"
     );
     assert_eq!(state(&service, &info.document_id), before);
+}
+
+// Independent default manufacturing-grid oracle; encoding comparison stays 1 nm.
+fn output_grid(p: editor_core::MmPoint) -> editor_core::MmPoint {
+    editor_core::MmPoint::new(
+        (p.x_mm * 10000.).round() / 10000.,
+        (p.y_mm * 10000.).round() / 10000.,
+    )
 }

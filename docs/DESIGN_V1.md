@@ -366,7 +366,7 @@ Manufacturing Model
 |---|---|
 | 核心计算比较容差 | `1e-6 mm`；边界相交／退化判断按场景单独处理，不能全局随意放大 |
 | Gerber 默认输出 | 毫米、6 位小数；计划采用经过规范校验的绝对坐标格式 |
-| 输出量化步长 q | `0.000001 mm`；每轴舍入误差不得超过 q/2 加数值舍入余量 |
+| 输出制造量化步长 q | 文档 ManufacturingPrecision，默认 `0.0001 mm`；每轴舍入误差不得超过 q/2 加数值舍入余量。FS 编码保持 `0.000001 mm`，不是制造 resolution（ADR 0026） |
 | 字体曲线制造逼近误差 | 最大轮廓偏差 `0.001 mm`；与屏幕缩放无关 |
 | 屏幕圆弧细分误差 | 常规静态显示不超过 `0.35` 个物理像素 |
 | 可接受的运行坐标范围 | 由冻结的输出整数位和几何运算范围共同决定；所有坐标及 I/J 都要检查 |
@@ -1023,11 +1023,11 @@ resource and API decisions: [ADR 0024](adr/0024-s4a1-vector-text.md).
 AT-047–052 headless coverage does not replace GUI/IME, independent viewer
 or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.
 
-### S4-A2 foundation (full Text GUI pending)
+### S4-A2 foundation (historical; superseded by S4-A2.1/A2.2 PASS)
 
 See [ADR 0025](adr/0025-s4a2-text-gui.md) for bounded configurable manufacturing
 precision and read-only service preview. The default remains 0.00025 mm and
-the total 0.001 mm threshold is unchanged. GUI/IME/offset remain pending.
+the total 0.001 mm threshold is unchanged. GUI/IME/offset subsequently passed the bounded S4-A2.1/A2.2 Mac-first gates.
 
 ### S4-A2 Canvas UX 增补与后续基础层顺序（2026-09-20）
 
@@ -1054,8 +1054,8 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-Global Units & Manufacturing Precision Foundation：**BLOCKED UNTIL S4-A2.1 PASS**。
-本轮不启动 Global Units、DXF/SVG/PLT、Final Layer Boolean Area 或 Windows。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
+Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
 
 ### S4-A2.2 text interaction amendment
@@ -1064,4 +1064,12 @@ The explicit user request supersedes the earlier single-line-only and floating-E
 cancel rules. See [S4-A2.2](S4_A2_2_PLAN.md): multiline text, an original built-in
 ASCII centerline font, selectable local outline fonts, Confirm → floating → click,
 and floating Escape → resume draft modal. Manufacturing changes still use one
-ApplicationService transaction. Global Units and Windows remain deferred.
+ApplicationService transaction. Global Units is the current slice; Windows remains deferred.
+
+
+### Global Units / Manufacturing Precision (current)
+
+See [plan](GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
+Windows deferred / not executed; full V1 not claimed; P100K not complete.

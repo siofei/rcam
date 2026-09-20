@@ -13,7 +13,7 @@ use std::{
 
 pub const DEBOUNCE: Duration = Duration::from_millis(200);
 const RECENT_LIMIT: usize = 8;
-pub const PRESETS: [(&str, f64); 3] = [("标准", 0.00025), ("高", 0.000125), ("超高", 0.0000625)];
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Placement {
     #[default]
@@ -42,6 +42,8 @@ pub enum Reply {
     },
 }
 pub struct Draft {
+    pub(crate) unit_cache: Vec<(String, f64)>,
+    pub display_unit: editor_core::units::DisplayUnit,
     pub floating: Option<MmPoint>,
     pub context: Option<(String, String, String, String)>,
     pub text: String,
@@ -87,6 +89,8 @@ pub struct Draft {
 impl Default for Draft {
     fn default() -> Self {
         Self {
+            unit_cache: Vec::new(),
+            display_unit: Default::default(),
             floating: None,
             context: None,
             text: String::new(),
@@ -125,7 +129,7 @@ impl Default for Draft {
             changed_at: None,
             submitted: None,
             preview: None,
-            status: "选择字体并输入单行文字".into(),
+            status: "选择字体并输入文字".into(),
             candidates: 0,
             publish_ms: 0.,
         }
@@ -140,6 +144,61 @@ fn number(value: &str) -> Result<f64, String> {
         .ok_or_else(|| "请输入有限毫米数值".into())
 }
 impl Draft {
+    pub fn change_unit(&mut self, unit: editor_core::units::DisplayUnit) -> Result<(), String> {
+        if unit == self.display_unit {
+            return Ok(());
+        }
+        let values = [
+            &self.height,
+            &self.baseline_spacing,
+            &self.stroke_width,
+            &self.offset,
+            &self.tracking,
+            &self.x,
+            &self.y,
+            &self.rx,
+            &self.ry,
+            &self.dx,
+            &self.dy,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, v)| {
+            self.unit_cache
+                .get(index)
+                .filter(|(text, _)| text == v)
+                .map_or_else(|| self.display_unit.parse_length(v), |(_, mm)| Ok(*mm))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+        self.unit_cache.clear();
+        for (field, mm) in [
+            &mut self.height,
+            &mut self.baseline_spacing,
+            &mut self.stroke_width,
+            &mut self.offset,
+            &mut self.tracking,
+            &mut self.x,
+            &mut self.y,
+            &mut self.rx,
+            &mut self.ry,
+            &mut self.dx,
+            &mut self.dy,
+        ]
+        .into_iter()
+        .zip(values)
+        {
+            *field = unit.input(mm);
+            self.unit_cache.push((field.clone(), mm));
+        }
+        self.display_unit = unit;
+        Ok(())
+    }
+    fn length(&self, index: usize, text: &str) -> Result<f64, String> {
+        self.unit_cache
+            .get(index)
+            .filter(|(shown, _)| shown == text)
+            .map_or_else(|| self.display_unit.parse_length(text), |(_, mm)| Ok(*mm))
+    }
     pub fn changed(&mut self) {
         self.floating = None;
         self.generation = self
@@ -165,7 +224,7 @@ impl Draft {
 
         self.changed();
         self.font_generation += 1;
-        self.text.clear();
+        // Retain user input and formatting across placement, cancel and reopening.
         self.pending_apply = None;
         self.pending_font = None;
         self.pending_postscript = None;
@@ -179,11 +238,11 @@ impl Draft {
                 return Err("请先拾取或设置相对基点".into());
             }
             (
-                number(&self.rx)? + number(&self.dx)?,
-                number(&self.ry)? + number(&self.dy)?,
+                self.length(7, &self.rx)? + self.length(9, &self.dx)?,
+                self.length(8, &self.ry)? + self.length(10, &self.dy)?,
             )
         } else {
-            (number(&self.x)?, number(&self.y)?)
+            (self.length(5, &self.x)?, self.length(6, &self.y)?)
         };
         if !x.is_finite() || !y.is_finite() {
             return Err("最终坐标溢出".into());
@@ -192,14 +251,14 @@ impl Draft {
     }
     pub fn set_mode(&mut self, mode: Placement) {
         if let Ok(p) = self.anchor() {
-            self.x = p.x_mm.to_string();
-            self.y = p.y_mm.to_string();
+            self.x = self.display_unit.input(p.x_mm);
+            self.y = self.display_unit.input(p.y_mm);
             if mode == Placement::Relative
                 && self.has_reference
-                && let (Ok(rx), Ok(ry)) = (number(&self.rx), number(&self.ry))
+                && let (Ok(rx), Ok(ry)) = (self.length(7, &self.rx), self.length(8, &self.ry))
             {
-                self.dx = (p.x_mm - rx).to_string();
-                self.dy = (p.y_mm - ry).to_string();
+                self.dx = self.display_unit.input(p.x_mm - rx);
+                self.dy = self.display_unit.input(p.y_mm - ry);
             }
         }
         self.placement = mode;
@@ -208,13 +267,13 @@ impl Draft {
     }
     pub fn canvas_click(&mut self, p: MmPoint) {
         if self.placement == Placement::Relative && self.pick_reference {
-            self.rx = p.x_mm.to_string();
-            self.ry = p.y_mm.to_string();
+            self.rx = self.display_unit.input(p.x_mm);
+            self.ry = self.display_unit.input(p.y_mm);
             self.has_reference = true;
             self.pick_reference = false;
         } else if self.placement == Placement::Mouse {
-            self.x = p.x_mm.to_string();
-            self.y = p.y_mm.to_string();
+            self.x = self.display_unit.input(p.x_mm);
+            self.y = self.display_unit.input(p.y_mm);
         } else {
             return;
         }
@@ -230,11 +289,11 @@ impl Draft {
                 text: self.text.clone(),
                 x_mm: anchor.x_mm,
                 y_mm: anchor.y_mm,
-                height_mm: number(&self.height)?,
-                baseline_spacing_mm: number(&self.baseline_spacing)?,
-                stroke_width_mm: number(&self.stroke_width)?,
-                outline_offset_mm: number(&self.offset)?,
-                tracking_mm: number(&self.tracking)?,
+                height_mm: self.length(0, &self.height)?,
+                baseline_spacing_mm: self.length(1, &self.baseline_spacing)?,
+                stroke_width_mm: self.length(2, &self.stroke_width)?,
+                outline_offset_mm: self.length(3, &self.offset)?,
+                tracking_mm: self.length(4, &self.tracking)?,
                 rotation_deg: number(&self.rotation)?,
                 curve_tolerance_mm: number(&self.tolerance)?,
                 h_align: self.h_align,
@@ -454,7 +513,9 @@ mod tests {
         }
         assert_eq!(d.recent.len(), 8);
         assert_eq!(d.recent[0].family, "font11");
+        let retained = d.text.clone();
         d.cancel();
-        assert!(d.text.is_empty() && d.preview.is_none() && d.changed_at.is_none());
+        assert_eq!(d.text, retained);
+        assert!(d.preview.is_none() && d.changed_at.is_none());
     }
 }

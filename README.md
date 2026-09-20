@@ -1,10 +1,10 @@
-# RCam Gerber editor — Mac-first S4-A2（实施中）
+# RCam Gerber editor — Mac-first Global Units / Manufacturing Precision
 
 S3-FINAL 正式收口基础编辑：GUI 制造修改统一走 `ApplicationService`；补齐标准 C/R/O/P
 Flash 尺寸写时复制、单事务 `edit.batch`、完整事务边界的 Undo 预算淘汰、对象端点/中心优先
 Snap、mm/in 显示以及同一 release build 的 Mac 原生 P1K/编辑/另存重开门禁。范围、证据映射和
 边界审计见 [S3 coverage](docs/S3_FINAL_COVERAGE.md)、[service audit](docs/S3_SERVICE_BOUNDARY_AUDIT.md)
-与 [final review](docs/S3_FINAL_REVIEW.md)。S4-A1 headless vector text core 已实现；S4-A2 正在实现正式 Text GUI / IME / Preview。Windows、完整 V1 与双平台验收仍未完成。
+与 [final review](docs/S3_FINAL_REVIEW.md)。S4-A1 headless vector text core 已实现；S4-A2.1 PASS（Mac-first），S4-A2.2 PASS（Mac-first）。Windows、完整 V1 与双平台验收仍未完成。
 
 历史 `S2-B1/S2-B2/S2-B3/S2-C1/S2-C2` 名称和文件继续保留；其中编辑、Undo/Redo、
 Grid/Snap/Measure 实际覆盖正式 S3 范围。自 S3-FINAL 起恢复 DESIGN_V1 的正式阶段编号。
@@ -32,7 +32,7 @@ Mac 启动：`cargo run --release --locked -p editor-app`。
 移动只使用 ΔX/ΔY 毫米；Cmd+Z 撤销，Shift+Cmd+Z / Cmd+Y 重做。文本字段保留文本撤销。
 另存为必须使用新路径；源文件不会被覆盖。元数据丢弃必须按提示确认。
 显隐、锁定和显示名只在本次会话保留，不产生制造 dirty 或历史。
-超出显示精度/预算时整幅拒绝并禁止移动与保存，可缩小视图或撤销恢复。
+显示采用 camera-relative local f32、safe zoom clamp 和 last-good-frame；资源预算失败保留诊断，不降低制造精度。
 
 macOS 界面从系统字体加载中文，不打包用户字体；S4-A1 已支持中英文制造矢量文字核心；S4-A2 已接入 Text GUI、系统字体搜索列表（保留文件选择）、异步 Preview 和显式定位；最终验收状态见 S4_A2_REVIEW。
 Windows、完整 CORE10、性能与双平台 V1 验收仍未完成；不能作为生产发行声明。
@@ -129,8 +129,8 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-Global Units & Manufacturing Precision Foundation：**BLOCKED UNTIL S4-A2.1 PASS**。
-本轮不启动 Global Units、DXF/SVG/PLT、Final Layer Boolean Area 或 Windows。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
+Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
 
 ### S4-A2.2 — 多行文本和菜单交互
@@ -142,3 +142,11 @@ ASCII 线条字体；中文选择本地系统轮廓字体。文本支持多行�
 默认线条字体输出真实有限宽度 Line，轮廓字体继续使用 S4-A2.1 Region / Line / Arc 路径。
 基线距离 0 为自动 1.3 × 字高；128 字符上限保留。
 实际测试和未执行项见 [S4_A2_2_REVIEW](docs/S4_A2_2_REVIEW.md)，Windows 未执行。
+
+
+### Global Units / Manufacturing Precision (current)
+
+See [plan](docs/GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
+Windows deferred / not executed; full V1 not claimed; P100K not complete.

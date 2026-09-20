@@ -907,13 +907,13 @@ fn modifier_click_gestures_preserve_press_intent_without_starting_move() {
 fn multi_selection_panel_labels_object_sum_not_layer_area() {
     let (mut m, _) = setup();
     m.run(Action::Select(MmPoint::new(10., 20.), 0., Replace));
-    let single = crate::metrics_panel::lines(&m.view).join("\n");
-    assert!(single.contains("面积：3.141593 mm²"));
+    let single = crate::metrics_panel::lines(&m.view, Default::default(), 0.000001).join("\n");
+    assert!(single.contains("面积：3.141592653590 mm²"));
     assert!(single.contains("周长：6.283185 mm"));
     m.run(Action::Select(MmPoint::new(21.5, 20.), 0., Add));
-    let multiple = crate::metrics_panel::lines(&m.view).join("\n");
+    let multiple = crate::metrics_panel::lines(&m.view, Default::default(), 0.000001).join("\n");
     assert!(multiple.contains("已精确：2 / 2"));
-    assert!(multiple.contains("对象面积合计：12.566371 mm²"));
+    assert!(multiple.contains("对象面积合计：12.566370614359 mm²"));
     assert!(multiple.contains("对象制造边界周长合计（含孔边）：25.132741 mm"));
     for forbidden in ["实际开口面积", "钢网总开口面积", "最终面积"] {
         assert!(!multiple.contains(forbidden));
@@ -921,13 +921,13 @@ fn multi_selection_panel_labels_object_sum_not_layer_area() {
     m.view.metrics[1].value = editor_service::MetricValue::Unsupported {
         reason: "test boundary".into(),
     };
-    let partial = crate::metrics_panel::lines(&m.view).join("\n");
+    let partial = crate::metrics_panel::lines(&m.view, Default::default(), 0.000001).join("\n");
     assert!(partial.contains("已精确：1 / 2"));
     assert!(partial.contains("对象面积合计（已精确项）"));
     assert!(partial.contains("1 个对象暂不可计算"));
     m.view.selected.ordered.remove(0);
     m.view.metrics.remove(0);
-    let unsupported = crate::metrics_panel::lines(&m.view).join("\n");
+    let unsupported = crate::metrics_panel::lines(&m.view, Default::default(), 0.000001).join("\n");
     assert!(unsupported.contains("暂不可精确计算"));
     assert!(!unsupported.contains("0.000000"));
 }

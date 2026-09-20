@@ -83,7 +83,7 @@ B0 表示数据安全、制造几何或核心发行阻塞；B1 表示 V1 必需�
 
 ## 4. 统一测量口径
 
-制造坐标比较使用设计第6节的毫米容差。默认输出量化步长q=0.000001mm；每轴舍入误差≤q/2加浮点余量。字体贝塞尔转制造轮廓的最大偏差≤0.001mm。显示细分的0.35物理像素误差不允许被带到Gerber保存中。
+制造坐标比较使用设计第6节的毫米容差。输出制造量化步长q由文档精度指定，默认q=0.0001mm；FS编码仍为0.000001mm（ADR 0026）。每轴舍入误差≤q/2加浮点余量。字体贝塞尔转制造轮廓的最大偏差≤0.001mm。显示细分的0.35物理像素误差不允许被带到Gerber保存中。
 
 性能按设计第14节：release、固定画布、预热10秒、固定60秒交互、A/B各重复3次，保留全部数据。表中的p95／p99是冻结采集口径的百分位数，不是用平均FPS换算出来。每次运行都要达标，不只选择最佳一次。
 
@@ -1869,3 +1869,14 @@ supported, stroke width and export/reopen verified. AT-031–034/040: multiline 
 is text input, Confirm hides modal, floating Escape restores draft without mutation,
 canvas click commits once. Menu entries route to existing actions. Previous newline
 rejection and floating-Esc-discard expectations are superseded by the user request.
+
+
+### S4 Global Units amendment
+
+Existing AT-007/031/033/034/041/043–055/058/062/086–095 identities are unchanged.
+Add four-unit equivalent geometry, explicit suffix/current-unit parsing, Auto
+length/area digits, focused draft isolation and repeated unit-switch byte identity.
+Check default/preset/custom resolution, symmetric ties-away rounding, idempotence,
+invalid/overflow rejection, source preservation, policy dirty/revision/no-op,
+export/reparse, quantized Arc/Region topology rejection and text retention across
+create/cancel/reopen. Native Mac steps and actual results belong to the stage review.

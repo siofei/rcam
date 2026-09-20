@@ -5,6 +5,7 @@ mod bounds;
 pub mod grid;
 pub mod hit_test;
 pub mod metrics;
+pub mod units;
 pub use bounds::{BoundsMm, geometries_bounds};
 pub mod edit;
 mod transform;

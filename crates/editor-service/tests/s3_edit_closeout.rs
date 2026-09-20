@@ -567,7 +567,11 @@ fn complete_headless_s3_edit_validate_export_reopen_geometry_flow() {
                     ..
                 },
             ) => {
-                assert!(actual_center.distance_mm(*expected_center) <= 1e-6);
+                let quantized = editor_core::MmPoint::new(
+                    (expected_center.x_mm * 10000.).round() / 10000.,
+                    (expected_center.y_mm * 10000.).round() / 10000.,
+                );
+                assert!(actual_center.distance_mm(quantized) <= 1e-6);
                 assert_eq!(actual_transform, expected_transform);
             }
             _ => panic!("unexpected geometry in fixed headless fixture"),

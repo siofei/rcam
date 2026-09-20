@@ -10,6 +10,7 @@ pub(crate) enum ActiveModal {
     Flash,
     Grid,
     Rename,
+    Units,
 }
 impl ActiveModal {
     fn title(self) -> &'static str {
@@ -21,6 +22,7 @@ impl ActiveModal {
             Self::Flash => "Flash 尺寸属性",
             Self::Grid => "网格 / 吸附设置",
             Self::Rename => "图层名称",
+            Self::Units => "单位 / 制造精度",
         }
     }
 }
@@ -31,8 +33,12 @@ impl EditorApp {
         }
         self.text.cancel();
         self.drag = None;
-        self.measure.clear();
-        self.tool = if modal == ActiveModal::Text {
+        if modal != ActiveModal::Units {
+            self.measure.clear();
+        }
+        self.tool = if modal == ActiveModal::Units && self.tool == tools::ActiveTool::Measure {
+            tools::ActiveTool::Measure
+        } else if modal == ActiveModal::Text {
             tools::ActiveTool::Text
         } else {
             tools::ActiveTool::Select
@@ -51,20 +57,38 @@ impl EditorApp {
             self.rename = layer.display_name.clone();
         }
         self.mirror_direction = crate::state::MirrorDirection::Horizontal;
-        self.spacing = self.grid.spacing_mm.to_string();
+        self.spacing = if modal == ActiveModal::Units {
+            (self.precision().resolution_mm * 1000.).to_string()
+        } else {
+            self.display_unit.input(self.grid.spacing_mm)
+        };
+        if modal == ActiveModal::Text {
+            self.text.changed();
+            if self.text.font.is_none()
+                && let Some(path) = self.text.font_path.clone()
+            {
+                self.text.queue_font(path);
+            }
+        }
         self.draft_snap = self.grid.snap_enabled;
         self.dx = "0".into();
         self.dy = "0".into();
         self.angle = "90".into();
         self.pivot_mode = PivotMode::SelectionCenter;
+        self.pivot_x = "0".into();
+        self.pivot_y = "0".into();
         self.size_aperture_id = None;
         self.sync_size_fields();
     }
     pub(crate) fn cancel_modal(&mut self) {
+        let keep_measure =
+            self.modal == Some(ActiveModal::Units) && self.tool == tools::ActiveTool::Measure;
         self.modal = None;
         self.modal_pending = None;
         self.text.cancel();
-        self.tool = tools::ActiveTool::Select;
+        if !keep_measure {
+            self.tool = tools::ActiveTool::Select;
+        }
         self.ui_error = None;
         self.view.error = None;
     }
@@ -91,15 +115,16 @@ impl EditorApp {
                                     && self.modal_pending.is_none()
                                     && self.text.pending_apply.is_none()),
                             |ui| match modal {
+                                ActiveModal::Units => self.units_modal(ui),
                                 ActiveModal::Text => self.text_controls(ui),
                                 ActiveModal::Rotate | ActiveModal::Mirror => {
                                     self.transform_controls(ui)
                                 }
                                 ActiveModal::Flash => self.flash_size_controls(ui),
                                 ActiveModal::Move => {
-                                    ui.label("ΔX mm");
+                                    ui.label(format!("ΔX {}", self.display_unit.suffix()));
                                     ui.text_edit_singleline(&mut self.dx);
-                                    ui.label("ΔY mm");
+                                    ui.label(format!("ΔY {}", self.display_unit.suffix()));
                                     ui.text_edit_singleline(&mut self.dy);
                                     if ui.button("应用位移").clicked() || self.dialog_enter(ui)
                                     {
@@ -107,13 +132,13 @@ impl EditorApp {
                                     }
                                 }
                                 ActiveModal::Grid => {
-                                    ui.label("网格步长 mm");
+                                    ui.label(format!("网格步长 {}", self.display_unit.suffix()));
                                     ui.text_edit_singleline(&mut self.spacing);
                                     ui.checkbox(&mut self.draft_snap, "Grid Snap");
                                     ui.small("对象优先于网格；Alt 临时关闭吸附");
                                     if ui.button("应用设置").clicked() || self.dialog_enter(ui)
                                     {
-                                        match self.spacing.parse::<f64>() {
+                                        match self.display_unit.parse_length(&self.spacing) {
                                             Ok(v)
                                                 if editor_core::grid::snap_scalar(0., v, 0.)
                                                     .is_ok() =>
@@ -325,5 +350,69 @@ mod tests {
         frame(&mut app, &ctx, Some(egui::Key::Enter));
         assert_eq!(app.modal, None);
         assert_eq!(app.grid.spacing_mm, 0.25);
+    }
+    #[test]
+    fn retained_text_and_four_units_preserve_exact_geometry_parameters() {
+        let mut app = app();
+        app.open_modal(ActiveModal::Text);
+        app.text.text = "ABC\n123".into();
+        app.text.height = "3.1234567".into();
+        app.text.rotation = "37".into();
+        app.text.placement = crate::text_tool::Placement::Absolute;
+        app.text.x = "12.3456789".into();
+        let original = app.text.params("layer").unwrap();
+        app.cancel_modal();
+        for _ in 0..10 {
+            for unit in editor_core::units::DisplayUnit::ALL {
+                app.open_modal(ActiveModal::Units);
+                app.text.change_unit(unit).unwrap();
+                app.display_unit = unit;
+                app.cancel_modal();
+                app.open_modal(ActiveModal::Text);
+                assert_eq!(
+                    serde_json::to_value(app.text.params("layer").unwrap()).unwrap(),
+                    serde_json::to_value(&original).unwrap()
+                );
+                assert!(app.text.preview.is_none() && app.text.pending_apply.is_none());
+                app.open_modal(ActiveModal::Units);
+                assert_eq!(app.modal, Some(ActiveModal::Text));
+                app.cancel_modal();
+            }
+        }
+        app.text.height = "unfinished".into();
+        let old_unit = app.text.display_unit;
+        let different = if old_unit == editor_core::units::DisplayUnit::Inch {
+            editor_core::units::DisplayUnit::Mil
+        } else {
+            editor_core::units::DisplayUnit::Inch
+        };
+        assert!(app.text.change_unit(different).is_err());
+        assert_eq!(app.text.height, "unfinished");
+        assert_eq!(app.text.display_unit, old_unit);
+    }
+    #[test]
+    fn unit_settings_keep_measurement_and_do_not_reinterpret_active_modal() {
+        let mut app = app();
+        app.tool = tools::ActiveTool::Measure;
+        app.measure.click(editor_core::MmPoint::new(0., 0.));
+        app.measure.click(editor_core::MmPoint::new(3., 4.));
+        for unit in editor_core::units::DisplayUnit::ALL {
+            app.open_modal(ActiveModal::Units);
+            app.text.change_unit(unit).unwrap();
+            app.display_unit = unit;
+            app.cancel_modal();
+            assert!(app.tool == tools::ActiveTool::Measure);
+            assert_eq!(app.measure.values(), Some((3., 4., 5.)));
+            assert_eq!(app.measure.completed.len(), 1);
+            assert!(
+                app.measure
+                    .label_with_resolution(unit, 0.0001)
+                    .contains(&unit.format_length(5., 0.0001))
+            );
+            let action = app
+                .length_action(Action::Move("1inch".into(), "-100um".into()))
+                .unwrap();
+            assert!(matches!(action, Action::Move(x,y) if x=="25.4" && y=="-0.1"));
+        }
     }
 }
