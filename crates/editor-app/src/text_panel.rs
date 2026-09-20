@@ -199,6 +199,7 @@ impl EditorApp {
             |f| format!("{} / {}", f.family, f.subfamily),
         );
         egui::ComboBox::from_id_salt("system-text-font")
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .width(ui.available_width())
             .selected_text(selected)
             .height(280.)
@@ -219,6 +220,7 @@ impl EditorApp {
                             .clicked()
                         {
                             system_font = Some(font.clone());
+                            ui.close();
                         }
                     }
                 } else {
