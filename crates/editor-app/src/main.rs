@@ -5,6 +5,7 @@ mod display;
 #[cfg(test)]
 mod display_tests;
 mod drag;
+mod font_catalog;
 mod gpu;
 mod metrics_panel;
 mod native_bench;
@@ -12,9 +13,12 @@ mod platform;
 mod render_index;
 mod selection;
 mod state;
+mod text_panel;
+mod text_tool;
 mod tools;
 #[cfg(test)]
 mod viewport_tests;
+mod world_index;
 
 use camera::Camera;
 use eframe::egui::{self, Color32, RichText, Vec2};
@@ -33,6 +37,13 @@ enum PivotMode {
     Custom,
 }
 
+struct LastFrame {
+    scene: std::sync::Arc<display::Scene>,
+    selected: std::sync::Arc<Vec<u32>>,
+    index: std::sync::Arc<render_index::RenderIndex>,
+    uniforms: gpu::Uniforms,
+    camera: Camera,
+}
 struct EditorApp {
     tx: SyncSender<(u64, Action)>,
     rx: Receiver<(u64, View)>,
@@ -40,9 +51,12 @@ struct EditorApp {
     busy: bool,
     sequence: u64,
     camera: Camera,
+    last_good: Option<LastFrame>,
     grid: tools::GridSettings,
+    grid_visual: tools::GridVisualState,
     spacing: String,
     tool: tools::ActiveTool,
+    text: text_tool::Draft,
     measure: tools::MeasureState,
     fit: bool,
     dx: String,
@@ -66,12 +80,15 @@ struct EditorApp {
     last_title: String,
     canvas_rect: egui::Rect,
     display_error: Option<String>,
+    display_pending: bool,
     drag: Option<drag::Gesture>,
     bench: Option<native_bench::NativeBench>,
     timing: bool,
     selected_flags: std::sync::Arc<Vec<u32>>,
     last_frame: Instant,
     text_input_at_event: bool,
+    ime_active: bool,
+    reported_ppp: f32,
 }
 impl EditorApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -117,7 +134,7 @@ impl EditorApp {
             .as_ref()
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
-        eprintln!("RCam S2-C2 native GPU: {adapter}");
+        eprintln!("RCam S4-A2 native GPU: {adapter}");
         Self {
             tx,
             rx,
@@ -125,9 +142,12 @@ impl EditorApp {
             busy: false,
             sequence: 0,
             camera: Camera::default(),
+            last_good: None,
             grid: Default::default(),
+            grid_visual: Default::default(),
             spacing: "0.1".into(),
             tool: Default::default(),
+            text: Default::default(),
             measure: Default::default(),
             fit: false,
             dx: "0".into(),
@@ -151,12 +171,15 @@ impl EditorApp {
             last_title: String::new(),
             canvas_rect: egui::Rect::NOTHING,
             display_error: None,
+            display_pending: false,
             drag: None,
             bench: native_bench::NativeBench::from_env(gpu.device.clone()),
             selected_flags: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
             last_frame: Instant::now(),
             text_input_at_event: false,
+            ime_active: false,
+            reported_ppp: 0.,
         }
     }
     fn send(&mut self, a: Action) {
@@ -182,6 +205,7 @@ impl EditorApp {
             && self.view.scene.is_some()
             && !self.fit
             && self.display_error.is_none()
+            && !self.display_pending
     }
     fn open(&mut self) {
         match platform::choose_path(false, "") {
@@ -465,7 +489,21 @@ impl EditorApp {
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         // egui clears text focus on Escape before update; retain its event-time owner.
-        self.text_input_at_event = ctx.wants_keyboard_input();
+        self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
+        for event in &raw.events {
+            match event {
+                egui::Event::Ime(egui::ImeEvent::Preedit(text)) => {
+                    self.ime_active = !text.is_empty();
+                    eprintln!("ime_preedit scalars={}", text.chars().count());
+                }
+                egui::Event::Ime(egui::ImeEvent::Commit(text)) => {
+                    self.ime_active = false;
+                    eprintln!("ime_commit scalars={}", text.chars().count());
+                }
+                egui::Event::Ime(egui::ImeEvent::Disabled) => self.ime_active = false,
+                _ => {}
+            }
+        }
         if let Some(mut bench) = self.bench.take() {
             bench.input(self, ctx, raw);
             self.bench = Some(bench);
@@ -473,6 +511,11 @@ impl eframe::App for EditorApp {
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let now = Instant::now();
+        if self.reported_ppp != ctx.pixels_per_point() {
+            self.reported_ppp = ctx.pixels_per_point();
+            eprintln!("native_pixels_per_point={}", self.reported_ppp);
+        }
+        self.tick_text(ctx, now);
         if self.timing {
             eprintln!(
                 "render_frame interval_ms={:.6} canvas_physical={:.0}x{:.0} selected={} preview={} revision={}",
@@ -500,6 +543,37 @@ impl eframe::App for EditorApp {
                     gpu::selection_flags(scene, &self.view.selected.ids())
                 }));
             self.busy = false;
+            self.accept_text_reply();
+            if let Some(diagnostic) = &self.view.display_transient {
+                eprintln!("display_transient={diagnostic}");
+                if let Some(last) = &self.last_good {
+                    self.camera = last.camera;
+                }
+            }
+            if let Some(generation) = self.text.pending_apply.take()
+                && generation == self.text.generation
+            {
+                if self.view.error.is_none() {
+                    self.text.cancel();
+                    self.text.context =
+                        self.view
+                            .info
+                            .as_ref()
+                            .zip(self.layer.as_ref())
+                            .map(|(d, l)| {
+                                (
+                                    d.document_id.clone(),
+                                    d.revision.clone(),
+                                    d.workspace_revision.clone(),
+                                    l.clone(),
+                                )
+                            });
+                }
+                self.text.status = self.view.error.as_ref().map_or_else(
+                    || self.view.message.clone(),
+                    |e| format!("{}: {}", e.code, e.message),
+                );
+            }
             if let Some(drag) = &mut self.drag {
                 if self.view.error.is_none() {
                     drag.confirm(&self.view);
@@ -508,6 +582,8 @@ impl eframe::App for EditorApp {
                 }
             }
             if changed {
+                self.last_good = None;
+                self.text.cancel();
                 self.measure.clear();
                 self.drag = None;
                 self.fit = self.view.info.is_some();
@@ -607,6 +683,9 @@ impl eframe::App for EditorApp {
         let text_focus = self.text_input_at_event || ctx.wants_keyboard_input();
         if !text_focus && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.measure.clear();
+            if self.tool == tools::ActiveTool::Text {
+                self.text.cancel();
+            }
         }
         if cancel_drag || modal_open || self.display_error.is_some() {
             self.drag = None;
@@ -838,9 +917,17 @@ impl eframe::App for EditorApp {
             .width_range(230.0..=380.)
             .show(ctx, |ui| {
                 ui.add_space(8.);
-                ui.heading("对象属性");
+                ui.heading(if self.tool == tools::ActiveTool::Text {
+                    "文字工具"
+                } else {
+                    "对象属性"
+                });
                 ui.add_space(8.);
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    if self.tool == tools::ActiveTool::Text {
+                        self.text_controls(ui);
+                        ui.separator();
+                    }
                     ui.label(format!(
                         "已选择 {} 个对象",
                         self.view.selected.ordered.len()
@@ -957,7 +1044,9 @@ impl eframe::App for EditorApp {
                 let old = self.tool;
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Select, "选择");
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Measure, "测距");
+                ui.selectable_value(&mut self.tool, tools::ActiveTool::Text, "文字");
                 if old != self.tool {
+                    self.text.changed();
                     self.drag = None;
                     self.measure.clear();
                 }
@@ -991,6 +1080,7 @@ impl eframe::App for EditorApp {
                 {
                     self.camera.pan(ctx.input(|i| i.pointer.delta()));
                 }
+                let camera_before = self.camera;
                 if r.hovered()
                     && let Some(pos) = r.hover_pos()
                 {
@@ -998,10 +1088,57 @@ impl eframe::App for EditorApp {
 
                     if self.drag.is_none() {
                         self.camera.pan(scroll);
-                        self.camera.zoom(f64::from(zoom), pos, rect);
+                        let extent = self.view.scene.as_ref().map_or(1e-12, |s| {
+                            s.objects
+                                .iter()
+                                .flat_map(|o| o.bounds)
+                                .map(|v| f64::from(v).abs())
+                                .fold(1e-12, f64::max)
+                        });
+                        self.camera.zoom_view(
+                            f64::from(zoom),
+                            pos,
+                            rect,
+                            ctx.pixels_per_point(),
+                            self.view.bounds,
+                            extent,
+                        );
                     }
                     let w = self.camera.world(pos, rect);
                     cursor_label = Some(self.display_unit.point_label(w));
+                    if camera_before.center != self.camera.center
+                        || camera_before.scale != self.camera.scale
+                    {
+                        eprintln!(
+                            "native_camera center={:?} scale={} ppp={}",
+                            self.camera.center,
+                            self.camera.scale,
+                            ctx.pixels_per_point()
+                        );
+                    }
+                    if self.tool == tools::ActiveTool::Text
+                        && r.clicked_by(egui::PointerButton::Primary)
+                        && !modal_open
+                        && !text_focus
+                    {
+                        let point = if self.text.snap_text {
+                            tools::snap_point(
+                                w,
+                                tools::GridSettings {
+                                    snap_enabled: true,
+                                    ..self.grid
+                                },
+                                &[],
+                                self.camera,
+                                None,
+                                false,
+                            )
+                            .unwrap_or(w)
+                        } else {
+                            w
+                        };
+                        self.text.canvas_click(point);
+                    }
                     if self.tool == tools::ActiveTool::Measure
                         && self.usable()
                         && !modal_open
@@ -1078,12 +1215,32 @@ impl eframe::App for EditorApp {
                 }
                 self.measure.hover(measure_hover);
                 let ppm = self.camera.scale * f64::from(ctx.pixels_per_point());
+                let coverage = self.view.render_viewport;
+                let lo = self.camera.world(rect.left_bottom(), rect);
+                let hi = self.camera.world(rect.right_top(), rect);
+                let outside = coverage.is_none_or(|b| {
+                    lo.x_mm < b.min_x_mm
+                        || lo.y_mm < b.min_y_mm
+                        || hi.x_mm > b.max_x_mm
+                        || hi.y_mm > b.max_y_mm
+                });
                 let needs_lod = self.view.info.is_some()
-                    && (ppm > self.view.render_ppm
-                        || (self.view.blocked.is_some() && ppm < self.view.render_ppm / 2.));
+                    && (outside || ppm > self.view.render_ppm || ppm < self.view.render_ppm / 4.);
                 if needs_lod && !self.busy {
-                    self.send(Action::Rebuild(2f64.powf(ppm.log2().ceil())));
+                    let margin_x = (hi.x_mm - lo.x_mm) * 0.5 + 4. / ppm;
+                    let margin_y = (hi.y_mm - lo.y_mm) * 0.5 + 4. / ppm;
+                    self.send(Action::Viewport(
+                        self.camera.center,
+                        editor_core::BoundsMm {
+                            min_x_mm: lo.x_mm - margin_x,
+                            min_y_mm: lo.y_mm - margin_y,
+                            max_x_mm: hi.x_mm + margin_x,
+                            max_y_mm: hi.y_mm + margin_y,
+                        },
+                        2f64.powf(ppm.log2().ceil()),
+                    ));
                 }
+                let mut rendered = false;
                 if let Some(scene) = &self.view.scene
                     && !needs_lod
                 {
@@ -1106,29 +1263,73 @@ impl eframe::App for EditorApp {
                             let uniforms = prepared.uniforms;
                             let index = prepared.index;
                             self.display_error = None;
-                            painter.add(egui_wgpu::Callback::new_paint_callback(
-                                rect,
-                                gpu::Callback {
-                                    painted: self
-                                        .bench
-                                        .as_ref()
-                                        .map(|b| (b.painted.clone(), b.frame_id)),
-                                    index,
-                                    scene: scene.clone(),
-                                    selected: self.selected_flags.clone(),
-                                    uniforms,
-                                    format: self.format,
-                                },
-                            ));
+                            self.last_good = Some(LastFrame {
+                                scene: scene.clone(),
+                                selected: self.selected_flags.clone(),
+                                index,
+                                uniforms,
+                                camera: self.camera,
+                            });
+                            rendered = true;
                         }
                         Err(e) => {
+                            if self.display_error.as_ref() != Some(&e) {
+                                eprintln!("display_prepare_diagnostic={e}");
+                            }
                             self.display_error = Some(e);
+                            if let Some(last) = &self.last_good {
+                                self.camera = last.camera;
+                            }
                             self.drag = None;
                         }
                     }
                 }
-                self.grid
-                    .paint(&painter, self.camera, rect, ctx.pixels_per_point());
+                self.display_pending = self.view.info.is_some() && !rendered;
+                if self.view.blocked.is_some() {
+                    self.last_good = None;
+                }
+                if let Some(last) = &self.last_good {
+                    if !rendered {
+                        self.display_error = None;
+                    }
+                    painter.add(egui_wgpu::Callback::new_paint_callback(
+                        rect,
+                        gpu::Callback {
+                            painted: self.bench.as_ref().map(|b| (b.painted.clone(), b.frame_id)),
+                            index: last.index.clone(),
+                            scene: last.scene.clone(),
+                            selected: last.selected.clone(),
+                            uniforms: last.uniforms,
+                            format: self.format,
+                        },
+                    ));
+                }
+                self.invalidate_text_overlay();
+                if self.tool == tools::ActiveTool::Text {
+                    self.text.paint(&painter, self.camera, rect);
+                }
+                let grid_opacity_before = self.grid_visual.opacity;
+                if self
+                    .grid_visual
+                    .advance(self.grid.visible, ctx.input(|i| i.stable_dt))
+                {
+                    ctx.request_repaint();
+                }
+                if self.grid_visual.opacity != grid_opacity_before {
+                    eprintln!(
+                        "native_grid visible={} opacity={} ppp={}",
+                        self.grid.visible,
+                        self.grid_visual.opacity,
+                        ctx.pixels_per_point()
+                    );
+                }
+                self.grid.paint(
+                    &painter,
+                    self.camera,
+                    rect,
+                    ctx.pixels_per_point(),
+                    self.grid_visual.opacity,
+                );
                 if self.tool == tools::ActiveTool::Measure {
                     self.measure
                         .paint_in(&painter, self.camera, rect, self.display_unit);
@@ -1194,8 +1395,8 @@ impl eframe::App for EditorApp {
                 let message =
                     if let Some(e) = self.view.blocked.as_ref().or(self.display_error.as_ref()) {
                         format!("无法安全显示 / 编辑\n{e}\n可撤销、缩小视图或关闭文件")
-                    } else if needs_lod {
-                        "正在准备当前缩放的完整图形…".into()
+                    } else if needs_lod && self.last_good.is_none() {
+                        "正在准备画布…".into()
                     } else if self.view.info.is_none() {
                         "打开 Gerber 开始编辑\n使用“打开…”或从 Finder 拖入单个文件".into()
                     } else if self.view.layers.iter().all(|l| !l.visible) {

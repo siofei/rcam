@@ -24,7 +24,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs, io};
-pub use text::{FontIdentity, TextParams, TextPreviewResult, TextResult};
+pub use text::{FontIdentity, FontInfo, TextParams, TextPreviewResult, TextResult, TextTimings};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
 

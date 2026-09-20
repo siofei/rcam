@@ -569,6 +569,11 @@ It does not allocate IDs, write files, alter dirty state or consume Undo.
 Both paths share font and insertion preflight; `text.create` rechecks font
 bytes and commits one transaction. Preview does not grant permission to commit
 a changed font. Consumers must keep font paths private and schedule expensive
-work off the UI thread. GUI generation IDs and stale publication fencing are
-not implemented here. `outline_offset_mm` is not yet supported and is rejected
-as an unknown field. Full S4-A2 remains pending; see ADR 0025 and review.
+work off the UI thread. GUI generation IDs and stale publication fencing are maintained in the app.
+`outline_offset_mm` defaults to zero; finite absolute offset <=2 mm and
+<=25% of visible height is accepted for topology validation. Unsupported
+collapse/normalization and resource cases fail closed. Preview additionally
+reports font read/hash and geometry timings. Typed host-only `font_inspect`
+uses explicit file access and returns family/subfamily plus verified identity;
+it is not a new public JSON operation. Full native S4-A2 acceptance remains
+pending; see ADR 0025 and review.

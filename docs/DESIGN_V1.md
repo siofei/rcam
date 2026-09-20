@@ -1028,3 +1028,17 @@ or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.
 See [ADR 0025](adr/0025-s4a2-text-gui.md) for bounded configurable manufacturing
 precision and read-only service preview. The default remains 0.00025 mm and
 the total 0.001 mm threshold is unchanged. GUI/IME/offset remain pending.
+
+### S4-A2 Canvas UX 增补与后续基础层顺序（2026-09-20）
+
+S4-A2 同步包含网格显隐渐变、连续物理像素 LOD 和极限缩放保护。
+网格视觉状态只在 app/view 层，默认 180 ms；制造网格和 Snap spacing 不变。
+显示路径为缓存 f64 制造包围盒查询 → 保留曝光顺序 → camera-relative
+render origin → 局部 f32。显示精度瞬态失败保留最后有效帧，制造无效仍拒绝。
+不得仅隐藏“zoom out”错误或放宽资源上限。设计与数值分配见 ADR 0025。
+
+**Global Units & Manufacturing Precision Foundation — BLOCKING BEFORE NEXT
+MAJOR FEATURE STAGE**：S4-A2 后首先收口 mm/inch/mil/µm 全局显示单位和
+用户要求的默认 0.1 µm 制造精度；先冻结换算、舍入与误差用例，再进入后续
+正式功能阶段。本轮文字和 writer 的既有精度不会据此被静默改写。
+这项排期不代表该基础层已实现，也不改变双平台 V1 退出条件。

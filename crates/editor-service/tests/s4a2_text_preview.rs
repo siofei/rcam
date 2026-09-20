@@ -194,8 +194,8 @@ fn json_preview_requires_revision_and_strict_params() {
         result["result"]["params"]["layout"]["curve_tolerance_mm"],
         0.00025
     );
-    request["params"]["layout"]["outline_offset_mm"] = json!(0.1);
-    // Offset is not implemented in this closure: never silently ignore it.
+    request["params"]["layout"]["unknown_offset"] = json!(0.1);
+    // Unknown fields must never be silently ignored.
     assert_eq!(
         service.execute_json(&request.to_string())["error"]["code"],
         "INVALID_ARGUMENT"
@@ -203,7 +203,7 @@ fn json_preview_requires_revision_and_strict_params() {
     request["params"]["layout"]
         .as_object_mut()
         .unwrap()
-        .remove("outline_offset_mm");
+        .remove("unknown_offset");
     request.as_object_mut().unwrap().remove("expected_revision");
     assert_eq!(
         service.execute_json(&request.to_string())["error"]["code"],
@@ -223,22 +223,37 @@ fn json_preview_requires_revision_and_strict_params() {
 }
 
 #[test]
-fn known_thin_slab_case_is_rejected_by_both_paths_without_side_effects() {
-    let (mut service, info, mut params) = setup();
-    params.layout.curve_tolerance_mm = 0.0000625;
-    let before = state(&service, &info.document_id);
-    let preview = service
-        .text_preview(&info.document_id, &info.revision, params.clone())
-        .unwrap_err();
-    assert_eq!(preview.code, "VALIDATION_FAILED");
-    assert!(preview.message.contains("overlapping adjacent edges"));
-    assert_eq!(
-        service
-            .text_create(&info.document_id, &info.revision, params)
-            .unwrap_err(),
-        preview
-    );
-    assert_eq!(state(&service, &info.document_id), before);
+fn frozen_thin_slab_preview_create_parity() {
+    for tolerance in [0.00025, 0.000125, 0.0000625] {
+        let (mut service, info, mut params) = setup();
+        params.layout.curve_tolerance_mm = tolerance;
+        let before = state(&service, &info.document_id);
+        let preview = service
+            .text_preview(&info.document_id, &info.revision, params.clone())
+            .unwrap();
+        assert_eq!(state(&service, &info.document_id), before);
+        let result = service
+            .text_create(&info.document_id, &info.revision, params.clone())
+            .unwrap();
+        let actual: Vec<_> = result
+            .generated_object_ids
+            .into_iter()
+            .map(|id| {
+                service
+                    .objects_get(
+                        &info.document_id,
+                        ObjectParams {
+                            layer_id: params.layer_id.clone(),
+                            object_id: id,
+                        },
+                    )
+                    .unwrap()
+                    .object
+                    .geometry
+            })
+            .collect();
+        assert_eq!(actual, preview.geometries);
+    }
 }
 
 #[test]
@@ -389,4 +404,52 @@ fn accepted_custom_precision_exports_and_reopens_within_writer_budget() {
             }
         }
     }
+}
+
+#[test]
+fn material_offset_real_glyphs_are_dark_and_atomic() {
+    for text in ["O", "8", "中", "回"] {
+        for offset in [0., 0.01, -0.01] {
+            let (mut service, info, mut params) = setup();
+            params.layout.text = text.into();
+            params.layout.outline_offset_mm = offset;
+            let preview = service
+                .text_preview(&info.document_id, &info.revision, params.clone())
+                .unwrap_or_else(|e| panic!("{text} {offset}: {e:?}"));
+            let result = service
+                .text_create(&info.document_id, &info.revision, params.clone())
+                .unwrap();
+            let actual: Vec<_> = result
+                .generated_object_ids
+                .into_iter()
+                .map(|id| {
+                    let o = service
+                        .objects_get(
+                            &info.document_id,
+                            ObjectParams {
+                                layer_id: params.layer_id.clone(),
+                                object_id: id,
+                            },
+                        )
+                        .unwrap()
+                        .object;
+                    assert_eq!(o.exposure, editor_core::Exposure::Dark);
+                    o.geometry
+                })
+                .collect();
+            assert_eq!(actual, preview.geometries);
+        }
+    }
+    let (mut service, info, mut params) = setup();
+    params.layout.text = "O".into();
+    params.layout.outline_offset_mm = -0.7;
+    let before = state(&service, &info.document_id);
+    assert_eq!(
+        service
+            .text_create(&info.document_id, &info.revision, params)
+            .unwrap_err()
+            .code,
+        "VALIDATION_FAILED"
+    );
+    assert_eq!(state(&service, &info.document_id), before);
 }

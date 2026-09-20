@@ -1,5 +1,13 @@
 # 文档变更记录
 
+## 2026-09-20 · S4-A2 Completion 与 Canvas UX 增补（实施中）
+
+在 246f57e foundation 上继续文字 GUI、字体身份、typed 异步预览、三种定位、
+真实轮廓补偿和组事务；保留冻结薄片回归并修复其生成路径。新增锁定的
+clipper2-rust 1.1.0 与许可记录。Canvas 改为 f64 视口筛选、局部显示原点、
+连续网格透明度与最后有效帧保护，渲染预算上限不变。原生与自动证据分开记录，
+未完成项不得签署 PASS。全局单位/0.1 µm 基础层列为下一正式功能阶段前阻断项。
+
 ## 2026-09-20 · Mac-first S2-B2
 
 新增 exact objects.select_rect Window/Crossing、确定顺序 SelectionSet、框选与整组原子编辑。

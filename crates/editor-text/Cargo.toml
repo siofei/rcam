@@ -9,3 +9,4 @@ license.workspace = true
 editor-core.workspace = true
 serde.workspace = true
 ttf-parser = "=0.25.1"
+clipper2-rust = "=1.1.0"

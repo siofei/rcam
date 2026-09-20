@@ -8,6 +8,7 @@ use std::{
 
 #[derive(Clone, Default)]
 pub struct View {
+    pub text_reply: Option<Arc<crate::text_tool::Reply>>,
     pub metrics: Vec<MetricsItem>,
     pub metrics_error: Option<String>,
     pub info: Option<DocumentInfo>,
@@ -21,6 +22,8 @@ pub struct View {
     pub error: Option<ServiceError>,
     pub message: String,
     pub render_ppm: f64,
+    pub render_viewport: Option<BoundsMm>,
+    pub display_transient: Option<String>,
     pub drag_hit: bool,
     pub press_hit: Option<ObjectInfo>,
 }
@@ -29,6 +32,8 @@ pub struct Model {
     pub view: View,
     snapshot: Option<RenderSnapshot>,
     metrics_identity: String,
+    world_index: crate::world_index::WorldIndex,
+    viewport: Option<(MmPoint, BoundsMm)>,
     serial: u64,
     pub ppm: f64,
 }
@@ -45,6 +50,11 @@ pub enum MirrorDirection {
 }
 pub enum Action {
     Open(PathBuf),
+    TextFont(u64, PathBuf, u32),
+    FontCatalog,
+    SystemFont(u64, PathBuf, String),
+    TextPreview(crate::text_tool::Request),
+    TextCreate(crate::text_tool::Request),
     Select(MmPoint, f64, crate::selection::SelectionMode),
     SelectRect(BoundsMm, editor_core::hit_test::SelectRectMode),
     Move(String, String),
@@ -58,7 +68,9 @@ pub enum Action {
     History(bool),
     Layer(LayerUpdateParams),
     Save(PathBuf, String, Option<Vec<String>>),
+    #[cfg(test)]
     Rebuild(f64),
+    Viewport(MmPoint, BoundsMm, f64),
     Close(bool),
 }
 impl Default for Model {
@@ -68,6 +80,8 @@ impl Default for Model {
             view: View::default(),
             snapshot: None,
             metrics_identity: String::new(),
+            world_index: Default::default(),
+            viewport: None,
             serial: 0,
             ppm: 20.,
         }
@@ -134,6 +148,8 @@ impl Model {
         let old_view = self.view.clone();
         let old_snapshot = self.snapshot.take();
         let old_ppm = self.ppm;
+        let old_viewport = self.viewport.take();
+        let old_index = std::mem::take(&mut self.world_index);
         self.ppm = 20.;
         self.view = View {
             info: Some(candidate),
@@ -152,6 +168,8 @@ impl Model {
             self.view = old_view;
             self.snapshot = old_snapshot;
             self.ppm = old_ppm;
+            self.viewport = old_viewport;
+            self.world_index = old_index;
             return Err(e);
         }
         if let Some(old) = old_view.info {
@@ -213,6 +231,8 @@ impl Model {
         if geometry {
             let snapshot = self.service.render_snapshot(&id)?;
             self.view.apertures = snapshot.apertures.clone();
+            self.world_index = crate::world_index::WorldIndex::build(&snapshot)
+                .map_err(|e| error("VALIDATION_FAILED", &e))?;
             self.snapshot = Some(snapshot);
         }
         self.view.snap_points = self.snapshot.as_ref().map_or_else(Vec::new, |snapshot| {
@@ -233,8 +253,12 @@ impl Model {
                 b.min_y_mm + (b.max_y_mm - b.min_y_mm) / 2.,
             )
         });
+        let anchor = self.viewport.map_or(anchor, |(origin, _)| origin);
+        let filtered = self
+            .viewport
+            .map(|(_, bounds)| self.world_index.query(snapshot, &self.view.layers, bounds));
         match Scene::build_cached(
-            snapshot,
+            filtered.as_ref().unwrap_or(snapshot),
             &self.view.layers,
             anchor,
             self.ppm,
@@ -244,6 +268,14 @@ impl Model {
             Ok(scene) => {
                 self.view.scene = Some(Arc::new(scene));
                 self.view.blocked = None;
+                self.view.display_transient = None;
+                self.view.render_viewport = self.viewport.map(|(_, b)| b);
+            }
+            Err(e) if e.starts_with("DISPLAY_PRECISION:") => {
+                self.view.display_transient = Some(e);
+                if let Some(scene) = &self.view.scene {
+                    self.view.render_ppm = scene.ppm;
+                }
             }
             Err(e) => {
                 self.view.scene = None;
@@ -292,7 +324,36 @@ impl Model {
         mode: crate::selection::SelectionMode,
     ) -> Result<(), ServiceError> {
         let hit = self.hit(point, tolerance)?;
-        self.view.selected.click(hit, mode);
+        if let Some(hit) = &hit
+            && let editor_core::ObjectOrigin::Generated { operation_id } = &hit.object.origin
+            && let Some(snapshot) = &self.snapshot
+        {
+            let ids:Vec<_>=snapshot.layers.iter().filter(|l|l.id==hit.layer_id).flat_map(|l|&l.objects)
+                .filter(|o|matches!(&o.origin,editor_core::ObjectOrigin::Generated {operation_id:id} if id==operation_id))
+                .map(|o|o.object_id.clone()).collect();
+            if mode == crate::selection::SelectionMode::Replace {
+                self.view.selected.ordered.clear();
+            }
+            for id in ids {
+                let object = self.service.objects_get(
+                    &self.info()?.document_id,
+                    ObjectParams {
+                        layer_id: hit.layer_id.clone(),
+                        object_id: id,
+                    },
+                )?;
+                self.view.selected.click(
+                    Some(object),
+                    if mode == crate::selection::SelectionMode::Remove {
+                        mode
+                    } else {
+                        crate::selection::SelectionMode::Add
+                    },
+                );
+            }
+        } else {
+            self.view.selected.click(hit, mode);
+        }
         Ok(())
     }
     fn select_rect(
@@ -561,8 +622,75 @@ impl Model {
     }
     pub fn run(&mut self, action: Action) {
         self.view.error = None;
+        self.view.text_reply = None;
         let result = (|| match action {
             Action::Open(path) => self.open(&path),
+            Action::FontCatalog => {
+                self.view.text_reply = Some(Arc::new(crate::text_tool::Reply::Catalog(
+                    crate::font_catalog::installed_fonts().map(Arc::new),
+                )));
+                Ok(())
+            }
+            Action::SystemFont(generation, path, postscript) => {
+                let result = self.service.grant_file_access(&path, false).and_then(|()| {
+                    self.service
+                        .font_inspect_named(&path.to_string_lossy(), &postscript)
+                });
+                self.view.text_reply = Some(Arc::new(crate::text_tool::Reply::Font {
+                    generation,
+                    result,
+                }));
+                Ok(())
+            }
+            Action::TextFont(generation, path, face) => {
+                let result = self
+                    .service
+                    .grant_file_access(&path, false)
+                    .and_then(|()| self.service.font_inspect(&path.to_string_lossy(), face));
+                self.view.text_reply = Some(Arc::new(crate::text_tool::Reply::Font {
+                    generation,
+                    result,
+                }));
+                Ok(())
+            }
+            Action::TextPreview(request) => {
+                let start = std::time::Instant::now();
+                let result = self
+                    .service
+                    .text_preview(&request.document, &request.revision, request.params.clone())
+                    .map(Arc::new);
+                self.view.text_reply = Some(Arc::new(crate::text_tool::Reply::Preview {
+                    request: Box::new(request),
+                    result,
+                    finished: std::time::Instant::now(),
+                    worker_ms: start.elapsed().as_secs_f64() * 1000.,
+                }));
+                Ok(())
+            }
+            Action::TextCreate(request) => {
+                self.editable()?;
+                let result = self.service.text_create(
+                    &request.document,
+                    &request.revision,
+                    request.params.clone(),
+                )?;
+                self.view.selected.ordered = result
+                    .generated_object_ids
+                    .into_iter()
+                    .map(|id| {
+                        self.service.objects_get(
+                            &request.document,
+                            ObjectParams {
+                                layer_id: request.params.layer_id.clone(),
+                                object_id: id,
+                            },
+                        )
+                    })
+                    .collect::<Result<_, _>>()?;
+                self.view.message =
+                    "文字已创建并整组选中；普通 Gerber 不保存文字原文/字体组".into();
+                self.refresh(true)
+            }
             Action::Select(p, t, mode) => self.select(p, t, mode),
             Action::SelectRect(r, m) => self.select_rect(r, m),
             Action::Move(dx, dy) => self.numeric_move(&dx, &dy),
@@ -666,6 +794,13 @@ impl Model {
                 self.refresh(false)
             }
             Action::Save(path, layer, c) => self.save(&path, layer, c),
+            Action::Viewport(origin, bounds, ppm) => {
+                self.viewport = Some((origin, bounds));
+                self.ppm = ppm;
+                self.rebuild();
+                Ok(())
+            }
+            #[cfg(test)]
             Action::Rebuild(ppm) => {
                 self.ppm = ppm;
                 self.rebuild();
@@ -676,6 +811,7 @@ impl Model {
                 self.service.close(&d.document_id, &d.revision, discard)?;
                 self.view = View::default();
                 self.snapshot = None;
+                self.viewport = None;
                 Ok(())
             }
         })();

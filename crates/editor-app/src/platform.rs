@@ -16,7 +16,11 @@ pub fn choose_path(save: bool, name: &str) -> Result<Option<PathBuf>, String> {
             panel
         } else {
             let panel = NSOpenPanel::openPanel(mtm);
-            panel.setTitle(Some(&NSString::from_str("打开 Gerber")));
+            panel.setTitle(Some(&NSString::from_str(if name == "font" {
+                "选择本地字体 TTF / OTF / TTC"
+            } else {
+                "打开 Gerber"
+            })));
             panel.setCanChooseDirectories(false);
             panel.setCanChooseFiles(true);
             panel.setAllowsMultipleSelection(false);

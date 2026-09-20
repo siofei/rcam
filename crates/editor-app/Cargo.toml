@@ -22,3 +22,6 @@ test = true
 objc2 = "=0.6.4"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSResponder"] }
 objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSURL"] }
+
+objc2-core-text = { version = "=0.3.2", default-features = false, features = ["std", "CTFontCollection", "CTFontDescriptor"] }
+objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFArray", "CFDictionary", "CFString", "CFURL"] }

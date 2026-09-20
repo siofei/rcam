@@ -1,4 +1,5 @@
 //! Bounded font outlines -> f64 manufacturing Regions, independent of display.
+mod offset;
 use editor_core::{MmPoint, RegionContour, RegionEdge, RegionRole, SemanticGeometry};
 use serde::{Deserialize, Serialize};
 use ttf_parser::{Face, OutlineBuilder};
@@ -44,10 +45,13 @@ pub struct Layout {
     pub rotation_deg: f64,
     #[serde(default = "default_tolerance_mm")]
     pub curve_tolerance_mm: f64,
+    #[serde(default)]
+    pub outline_offset_mm: f64,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextError {
     InvalidArgument,
+    InvalidTopology,
     InvalidFont,
     MissingGlyph(char),
     UnsupportedOutline,
@@ -172,11 +176,73 @@ impl OutlineBuilder for Outline {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GenerationTimings {
+    pub parse_ms: f64,
+    pub offset_ms: f64,
+    pub generation_ms: f64,
+}
+/// Resolve a system PostScript name to the actual TTC/OTC face index.
+pub fn font_face_index(bytes: &[u8], postscript: &str) -> Result<u32, TextError> {
+    let count = ttf_parser::fonts_in_collection(bytes).unwrap_or(1);
+    if count > 1024 {
+        return Err(TextError::ResourceLimit);
+    }
+    for index in 0..count {
+        let face = Face::parse(bytes, index).map_err(|_| TextError::InvalidFont)?;
+        if face.names().into_iter().any(|n| {
+            n.name_id == ttf_parser::name_id::POST_SCRIPT_NAME
+                && (n.to_string().as_deref() == Some(postscript)
+                    || (n.platform_id == ttf_parser::PlatformId::Macintosh
+                        && n.encoding_id == 0
+                        && n.name.is_ascii()
+                        && n.name == postscript.as_bytes()))
+        }) {
+            return Ok(index);
+        }
+    }
+    Err(TextError::InvalidFont)
+}
+pub fn font_names(bytes: &[u8], face_index: u32) -> Result<(String, String), TextError> {
+    let face = Face::parse(bytes, face_index).map_err(|_| TextError::InvalidFont)?;
+    if face.is_variable() {
+        return Err(TextError::UnsupportedOutline);
+    }
+    let name = |id| {
+        face.names()
+            .into_iter()
+            .filter(|n| n.name_id == id)
+            .find_map(|n| {
+                n.to_string().or_else(|| {
+                    (n.platform_id == ttf_parser::PlatformId::Macintosh
+                        && n.encoding_id == 0
+                        && n.name.is_ascii())
+                    .then(|| String::from_utf8_lossy(n.name).into_owned())
+                })
+            })
+            .unwrap_or_else(|| "Unknown".into())
+    };
+    Ok((
+        name(ttf_parser::name_id::FAMILY),
+        name(ttf_parser::name_id::SUBFAMILY),
+    ))
+}
+
 pub fn generate(
     bytes: &[u8],
     face_index: u32,
     layout: &Layout,
 ) -> Result<Vec<SemanticGeometry>, TextError> {
+    generate_timed(bytes, face_index, layout).map(|(geometry, _)| geometry)
+}
+
+pub fn generate_timed(
+    bytes: &[u8],
+    face_index: u32,
+    layout: &Layout,
+) -> Result<(Vec<SemanticGeometry>, GenerationTimings), TextError> {
+    let started = std::time::Instant::now();
+    let mut timings = GenerationTimings::default();
     let values = [
         layout.x_mm,
         layout.y_mm,
@@ -184,10 +250,13 @@ pub fn generate(
         layout.tracking_mm,
         layout.rotation_deg,
         layout.curve_tolerance_mm,
+        layout.outline_offset_mm,
     ];
     if !values.iter().all(|v| v.is_finite())
         || layout.curve_tolerance_mm <= 0.
         || layout.curve_tolerance_mm > MAX_TOLERANCE_MM
+        || layout.outline_offset_mm.abs() > 2.
+        || layout.outline_offset_mm.abs() > layout.height_mm * 0.25
         || layout.height_mm <= 0.
         || layout.height_mm > 1000.
         || layout.tracking_mm.abs() > 1000.
@@ -201,7 +270,9 @@ pub fn generate(
     {
         return Err(TextError::ResourceLimit);
     }
+    let parse_started = std::time::Instant::now();
     let face = Face::parse(bytes, face_index).map_err(|_| TextError::InvalidFont)?;
+    timings.parse_ms = parse_started.elapsed().as_secs_f64() * 1000.;
     if face.is_variable() {
         return Err(TextError::UnsupportedOutline);
     }
@@ -240,7 +311,7 @@ pub fn generate(
         }
         glyphs.push((id, advance, true));
     }
-    let scale = layout.height_mm / (ymax - ymin);
+    let scale = (layout.height_mm - 2. * layout.outline_offset_mm) / (ymax - ymin);
     // ttf-parser supplies f32 font coordinates. Reserve a conservative conversion
     // allowance in addition to flattening; reject scales that cannot certify it.
     if !scale.is_finite() || scale <= 0. || scale * 65536. * f32::EPSILON as f64 * 4. > 0.00025 {
@@ -266,11 +337,42 @@ pub fn generate(
         }
         pen += advance * scale + layout.tracking_mm;
     }
+    let offset_started = std::time::Instant::now();
+    if layout.outline_offset_mm != 0. {
+        // Erosion does not distribute over overlapping glyph unions. Refuse
+        // ambiguous overlapping bounding intervals rather than erode separately.
+        if layout.outline_offset_mm < 0. {
+            let mut intervals: Vec<_> = outlines
+                .iter()
+                .map(|cs| {
+                    cs.iter()
+                        .flatten()
+                        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                            (lo.min(p[0]), hi.max(p[0]))
+                        })
+                })
+                .collect();
+            intervals.sort_by(|a, b| a.0.total_cmp(&b.0));
+            if intervals.windows(2).any(|w| w[0].1 >= w[1].0) {
+                return Err(TextError::InvalidTopology);
+            }
+        }
+        outlines = outlines
+            .iter()
+            .map(|c| offset::material(c, layout.outline_offset_mm))
+            .collect::<Result<_, _>>()?;
+    }
+    timings.offset_ms = offset_started.elapsed().as_secs_f64() * 1000.;
     let all: Vec<_> = outlines.iter().flatten().flatten().copied().collect();
     let xmin = all.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
     let xmax = all.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max);
     let low = all.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
     let high = all.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max);
+    // Erosion at an acute extremum can retreat by more than delta. Never
+    // advertise the requested visible height when that normalization is lost.
+    if layout.outline_offset_mm != 0. && ((high - low) - layout.height_mm).abs() > 0.00008 {
+        return Err(TextError::InvalidTopology);
+    }
     let anchor_x = match layout.h_align {
         HorizontalAlign::Left => xmin,
         HorizontalAlign::Center => (xmin + xmax) * 0.5,
@@ -306,7 +408,22 @@ pub fn generate(
             {
                 points.pop();
             }
-            if points.len() < 3 {
+            // A slab may be long but sub-resolution in its perpendicular
+            // direction. Endpoint deduplication alone does not detect it.
+            // Only omit it if the existing retained-boundary certificate below
+            // proves its entire convex hull remains within the 4 nm budget.
+            let thin = points
+                .iter()
+                .enumerate()
+                .flat_map(|(i, a)| points[i + 1..].iter().map(move |b| (*a, *b)))
+                .max_by(|(a, b), (c, d)| a.distance_mm(*b).total_cmp(&c.distance_mm(*d)))
+                .is_some_and(|(a, b)| {
+                    points.iter().all(|p| {
+                        segment_distance([p.x_mm, p.y_mm], [a.x_mm, a.y_mm], [b.x_mm, b.y_mm])
+                            <= 0.000001
+                    })
+                });
+            if points.len() < 3 || thin {
                 collapsed.push(original);
                 continue;
             }
@@ -371,7 +488,8 @@ pub fn generate(
     if geometries.is_empty() {
         return Err(TextError::UnsupportedOutline);
     }
-    Ok(geometries)
+    timings.generation_ms = started.elapsed().as_secs_f64() * 1000.;
+    Ok((geometries, timings))
 }
 
 // Vertical slab decomposition uses the font's nonzero winding rule. Every
@@ -477,6 +595,7 @@ mod tests {
             v_align: VerticalAlign::Bottom,
             rotation_deg: 0.,
             curve_tolerance_mm: TOLERANCE_MM,
+            outline_offset_mm: 0.,
         }
     }
     fn points(g: &[SemanticGeometry]) -> Vec<MmPoint> {

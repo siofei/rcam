@@ -1,7 +1,7 @@
 use super::*;
 use editor_text::{Layout, TextError};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FontIdentity {
     pub path: String,
@@ -35,15 +35,72 @@ pub struct TextPreviewResult {
     pub revision: String,
     pub params: TextParams,
     pub geometries: Vec<SemanticGeometry>,
+    pub timings: TextTimings,
     pub manufacturing_error_bound_mm: f64,
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FontInfo {
+    pub identity: FontIdentity,
+    pub family: String,
+    pub subfamily: String,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TextTimings {
+    pub font_read_ms: f64,
+    pub font_hash_ms: f64,
+    pub geometry: editor_text::GenerationTimings,
+}
 impl ApplicationService {
+    /// Host must grant the user-selected path first. Font bytes never leave the service.
+    pub fn font_inspect(&self, path: &str, face_index: u32) -> Result<FontInfo, ServiceError> {
+        self.font_inspect_resolved(path, face_index, None)
+    }
+    /// Resolve a selected system font name without guessing the TTC face number.
+    pub fn font_inspect_named(
+        &self,
+        path: &str,
+        postscript: &str,
+    ) -> Result<FontInfo, ServiceError> {
+        self.font_inspect_resolved(path, 0, Some(postscript))
+    }
+    fn font_inspect_resolved(
+        &self,
+        path: &str,
+        face_index: u32,
+        postscript: Option<&str>,
+    ) -> Result<FontInfo, ServiceError> {
+        let policy = self
+            .file_access
+            .as_ref()
+            .ok_or_else(|| ServiceError::invalid_field("font", "file access policy required"))?;
+        let (canonical, bytes) = policy.read_path_limited(path, 64 * 1024 * 1024)?;
+        let face_index = match postscript {
+            Some(name) => editor_text::font_face_index(&bytes, name)
+                .map_err(|e| ServiceError::invalid_field("font", format!("{e:?}")))?,
+            None => face_index,
+        };
+        let (family, subfamily) = editor_text::font_names(&bytes, face_index)
+            .map_err(|e| ServiceError::invalid_field("font", format!("{e:?}")))?;
+        Ok(FontInfo {
+            identity: FontIdentity {
+                path: canonical.to_string_lossy().into(),
+                sha256: sha256_hex(&bytes),
+                face_index,
+                license_status:
+                    "User-selected local font; permission not asserted; not redistributed".into(),
+                redistribution_allowed: false,
+            },
+            family,
+            subfamily,
+        })
+    }
+
     fn prepare_text(
         &self,
         document_id: &str,
         expected_revision: &str,
         params: &TextParams,
-    ) -> Result<Vec<SemanticGeometry>, ServiceError> {
+    ) -> Result<(Vec<SemanticGeometry>, TextTimings), ServiceError> {
         let record = self
             .documents
             .get(document_id)
@@ -67,29 +124,41 @@ impl ApplicationService {
             .file_access
             .as_ref()
             .ok_or_else(|| ServiceError::invalid_field("font", "file access policy required"))?;
+        let started = std::time::Instant::now();
         let (_, bytes) = policy.read_path_limited(&params.font.path, 64 * 1024 * 1024)?;
-        if sha256_hex(&bytes) != params.font.sha256.to_ascii_lowercase() {
+        let mut timings = TextTimings {
+            font_read_ms: started.elapsed().as_secs_f64() * 1000.,
+            ..Default::default()
+        };
+        let started = std::time::Instant::now();
+        let hash = sha256_hex(&bytes);
+        timings.font_hash_ms = started.elapsed().as_secs_f64() * 1000.;
+        if hash != params.font.sha256.to_ascii_lowercase() {
             return Err(ServiceError::invalid_field(
                 "font.sha256",
                 "font hash mismatch",
             ));
         }
-        let geometries = editor_text::generate(&bytes, params.font.face_index, &params.layout)
-            .map_err(|e| ServiceError {
-                code: match e {
-                    TextError::ResourceLimit => "RESOURCE_LIMIT",
-                    TextError::UnsupportedOutline => "UNSUPPORTED_FEATURE",
-                    _ => "INVALID_ARGUMENT",
-                }
-                .into(),
-                message: format!("text generation rejected: {e:?}"),
-                details: serde_json::json!({"field":"text"}),
-            })?;
+        let (geometries, geometry_timings) =
+            editor_text::generate_timed(&bytes, params.font.face_index, &params.layout).map_err(
+                |e| ServiceError {
+                    code: match e {
+                        TextError::InvalidTopology => "VALIDATION_FAILED",
+                        TextError::ResourceLimit => "RESOURCE_LIMIT",
+                        TextError::UnsupportedOutline => "UNSUPPORTED_FEATURE",
+                        _ => "INVALID_ARGUMENT",
+                    }
+                    .into(),
+                    message: format!("text generation rejected: {e:?}"),
+                    details: serde_json::json!({"field":"text"}),
+                },
+            )?;
         record
             .history
             .validate_generated(&record.document, &params.layer_id, &geometries)
             .map_err(map_edit_error)?;
-        Ok(geometries)
+        timings.geometry = geometry_timings;
+        Ok((geometries, timings))
     }
 
     /// Run on a worker: font I/O and geometry generation can be expensive.
@@ -100,12 +169,13 @@ impl ApplicationService {
         expected_revision: &str,
         params: TextParams,
     ) -> Result<TextPreviewResult, ServiceError> {
-        let geometries = self.prepare_text(document_id, expected_revision, &params)?;
+        let (geometries, timings) = self.prepare_text(document_id, expected_revision, &params)?;
         Ok(TextPreviewResult {
             document_id: document_id.into(),
             revision: expected_revision.into(),
             params,
             geometries,
+            timings,
             manufacturing_error_bound_mm: 0.001,
         })
     }
@@ -117,7 +187,7 @@ impl ApplicationService {
         params: TextParams,
     ) -> Result<TextResult, ServiceError> {
         // Re-read/hash and validate: a prior preview never authorizes changed font bytes.
-        let geometries = self.prepare_text(document_id, expected_revision, &params)?;
+        let (geometries, _) = self.prepare_text(document_id, expected_revision, &params)?;
         let record = self.edit_record(document_id, expected_revision)?;
         let ids = record
             .history

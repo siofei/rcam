@@ -197,6 +197,33 @@ impl RenderIndex {
         result.ordered_candidate_ids.dedup();
         result
     }
+    /// Bound actual per-cell candidate visits, not the densest cell multiplied
+    /// by every pixel in an otherwise sparse viewport. The shader indexes one
+    /// cell per sample; a four-pixel halo covers AA/selected-edge samples.
+    pub fn sample_candidate_work(&self, view: &ViewportRenderSet, ppm: f64) -> f64 {
+        let Some([x0, y0, x1, y1]) = view.cell_range else {
+            return 0.;
+        };
+        let mut work = 0.;
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let cell = y * self.cols as usize + x;
+                let count = self.data[cell + 1] - self.data[cell];
+                let mut dimensions = [0.; 2];
+                for (axis, coordinate) in [x, y].into_iter().enumerate() {
+                    let origin = f64::from(self.grid[axis]);
+                    let inverse = f64::from(self.grid[axis + 2]);
+                    let lo = origin + coordinate as f64 / inverse;
+                    let hi = origin + (coordinate + 1) as f64 / inverse;
+                    let visible =
+                        hi.min(view.world_bounds[axis + 2]) - lo.max(view.world_bounds[axis]);
+                    dimensions[axis] = (visible * ppm + 4.).max(0.);
+                }
+                work += dimensions[0] * dimensions[1] * f64::from(count) * 20.;
+            }
+        }
+        work
+    }
     fn range(&self, b: [f32; 4]) -> [usize; 4] {
         // One-cell halo protects CPU/GPU f32 rounding at grid boundaries.
         let cell = |v: f32, axis: usize| -> usize {

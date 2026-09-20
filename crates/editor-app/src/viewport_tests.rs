@@ -165,3 +165,75 @@ fn preview_index_benchmark() {
         }
     }
 }
+
+#[test]
+fn f64_viewport_culls_remote_objects_before_rebasing_gpu_coordinates() {
+    use crate::{state::Model, world_index::WorldIndex};
+    use editor_core::BoundsMm;
+    let mut model = Model::default();
+    model
+        .open(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s1a/standard_hole_over_line.gbr"),
+        )
+        .unwrap();
+    let mut snapshot = model
+        .service
+        .render_snapshot(&model.view.info.as_ref().unwrap().document_id)
+        .unwrap();
+    let mut local = snapshot.layers[0].objects[0].clone();
+    local.geometry = editor_core::SemanticGeometry::Line {
+        start: MmPoint::new(1e8, 0.),
+        end: MmPoint::new(1e8 + 0.001, 0.),
+        width_mm: 0.0001,
+    };
+    local.object_id = "local".into();
+    let mut remote = local.clone();
+    remote.object_id = "remote".into();
+    remote.geometry = editor_core::SemanticGeometry::Line {
+        start: MmPoint::new(-1e12, 0.),
+        end: MmPoint::new(-1e12 + 1., 0.),
+        width_mm: 0.1,
+    };
+    snapshot.layers[0].objects = vec![remote, local];
+    let before = snapshot.clone();
+    let index = WorldIndex::build(&snapshot).unwrap();
+    let view = BoundsMm {
+        min_x_mm: 1e8 - 0.01,
+        min_y_mm: -0.01,
+        max_x_mm: 1e8 + 0.01,
+        max_y_mm: 0.01,
+    };
+    let culled = index.query(&snapshot, &model.view.layers, view);
+    assert_eq!(culled.layers[0].objects.len(), 1);
+    assert_eq!(culled.layers[0].objects[0].object_id, "local");
+    let origin = MmPoint::new(1e8, 0.);
+    let scene = Scene::build(&culled, &model.view.layers, origin, 100_000., 1).unwrap();
+    assert_eq!(scene.anchor, origin);
+    assert!(Scene::build(&snapshot, &model.view.layers, origin, 100_000., 1).is_err());
+    assert!(scene.scalar(0.001).is_ok());
+    assert_eq!(snapshot, before);
+}
+
+#[test]
+fn display_precision_failure_preserves_last_good_scene_and_manufacturing() {
+    use crate::state::{Action, Model};
+    let mut model = Model::default();
+    model
+        .open(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s1a/standard_hole_over_line.gbr"),
+        )
+        .unwrap();
+    let scene = model.view.scene.clone().unwrap();
+    let info = model.view.info.clone().unwrap();
+    let snapshot = model.service.render_snapshot(&info.document_id).unwrap();
+    model.run(Action::Rebuild(1e20));
+    assert!(model.view.display_transient.is_some());
+    assert!(Arc::ptr_eq(&scene, model.view.scene.as_ref().unwrap()));
+    assert_eq!(model.view.info.as_ref().unwrap(), &info);
+    assert_eq!(
+        model.service.render_snapshot(&info.document_id).unwrap(),
+        snapshot
+    );
+}

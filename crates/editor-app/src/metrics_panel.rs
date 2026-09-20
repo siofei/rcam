@@ -48,7 +48,7 @@ pub fn lines(view: &View) -> Vec<String> {
     let mut lines = vec![
         format!("已精确：{exact} / {count}"),
         format!("对象面积合计{suffix}：{area:.6} mm²"),
-        format!("对象周长合计{suffix}：{perimeter:.6} mm"),
+        format!("分解对象周长合计{suffix}（非字形外轮廓）：{perimeter:.6} mm"),
     ];
     if exact < count {
         lines.push(format!("{} 个对象暂不可计算", count - exact));

@@ -35,3 +35,47 @@ Remaining task closures, in dependency order:
 
 Do not add shaping, multiline, persistent editable text, automatic bridging,
 font redistribution, post-V1 formats, P100K, Windows implementation or signing.
+
+## Completion continuation
+
+User requested continuation using the Foundation review and S4-A2 Completion
+brief. Full S4-A2 is now the target, stopping before S4-B/S5. Additional allowed
+modules: editor-app text draft/UI/worker/display overlay and tests; editor-text
+material offset/canonicalization; service font inspection and timing; locked
+geometry dependency and notices; native evidence and packaging. Requirements
+R05/R09–R12/R14/R16/R18/R20–R22; AT-043/046–052/054/086/088–092/095/097 and
+Grid/Measure/S3 renderer regression. Existing acceptance identities/platforms
+and total 0.001 mm threshold are unchanged.
+
+## Canvas UX mandatory hotfix (in progress)
+
+The user-added 2026-09-20 addendum is part of S4-A2 Completion, not a new
+stage. Allowed modules additionally include camera, display, render index,
+Grid overlay and their app tests. R07/R08/R13/R14/R18 and the existing navigation,
+Grid/Snap and renderer acceptance cases remain applicable; no acceptance
+threshold or platform is relaxed.
+
+Required closure: 180 ms view-only visibility fade; continuous physical-pixel
+1/2/5 density LOD with separate style opacity; unchanged base snapping;
+f64 viewport culling before camera-relative f32 conversion; safe zoom clamps;
+last-good display protection; native Retina grid and extreme-zoom evidence.
+These items remain IN PROGRESS until code, automated gates and native evidence
+are recorded. Text GUI/IME/preview/font/placement continue in the same closure.
+
+## Next mandatory foundation
+
+**Global Units & Manufacturing Precision Foundation — BLOCKING BEFORE NEXT
+MAJOR FEATURE STAGE.** After S4-A2, before S4-B/S5 or any other major feature,
+freeze and implement global mm/inch/mil/µm display units and the requested
+0.1 µm default manufacturing precision with explicit conversion, rounding,
+error budgets and acceptance cases. This does not silently change current
+text tolerances or writer quantization during S4-A2.
+
+### User refinement: system fonts first
+
+The latest user instruction changes the primary font interaction to a searchable
+system-font list. macOS Core Text enumeration runs in the existing worker;
+selecting a named TTC face resolves its actual index and verifies bytes/hash
+through ApplicationService. The explicit font-file picker remains available.
+This is part of the current S4-A2 scope, with no change to installed-font
+redistribution policy or the post-S4-A2 global-units blocker.

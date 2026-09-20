@@ -115,53 +115,103 @@ impl GridSettings {
         };
         Ok(MmPoint::new(scalar(p.x_mm)?, scalar(p.y_mm)?))
     }
-    pub fn visual_step(self, camera: Camera, rect: Rect) -> Option<f64> {
-        if !self.visible
-            || !self.spacing_mm.is_finite()
+    /// Display levels only; snapping always reads spacing_mm directly.
+    pub fn visual_levels(self, camera: Camera, ppp: f32) -> Vec<(f64, f32)> {
+        let physical = camera.scale * f64::from(ppp);
+        if !self.spacing_mm.is_finite()
             || self.spacing_mm <= 0.
-            || !camera.scale.is_finite()
-            || camera.scale <= 0.
+            || !physical.is_finite()
+            || physical <= 0.
         {
-            return None;
+            return vec![];
         }
-        let min_points = 12f64.max(f64::from(rect.width().max(rect.height())) / 500.);
-        let factor = (min_points / camera.scale / self.spacing_mm)
-            .log10()
-            .ceil()
-            .max(0.);
-        let step = self.spacing_mm * 10f64.powf(factor);
-        (step.is_finite() && step > 0.).then_some(step)
-    }
-    pub fn paint(self, painter: &egui::Painter, camera: Camera, rect: Rect, ppp: f32) {
-        let Some(step) = self.visual_step(camera, rect) else {
-            return;
+        let density = |px: f64| {
+            let t = ((px - 6.) / 12.).clamp(0., 1.);
+            t * t * (3. - 2. * t)
         };
+        let mut levels = Vec::new();
+        let mut previous = [0.; 2];
+        for decade in 0..=30 {
+            for multiplier in [1., 2., 5.] {
+                let step = self.spacing_mm * multiplier * 10f64.powi(decade);
+                let d = density(step * physical);
+                let weight = d * (1. - previous[0]);
+                previous = [previous[1], d];
+                if weight > 0. {
+                    levels.push((step, weight as f32));
+                }
+                if previous == [1., 1.] {
+                    return levels;
+                }
+            }
+        }
+        levels
+    }
+    pub fn paint(
+        self,
+        painter: &egui::Painter,
+        camera: Camera,
+        rect: Rect,
+        ppp: f32,
+        opacity: f32,
+    ) {
+        if opacity <= 0. {
+            return;
+        }
         let a = camera.world(rect.left_bottom(), rect);
         let b = camera.world(rect.right_top(), rect);
-        let stroke = Stroke::new(1. / ppp, Color32::from_rgba_unmultiplied(130, 160, 180, 65));
-        for axis in 0..2 {
-            let (lo, hi) = if axis == 0 {
-                (a.x_mm, b.x_mm)
-            } else {
-                (a.y_mm, b.y_mm)
-            };
-            let first = (lo / step).ceil();
-            if !first.is_finite() || first.abs() >= 2f64.powi(52) {
-                continue;
-            }
-            for n in 0..512 {
-                let v = (first + f64::from(n)) * step;
-                if !v.is_finite() || v > hi {
-                    break;
-                }
-                let (p, q) = if axis == 0 {
-                    (MmPoint::new(v, a.y_mm), MmPoint::new(v, b.y_mm))
+        for (step, density) in self.visual_levels(camera, ppp) {
+            for axis in 0..2 {
+                let (lo, hi) = if axis == 0 {
+                    (a.x_mm, b.x_mm)
                 } else {
-                    (MmPoint::new(a.x_mm, v), MmPoint::new(b.x_mm, v))
+                    (a.y_mm, b.y_mm)
                 };
-                painter.line_segment([camera.screen(p, rect), camera.screen(q, rect)], stroke);
+                let first = (lo / step).ceil();
+                if !first.is_finite() || first.abs() >= 2f64.powi(52) {
+                    continue;
+                }
+                // Every rendered spacing is a 1/2/5 integer multiple of the base.
+                let count = ((hi - lo) / step).ceil().max(0.) as usize + 2;
+                for n in 0..count.min(8192) {
+                    let index = first + n as f64;
+                    let v = index * step;
+                    if !v.is_finite() || v > hi {
+                        break;
+                    }
+                    let style = if index.rem_euclid(5.) == 0. { 85. } else { 42. };
+                    let alpha = (opacity * density * style).round() as u8;
+                    let stroke = Stroke::new(
+                        1. / ppp,
+                        Color32::from_rgba_unmultiplied(130, 160, 180, alpha),
+                    );
+                    let (p, q) = if axis == 0 {
+                        (MmPoint::new(v, a.y_mm), MmPoint::new(v, b.y_mm))
+                    } else {
+                        (MmPoint::new(a.x_mm, v), MmPoint::new(b.x_mm, v))
+                    };
+                    painter.line_segment([camera.screen(p, rect), camera.screen(q, rect)], stroke);
+                }
             }
         }
+    }
+}
+
+/// Transient overlay state, never part of a document or undo transaction.
+#[derive(Default)]
+pub struct GridVisualState {
+    pub opacity: f32,
+}
+impl GridVisualState {
+    pub fn advance(&mut self, visible: bool, dt: f32) -> bool {
+        let target = if visible { 1. } else { 0. };
+        let delta = if dt.is_finite() {
+            dt.max(0.) / 0.180
+        } else {
+            0.
+        };
+        self.opacity += (target - self.opacity).clamp(-delta, delta);
+        self.opacity != target
     }
 }
 #[derive(Default, PartialEq, Eq, Clone, Copy)]
@@ -169,6 +219,7 @@ pub enum ActiveTool {
     #[default]
     Select,
     Measure,
+    Text,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Measurement {
@@ -342,21 +393,61 @@ pub fn overlay_label(
 mod tests {
     use super::*;
     #[test]
+    fn grid_fade_has_monotone_exact_endpoints_and_stops() {
+        let mut visual = GridVisualState::default();
+        for visible in [true, false] {
+            for _ in 0..20 {
+                let old = visual.opacity;
+                visual.advance(visible, 0.01);
+                assert!(if visible {
+                    visual.opacity >= old
+                } else {
+                    visual.opacity <= old
+                });
+            }
+            assert_eq!(visual.opacity, if visible { 1. } else { 0. });
+            assert!(!visual.advance(visible, 0.01));
+        }
+    }
+    #[test]
+    fn density_weights_are_continuous_across_nice_steps() {
+        let grid = GridSettings::default();
+        for scale in [12., 30., 60., 90., 180.] {
+            let levels = |scale| {
+                grid.visual_levels(
+                    Camera {
+                        scale,
+                        ..Default::default()
+                    },
+                    2.,
+                )
+            };
+            let a = levels(scale * (1. - 1e-7));
+            let b = levels(scale * (1. + 1e-7));
+            for (step, alpha) in a.iter().chain(&b) {
+                let weight =
+                    |v: &Vec<(f64, f32)>| v.iter().find(|x| x.0 == *step).map_or(0., |x| x.1);
+                assert!((weight(&a) - weight(&b)).abs() < 1e-5, "{step} {alpha}");
+            }
+        }
+    }
+    #[test]
     fn visual_density_does_not_change_snap_step() {
         let grid = GridSettings {
             visible: true,
             spacing_mm: 0.01,
             snap_enabled: true,
         };
-        let rect = Rect::from_min_size(egui::pos2(0., 0.), egui::vec2(800., 600.));
         for scale in [1e-6, 1., 100., 1e8] {
             let c = Camera {
                 scale,
                 ..Default::default()
             };
-            let step = grid.visual_step(c, rect).unwrap();
-            assert!(step >= grid.spacing_mm && step * scale >= 12. - 1e-9);
-            assert!(rect.width() as f64 / (step * scale) < 512.);
+            for (step, alpha) in grid.visual_levels(c, 2.) {
+                assert!(step >= grid.spacing_mm && step * scale * 2. > 6.);
+                assert!((step / grid.spacing_mm - (step / grid.spacing_mm).round()).abs() < 1e-4);
+                assert!((0. ..=1.).contains(&alpha));
+            }
             assert_eq!(
                 grid.point(MmPoint::new(0.123, -0.123)).unwrap(),
                 MmPoint::new(0.12, -0.12)

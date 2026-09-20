@@ -1,39 +1,62 @@
-# S4-A2 foundation review — full stage NOT COMPLETE
+# S4-A2 Completion review and acceptance boundary
 
-This delivery advances only Gate 0 and the service/precision foundation.
-It is not the final Text GUI delivery. Scope and R/AT mapping: S4_A2_PLAN.md.
-Decision and numeric budget: ADR 0025. Windows deferred / not executed.
+Base: 246f57e foundation. Its historical review is preserved in
+S4_A2_FOUNDATION_REVIEW.md. Current scope is the full Completion brief plus
+the mandatory Canvas UX addendum and the user-requested system-font list.
+Requirements/cases/modules: S4_A2_PLAN.md. Numeric/architecture decisions:
+ADR 0025. Windows deferred / not executed; no full V1 claim.
 
-Implemented:
-- Direct font parser dependency/status documentation repaired.
-- Backward-compatible precision field with bounded manufacturing tolerance.
-- Owned read-only preview DTO and JSON operation, sharing full generated
-  insertion preflight with text.create; preview never allocates object IDs.
-- Tests for preview state preservation, accepted precision parity, one-Undo
-  Apply, Undo/Redo preservation, stale/closed document, font/hash/face errors,
-  layer locks, strict JSON and precision range/resource rejection.
+## Implemented closure
 
-Known failure retained: '口8' / Arial Unicode / 3 mm / 37 degrees at
-0.0000625 mm returns VALIDATION_FAILED (overlapping adjacent edges). Regression
-asserts atomic rejection in both paths; this does not count as precision GUI
-acceptance. Default 0.00025 and 0.000125 parity remain tested. No failing sample,
-resource limit, acceptance identity, platform requirement or threshold removed.
+- Frozen Arial Unicode 口8 / 3 mm / tracking 0.1 / center-middle / 37° /
+  (12.34567, -6.78901) / 0.0000625 mm succeeds in preview and create. The
+  general Region validator is unchanged; sub-resolution slab omission still
+  requires the retained-boundary certificate.
+- Real material outline offset, bounded topology/resource rejection and
+  total contour allocation below 0.001 mm. Dark geometry represents glyph
+  holes without global Clear. Original default precision remains 0.00025 mm.
+- Searchable macOS Core Text system-font list is primary, with a retained
+  file-picker button, explicit face/hash and bounded recent choices. Named
+  TTC faces are resolved from font tables, not guessed as index zero.
+- Existing model worker handles font inspection and 200 ms debounced typed
+  previews. Generation/document/revision/layer/font/parameters fence stale
+  results. Preview and Cancel never mutate manufacturing state.
+- Mouse, exact Absolute, explicit Relative/Pick Base placement; opt-in text
+  snap. Apply is one create and one Undo transaction, with generated-group
+  selection. Persisted Gerber contains ordinary manufacturing geometry.
+- Grid visibility uses 180 ms transient opacity; 1/2/5 visual levels blend
+  continuously in physical pixels. Manufacturing snap retains base spacing.
+- Cached f64 viewport envelopes precede camera-relative f32 conversion;
+  exposure order is preserved. Dynamic view precision clamps and retained
+  last-good frames protect navigation. Pending display work blocks edits
+  against a stale displayed frame; manufacturing invalidity still fails closed.
+- Native testing exposed an inflated dense-text GPU work estimate. The
+  correction integrates candidate work over visible cells, preserving the
+  existing 2,000,000,000 work ceiling. A Retina Apply regression covers it.
 
-Not implemented / not executed: Text GUI; asynchronous preview publication and
-stale-result fencing; font picker/recent fonts; outline offset; Mouse/Absolute/
-Relative placement; group GUI interactions; native Chinese IME and all 29 native
-steps; the multi-font/offset/precision performance matrix. These remain required
-before S4-A2 PASS. Native renderer regression is not Text GUI/IME evidence.
+## Evidence and limitations
 
-Verification is bound to the clean commit in the foundation public evidence
-archive: environment.json, git-head.txt, clean-status-before/after.txt,
-tested-source-hashes.txt, gates.json and individual command logs. Test commands
-include all workspace gates, S4-A1 text workflow, s4a2_text_preview,
-automation_contract, headless_workflow, service normal dependency tree, release
-editor-app build, source manifest/package tests and existing native Metal parity.
-The gate result file supplies actual exits, not this planned command list.
+The final run-specific evidence archive is authoritative for command exits,
+source identity, native steps and unexecuted coverage. Code implementation,
+automated checks, native observations and user-reported physical gestures are
+separate evidence categories; none substitutes for the others.
 
-Source/evidence packages are explicitly named S4A2_FOUNDATION to prevent
-confusion with the still-open final S4-A2 delivery. Fresh extraction must verify
-manifest/test results and equality with tested payload hashes. No font bytes,
-private Gerber samples or private workspace paths belong in public evidence.
+Development native evidence includes actual macOS IME preedit/commit/edit,
+preview/offset/rotation, and Retina ppp=2 grid fade. The user performed slow/
+fast trackpad pinch, zoom toward bounds and Fit and reported no error or blank
+canvas. Raw logs retain 973 camera events, scales 0.260343..27367.632, revision
+0 and no display-prepare diagnostic for that run. This is evidence for the
+observed run, not a proof of every mathematical zoom bound or every platform.
+The old development window's unsaved user changes were preserved.
+
+The three-font performance matrix intentionally records RESOURCE_LIMIT and
+VALIDATION_FAILED cases as rejections, not successful geometry. Existing edge,
+region and work budgets were not raised. Unsupported fonts/erosion topology,
+variable fonts, complex shaping, multiline and automatic stencil bridges
+remain fail-closed. Font data never enters source/evidence archives.
+
+Full stage acceptance requires the run-specific native coverage table and all
+final clean-commit gates. Do not infer PASS from this implementation review.
+The next task is Global Units & Manufacturing Precision Foundation,
+**BLOCKING BEFORE NEXT MAJOR FEATURE STAGE**, covering mm/inch/mil/µm and
+0.1 µm default manufacturing precision. No S4-B/S5 work was started.

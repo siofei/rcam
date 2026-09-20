@@ -315,7 +315,7 @@ impl Scene {
             || (n != 0. && f == 0.)
             || ((f64::from(f) - n).abs() + n.abs() * f64::from(f32::EPSILON) * 4.) * self.ppm > 0.10
         {
-            Err("UNSUPPORTED_FEATURE: display precision cannot preserve this view; zoom out".into())
+            Err("DISPLAY_PRECISION: local coordinate error exceeds 0.1 physical pixel".into())
         } else {
             Ok(f)
         }

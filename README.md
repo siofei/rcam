@@ -34,7 +34,7 @@ Mac 启动：`cargo run --release --locked -p editor-app`。
 显隐、锁定和显示名只在本次会话保留，不产生制造 dirty 或历史。
 超出显示精度/预算时整幅拒绝并禁止移动与保存，可缩小视图或撤销恢复。
 
-macOS 界面从系统字体加载中文，不打包用户字体；S4-A1 已支持中英文制造矢量文字核心；正式 Text GUI / IME / Preview 正在 S4-A2 实施。
+macOS 界面从系统字体加载中文，不打包用户字体；S4-A1 已支持中英文制造矢量文字核心；S4-A2 已接入 Text GUI、系统字体搜索列表（保留文件选择）、异步 Preview 和显式定位；最终验收状态见 S4_A2_REVIEW。
 Windows、完整 CORE10、性能与双平台 V1 验收仍未完成；不能作为生产发行声明。
 
 Rotate preserves true manufacturing geometry; mirrored arcs reverse direction.

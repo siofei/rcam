@@ -46,3 +46,27 @@ A maintained bounded parser avoids implementing binary font parsing ourselves.
 No shaping engine is introduced for the frozen single-line ASCII/CJK subset;
 complex shaping and variable fonts remain unsupported. Font files are local
 user inputs and are not distributed. See THIRD_PARTY_NOTICES.md.
+
+## S4-A2 material offset
+
+`clipper2-rust = 1.1.0` is pinned in editor-text and Cargo.lock, BSL-1.0.
+Primary source/API: https://docs.rs/crate/clipper2-rust/1.1.0/source/ .
+Pure Rust (MSRV 1.70), forbids unsafe code; only normal dependency num-traits
+was already locked. It supplies nonzero polygon union and round material
+offset, avoiding a new handwritten offset kernel or C++ build/FFI dependency.
+Inputs are bounded local integer coordinates at 1e8 units/mm, with 4096 edges
+per glyph and existing generation work limits. No fonts or third-party source
+are copied into the product repository. macOS validation only this round;
+Windows remains deferred. Full license is in THIRD_PARTY_NOTICES.md.
+
+S4-A2 system-font picker uses macOS-only `objc2-core-text = 0.3.2`
+(Zlib OR Apache-2.0 OR MIT) and existing `objc2-core-foundation = 0.3.2`
+(MIT). Official binding source/API was inspected in the locked crate:
+https://github.com/madsmtm/objc2 . Only CTFontCollection/CTFontDescriptor and
+required CF array/string/URL facilities are enabled. Core Text supplies the
+installed font catalog; this avoids guessing filesystem font directories or
+hand-writing platform FFI. Metadata enumeration runs on the model worker;
+selected TTF/OTF/TTC/OTC bytes still pass explicit service file policy,
+PostScript-to-face resolution, hashing and static-outline validation.
+No OS font is copied, bundled or uploaded. No window/GPU dependency enters
+editor-core/editor-text/editor-service. Windows catalog support is deferred.

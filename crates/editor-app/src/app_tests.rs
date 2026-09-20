@@ -914,7 +914,7 @@ fn multi_selection_panel_labels_object_sum_not_layer_area() {
     let multiple = crate::metrics_panel::lines(&m.view).join("\n");
     assert!(multiple.contains("已精确：2 / 2"));
     assert!(multiple.contains("对象面积合计：12.566371 mm²"));
-    assert!(multiple.contains("对象周长合计：25.132741 mm"));
+    assert!(multiple.contains("分解对象周长合计（非字形外轮廓）：25.132741 mm"));
     for forbidden in ["实际开口面积", "钢网总开口面积", "最终面积"] {
         assert!(!multiple.contains(forbidden));
     }
@@ -1475,4 +1475,285 @@ fn s3_snap_candidates_come_from_visible_manufacturing_geometry() {
     }));
     patch(&mut m, Some(false), None, None);
     assert!(m.view.snap_points.is_empty());
+}
+
+fn text_draft(m: &mut Model) -> crate::text_tool::Draft {
+    let path = std::path::PathBuf::from("/System/Library/Fonts/Supplemental/Arial Unicode.ttf");
+    m.run(Action::TextFont(1, path, 0));
+    let reply = m.view.text_reply.as_ref().unwrap();
+    let crate::text_tool::Reply::Font { result, .. } = reply.as_ref() else {
+        panic!()
+    };
+    let mut draft = crate::text_tool::Draft {
+        text: "口8".into(),
+        ..Default::default()
+    };
+    draft.accept_font(result.as_ref().unwrap().clone());
+    draft
+}
+fn text_request(m: &Model, d: &crate::text_tool::Draft) -> crate::text_tool::Request {
+    let info = m.view.info.as_ref().unwrap();
+    crate::text_tool::Request {
+        generation: d.generation,
+        document: info.document_id.clone(),
+        revision: info.revision.clone(),
+        params: d.params(&m.view.layers[0].layer_id).unwrap(),
+    }
+}
+#[test]
+fn text_typed_worker_preview_fencing_apply_group_and_history() {
+    let (mut m, _) = setup();
+    let mut d = text_draft(&mut m);
+    let r = text_request(&m, &d);
+    let info = m.view.info.clone();
+    m.run(Action::TextPreview(r.clone()));
+    assert_eq!(m.view.info, info);
+    let crate::text_tool::Reply::Preview { result, .. } =
+        m.view.text_reply.as_ref().unwrap().as_ref()
+    else {
+        panic!()
+    };
+    let p = result.as_ref().unwrap();
+    assert!(!p.geometries.is_empty());
+    assert!(d.matches(&r, &m.view, Some(&r.params.layer_id), true));
+    assert!(!d.matches(&r, &m.view, Some(&r.params.layer_id), false));
+    assert!(!d.matches(&r, &m.view, Some("other-layer"), true));
+    let mut other = m.view.clone();
+    other.info.as_mut().unwrap().document_id = "other".into();
+    assert!(!d.matches(&r, &other, Some(&r.params.layer_id), true));
+    other = m.view.clone();
+    other.info.as_mut().unwrap().revision = "999".into();
+    assert!(!d.matches(&r, &other, Some(&r.params.layer_id), true));
+    other.info = None;
+    assert!(!d.matches(&r, &other, Some(&r.params.layer_id), true));
+    d.changed();
+    assert!(!d.matches(&r, &m.view, Some(&r.params.layer_id), true));
+    let before = m.view.info.clone();
+    d.cancel();
+    assert_eq!(m.view.info, before);
+    let expected = p.geometries.len();
+    m.run(Action::TextCreate(r.clone()));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    assert_eq!(m.view.selected.ordered.len(), expected);
+    let selected = m.view.selected.clone();
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+    m.run(Action::TextCreate(r));
+    assert_eq!(m.view.error.as_ref().unwrap().code, "REVISION_CONFLICT");
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+    m.run(Action::Move("1".into(), "2".into()));
+    assert!(m.view.error.is_none());
+    m.run(Action::Rotate("37".into(), PivotInput::WorldOrigin));
+    assert!(m.view.error.is_none());
+    m.run(Action::Mirror(MirrorDirection::Horizontal));
+    assert!(m.view.error.is_none());
+    m.run(Action::History(false));
+    m.run(Action::History(false));
+    m.run(Action::History(false));
+    assert_eq!(m.view.selected, selected);
+    m.run(Action::Delete);
+    assert!(m.view.error.is_none());
+    m.run(Action::History(false));
+    assert!(m.view.error.is_none());
+    // Change the current draft font; committed manufacturing snapshot is unchanged.
+    let before = m
+        .service
+        .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
+        .unwrap();
+    m.run(Action::TextFont(
+        2,
+        "/System/Library/Fonts/STHeiti Light.ttc".into(),
+        0,
+    ));
+    assert_eq!(
+        m.service
+            .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
+            .unwrap(),
+        before
+    );
+}
+
+#[test]
+#[ignore = "release-only multi-font text preview matrix; writes explicit evidence"]
+fn text_preview_performance_matrix() {
+    let (mut m, _) = setup();
+    let mut rows = Vec::new();
+    for path in [
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+    ] {
+        m.service
+            .grant_file_access(std::path::Path::new(path), false)
+            .unwrap();
+        let font = m.service.font_inspect(path, 0).unwrap();
+        for (text, offset, tolerance) in [
+            ("ABCD12348O", 0., 0.00025),
+            ("中文口回", 0., 0.000125),
+            ("中文测试钢网口回", 0., 0.00025),
+            ("中文AB1234口回CD", 0.01, 0.00025),
+            ("O8中回", -0.01, 0.00025),
+            ("口8", 0., 0.0000625),
+            ("口8", 0.01, 0.000125),
+            ("口8", -0.01, 0.000125),
+            ("口", 0., 0.00001),
+        ] {
+            let mut draft = crate::text_tool::Draft {
+                text: text.into(),
+                offset: offset.to_string(),
+                tolerance: tolerance.to_string(),
+                rotation: "37".into(),
+                ..Default::default()
+            };
+            draft.accept_font(font.clone());
+            let request = text_request(&m, &draft);
+            let start = std::time::Instant::now();
+            m.run(Action::TextPreview(request));
+            let crate::text_tool::Reply::Preview {
+                result,
+                worker_ms,
+                finished,
+                ..
+            } = m.view.text_reply.as_ref().unwrap().as_ref()
+            else {
+                panic!()
+            };
+            let publish_ms = finished.elapsed().as_secs_f64() * 1000.;
+            let row = match result {
+                Ok(p) => {
+                    let geometry_bounds = editor_core::geometries_bounds(p.geometries.iter(), &[])
+                        .unwrap()
+                        .unwrap();
+                    let ctx = eframe::egui::Context::default();
+                    let mut camera = crate::camera::Camera::default();
+                    let rect = eframe::egui::Rect::from_min_size(
+                        eframe::egui::Pos2::ZERO,
+                        eframe::egui::vec2(800., 600.),
+                    );
+                    camera.fit(Some(geometry_bounds), rect);
+                    draft.preview = Some(p.clone());
+                    let paint = std::time::Instant::now();
+                    let _ = ctx.run(eframe::egui::RawInput::default(), |ctx| {
+                        draft.paint(
+                            &ctx.layer_painter(eframe::egui::LayerId::background()),
+                            camera,
+                            rect,
+                        )
+                    });
+                    serde_json::json!({"status":"PASS","objects":p.geometries.len(),"timings":p.timings,"worker_ms":worker_ms,"publish_latency_ms":publish_ms,"overlay_prepare_ms":paint.elapsed().as_secs_f64()*1000.,"renderer_candidates":draft.candidates})
+                }
+                Err(e) => {
+                    serde_json::json!({"status":"REJECTED","error":e.code,"reason":e.message,"worker_ms":worker_ms,"publish_latency_ms":publish_ms})
+                }
+            };
+            rows.push(serde_json::json!({"font":std::path::Path::new(path).file_name().unwrap().to_string_lossy(),"family":font.family,"sha256":font.identity.sha256,"face_index":0,"text":text,"offset_mm":offset,"tolerance_mm":tolerance,"total_ms":start.elapsed().as_secs_f64()*1000.,"result":row}));
+        }
+    }
+    let out = std::env::var("RCAM_TEXT_MATRIX").expect("set RCAM_TEXT_MATRIX to a new output path");
+    std::fs::write(out, serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
+    assert!(rows.iter().all(|r| {
+        r["result"]["status"] == "PASS"
+            || ["RESOURCE_LIMIT", "VALIDATION_FAILED", "UNSUPPORTED_FEATURE"]
+                .iter()
+                .any(|code| r["result"]["error"] == *code)
+    }));
+}
+
+#[test]
+fn committed_text_fits_retina_viewport_sample_budget() {
+    use eframe::egui;
+    let mut m = Model::default();
+    m.open(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/s2a3/gui_primitives.gbr"),
+    )
+    .unwrap();
+    let mut draft = text_draft(&mut m);
+    draft.text = "中间".into();
+    draft.offset = "0.01".into();
+    draft.rotation = "37".into();
+    draft.x = "24.36119473474698".into();
+    draft.y = "30.628727186858097".into();
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(784., 658.));
+    let mut camera = crate::camera::Camera::default();
+    camera.fit(m.view.bounds, rect);
+    let lo = camera.world(rect.left_bottom(), rect);
+    let hi = camera.world(rect.right_top(), rect);
+    m.run(Action::Viewport(
+        camera.center,
+        editor_core::BoundsMm {
+            min_x_mm: lo.x_mm - 30.,
+            min_y_mm: lo.y_mm - 30.,
+            max_x_mm: hi.x_mm + 30.,
+            max_y_mm: hi.y_mm + 30.,
+        },
+        64.,
+    ));
+    m.run(Action::TextCreate(text_request(&m, &draft)));
+    assert!(m.view.error.is_none());
+    let scene = m.view.scene.as_ref().unwrap();
+    let flags = crate::gpu::selection_flags(scene, &m.view.selected.ids());
+    let prepared =
+        crate::gpu::prepare_measured(scene, camera, rect, 2., &flags, MmPoint::new(0., 0.))
+            .unwrap();
+    assert!(prepared.stats.estimated_work < 2_000_000_000.);
+    assert!(prepared.stats.candidate_count > 700);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn system_font_catalog_resolves_named_ttc_faces_without_document_mutation() {
+    let (mut m, _) = setup();
+    let before = m.view.info.clone();
+    m.run(Action::FontCatalog);
+    let crate::text_tool::Reply::Catalog(result) = m.view.text_reply.as_ref().unwrap().as_ref()
+    else {
+        panic!()
+    };
+    let fonts = result.as_ref().unwrap().clone();
+    assert!(!fonts.is_empty());
+    let arial = fonts
+        .iter()
+        .find(|f| f.path.ends_with("Arial Unicode.ttf"))
+        .unwrap();
+    m.run(Action::SystemFont(
+        1,
+        arial.path.clone(),
+        arial.postscript.clone(),
+    ));
+    let crate::text_tool::Reply::Font { result, .. } = m.view.text_reply.as_ref().unwrap().as_ref()
+    else {
+        panic!()
+    };
+    assert_eq!(result.as_ref().unwrap().identity.face_index, 0);
+    let collection: Vec<_> = fonts
+        .iter()
+        .filter(|f| f.path.ends_with("STHeiti Light.ttc"))
+        .collect();
+    assert!(collection.len() >= 2);
+    let mut indices = std::collections::BTreeSet::new();
+    for font in collection {
+        m.run(Action::SystemFont(
+            2,
+            font.path.clone(),
+            font.postscript.clone(),
+        ));
+        let crate::text_tool::Reply::Font { result, .. } =
+            m.view.text_reply.as_ref().unwrap().as_ref()
+        else {
+            panic!()
+        };
+        indices.insert(
+            result
+                .as_ref()
+                .unwrap_or_else(|e| panic!("{}: {e:?}", font.postscript))
+                .identity
+                .face_index,
+        );
+    }
+    assert!(indices.len() >= 2);
+    assert_eq!(m.view.info, before);
+    eprintln!(
+        "system_font_catalog_count={} resolved_ttc_faces={indices:?}",
+        fonts.len()
+    );
 }

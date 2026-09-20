@@ -107,7 +107,6 @@ pub fn prepare_measured(
     let mut stats = PrepareStats::default();
     let width = rect.width() * ppp;
     let height = rect.height() * ppp;
-    let pixels = f64::from(width) * f64::from(height);
     let ppm = camera.scale * f64::from(ppp);
     let cx = camera.center.x_mm - scene.anchor.x_mm;
     let cy = camera.center.y_mm - scene.anchor.y_mm;
@@ -127,7 +126,7 @@ pub fn prepare_measured(
     stats.candidate_count = viewport.ordered_candidate_ids.len();
     stats.max_candidates_in_view = viewport.max_candidates_in_view;
     stats.cell_references_visited = viewport.cell_references_visited;
-    let mut work = pixels * viewport.max_candidates_in_view as f64 * 20.;
+    let mut work = index.sample_candidate_work(&viewport, ppm);
     for id in &viewport.ordered_candidate_ids {
         let index = *id as usize;
         let object = &scene.objects[index];
