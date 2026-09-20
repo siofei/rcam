@@ -1,10 +1,10 @@
-# RCam Gerber editor — Mac-first S3-FINAL
+# RCam Gerber editor — Mac-first S4-A2（实施中）
 
 S3-FINAL 正式收口基础编辑：GUI 制造修改统一走 `ApplicationService`；补齐标准 C/R/O/P
 Flash 尺寸写时复制、单事务 `edit.batch`、完整事务边界的 Undo 预算淘汰、对象端点/中心优先
 Snap、mm/in 显示以及同一 release build 的 Mac 原生 P1K/编辑/另存重开门禁。范围、证据映射和
 边界审计见 [S3 coverage](docs/S3_FINAL_COVERAGE.md)、[service audit](docs/S3_SERVICE_BOUNDARY_AUDIT.md)
-与 [final review](docs/S3_FINAL_REVIEW.md)。Windows、S4 文字、完整 V1 与双平台验收仍未执行。
+与 [final review](docs/S3_FINAL_REVIEW.md)。S4-A1 headless vector text core 已实现；S4-A2 正在实现正式 Text GUI / IME / Preview。Windows、完整 V1 与双平台验收仍未完成。
 
 历史 `S2-B1/S2-B2/S2-B3/S2-C1/S2-C2` 名称和文件继续保留；其中编辑、Undo/Redo、
 Grid/Snap/Measure 实际覆盖正式 S3 范围。自 S3-FINAL 起恢复 DESIGN_V1 的正式阶段编号。
@@ -34,7 +34,7 @@ Mac 启动：`cargo run --release --locked -p editor-app`。
 显隐、锁定和显示名只在本次会话保留，不产生制造 dirty 或历史。
 超出显示精度/预算时整幅拒绝并禁止移动与保存，可缩小视图或撤销恢复。
 
-macOS 界面从系统字体加载中文，不打包用户字体；中英文制造矢量文字尚未实施。
+macOS 界面从系统字体加载中文，不打包用户字体；S4-A1 已支持中英文制造矢量文字核心；正式 Text GUI / IME / Preview 正在 S4-A2 实施。
 Windows、完整 CORE10、性能与双平台 V1 验收仍未完成；不能作为生产发行声明。
 
 Rotate preserves true manufacturing geometry; mirrored arcs reverse direction.

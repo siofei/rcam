@@ -547,6 +547,7 @@ fn capabilities_and_strict_dtos_match_implemented_operations() {
         "objects.delete",
         "objects.rotate",
         "objects.mirror",
+        "text.preview",
     ] {
         assert!(
             caps["supported_operations"]
@@ -555,15 +556,7 @@ fn capabilities_and_strict_dtos_match_implemented_operations() {
                 .contains(&json!(op))
         );
     }
-    {
-        let op = "text.preview";
-        assert!(
-            !caps["supported_operations"]
-                .as_array()
-                .unwrap()
-                .contains(&json!(op))
-        );
-    }
+
     for (op, p) in [
         (
             "objects.duplicate",

@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发切片为 Mac-first S2-C2，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+当前开发切片为 Mac-first S4-A2 服务前置闭环，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -157,3 +157,11 @@ Flash 尺寸 COW、`edit.batch` 的 Move/Rotate/Mirror/SetProperties 原子子�
 没有公布 batch Duplicate/Delete、异步 jobs、文字、脚本运行时、覆盖保存、Final Layer Boolean Area、
 P100K 或非 Gerber 格式。Mac 原生结果绑定 clean commit；Windows、双平台 V1、CORE10 10/10 和
 96 个 AT 全量通过均未声明。
+
+## 2026-09-20 S4-A1 and S4-A2 foundation
+
+S4-A1 headless vector text core is implemented. S4-A2 foundation adds configurable
+manufacturing precision and read-only text.preview sharing create validation.
+Formal Text GUI/IME/Preview worker, material offset and placement remain pending.
+The retained high-precision thin-slab limitation is recorded in S4_A2_REVIEW.md.
+Full S4/V1, Windows and final S4-A2 acceptance are not claimed.

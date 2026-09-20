@@ -97,6 +97,7 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
         "objects.move",
         "objects.rotate",
         "objects.mirror",
+        "text.preview",
         "objects.duplicate",
         "objects.delete",
         "history.undo",
@@ -109,16 +110,6 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
     ] {
         assert!(
             capabilities
-                .supported_operations
-                .iter()
-                .any(|item| item == operation),
-            "{operation}"
-        );
-    }
-    {
-        let operation = "text.preview";
-        assert!(
-            !capabilities
                 .supported_operations
                 .iter()
                 .any(|item| item == operation),

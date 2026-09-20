@@ -35,3 +35,14 @@ The CI workflow covers Windows MSVC and macOS arm64 only. Linux and WSL2 are
 outside the product target and are intentionally absent from CI. The local
 headless tests do not claim native window, Metal, or Windows DX12 acceptance;
 those require the corresponding platform runs.
+
+## S4-A1 direct font parser
+
+`ttf-parser = 0.25.1` is pinned directly in editor-text and Cargo.lock.
+Source: https://crates.io/crates/ttf-parser/0.25.1 and
+https://github.com/harfbuzz/ttf-parser. License: MIT OR Apache-2.0.
+Purpose: static TTF/OTF glyph outline extraction, including TTC face selection.
+A maintained bounded parser avoids implementing binary font parsing ourselves.
+No shaping engine is introduced for the frozen single-line ASCII/CJK subset;
+complex shaping and variable fonts remain unsupported. Font files are local
+user inputs and are not distributed. See THIRD_PARTY_NOTICES.md.

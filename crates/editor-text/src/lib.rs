@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use ttf_parser::{Face, OutlineBuilder};
 
 pub const TOLERANCE_MM: f64 = 0.00025;
+/// Maximum custom flattening error within the 0.001 mm total manufacturing budget.
+pub const MAX_TOLERANCE_MM: f64 = TOLERANCE_MM;
+/// Smaller requests cannot be certified against cleanup and writer resolution.
+pub const MIN_TOLERANCE_MM: f64 = 0.00001;
+fn default_tolerance_mm() -> f64 {
+    TOLERANCE_MM
+}
 pub const MAX_CHARACTERS: usize = 128;
 const MAX_EDGES: usize = 4096;
 const MAX_REGIONS: usize = 10000;
@@ -35,6 +42,8 @@ pub struct Layout {
     pub h_align: HorizontalAlign,
     pub v_align: VerticalAlign,
     pub rotation_deg: f64,
+    #[serde(default = "default_tolerance_mm")]
+    pub curve_tolerance_mm: f64,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextError {
@@ -174,8 +183,11 @@ pub fn generate(
         layout.height_mm,
         layout.tracking_mm,
         layout.rotation_deg,
+        layout.curve_tolerance_mm,
     ];
     if !values.iter().all(|v| v.is_finite())
+        || layout.curve_tolerance_mm <= 0.
+        || layout.curve_tolerance_mm > MAX_TOLERANCE_MM
         || layout.height_mm <= 0.
         || layout.height_mm > 1000.
         || layout.tracking_mm.abs() > 1000.
@@ -185,7 +197,8 @@ pub fn generate(
     {
         return Err(TextError::InvalidArgument);
     }
-    if layout.text.chars().count() > MAX_CHARACTERS {
+    if layout.curve_tolerance_mm < MIN_TOLERANCE_MM || layout.text.chars().count() > MAX_CHARACTERS
+    {
         return Err(TextError::ResourceLimit);
     }
     let face = Face::parse(bytes, face_index).map_err(|_| TextError::InvalidFont)?;
@@ -237,7 +250,7 @@ pub fn generate(
     let mut pen = 0.;
     for (id, advance, visible) in glyphs {
         if visible {
-            let mut outline = Outline::new(TOLERANCE_MM / scale);
+            let mut outline = Outline::new(layout.curve_tolerance_mm / scale);
             face.outline_glyph(id, &mut outline)
                 .ok_or(TextError::UnsupportedOutline)?;
             if outline.failed {
@@ -463,6 +476,7 @@ mod tests {
             h_align: HorizontalAlign::Left,
             v_align: VerticalAlign::Bottom,
             rotation_deg: 0.,
+            curve_tolerance_mm: TOLERANCE_MM,
         }
     }
     fn points(g: &[SemanticGeometry]) -> Vec<MmPoint> {
@@ -639,6 +653,33 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn custom_tolerance_bounds_have_independent_dense_distance_checks() {
+        let bytes = font();
+        // Service tests exercise JSON defaults; here test the independent curve bound
+        // at every preset and both accepted endpoints without altering core thresholds.
+        for tolerance in [MIN_TOLERANCE_MM, 0.0000625, 0.000125, MAX_TOLERANCE_MM] {
+            let mut o = Outline::new(tolerance);
+            o.contours.push(vec![[0., 0.]]);
+            o.curve(&[[0., 0.], [1., 3.], [4., 0.]], 0);
+            assert!(!o.failed);
+            for i in 0..=10000 {
+                let t = i as f64 / 10000.;
+                let point = [2. * (1. - t) * t + 4. * t * t, 6. * (1. - t) * t];
+                let error = o.contours[0]
+                    .windows(2)
+                    .map(|w| segment_distance(point, w[0], w[1]))
+                    .fold(f64::INFINITY, f64::min);
+                assert!(error <= tolerance + 1e-12);
+            }
+        }
+        let mut explicit = layout("口");
+        explicit.curve_tolerance_mm = MIN_TOLERANCE_MM;
+        // Rectilinear geometry demonstrates that the minimum is accepted;
+        // curve/resource/semantic limits still apply independently.
+        assert!(generate(&bytes, 0, &explicit).is_ok());
+    }
+
     #[test]
     fn nonzero_winding_preserves_holes_and_overlapping_solids() {
         let outer = vec![[0., 0.], [4., 0.], [4., 4.], [0., 4.], [0., 0.]];

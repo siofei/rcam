@@ -134,10 +134,17 @@ S4  Vector Text / Save workflow
 review 不重命名；它们保留历史身份，但其中直接编辑、事务、Grid/Snap/Measure、metrics 与
 P1K renderer closeout 实际覆盖了正式 S3 的部分范围。
 
-## 2026-09-20 S3-FINAL（当前）
+## 2026-09-20 S3-FINAL（历史闭环）
 
 正式核对 R10/R11/R13，并回归 R08/R09/R14-R19/R21/R22。补齐标准 Flash 尺寸 COW、
 `edit.batch` 的单 revision/单 Undo 原子事务、按完整事务淘汰的可解释历史预算、显式对象
 端点/中心 Snap 和 mm/in 显示；保留既有 Move/Drag/Duplicate/Delete/Rotate/Mirror、
 Grid/Measure、GeometryMetrics 与 P1K 门禁。Mac-first；Windows deferred / not executed。
 不开始 S4 文字、任务系统、Post-V1 格式或 P100K。
+
+## 2026-09-20 S4-A2（当前，服务前置闭环）
+
+S4-A1 headless core 已实现。本次推进 S4-A2 Gate 0、精度参数和只读预览服务，
+允许模块、R/AT 对应、后续 GUI/IME/offset 闭环见 S4_A2_PLAN.md。
+完整 S4-A2 尚未完成；已知高精度窄片拒绝保留在 S4_A2_REVIEW.md。
+Windows deferred / not executed；不进入 S4-B/S5。

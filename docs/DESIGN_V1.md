@@ -1022,3 +1022,9 @@ Scope and local AT mapping: [S4_A1_PLAN.md](S4_A1_PLAN.md); geometry, font,
 resource and API decisions: [ADR 0024](adr/0024-s4a1-vector-text.md).
 AT-047–052 headless coverage does not replace GUI/IME, independent viewer
 or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.
+
+### S4-A2 foundation (full Text GUI pending)
+
+See [ADR 0025](adr/0025-s4a2-text-gui.md) for bounded configurable manufacturing
+precision and read-only service preview. The default remains 0.00025 mm and
+the total 0.001 mm threshold is unchanged. GUI/IME/offset remain pending.

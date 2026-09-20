@@ -168,3 +168,11 @@ Scope and local AT mapping: [S4_A1_PLAN.md](S4_A1_PLAN.md); geometry, font,
 resource and API decisions: [ADR 0024](adr/0024-s4a1-vector-text.md).
 AT-047–052 headless coverage does not replace GUI/IME, independent viewer
 or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.
+
+### S4-A2 foundation — not full GUI acceptance
+
+Add backward-compatible curve_tolerance_mm, read-only text.preview, shared
+generated-insertion preflight and explicit precision/atomicity tests. Repair
+S4-A1 dependency/README state. ADR 0025 records the unchanged total error
+threshold and retained thin-slab rejection. No new dependency or acceptance
+identity/platform changes. GUI/IME/outline offset remain open.

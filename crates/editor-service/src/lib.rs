@@ -24,7 +24,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs, io};
-pub use text::{FontIdentity, TextParams, TextResult};
+pub use text::{FontIdentity, TextParams, TextPreviewResult, TextResult};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -672,7 +672,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-A1 vector text core".into(),
+            stage: "S4-A2 service foundation (GUI pending)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -691,6 +691,7 @@ impl ApplicationService {
                 "objects.set_properties".into(),
                 "edit.batch".into(),
                 "text.create".into(),
+                "text.preview".into(),
                 "history.undo".into(),
                 "history.redo".into(),
                 "layers.list".into(),
@@ -1759,6 +1760,7 @@ impl ApplicationService {
             | "objects.set_properties"
             | "edit.batch"
             | "text.create"
+            | "text.preview"
             | "history.undo"
             | "history.redo"
             | "document.close"
@@ -1803,6 +1805,12 @@ impl ApplicationService {
                     )?)
                     .map_err(serialize_error)?,
                     "objects.set_properties" => serde_json::to_value(self.objects_set_properties(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "text.preview" => serde_json::to_value(self.text_preview(
                         id,
                         revision,
                         parse_params(&request.params)?,

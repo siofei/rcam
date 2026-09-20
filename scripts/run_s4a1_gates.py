@@ -1,4 +1,4 @@
-"""Run immutable S4-A1 macOS gates from a clean commit."""
+"""Run immutable text-stage macOS gates from a clean commit."""
 import argparse
 import hashlib
 import json
@@ -23,20 +23,22 @@ def sha256(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--stage', default='S4-A1')
+    parser.add_argument('--extra-service-test', action='append', default=[])
     args = parser.parse_args()
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=False)
     status_before = output(['git', 'status', '--porcelain=v1', '--untracked-files=all'])
     (out/'clean-status-before.txt').write_text(status_before+'\n', encoding='utf-8')
     if status_before:
-        raise SystemExit('S4-A1 gates require a clean commit')
+        raise SystemExit('text gates require a clean commit')
     commit = output(['git', 'rev-parse', 'HEAD'])
     (out/'git-head.txt').write_text(commit+'\n', encoding='utf-8')
     manifest = ROOT/'MANIFEST.sha256'
     (out/'tested-source-hashes.txt').write_bytes(manifest.read_bytes())
     environment = dict(
         schema_version=2,
-        stage='S4-A1',
+        stage=args.stage,
         platform=platform.platform(),
         machine=platform.machine(),
         macos=platform.mac_ver()[0],
@@ -80,6 +82,7 @@ def main():
         ['cargo', 'test', '--release', '--locked', '-p', 'editor-app',
          'native_metal_reference_production_pixel_parity', '--', '--ignored', '--nocapture'],
     ]
+    commands[14:14] = [['cargo', 'test', '--locked', '-p', 'editor-service', '--test', target, '--', '--nocapture'] for target in args.extra_service_test]
     results = []
     for number, command in enumerate(commands):
         log = out/f'{number:02d}.log'
@@ -98,7 +101,7 @@ def main():
     (out/'clean-status-after.txt').write_text(status_after+'\n', encoding='utf-8')
     summary = dict(
         schema_version=2,
-        stage='S4-A1',
+        stage=args.stage,
         base_commit=commit,
         source_manifest_sha256=sha256(manifest),
         clean_before=not bool(status_before),

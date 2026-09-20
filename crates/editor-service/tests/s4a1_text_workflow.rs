@@ -62,6 +62,7 @@ impl Run {
                 h_align: HorizontalAlign::Left,
                 v_align: VerticalAlign::Bottom,
                 rotation_deg: 0.,
+                curve_tolerance_mm: editor_text::TOLERANCE_MM,
             },
         }
     }

@@ -553,4 +553,22 @@ missing glyph, empty/control-containing text, stale revision, locked layer,
 nonfinite parameters or exceeded budgets leave geometry/revision/history intact.
 Unknown nested fields are rejected. File access authority is host-owned.
 Horizontal anchors: left/center/right; vertical: baseline/bottom/middle/top.
-Limits and supported script ranges: ADR 0024. `text.preview` remains unsupported.
+Limits and supported script ranges: ADR 0024. `text.preview` is added by the S4-A2 foundation below.
+
+### S4-A2 foundation `text.preview` and precision
+
+`layout.curve_tolerance_mm` is optional on the wire, default 0.00025 mm.
+The accepted interval is [0.00001, 0.00025] mm; nonfinite/nonpositive/coarser
+values are INVALID_ARGUMENT, positive smaller values are RESOURCE_LIMIT.
+Geometry and all existing resource checks may independently reject a request.
+
+`text.preview` uses the same parameters and requires document_id and
+expected_revision, despite being read-only. The result contains document_id,
+revision, params, geometries, and manufacturing_error_bound_mm (0.001).
+It does not allocate IDs, write files, alter dirty state or consume Undo.
+Both paths share font and insertion preflight; `text.create` rechecks font
+bytes and commits one transaction. Preview does not grant permission to commit
+a changed font. Consumers must keep font paths private and schedule expensive
+work off the UI thread. GUI generation IDs and stale publication fencing are
+not implemented here. `outline_offset_mm` is not yet supported and is rejected
+as an unknown field. Full S4-A2 remains pending; see ADR 0025 and review.

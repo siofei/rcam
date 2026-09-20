@@ -659,13 +659,12 @@ impl EditHistory {
         Ok(ids)
     }
 
-    /// Append generated manufacturing geometry as one bounded history transaction.
-    pub fn insert_generated(
-        &mut self,
-        document: &mut SemanticDocument,
+    fn generated_plan(
+        &self,
+        document: &SemanticDocument,
         layer_id: &str,
-        geometries: Vec<SemanticGeometry>,
-    ) -> Result<Vec<String>, EditError> {
+        geometries: &[SemanticGeometry],
+    ) -> Result<(usize, u64, usize), EditError> {
         if geometries.is_empty()
             || self
                 .document_id
@@ -726,18 +725,48 @@ impl EditHistory {
             .flat_map(|l| &l.objects)
             .map(|o| o.object_id.as_str())
             .collect();
+        for (i, geometry) in geometries.iter().enumerate() {
+            validate_geometry(geometry, &aperture_ids).map_err(EditError::InvalidGeometry)?;
+            let id = format!(
+                "{}-generated-object-{}",
+                document.id,
+                self.next_generated_id + i as u64
+            );
+            if existing.contains(id.as_str()) {
+                return Err(EditError::InvalidArgument);
+            }
+        }
+        Ok((layer_index, next, bytes))
+    }
+
+    /// Read-only preflight shared by text preview and the insertion transaction.
+    pub fn validate_generated(
+        &self,
+        document: &SemanticDocument,
+        layer_id: &str,
+        geometries: &[SemanticGeometry],
+    ) -> Result<(), EditError> {
+        self.generated_plan(document, layer_id, geometries)
+            .map(|_| ())
+    }
+
+    /// Append generated manufacturing geometry as one bounded history transaction.
+    pub fn insert_generated(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        geometries: Vec<SemanticGeometry>,
+    ) -> Result<Vec<String>, EditError> {
+        let (layer_index, next, bytes) = self.generated_plan(document, layer_id, &geometries)?;
+        let layer = &document.layers[layer_index];
         let operation_id = format!("{}-generated-op-{}", document.id, self.next_generated_id);
         let mut entries = Vec::with_capacity(geometries.len());
         for (i, geometry) in geometries.into_iter().enumerate() {
-            validate_geometry(&geometry, &aperture_ids).map_err(EditError::InvalidGeometry)?;
             let object_id = format!(
                 "{}-generated-object-{}",
                 document.id,
                 self.next_generated_id + i as u64
             );
-            if existing.contains(object_id.as_str()) {
-                return Err(EditError::InvalidArgument);
-            }
             entries.push(IndexedObject {
                 index: layer.objects.len() + i,
                 object: SemanticObject {

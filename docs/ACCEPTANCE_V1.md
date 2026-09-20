@@ -1844,3 +1844,10 @@ Scope and local AT mapping: [S4_A1_PLAN.md](S4_A1_PLAN.md); geometry, font,
 resource and API decisions: [ADR 0024](adr/0024-s4a1-vector-text.md).
 AT-047–052 headless coverage does not replace GUI/IME, independent viewer
 or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.
+
+### S4-A2 foundation local coverage
+
+AT-047–052/054/086/088–092/095/097: read-only preview and accepted precision
+parity are headless additions, not substitutes for original native steps.
+The known thin-slab rejection in S4_A2_REVIEW.md remains an open limitation.
+No case identities, required_platforms or pass thresholds change.
