@@ -137,3 +137,9 @@ ADR 0012：移除 SemanticLayer UI字段；新增 layer.update 和独立 workspa
 ## 2026-09-20 S2-B3.2
 
 当前范围：视口候选去重/曝光排序、局部预算、事件时 selection flags、原生窗口 benchmark。详见 S2_B3_2_PLAN.md 与 ADR0021；冻结 50ms/300ms 门槛不变。P100K preview 成本采集保留预算拒绝，不能声明 P100K 性能通过。最终结果在独立 public evidence 中绑定受测 clean commit；不启动后续功能。
+
+## 2026-09-20 S2-C1
+
+新增 app-only Grid/Measure、core 纯 f64 网格 helper，单选/多选 Drag 使用共同吸附位移。
+数值 Move 不量化；视觉网格按 zoom 抽稀且有界。沿用服务和 Renderer，未新增依赖。
+决策见 ADR0022，范围/执行见 S2_C1_PLAN.md，结果见 S2_C1_REVIEW.md。

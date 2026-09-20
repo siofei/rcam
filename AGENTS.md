@@ -94,4 +94,4 @@ cargo build --release --locked -p editor-app
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
 
-当前活动开发阶段为 Mac-first S2-B3.2 Viewport + Native Gate，Windows deferred / not executed；最终双平台 V1 要求保持不变。
+当前活动开发阶段为 Mac-first S2-C1 Grid / Snap / Measure，Windows deferred / not executed；最终双平台 V1 要求保持不变。

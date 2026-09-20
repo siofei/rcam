@@ -12,6 +12,7 @@ mod platform;
 mod render_index;
 mod selection;
 mod state;
+mod tools;
 #[cfg(test)]
 mod viewport_tests;
 
@@ -31,6 +32,10 @@ struct EditorApp {
     busy: bool,
     sequence: u64,
     camera: Camera,
+    grid: tools::GridSettings,
+    spacing: String,
+    tool: tools::ActiveTool,
+    measure: tools::MeasureState,
     fit: bool,
     dx: String,
     dy: String,
@@ -50,6 +55,7 @@ struct EditorApp {
     timing: bool,
     selected_flags: std::sync::Arc<Vec<u32>>,
     last_frame: Instant,
+    text_input_at_event: bool,
 }
 impl EditorApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -95,7 +101,7 @@ impl EditorApp {
             .as_ref()
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
-        eprintln!("RCam S2-B3.2 native GPU: {adapter}");
+        eprintln!("RCam S2-C1 native GPU: {adapter}");
         Self {
             tx,
             rx,
@@ -103,6 +109,10 @@ impl EditorApp {
             busy: false,
             sequence: 0,
             camera: Camera::default(),
+            grid: Default::default(),
+            spacing: "0.1".into(),
+            tool: Default::default(),
+            measure: Default::default(),
             fit: false,
             dx: "0".into(),
             dy: "0".into(),
@@ -122,6 +132,7 @@ impl EditorApp {
             selected_flags: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
             last_frame: Instant::now(),
+            text_input_at_event: false,
         }
     }
     fn send(&mut self, a: Action) {
@@ -222,6 +233,8 @@ impl EditorApp {
 }
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // egui clears text focus on Escape before update; retain its event-time owner.
+        self.text_input_at_event = ctx.wants_keyboard_input();
         if let Some(mut bench) = self.bench.take() {
             bench.input(self, ctx, raw);
             self.bench = Some(bench);
@@ -264,6 +277,7 @@ impl eframe::App for EditorApp {
                 }
             }
             if changed {
+                self.measure.clear();
                 self.drag = None;
                 self.fit = self.view.info.is_some();
                 self.layer = self.view.layers.first().map(|l| l.layer_id.clone());
@@ -352,10 +366,14 @@ impl eframe::App for EditorApp {
                 i.pointer.primary_released(),
             )
         });
+        let text_focus = self.text_input_at_event || ctx.wants_keyboard_input();
+        if !text_focus && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.measure.clear();
+        }
         if cancel_drag || modal_open || self.display_error.is_some() {
             self.drag = None;
         }
-        if drag::shortcuts_allowed(ctx.wants_keyboard_input(), self.busy, modal_open) {
+        if drag::shortcuts_allowed(text_focus, self.busy, modal_open) {
             ctx.input_mut(|i| {
                 if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) {
                     self.open();
@@ -669,10 +687,49 @@ impl eframe::App for EditorApp {
                     }
                 });
             });
+        egui::TopBottomPanel::top("grid-tools").show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut self.grid.visible, "网格");
+                ui.label("步长 mm");
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut self.spacing)
+                        .id(egui::Id::new("grid-spacing"))
+                        .desired_width(80.),
+                );
+                if response.lost_focus()
+                    || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                {
+                    match self.spacing.parse::<f64>() {
+                        Ok(v) if editor_core::grid::snap_scalar(0., v, 0.).is_ok() => {
+                            self.grid.spacing_mm = v;
+                            self.ui_error = None;
+                        }
+                        _ => {
+                            self.ui_error =
+                                Some("网格步长必须是有限正数；继续使用上次有效步长".into());
+                        }
+                    }
+                }
+                ui.checkbox(&mut self.grid.snap_enabled, "Grid Snap");
+                ui.label(format!(
+                    "Snap: {} · {} mm · 吸附拖动抓取点",
+                    if self.grid.snap_enabled { "ON" } else { "OFF" },
+                    self.grid.spacing_mm
+                ));
+                let old = self.tool;
+                ui.selectable_value(&mut self.tool, tools::ActiveTool::Select, "选择");
+                ui.selectable_value(&mut self.tool, tools::ActiveTool::Measure, "测距");
+                if old != self.tool {
+                    self.drag = None;
+                    self.measure.clear();
+                }
+            });
+        });
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::from_rgb(14, 18, 22)))
             .show(ctx, |ui| {
                 let mut cursor_label = None;
+                let mut measure_hover = None;
                 let (r, painter) =
                     ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
                 let rect = r.rect;
@@ -701,6 +758,21 @@ impl eframe::App for EditorApp {
                     }
                     let w = self.camera.world(pos, rect);
                     cursor_label = Some(format!("X {:.6}  Y {:.6} mm", w.x_mm, w.y_mm));
+                    if self.tool == tools::ActiveTool::Measure
+                        && self.usable()
+                        && !modal_open
+                        && !ctx.wants_keyboard_input()
+                    {
+                        match self.grid.point(w) {
+                            Ok(p) => {
+                                measure_hover = Some(p);
+                                if r.clicked_by(egui::PointerButton::Primary) {
+                                    self.measure.click(p);
+                                }
+                            }
+                            Err(e) => self.ui_error = Some(e),
+                        }
+                    }
                     if let Some((press, modifiers)) = ctx.input(|i| {
                         i.events.iter().find_map(|e| match e {
                             egui::Event::PointerButton {
@@ -711,7 +783,9 @@ impl eframe::App for EditorApp {
                             } => Some((*pos, *modifiers)),
                             _ => None,
                         })
-                    }) && self.usable()
+                    }) && self.tool == tools::ActiveTool::Select
+                        && !ctx.wants_keyboard_input()
+                        && self.usable()
                         && !cancel_drag
                         && !modal_open
                         && rect.contains(press)
@@ -724,7 +798,8 @@ impl eframe::App for EditorApp {
                             ctx.pixels_per_point(),
                             selection::SelectionMode::from_modifiers(modifiers),
                         ));
-                        if self.drag.is_some() {
+                        if let Some(d) = &mut self.drag {
+                            d.set_grid(self.grid);
                             self.send(Action::ProbeDrag(
                                 self.camera.world(press, rect),
                                 self.camera.tolerance(ctx.pixels_per_point()),
@@ -739,6 +814,9 @@ impl eframe::App for EditorApp {
                         drag.update(pos);
                     }
                     drag.released |= ctx.input(|i| i.pointer.primary_released());
+                    if let Some(error) = drag.error() {
+                        self.ui_error = Some(error.to_string());
+                    }
                     if drag.released && drag.confirmed {
                         let drag = self.drag.take().unwrap();
                         if let Some(action) = drag.release() {
@@ -746,6 +824,7 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                self.measure.hover(measure_hover);
                 let ppm = self.camera.scale * f64::from(ctx.pixels_per_point());
                 let needs_lod = self.view.info.is_some()
                     && (ppm > self.view.render_ppm
@@ -796,6 +875,11 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                self.grid
+                    .paint(&painter, self.camera, rect, ctx.pixels_per_point());
+                if self.tool == tools::ActiveTool::Measure {
+                    self.measure.paint(&painter, self.camera, rect);
+                }
                 if let Some((selection_rect, window)) =
                     self.drag.as_ref().and_then(|d| d.preview_rect())
                 {
@@ -824,11 +908,11 @@ impl eframe::App for EditorApp {
                     );
                 }
                 if let Some(label) = cursor_label {
-                    painter.text(
+                    tools::overlay_label(
+                        &painter,
                         rect.left_bottom() + Vec2::new(12., -14.),
                         egui::Align2::LEFT_BOTTOM,
                         label,
-                        egui::FontId::monospace(12.),
                         Color32::LIGHT_GRAY,
                     );
                 }

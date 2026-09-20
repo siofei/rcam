@@ -923,3 +923,132 @@ fn metrics_worker_selection_edit_and_close_identity() {
     m.run(Action::Close(true));
     assert!(m.view.metrics.is_empty());
 }
+
+#[test]
+fn s2c1_view_tools_preserve_export_revision_dirty_and_history() {
+    let (mut m, dir) = setup();
+    let layer = m.view.layers[0].layer_id.clone();
+    m.save(&dir.join("baseline.gbr"), layer.clone(), None)
+        .unwrap();
+    let bytes = std::fs::read(dir.join("baseline.gbr")).unwrap();
+    let before = m.view.info.clone();
+    let mut grid = crate::tools::GridSettings::default();
+    let mut measure = crate::tools::MeasureState::default();
+    for step in 0..5 {
+        match step {
+            0 => grid.visible = true,
+            1 => grid.spacing_mm = 0.01,
+            2 => grid.snap_enabled = true,
+            3 => {
+                measure.click(grid.point(MmPoint::new(0., 0.)).unwrap());
+                measure.hover(Some(MmPoint::new(3., 4.)));
+                measure.click(MmPoint::new(3., 4.));
+                assert_eq!(measure.values(), Some((3., 4., 5.)));
+            }
+            _ => measure.clear(),
+        }
+        let info = m.view.info.as_ref().unwrap();
+        let baseline = before.as_ref().unwrap();
+        assert_eq!(
+            (
+                &info.revision,
+                info.dirty,
+                info.undo_entries,
+                info.redo_entries
+            ),
+            (
+                &baseline.revision,
+                baseline.dirty,
+                baseline.undo_entries,
+                baseline.redo_entries
+            )
+        );
+        m.save(&dir.join(format!("view-{step}.gbr")), layer.clone(), None)
+            .unwrap();
+        assert_eq!(
+            std::fs::read(dir.join(format!("view-{step}.gbr"))).unwrap(),
+            bytes
+        );
+    }
+    m.run(Action::Move("0.123".into(), "0".into())); // no selection is rejected
+    select(&mut m);
+    m.run(Action::Move("0.123".into(), "0".into()));
+    assert!(grid.snap_enabled);
+    assert_eq!(center(&m), MmPoint::new(10.123, 20.));
+}
+
+#[test]
+fn s2c1_snap_common_delta_preview_single_transaction_and_undo() {
+    for multi in [false, true] {
+        let (mut m, dir) = setup();
+        select(&mut m);
+        if multi {
+            multiselect(&mut m);
+        }
+        let original = m.view.selected.clone();
+        let before = m.view.info.clone();
+        let mut drag = crate::drag::Drag::arm(
+            &m.view,
+            eframe::egui::pos2(100., 100.),
+            crate::camera::Camera::default(),
+            eframe::egui::Rect::from_min_size(
+                eframe::egui::Pos2::ZERO,
+                eframe::egui::vec2(400., 400.),
+            ),
+            2.,
+        )
+        .unwrap();
+        drag.grid = crate::tools::GridSettings {
+            visible: false,
+            spacing_mm: 0.5,
+            snap_enabled: true,
+        };
+        drag.confirmed = true;
+        for n in 0..20 {
+            drag.update(eframe::egui::pos2(110. + n as f32, 107.));
+        }
+        assert_eq!(drag.delta, MmPoint::new(3., -0.5));
+        assert_eq!(m.view.info, before);
+        m.run(drag.release().unwrap());
+        assert!(m.view.error.is_none());
+        let info = m.view.info.as_ref().unwrap();
+        assert_eq!(info.revision, "1");
+        assert_eq!(info.undo_entries, 1);
+        assert!(info.dirty);
+        for (old, new) in original.ordered.iter().zip(&m.view.selected.ordered) {
+            match (&old.object.geometry, &new.object.geometry) {
+                (
+                    SemanticGeometry::Flash { center: a, .. },
+                    SemanticGeometry::Flash { center: b, .. },
+                ) => assert_eq!(*b, MmPoint::new(a.x_mm + 3., a.y_mm - 0.5)),
+                _ => panic!(),
+            }
+        }
+        let output = dir.join("snapped.gbr");
+        m.save(&output, m.view.layers[0].layer_id.clone(), None)
+            .unwrap();
+        m.run(Action::History(false));
+        assert_eq!(m.view.selected, original);
+        m.run(Action::Close(true));
+        m.open(&output).unwrap();
+        m.select(MmPoint::new(13., 19.5), 0., Replace).unwrap();
+        assert_eq!(center(&m), MmPoint::new(13., 19.5));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("中文 # source.gbx")).unwrap(),
+            SOURCE
+        );
+    }
+}
+
+#[test]
+fn s2c1_invalid_snap_cannot_commit() {
+    let (mut m, _) = setup();
+    let mut drag = armed(&mut m, 2.);
+    drag.grid.snap_enabled = true;
+    drag.grid.spacing_mm = 1e-300;
+    let before = m.view.info.clone();
+    drag.update(eframe::egui::pos2(120., 120.));
+    assert!(drag.error.is_some());
+    assert!(drag.release().is_none());
+    assert_eq!(m.view.info, before);
+}

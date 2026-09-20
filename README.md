@@ -1,4 +1,6 @@
-# RCam Gerber editor — Mac-first S2-B3.2
+# RCam Gerber editor — Mac-first S2-C1
+
+S2-C1 增加网格、显式 Grid Snap、光标毫米坐标与两点测距，见 [本轮计划](docs/S2_C1_PLAN.md)。Grid/Measure 仅为视图状态；鼠标抓取点吸附，数值 Move 保持精确输入。
 
 S2-B3 增加独立对象解析面积/周长、会话lazy cache和后台属性面板。多选只显示对象合计；复杂几何明确不可计算，不代表图层最终开口面积。任务范围见 [S2-B3计划](docs/S2_B3_PLAN.md)。
 

@@ -21,6 +21,8 @@ pub struct Drag {
     pub last: Pos2,
     pub dragging: bool,
     pub delta: MmPoint,
+    pub grid: crate::tools::GridSettings,
+    pub error: Option<String>,
 }
 pub fn editable_selection(view: &View) -> bool {
     view.blocked.is_none()
@@ -61,6 +63,8 @@ impl Drag {
             last: start,
             dragging: false,
             delta: MmPoint::new(0., 0.),
+            grid: Default::default(),
+            error: None,
         })
     }
     pub fn update(&mut self, pos: Pos2) {
@@ -71,12 +75,22 @@ impl Drag {
         self.dragging |= pos.distance(self.start) * self.ppp >= THRESHOLD_PX;
         if self.dragging {
             let a = self.camera.world(self.start, self.rect);
-            let b = self.camera.world(pos, self.rect);
+            let b = match self.grid.point(self.camera.world(pos, self.rect)) {
+                Ok(b) => b,
+                Err(e) => {
+                    self.error = Some(e);
+                    self.delta = MmPoint::new(0., 0.);
+                    return;
+                }
+            };
             self.delta = MmPoint::new(b.x_mm - a.x_mm, b.y_mm - a.y_mm);
         }
     }
     pub fn release(self) -> Option<Action> {
-        (self.confirmed && self.dragging && (self.delta.x_mm != 0. || self.delta.y_mm != 0.))
+        (self.error.is_none()
+            && self.confirmed
+            && self.dragging
+            && (self.delta.x_mm != 0. || self.delta.y_mm != 0.))
             .then_some(Action::DragMove(self))
     }
 }
@@ -137,6 +151,14 @@ impl Gesture {
                 Drag::arm(view, start, camera, rect, ppp)
             },
         }
+    }
+    pub fn set_grid(&mut self, grid: crate::tools::GridSettings) {
+        if let Some(d) = &mut self.object_drag {
+            d.grid = grid;
+        }
+    }
+    pub fn error(&self) -> Option<&str> {
+        self.object_drag.as_ref().and_then(|d| d.error.as_deref())
     }
     pub fn confirm(&mut self, view: &View) {
         self.confirmed = true;

@@ -986,3 +986,8 @@ GeometryMetrics 的派生真值、lazy cache 和 Object/Layer Area 分界见 ADR
 依 ADR0018，从制造几何计算独立对象面积/周长并lazy缓存，经objects.metrics与后台属性面板展示。
 局部孔边计入周长；复杂union不可证明时明确unsupported。Object Metrics合计不代表最终Layer Area。
 实现范围与局部AT映射见S2_B3_PLAN.md，不降低最终双平台/CORE10门槛。
+
+### S2-C1 网格、吸附与测距
+
+依 ADR 0022 实施 app-only Grid / Measure 状态和 f64 网格数值 helper。
+局部 AT-044/045，不代表完整 Object Snap 或英寸显示已完成；最终 V1 门槛不变。

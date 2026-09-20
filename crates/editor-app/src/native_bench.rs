@@ -15,6 +15,11 @@ use std::{
 
 pub struct NativeBench {
     out: PathBuf,
+    tools_gate: bool,
+    navigation_shot: bool,
+    tool_input_phase: Option<u32>,
+    tool_baseline: Option<serde_json::Value>,
+    tools_records: Vec<Value>,
     device: wgpu::Device,
     pub painted: Arc<AtomicU64>,
     pub frame_id: u64,
@@ -70,6 +75,11 @@ impl NativeBench {
             .expect("new run directory required");
         Some(Self {
             out,
+            tools_gate: std::env::var_os("RCAM_S2C1_GATE").is_some(),
+            navigation_shot: false,
+            tool_input_phase: None,
+            tool_baseline: None,
+            tools_records: vec![],
             device,
             painted: Arc::new(AtomicU64::new(0)),
             frame_id: 0,
@@ -161,6 +171,56 @@ impl NativeBench {
                 )
                 .expect("screenshot write");
             }
+        }
+        if self.tools_gate
+            && self.tool_input_phase != Some(self.phase)
+            && ((20..=28).contains(&self.phase) || self.phase == 221)
+            && !app.busy
+        {
+            let point = match self.phase {
+                20 => Some(MmPoint::new(20., 13.)),
+                21 | 22 => Some(MmPoint::new(23., 17.)),
+                26 => Some(MmPoint::new(20., 13.)),
+                27 | 28 => Some(MmPoint::new(21.23, 13.77)),
+                _ => None,
+            };
+            if let Some(point) = point {
+                let pos = app.camera.screen(point, app.canvas_rect);
+                raw.events.push(egui::Event::PointerMoved(pos));
+                if matches!(self.phase, 20 | 22 | 26 | 28) {
+                    raw.events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: self.phase != 28,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                    if matches!(self.phase, 20 | 22) {
+                        raw.events.push(egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed: false,
+                            modifiers: egui::Modifiers::NONE,
+                        });
+                    }
+                }
+            }
+            if self.phase == 23 || self.phase == 221 {
+                raw.events.push(egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+                raw.events.push(egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: false,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            self.tool_input_phase = Some(self.phase);
         }
         if self.phase == 8 && !self.pressed {
             self.drag_start = app.camera.screen(MmPoint::new(20., 13.), app.canvas_rect);
@@ -302,6 +362,12 @@ impl NativeBench {
                 self.enter(4);
             }
             4 if self.since.elapsed().as_secs_f64() >= 10. => {
+                if self.tools_gate {
+                    app.grid.visible = true;
+                    app.grid.spacing_mm = 0.5;
+                    app.spacing = "0.5".into();
+                    Self::screenshot(ctx);
+                }
                 self.enter(5);
             }
             5 => {
@@ -315,6 +381,10 @@ impl NativeBench {
                 {
                     self.failures
                         .push("navigation changed manufacturing".into());
+                }
+                if self.tools_gate && t >= 15. && !self.navigation_shot {
+                    Self::screenshot(ctx);
+                    self.navigation_shot = true;
                 }
                 if t >= 30. {
                     self.pan_duration = t;
@@ -332,6 +402,9 @@ impl NativeBench {
                 self.enter(7);
             }
             7 if !app.busy => {
+                if self.tools_gate {
+                    app.grid.snap_enabled = self.round > 0;
+                }
                 Self::screenshot(ctx);
                 self.pressed = false;
                 self.released = false;
@@ -364,7 +437,10 @@ impl NativeBench {
                 }
                 if self.since.elapsed().as_secs_f64() >= 10. {
                     self.durations.push(self.since.elapsed().as_secs_f64());
-                    self.expected_delta = app.camera.world(self.last_pointer, app.canvas_rect);
+                    self.expected_delta = app
+                        .grid
+                        .point(app.camera.world(self.last_pointer, app.canvas_rect))
+                        .unwrap();
                     let start = app.camera.world(self.drag_start, app.canvas_rect);
                     self.expected_delta = MmPoint::new(
                         self.expected_delta.x_mm - start.x_mm,
@@ -435,7 +511,149 @@ impl NativeBench {
                     self.enter(7);
                 }
             }
-            14 if self.since.elapsed().as_secs_f64() > 0.5 => self.finish(app, ctx),
+            14 if self.since.elapsed().as_secs_f64() > 0.5 => {
+                if self.tools_gate {
+                    app.tool = crate::tools::ActiveTool::Measure;
+                    self.tool_baseline =
+                        Some(serde_json::to_value(app.view.info.as_ref().unwrap()).unwrap());
+                    self.enter(20);
+                } else {
+                    self.finish(app, ctx);
+                }
+            }
+            20..=23 if self.tools_gate && self.since.elapsed().as_secs_f64() > 0.5 => {
+                let info = serde_json::to_value(app.view.info.as_ref().unwrap()).unwrap();
+                if Some(&info) != self.tool_baseline.as_ref() {
+                    self.failures.push("Measure changed document info".into());
+                }
+                match self.phase {
+                    20 if app.measure.a != Some(MmPoint::new(20., 13.)) => {
+                        self.failures.push("measure A".into())
+                    }
+                    21 | 22 if app.measure.values() != Some((3., 4., 5.)) => {
+                        self.failures.push("measure 3-4-5".into())
+                    }
+                    21 if app.measure.fixed => self.failures.push("dynamic B fixed early".into()),
+                    22 if !app.measure.fixed => self.failures.push("fixed B missing".into()),
+                    23 if app.measure.a.is_some() => {
+                        self.failures.push("Escape did not clear ruler".into())
+                    }
+                    _ => {}
+                }
+                self.tools_records.push(json!({"phase":self.phase,"measure":app.measure.label(),"values":app.measure.values(),"fixed":app.measure.fixed,"info":info,"ppp":ctx.pixels_per_point(),"canvas_physical":[app.canvas_rect.width()*ctx.pixels_per_point(),app.canvas_rect.height()*ctx.pixels_per_point()]}));
+                Self::screenshot(ctx);
+                self.enter(if self.phase == 22 {
+                    220
+                } else {
+                    self.phase + 1
+                });
+            }
+            220 if self.tools_gate => {
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new("grid-spacing")));
+                if self.since.elapsed().as_secs_f64() > 0.5 {
+                    self.enter(221);
+                }
+            }
+            221 if self.tools_gate && self.since.elapsed().as_secs_f64() > 0.5 => {
+                let preserved = app.measure.fixed && app.measure.values() == Some((3., 4., 5.));
+                if !preserved {
+                    self.failures
+                        .push("text-focused Escape cleared measurement".into());
+                }
+                self.tools_records.push(json!({"phase":221,"text_escape_preserved_measure":preserved,"info":app.view.info}));
+                Self::screenshot(ctx);
+                self.enter(23);
+            }
+            24 if self.tools_gate => {
+                self.save(app, "after-tools.gbr");
+                app.tool = crate::tools::ActiveTool::Select;
+                self.enter(25);
+            }
+            25 if self.tools_gate && !app.busy => {
+                if std::fs::read(self.out.join("after-tools.gbr")).unwrap() != self.baseline_bytes {
+                    self.failures.push("tools changed writer bytes".into());
+                }
+                app.send(Action::Select(
+                    MmPoint::new(20., 13.),
+                    0.,
+                    crate::selection::SelectionMode::Replace,
+                ));
+                self.enter(26);
+            }
+            26 if self.tools_gate
+                && !app.busy
+                && app.drag.as_ref().is_some_and(|d| d.confirmed) =>
+            {
+                self.revision = app.view.info.as_ref().unwrap().revision.clone();
+                self.undo = app.view.info.as_ref().unwrap().undo_entries;
+                self.enter(27);
+            }
+            27 if self.tools_gate && self.since.elapsed().as_secs_f64() > 0.5 => {
+                if app.view.info.as_ref().unwrap().revision != self.revision
+                    || app.view.info.as_ref().unwrap().undo_entries != self.undo
+                {
+                    self.failures.push("single preview mutated document".into());
+                }
+                Self::screenshot(ctx);
+                self.enter(28);
+            }
+            28 if self.tools_gate && !app.busy && self.since.elapsed().as_secs_f64() > 0.5 => {
+                let info = app.view.info.as_ref().unwrap();
+                let coords = app.view.selected.ordered.len() == 1
+                    && matches!(app.view.selected.primary().unwrap().object.geometry,SemanticGeometry::Flash{center,..} if center.distance_mm(MmPoint::new(21.,14.))<1e-6);
+                if !coords
+                    || info.undo_entries != self.undo + 1
+                    || info.revision.parse::<u64>().unwrap()
+                        != self.revision.parse::<u64>().unwrap() + 1
+                {
+                    self.failures
+                        .push("single snap commit coordinates/history".into());
+                }
+                self.tools_records.push(json!({"phase":28,"coordinates_correct":coords,"info":info,"selected":app.view.selected.ordered}));
+                Self::screenshot(ctx);
+                self.save(app, "single-snapped.gbr");
+                self.enter(29);
+            }
+            29 if self.tools_gate && !app.busy => {
+                app.send(Action::History(false));
+                self.enter(30);
+            }
+            30 if self.tools_gate && !app.busy => {
+                if !matches!(app.view.selected.primary().unwrap().object.geometry,SemanticGeometry::Flash{center,..} if center==MmPoint::new(20.,13.))
+                {
+                    self.failures.push("single Undo".into());
+                }
+                Self::screenshot(ctx);
+                app.send(Action::Close(true));
+                self.enter(31);
+            }
+            31 if self.tools_gate && !app.busy => {
+                app.send(Action::Open(self.out.join("single-snapped.gbr")));
+                self.enter(32);
+            }
+            32 if self.tools_gate && !app.busy && !app.fit => {
+                app.send(Action::Select(
+                    MmPoint::new(21., 14.),
+                    0.,
+                    crate::selection::SelectionMode::Replace,
+                ));
+                self.enter(33);
+            }
+            33 if self.tools_gate && !app.busy => {
+                let coords = app.view.selected.ordered.len() == 1
+                    && matches!(app.view.selected.primary().unwrap().object.geometry,SemanticGeometry::Flash{center,..} if center==MmPoint::new(21.,14.));
+                if !coords || app.measure.a.is_some() {
+                    self.failures.push("reopen coordinate/measure reset".into());
+                }
+                self.tools_records.push(
+                    json!({"phase":33,"reopen_coordinates_correct":coords,"info":app.view.info}),
+                );
+                Self::screenshot(ctx);
+                self.enter(34);
+            }
+            34 if self.tools_gate && self.since.elapsed().as_secs_f64() > 0.5 => {
+                self.finish(app, ctx)
+            }
             _ => {}
         }
     }
@@ -537,6 +755,9 @@ impl NativeBench {
             &json!({"schema_version":2,"rounds":drags}),
         );
         self.write("release-latency.json",&json!({"schema_version":2,"definition":"release raw input to target revision surface GPU complete after present call; conservative, not display scanout","rounds":self.releases}));
+        if self.tools_gate {
+            self.write("s2c1-tools.json", &json!({"schema_version":2,"status":if self.failures.is_empty(){"PASS"}else{"FAIL"},"records":self.tools_records,"note":"native egui pointer events; toolbar state configured by harness; rounds 0 snap OFF, 1/2 ON; grid ON during navigation"}));
+        }
         self.write("native-results.json",&json!({"schema_version":2,"benchmark":"s2b32","status":if self.failures.is_empty(){"PASS"}else{"FAIL"},"failures":self.failures,"elapsed_seconds":self.started.elapsed().as_secs_f64(),"surface_screenshots":self.screenshot}));
         eprintln!(
             "NATIVE_BENCH_RESULT {} {:?}",
