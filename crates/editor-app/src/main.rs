@@ -18,12 +18,20 @@ mod viewport_tests;
 
 use camera::Camera;
 use eframe::egui::{self, Color32, RichText, Vec2};
-use state::{Action, Model, View};
+use state::{Action, MirrorDirection, Model, PivotInput, View};
 use std::{
     path::Path,
     sync::mpsc::{self, Receiver, SyncSender},
     time::Instant,
 };
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum PivotMode {
+    #[default]
+    SelectionCenter,
+    WorldOrigin,
+    Custom,
+}
 
 struct EditorApp {
     tx: SyncSender<(u64, Action)>,
@@ -39,6 +47,14 @@ struct EditorApp {
     fit: bool,
     dx: String,
     dy: String,
+    angle: String,
+    pivot_mode: PivotMode,
+    pivot_x: String,
+    pivot_y: String,
+    size_aperture_id: Option<String>,
+    size_width: String,
+    size_height: String,
+    display_unit: tools::DisplayUnit,
     layer: Option<String>,
     rename: String,
     close_prompt: bool,
@@ -101,7 +117,7 @@ impl EditorApp {
             .as_ref()
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
-        eprintln!("RCam S2-C1 native GPU: {adapter}");
+        eprintln!("RCam S2-C2 native GPU: {adapter}");
         Self {
             tx,
             rx,
@@ -116,6 +132,14 @@ impl EditorApp {
             fit: false,
             dx: "0".into(),
             dy: "0".into(),
+            angle: "90".into(),
+            pivot_mode: PivotMode::SelectionCenter,
+            pivot_x: "0".into(),
+            pivot_y: "0".into(),
+            size_aperture_id: None,
+            size_width: String::new(),
+            size_height: String::new(),
+            display_unit: Default::default(),
             layer: None,
             rename: String::new(),
             close_prompt: false,
@@ -230,6 +254,213 @@ impl EditorApp {
             self.send(Action::History(true));
         }
     }
+    fn transform_controls(&mut self, ui: &mut egui::Ui) {
+        let enabled = self.usable() && drag::editable_selection(&self.view);
+        let center = state::selected_center(&self.view).ok();
+        ui.separator();
+        ui.strong("变换");
+        ui.label("制造坐标 f64；不经过 Grid Snap");
+        ui.add_enabled_ui(enabled, |ui| {
+            ui.label("旋转角度 · °");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.angle)
+                    .id(egui::Id::new("transform-angle"))
+                    .desired_width(f32::INFINITY),
+            );
+            ui.label("Pivot");
+            ui.radio_value(
+                &mut self.pivot_mode,
+                PivotMode::SelectionCenter,
+                "选择集制造边界中心",
+            );
+            if let Some(center) = center {
+                ui.label(format!("X {:.6} / Y {:.6} mm", center.x_mm, center.y_mm));
+            } else {
+                ui.colored_label(Color32::YELLOW, "选择集中心不可用，请使用明确 Pivot");
+            }
+            ui.radio_value(
+                &mut self.pivot_mode,
+                PivotMode::WorldOrigin,
+                "世界原点 (0, 0)",
+            );
+            ui.radio_value(&mut self.pivot_mode, PivotMode::Custom, "自定义 X / Y mm");
+            if self.pivot_mode == PivotMode::Custom {
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.pivot_x)
+                            .id(egui::Id::new("transform-pivot-x")),
+                    );
+                    ui.label("Y");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.pivot_y)
+                            .id(egui::Id::new("transform-pivot-y")),
+                    );
+                });
+            }
+        });
+        let pivot_ready = self.pivot_mode != PivotMode::SelectionCenter || center.is_some();
+        let mut rotate = None;
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(enabled && pivot_ready, egui::Button::new("-90°"))
+                .clicked()
+            {
+                rotate = Some("-90".into());
+            }
+            if ui
+                .add_enabled(enabled && pivot_ready, egui::Button::new("+90°"))
+                .clicked()
+            {
+                rotate = Some("90".into());
+            }
+            if ui
+                .add_enabled(enabled && pivot_ready, egui::Button::new("应用旋转"))
+                .clicked()
+            {
+                rotate = Some(self.angle.clone());
+            }
+        });
+        if let Some(angle) = rotate {
+            let pivot = match self.pivot_mode {
+                PivotMode::SelectionCenter => PivotInput::SelectionCenter,
+                PivotMode::WorldOrigin => PivotInput::WorldOrigin,
+                PivotMode::Custom => PivotInput::Custom(self.pivot_x.clone(), self.pivot_y.clone()),
+            };
+            self.send(Action::Rotate(angle, pivot));
+        }
+        ui.add_space(6.);
+        ui.label("镜像轴（选择集制造边界中心）");
+        let mut mirror = None;
+        if let Some(center) = center {
+            if ui
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(format!("水平镜像 · y = {:.6} mm", center.y_mm)),
+                )
+                .clicked()
+            {
+                mirror = Some(MirrorDirection::Horizontal);
+            }
+            if ui
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(format!("垂直镜像 · x = {:.6} mm", center.x_mm)),
+                )
+                .clicked()
+            {
+                mirror = Some(MirrorDirection::Vertical);
+            }
+        }
+        if let Some(direction) = mirror {
+            self.send(Action::Mirror(direction));
+        }
+    }
+    fn sync_size_fields(&mut self) {
+        let Some(primary) = self.view.selected.primary() else {
+            self.size_aperture_id = None;
+            return;
+        };
+        let editor_core::SemanticGeometry::Flash { aperture_id, .. } = &primary.object.geometry
+        else {
+            self.size_aperture_id = None;
+            return;
+        };
+        if self.size_aperture_id.as_deref() == Some(aperture_id) {
+            return;
+        }
+        let Some(aperture) = self
+            .view
+            .apertures
+            .iter()
+            .find(|aperture| aperture.id == *aperture_id)
+        else {
+            self.size_aperture_id = None;
+            return;
+        };
+        let (width, height) = match aperture.shape {
+            editor_core::ApertureShape::Circle { diameter_mm, .. }
+            | editor_core::ApertureShape::Polygon { diameter_mm, .. } => (diameter_mm, None),
+            editor_core::ApertureShape::Rectangle {
+                width_mm,
+                height_mm,
+                ..
+            }
+            | editor_core::ApertureShape::Obround {
+                width_mm,
+                height_mm,
+                ..
+            } => (width_mm, Some(height_mm)),
+            editor_core::ApertureShape::Macro { .. } => {
+                self.size_aperture_id = Some(aperture_id.clone());
+                self.size_width.clear();
+                self.size_height.clear();
+                return;
+            }
+        };
+        self.size_aperture_id = Some(aperture_id.clone());
+        self.size_width = width.to_string();
+        self.size_height = height.map_or_else(String::new, |value| value.to_string());
+    }
+
+    fn flash_size_controls(&mut self, ui: &mut egui::Ui) {
+        self.sync_size_fields();
+        if self.view.selected.ordered.len() != 1 || self.size_aperture_id.is_none() {
+            return;
+        }
+        let Some(primary) = self.view.selected.primary() else {
+            return;
+        };
+        let editor_core::SemanticGeometry::Flash { aperture_id, .. } = &primary.object.geometry
+        else {
+            return;
+        };
+        let Some(aperture) = self
+            .view
+            .apertures
+            .iter()
+            .find(|aperture| aperture.id == *aperture_id)
+        else {
+            return;
+        };
+        if matches!(aperture.shape, editor_core::ApertureShape::Macro { .. }) {
+            ui.label("Macro Flash 尺寸编辑不在 V1 范围");
+            return;
+        }
+        ui.separator();
+        ui.strong("Flash 尺寸属性");
+        let rectangular = matches!(
+            aperture.shape,
+            editor_core::ApertureShape::Rectangle { .. }
+                | editor_core::ApertureShape::Obround { .. }
+        );
+        ui.horizontal(|ui| {
+            ui.label(if rectangular {
+                "宽度 mm"
+            } else {
+                "直径 mm"
+            });
+            ui.add(
+                egui::TextEdit::singleline(&mut self.size_width)
+                    .id(egui::Id::new("flash-size-width")),
+            );
+        });
+        if rectangular {
+            ui.horizontal(|ui| {
+                ui.label("高度 mm");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.size_height)
+                        .id(egui::Id::new("flash-size-height")),
+                );
+            });
+        }
+        if ui.button("应用尺寸（写时复制）").clicked() {
+            self.send(Action::SetFlashSize(
+                self.size_width.clone(),
+                rectangular.then(|| self.size_height.clone()),
+            ));
+        }
+    }
 }
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
@@ -288,6 +519,13 @@ impl eframe::App for EditorApp {
                     .map_or(String::new(), |l| l.display_name.clone());
                 self.dx = "0".into();
                 self.dy = "0".into();
+                self.angle = "90".into();
+                self.pivot_mode = PivotMode::SelectionCenter;
+                self.pivot_x = "0".into();
+                self.pivot_y = "0".into();
+                self.size_aperture_id = None;
+                self.size_width.clear();
+                self.size_height.clear();
             }
             if self.quit_after_close && self.view.info.is_none() {
                 self.allow_quit = true;
@@ -454,7 +692,7 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("帮助", |ui| {
-                    ui.label("S2-B2 · Mac 多对象编辑");
+                    ui.label("S2-C2 · Mac Rotate / Mirror GUI");
                     ui.label(
                         "几何选择包括 Clear；Ctrl 点击加选，Shift 点击减选，双向框选，整组编辑。",
                     );
@@ -667,8 +905,10 @@ impl eframe::App for EditorApp {
                         if enter {
                             self.send(Action::Move(self.dx.clone(), self.dy.clone()));
                         }
+                        self.transform_controls(ui);
+                        self.flash_size_controls(ui);
                     } else {
-                        ui.label("点击图形查看对象，并输入毫米位移。");
+                        ui.label("点击图形查看对象，并输入毫米位移或变换参数。");
                     }
                     ui.separator();
                     if let Some(d) = &self.view.info {
@@ -711,17 +951,21 @@ impl eframe::App for EditorApp {
                     }
                 }
                 ui.checkbox(&mut self.grid.snap_enabled, "Grid Snap");
-                ui.label(format!(
-                    "Snap: {} · {} mm · 吸附拖动抓取点",
-                    if self.grid.snap_enabled { "ON" } else { "OFF" },
-                    self.grid.spacing_mm
-                ));
+                ui.label("对象>网格 · Alt关");
+                ui.selectable_value(&mut self.display_unit, tools::DisplayUnit::Mm, "mm");
+                ui.selectable_value(&mut self.display_unit, tools::DisplayUnit::Inch, "inch");
                 let old = self.tool;
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Select, "选择");
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Measure, "测距");
                 if old != self.tool {
                     self.drag = None;
                     self.measure.clear();
+                }
+                if self.tool == tools::ActiveTool::Measure {
+                    ui.label(format!(
+                        "标注 {} · 距离∠角度 · Esc清除",
+                        self.measure.completed.len()
+                    ));
                 }
             });
         });
@@ -757,13 +1001,20 @@ impl eframe::App for EditorApp {
                         self.camera.zoom(f64::from(zoom), pos, rect);
                     }
                     let w = self.camera.world(pos, rect);
-                    cursor_label = Some(format!("X {:.6}  Y {:.6} mm", w.x_mm, w.y_mm));
+                    cursor_label = Some(self.display_unit.point_label(w));
                     if self.tool == tools::ActiveTool::Measure
                         && self.usable()
                         && !modal_open
                         && !ctx.wants_keyboard_input()
                     {
-                        match self.grid.point(w) {
+                        match tools::snap_point(
+                            w,
+                            self.grid,
+                            &self.view.snap_points,
+                            self.camera,
+                            None,
+                            ctx.input(|input| input.modifiers.alt),
+                        ) {
                             Ok(p) => {
                                 measure_hover = Some(p);
                                 if r.clicked_by(egui::PointerButton::Primary) {
@@ -808,6 +1059,7 @@ impl eframe::App for EditorApp {
                     }
                 }
                 if let Some(drag) = &mut self.drag {
+                    drag.set_snap_disabled(ctx.input(|input| input.modifiers.alt));
                     if !drag.released
                         && let Some(pos) = ctx.input(|i| i.pointer.interact_pos())
                     {
@@ -878,7 +1130,8 @@ impl eframe::App for EditorApp {
                 self.grid
                     .paint(&painter, self.camera, rect, ctx.pixels_per_point());
                 if self.tool == tools::ActiveTool::Measure {
-                    self.measure.paint(&painter, self.camera, rect);
+                    self.measure
+                        .paint_in(&painter, self.camera, rect, self.display_unit);
                 }
                 if let Some((selection_rect, window)) =
                     self.drag.as_ref().and_then(|d| d.preview_rect())

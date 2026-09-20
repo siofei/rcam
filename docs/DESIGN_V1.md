@@ -516,7 +516,10 @@ Ctrl-click 加选，Shift-click 减选（两者同时按下时减选优先）；
 
 建议默认吸附距离 8 个逻辑点，优先级为显式捕捉点 > 网格；距离相同按稳定 ID 排序。按约定修饰键临时关闭吸附。网格显示密度可变化，但制造坐标不变。
 
-测距 V1 为两点直线距离，不等于圆弧长度或边到边最短距离。界面必须写明测量种类。
+测距 V1 为两点直线距离，不等于圆弧长度或边到边最短距离。每条测量同时显示距离与
+相对世界制造坐标 +X 轴的有向角度，角度按逆时针归一化到 `[0°, 360°)`。完成的测量以
+app-only Overlay 保留，允许连续创建并同时显示多条；每条线段中点显示距离/角度标注，
+Esc 清除全部测量。界面必须写明测量种类、角度基准与清除方式。
 
 ### 9.4 复制与快捷键边界
 
@@ -991,3 +994,24 @@ GeometryMetrics 的派生真值、lazy cache 和 Object/Layer Area 分界见 ADR
 
 依 ADR 0022 实施 app-only Grid / Measure 状态和 f64 网格数值 helper。
 局部 AT-044/045，不代表完整 Object Snap 或英寸显示已完成；最终 V1 门槛不变。
+
+### S2-C2 Rotate / Mirror GUI
+
+依 ADR 0023，Mac GUI 复用 S1-B2b 的 objects.rotate/objects.mirror。默认 Pivot/镜像轴来自所选对象
+制造 bounds union center，任意角和自定义 Pivot 保持 f64 mm 且不经过 Grid Snap；一次 SelectionSet 操作
+为一个服务事务/Undo。第一版不做 preview、Rotate Handle、Angular Snap 或自定义斜镜像轴。
+Windows deferred / not executed；最终双平台 V1 门槛不变。
+
+### S3-FINAL 实施注记
+
+正式 S3 收口恢复设计阶段编号。标准 C/R/O/P Flash 尺寸编辑采用新 ApertureDefinition 和新
+DCode 的写时复制，只重定向目标 Flash；Macro 明确拒绝。GUI 与 JSON/Rust 服务共用
+`objects.set_properties`，Undo/Redo 同时恢复对象引用与生成定义，writer 重开复核定义无冲突。
+
+`edit.batch` 当前实现已公布的 Move/Rotate/Mirror/SetProperties 子集：同一图层、显式对象 ID，
+先在差量几何与光圈定义上完成全部校验，再一次提交、一次 revision、一个 Undo。打开、关闭、
+导出及其他外部 I/O 不是 batch step；复制/删除仍用各自单事务操作，不冒充已实现的 batch step。
+
+历史预算按完整事务淘汰最旧 Undo，报告累计 truncation；单个事务超过字节预算时在修改前拒绝。
+Snap 使用 8 个 egui 逻辑点换算的制造半径，显式端点/中心优先于网格，稳定 ID 决胜，Alt 临时关闭；
+单位切换只改变 Grid/坐标/测距显示，不改 f64 mm 模型。详见 S3_FINAL_COVERAGE.md。

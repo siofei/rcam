@@ -530,17 +530,12 @@ fn core_budget_edits_are_atomic() {
         h.move_objects(&mut scene.document, &layer, &ids, 1., 0.)
             .unwrap();
     }
-    let before = scene.document.clone();
-    assert_eq!(
-        h.duplicate_objects(&mut scene.document, &layer, &ids, 1., 0.),
-        Err(EditError::ResourceLimit)
-    );
-    assert_eq!(
-        h.delete_objects(&mut scene.document, &layer, &ids),
-        Err(EditError::ResourceLimit)
-    );
-    assert_eq!(scene.document, before);
+    h.duplicate_objects(&mut scene.document, &layer, &ids, 1., 0.)
+        .unwrap();
+    h.delete_objects(&mut scene.document, &layer, &ids).unwrap();
     assert_eq!(h.undo_len(), 100);
+    assert_eq!(h.truncated_entries(), 2);
+    assert!(h.bytes() <= editor_core::edit::MAX_HISTORY_BYTES);
 }
 #[test]
 fn capabilities_and_strict_dtos_match_implemented_operations() {

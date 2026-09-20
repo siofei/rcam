@@ -6,7 +6,7 @@
 mod metrics;
 pub use editor_core::edit::MirrorAxis;
 use editor_core::edit::{
-    EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
+    BatchEdit, EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
 };
 use editor_core::{
     ApertureShape, CircleAperture, DocumentSnapshot, DrawObject, Exposure, Geometry, Layer,
@@ -210,6 +210,9 @@ pub struct DocumentInfo {
     pub dirty: bool,
     pub undo_entries: usize,
     pub redo_entries: usize,
+    pub history_bytes: usize,
+    pub history_truncated_entries: usize,
+    pub history_truncated_bytes: usize,
     pub layer_ids: Vec<String>,
     pub diagnostics: Vec<String>,
 }
@@ -462,6 +465,50 @@ pub struct DeleteParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetPropertiesParams {
+    pub layer_id: String,
+    pub object_ids: Vec<String>,
+    pub width_mm: f64,
+    pub height_mm: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", deny_unknown_fields)]
+pub enum BatchStepParams {
+    #[serde(rename = "objects.move")]
+    Move {
+        object_ids: Vec<String>,
+        dx_mm: f64,
+        dy_mm: f64,
+    },
+    #[serde(rename = "objects.rotate")]
+    Rotate {
+        object_ids: Vec<String>,
+        angle_deg: f64,
+        pivot_mm: PivotMm,
+    },
+    #[serde(rename = "objects.mirror")]
+    Mirror {
+        object_ids: Vec<String>,
+        axis: MirrorAxis,
+    },
+    #[serde(rename = "objects.set_properties")]
+    SetProperties {
+        object_ids: Vec<String>,
+        width_mm: f64,
+        height_mm: Option<f64>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchParams {
+    pub layer_id: String,
+    pub steps: Vec<BatchStepParams>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EditResult {
     pub document_id: String,
     pub revision: String,
@@ -469,6 +516,9 @@ pub struct EditResult {
     pub undo_entries_added: usize,
     pub undo_entries: usize,
     pub redo_entries: usize,
+    pub history_bytes: usize,
+    pub history_truncated_entries: usize,
+    pub history_truncated_bytes: usize,
     pub dirty: bool,
 }
 
@@ -515,6 +565,8 @@ pub struct ApplicationService {
     documents: HashMap<String, S1DocumentRecord>,
     file_access: Option<FileAccessPolicy>,
     next_document_id: u64,
+    history_max_entries: usize,
+    history_max_bytes: usize,
 }
 
 impl Default for ApplicationService {
@@ -530,6 +582,8 @@ impl ApplicationService {
             documents: HashMap::new(),
             file_access: None,
             next_document_id: 1,
+            history_max_entries: MAX_HISTORY_ENTRIES,
+            history_max_bytes: MAX_HISTORY_BYTES,
         }
     }
 
@@ -538,6 +592,20 @@ impl ApplicationService {
             file_access: Some(file_access),
             ..Self::new()
         }
+    }
+
+    pub fn with_file_access_and_history_limits(
+        file_access: FileAccessPolicy,
+        max_entries: usize,
+        max_bytes: usize,
+    ) -> Result<Self, ServiceError> {
+        EditHistory::with_limits(max_entries, max_bytes).map_err(map_edit_error)?;
+        Ok(Self {
+            file_access: Some(file_access),
+            history_max_entries: max_entries,
+            history_max_bytes: max_bytes,
+            ..Self::new()
+        })
     }
 
     pub fn capabilities(&self) -> Capabilities {
@@ -594,7 +662,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S2-B2 exact rectangle selection".into(),
+            stage: "S3 basic editing".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -610,6 +678,8 @@ impl ApplicationService {
                 "objects.mirror".into(),
                 "objects.duplicate".into(),
                 "objects.delete".into(),
+                "objects.set_properties".into(),
+                "edit.batch".into(),
                 "history.undo".into(),
                 "history.redo".into(),
                 "layers.list".into(),
@@ -662,8 +732,8 @@ impl ApplicationService {
                 max_query_results: 1000,
                 max_move_objects: MAX_MOVE_OBJECTS,
                 max_edit_objects: MAX_MOVE_OBJECTS,
-                max_history_entries: MAX_HISTORY_ENTRIES,
-                max_history_bytes: MAX_HISTORY_BYTES,
+                max_history_entries: self.history_max_entries,
+                max_history_bytes: self.history_max_bytes,
             },
             precision: PrecisionCapabilities {
                 coordinate_unit: "mm".into(),
@@ -783,7 +853,8 @@ impl ApplicationService {
             metadata,
             diagnostics: scene.diagnostics,
             revision: 0,
-            history: EditHistory::default(),
+            history: EditHistory::with_limits(self.history_max_entries, self.history_max_bytes)
+                .map_err(map_edit_error)?,
         };
         let info = document_info(&document_id, &record);
         self.documents.insert(document_id, record);
@@ -1215,17 +1286,104 @@ impl ApplicationService {
         Ok(edit_result(document_id, record, ids, 1))
     }
 
+    pub fn objects_set_properties(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: SetPropertiesParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id)?;
+        let ids = record
+            .history
+            .set_flash_size(
+                &mut record.document,
+                &params.layer_id,
+                &params.object_ids,
+                params.width_mm,
+                params.height_mm,
+            )
+            .map_err(map_edit_error)?;
+        record.metrics.invalidate_shapes(&ids);
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
+    pub fn edit_batch(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: BatchParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id)?;
+        let shape_changed = params
+            .steps
+            .iter()
+            .any(|step| matches!(step, BatchStepParams::SetProperties { .. }));
+        let steps: Vec<_> = params
+            .steps
+            .into_iter()
+            .map(|step| match step {
+                BatchStepParams::Move {
+                    object_ids,
+                    dx_mm,
+                    dy_mm,
+                } => BatchEdit::Move {
+                    object_ids,
+                    dx_mm,
+                    dy_mm,
+                },
+                BatchStepParams::Rotate {
+                    object_ids,
+                    angle_deg,
+                    pivot_mm,
+                } => BatchEdit::Rotate {
+                    object_ids,
+                    angle_deg,
+                    pivot: MmPoint::new(pivot_mm.x_mm, pivot_mm.y_mm),
+                },
+                BatchStepParams::Mirror { object_ids, axis } => {
+                    BatchEdit::Mirror { object_ids, axis }
+                }
+                BatchStepParams::SetProperties {
+                    object_ids,
+                    width_mm,
+                    height_mm,
+                } => BatchEdit::SetFlashSize {
+                    object_ids,
+                    width_mm,
+                    height_mm,
+                },
+            })
+            .collect();
+        let ids = record
+            .history
+            .edit_batch(&mut record.document, &params.layer_id, &steps)
+            .map_err(map_edit_error)?;
+        if shape_changed {
+            record.metrics.invalidate_shapes(&ids);
+        }
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
     pub fn history_undo(
         &mut self,
         document_id: &str,
         expected_revision: &str,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        let shape_changed = record.history.next_undo_changes_shape();
         let ids = record
             .history
             .undo(&mut record.document)
             .map_err(map_edit_error)?;
-        record.metrics.reconcile(&record.document, &ids);
+        if shape_changed {
+            record.metrics.invalidate_shapes(&ids);
+        } else {
+            record.metrics.reconcile(&record.document, &ids);
+        }
         record.revision += 1;
         Ok(edit_result(document_id, record, ids, 0))
     }
@@ -1236,11 +1394,16 @@ impl ApplicationService {
         expected_revision: &str,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        let shape_changed = record.history.next_redo_changes_shape();
         let ids = record
             .history
             .redo(&mut record.document)
             .map_err(map_edit_error)?;
-        record.metrics.reconcile(&record.document, &ids);
+        if shape_changed {
+            record.metrics.invalidate_shapes(&ids);
+        } else {
+            record.metrics.reconcile(&record.document, &ids);
+        }
         record.revision += 1;
         Ok(edit_result(document_id, record, ids, 0))
     }
@@ -1579,8 +1742,16 @@ impl ApplicationService {
                 serde_json::to_value(self.objects_get(document_id, params)?)
                     .map_err(serialize_error)?
             }
-            "objects.move" | "objects.rotate" | "objects.mirror" | "objects.duplicate"
-            | "objects.delete" | "history.undo" | "history.redo" | "document.close"
+            "objects.move"
+            | "objects.rotate"
+            | "objects.mirror"
+            | "objects.duplicate"
+            | "objects.delete"
+            | "objects.set_properties"
+            | "edit.batch"
+            | "history.undo"
+            | "history.redo"
+            | "document.close"
                 if self.file_access.is_some() =>
             {
                 let id = required_document_id(request)?;
@@ -1616,6 +1787,18 @@ impl ApplicationService {
                     )?)
                     .map_err(serialize_error)?,
                     "objects.delete" => serde_json::to_value(self.objects_delete(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.set_properties" => serde_json::to_value(self.objects_set_properties(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "edit.batch" => serde_json::to_value(self.edit_batch(
                         id,
                         revision,
                         parse_params(&request.params)?,
@@ -1823,6 +2006,9 @@ fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
         dirty: content_hash(&record.document) != record.saved_content_hash,
         undo_entries: record.history.undo_len(),
         redo_entries: record.history.redo_len(),
+        history_bytes: record.history.bytes(),
+        history_truncated_entries: record.history.truncated_entries(),
+        history_truncated_bytes: record.history.truncated_bytes(),
         layer_ids: record
             .document
             .layers
@@ -1841,6 +2027,9 @@ fn edit_result(id: &str, record: &S1DocumentRecord, ids: Vec<String>, added: usi
         undo_entries_added: added,
         undo_entries: record.history.undo_len(),
         redo_entries: record.history.redo_len(),
+        history_bytes: record.history.bytes(),
+        history_truncated_entries: record.history.truncated_entries(),
+        history_truncated_bytes: record.history.truncated_bytes(),
         dirty: content_hash(&record.document) != record.saved_content_hash,
     }
 }

@@ -107,6 +107,19 @@ impl MetricsCache {
         }
         self.trim_identities();
     }
+    pub(super) fn invalidate_shapes(&mut self, ids: &[String]) {
+        for id in ids {
+            if let Some(token) = self
+                .active
+                .remove(id)
+                .or_else(|| self.historical.remove(id))
+            {
+                self.values.remove(&token);
+                self.fifo.retain(|candidate| *candidate != token);
+            }
+        }
+        self.trim_identities();
+    }
     fn insert(&mut self, token: u64, value: Result<GeometryMetrics, MetricsError>) {
         if self.values.len() >= MAX_CACHE_ENTRIES
             && let Some(old) = self.fifo.pop_front()

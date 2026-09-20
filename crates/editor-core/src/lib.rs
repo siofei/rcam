@@ -5,7 +5,7 @@ mod bounds;
 pub mod grid;
 pub mod hit_test;
 pub mod metrics;
-pub use bounds::BoundsMm;
+pub use bounds::{BoundsMm, geometries_bounds};
 pub mod edit;
 mod transform;
 
@@ -722,7 +722,7 @@ impl SemanticDocument {
     }
 }
 
-fn validate_aperture_shape(shape: &ApertureShape) -> Result<(), SemanticError> {
+pub fn validate_aperture_shape(shape: &ApertureShape) -> Result<(), SemanticError> {
     let valid = match shape {
         ApertureShape::Circle {
             diameter_mm,

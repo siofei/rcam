@@ -1,7 +1,7 @@
 # 能力与实施状态
 
-当前开发切片为 S1-B1，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
-以下 S0/S0-B/S0-C 段落保留当时的实施状态；S1-A 当前状态见文末及 `S1_A_REVIEW.md`。
+当前开发切片为 Mac-first S2-C2，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
 
@@ -136,3 +136,24 @@ S2-B3 full stage blocked before renderer fix；本次是否关闭由原生1000 s
 ## 2026-09-20 S2-B3.2
 
 当前范围：视口候选去重/曝光排序、局部预算、事件时 selection flags、原生窗口 benchmark。详见 S2_B3_2_PLAN.md 与 ADR0021；冻结 50ms/300ms 门槛不变。P100K preview 成本采集保留预算拒绝，不能声明 P100K 性能通过。最终结果在独立 public evidence 中绑定受测 clean commit；不启动后续功能。
+
+## 2026-09-20 S2-C1 / S2-C2
+
+Mac GUI 已有 app-only Grid/Grid Snap/光标毫米坐标/两点测距；测距可保留多条，
+在线中显示毫米距离与相对世界 +X 轴的逆时针角度，Esc 清除全部。Grid/Measure
+都不进入制造模型、Undo 或 writer。
+当前 S2-C2 将无窗口已验证的 objects.rotate/objects.mirror 接入同一 GUI ApplicationService 路径：
+任意有限角、±90°、选择集制造 bounds 中心/世界原点/自定义 Pivot，及选择集中心的明确水平/垂直世界轴。
+多选一次事务/Undo；RectangularSweep 非整数90°、锁定/跨层/非法值整批拒绝。
+阶段通过状态以 S2_C2_REVIEW.md 的实际 gates/native 证据为准；Windows、完整 AT/V1、文字与 Post-V1 格式未完成。
+
+## 2026-09-20 S3-FINAL
+
+Mac-first S3 基础编辑正式范围由 `S3_FINAL_COVERAGE.md` 逐项签署。新增能力为：标准 C/R/O/P
+Flash 尺寸 COW、`edit.batch` 的 Move/Rotate/Mirror/SetProperties 原子子集、历史完整事务淘汰
+与 truncation 计数、对象端点/中心优先 Snap、Alt 临时关闭、mm/in 纯显示切换。
+`objects.set_properties` 与 batch shape edit 会正确失效 GeometryMetrics shape cache。
+
+没有公布 batch Duplicate/Delete、异步 jobs、文字、脚本运行时、覆盖保存、Final Layer Boolean Area、
+P100K 或非 Gerber 格式。Mac 原生结果绑定 clean commit；Windows、双平台 V1、CORE10 10/10 和
+96 个 AT 全量通过均未声明。

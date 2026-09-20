@@ -1,6 +1,22 @@
-# RCam Gerber editor — Mac-first S2-C1
+# RCam Gerber editor — Mac-first S3-FINAL
 
-S2-C1 增加网格、显式 Grid Snap、光标毫米坐标与两点测距，见 [本轮计划](docs/S2_C1_PLAN.md)。Grid/Measure 仅为视图状态；鼠标抓取点吸附，数值 Move 保持精确输入。
+S3-FINAL 正式收口基础编辑：GUI 制造修改统一走 `ApplicationService`；补齐标准 C/R/O/P
+Flash 尺寸写时复制、单事务 `edit.batch`、完整事务边界的 Undo 预算淘汰、对象端点/中心优先
+Snap、mm/in 显示以及同一 release build 的 Mac 原生 P1K/编辑/另存重开门禁。范围、证据映射和
+边界审计见 [S3 coverage](docs/S3_FINAL_COVERAGE.md)、[service audit](docs/S3_SERVICE_BOUNDARY_AUDIT.md)
+与 [final review](docs/S3_FINAL_REVIEW.md)。Windows、S4 文字、完整 V1 与双平台验收仍未执行。
+
+历史 `S2-B1/S2-B2/S2-B3/S2-C1/S2-C2` 名称和文件继续保留；其中编辑、Undo/Redo、
+Grid/Snap/Measure 实际覆盖正式 S3 范围。自 S3-FINAL 起恢复 DESIGN_V1 的正式阶段编号。
+
+S2-C2 将已有 `objects.rotate` / `objects.mirror` 接入属性面板：任意有限角、快捷 ±90°、
+选择集制造边界中心/世界原点/自定义 Pivot，以及明确显示坐标的水平/垂直世界轴镜像。
+多选只提交一个服务事务/Undo；Grid Snap 不量化 Transform 参数。见
+[本轮计划](docs/S2_C2_PLAN.md) 与 [ADR0023](docs/adr/0023-s2c2-transform-gui.md)。
+
+S2-C1 增加网格、显式 Grid Snap、光标毫米坐标与两点测距，见 [本轮计划](docs/S2_C1_PLAN.md)。
+测距现可同时保留多条，并在线中显示距离与相对世界 +X 轴的逆时针角度；Esc 清除全部。
+Grid/Measure 仅为视图状态；鼠标抓取点吸附，数值 Move 保持精确输入。
 
 S2-B3 增加独立对象解析面积/周长、会话lazy cache和后台属性面板。多选只显示对象合计；复杂几何明确不可计算，不代表图层最终开口面积。任务范围见 [S2-B3计划](docs/S2_B3_PLAN.md)。
 

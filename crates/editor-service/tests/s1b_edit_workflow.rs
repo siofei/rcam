@@ -571,24 +571,25 @@ fn close_discards_history_and_does_not_reuse_ids() {
     assert_eq!(opened["revision"], "0");
 }
 #[test]
-fn history_budget_rejects_without_changing_document() {
+fn history_entry_budget_evicts_oldest_complete_transaction() {
     let mut run = Run::new("budget", MIXED.as_bytes());
     for i in 0..100 {
         run.move_all(&i.to_string());
     }
-    let before = run.objects();
-    let info = run.info();
-    let ids: Vec<_> = before.iter().map(|o| o.object.object_id.clone()).collect();
-    assert_eq!(
-        run.call(
-            "objects.move",
-            Some("100"),
-            json!({"layer_id":run.layer,"object_ids":ids,"dx_mm":5,"dy_mm":-3})
-        )["error"]["code"],
-        "RESOURCE_LIMIT"
+    let ids: Vec<_> = run
+        .objects()
+        .iter()
+        .map(|o| o.object.object_id.clone())
+        .collect();
+    let result = run.ok(
+        "objects.move",
+        Some("100"),
+        json!({"layer_id":run.layer,"object_ids":ids,"dx_mm":5,"dy_mm":-3}),
     );
-    assert_eq!(run.objects(), before);
-    assert_eq!(run.info(), info);
+    assert_eq!(result["revision"], "101");
+    assert_eq!(result["undo_entries"], 100);
+    assert_eq!(result["history_truncated_entries"], 1);
+    assert!(result["history_truncated_bytes"].as_u64().unwrap() > 0);
 }
 #[test]
 fn geometry_query_tracks_move_and_undo() {

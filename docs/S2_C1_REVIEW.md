@@ -10,10 +10,14 @@ Grid/Measure 留在 app；制造模型、writer、服务协议和 manufacturing 
 单选/多选以抓取点得到一个共同 snapped delta，preview 不修改模型，release 只产生一个 Move/Undo。
 数值 Move 不受 Snap 影响。测距、网格显隐、步长和吸附开关不改变 revision/dirty/history/writer bytes。
 
-测距输出 ΔX=3、ΔY=4、Distance=5 mm；动态 B、固定 B、Esc 清除和文档重开清除均验证。
+原 S2-C1 闭环测距输出 ΔX=3、ΔY=4、Distance=5 mm；动态 B、固定 B、Esc 清除和文档重开清除均验证。
 实际控件检查发现 egui Escape 先释放输入框焦点的问题，已在 raw_input_hook 保留事件时焦点并修复；
 最终 native phase 221 真实 Key 事件断言测量保留，phase 23 无文本焦点时 Esc 才清除。
 密集图形下的读数重叠也已修复为独立底色，并使用带系统中文 fallback 的字体族。
+
+S2-C2 期间按用户追加需求扩展该 app-only 测距：完成的标注可同时保留多条，每条线中
+显示距离与相对世界 +X 轴的逆时针角度，Esc 清除全部。原 S2-C1 运行记录保留为历史证据；
+追加实现、测试与原生截图见 `S2_C2_REVIEW.md` 及其独立运行目录。
 
 ## 实际执行
 

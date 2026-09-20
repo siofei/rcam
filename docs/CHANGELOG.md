@@ -143,3 +143,21 @@ ADR 0012：移除 SemanticLayer UI字段；新增 layer.update 和独立 workspa
 新增 app-only Grid/Measure、core 纯 f64 网格 helper，单选/多选 Drag 使用共同吸附位移。
 数值 Move 不量化；视觉网格按 zoom 抽稀且有界。沿用服务和 Renderer，未新增依赖。
 决策见 ADR0022，范围/执行见 S2_C1_PLAN.md，结果见 S2_C1_REVIEW.md。
+
+## 2026-09-20 S2-C2
+
+按用户追加要求将两点测距扩展为可同时保留多条的 app-only 标注；线中显示距离与相对世界
++X 轴的逆时针角度，Esc 清除全部，不进入制造模型、Undo 或 writer。
+复用既有 objects.rotate/objects.mirror，把任意角、明确 Pivot、选择集中心 Horizontal/Vertical 世界轴接入 Mac GUI。
+选择集中心复用 f64 制造 bounds union；多选一次服务事务/Undo，Grid Snap 不参与 Transform。
+无 preview、无新依赖，不改制造算法、writer、renderer、96 个用例身份或最终双平台门槛。见 ADR0023。
+
+## 2026-09-20 S3-FINAL
+
+恢复正式 S3 阶段编号并建立 Requirement/AT/evidence 对照。新增标准 Flash 尺寸写时复制，
+服务 `objects.set_properties` 与 GUI 属性面板共用同一路径，Undo/Redo/writer round-trip 保留定义身份。
+实现 `edit.batch` 的 Move/Rotate/Mirror/SetProperties 原子子集；成功一次 revision/Undo，后段失败与
+外部 I/O step 预检失败均零修改。历史上限改为淘汰最旧完整事务并报告 truncation，超大单事务预拒绝。
+Snap 补齐显式 endpoint/center、8 逻辑点半径、稳定优先级和 Alt 临时关闭；坐标/Grid/Measure 支持
+mm/in 纯显示切换。扩展原生 harness 覆盖 Window/Crossing、P1K drag、Duplicate/Delete/Undo/Redo、
+Rotate/Mirror、Flash COW、Grid Snap、Measure、Save As/Reopen；Windows 与 S4 保持未执行。

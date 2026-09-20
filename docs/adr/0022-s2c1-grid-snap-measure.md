@@ -1,6 +1,6 @@
 # ADR 0022：S2-C1 Grid / Snap / Measure（Mac-first）
 
-状态：实施中，2026-09-20。前置审查 9779a45；历史成绩不替代本轮回归。
+状态：已接受并增补，2026-09-20。前置审查 9779a45；历史成绩不替代本轮回归。
 
 ## 范围与决定
 
@@ -19,9 +19,11 @@ S2-C1；R08/R10/R11/R13/R16/R17/R18/R19/R21/R22。
   snap(pointer target) - pointer start 得到全选择集唯一 delta。不是每对象独立吸附。
   UI 明示“吸附拖动抓取点”。preview 不提交，release 复用一次 DragMove/objects.move；
   非法 snap 取消整个手势并提示。数值 Move 保持用户精确输入，不经 snap。
-- Measure 为两点直线测距：click A -> 动态 B -> click B 固定；第三次 click 开始新测量。
-  显示 A/B、ΔX/ΔY/distance，全部 f64 mm；Snap ON 明示并同样应用到测量点。
-  Esc 清除测量；切换工具、文档清除。输入框焦点/模态窗口不触发画布工具快捷键。
+- Measure 为两点直线测距：click A -> 动态 B -> click B 固定；第三次 click 开始下一条测量，
+  已完成测量继续保留。显示 A/B、ΔX/ΔY/distance 与相对世界 +X 轴逆时针、归一化到
+  `[0°, 360°)` 的 angle，全部由 f64 mm 坐标计算；Snap ON 明示并同样应用到测量点。
+  每条线段中点使用不透明底色显示距离与角度，可连续保留多条。Esc 清除全部测量；切换工具、
+  文档清除。输入框焦点/模态窗口不触发画布工具快捷键。
   在 raw_input_hook 保留事件到达时的输入焦点，避免 egui 的 Escape 提前释放焦点后穿透到测距清除。
 - Grid 和测距使用独立 egui Overlay，不进入制造 scene/reference parity/hit test。
   光标坐标使用统一 Camera::world；离开 Canvas 不显示制造坐标。

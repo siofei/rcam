@@ -5,6 +5,7 @@ use crate::{
 };
 use editor_core::MmPoint;
 use eframe::egui::{Pos2, Rect};
+use std::collections::HashSet;
 
 pub const THRESHOLD_PX: f32 = 4.;
 #[derive(Clone)]
@@ -13,6 +14,7 @@ pub struct Drag {
     pub revision: String,
     pub layer: String,
     pub objects: Vec<String>,
+    excluded_snap_objects: HashSet<String>,
     start: Pos2,
     camera: Camera,
     rect: Rect,
@@ -22,6 +24,8 @@ pub struct Drag {
     pub dragging: bool,
     pub delta: MmPoint,
     pub grid: crate::tools::GridSettings,
+    pub snap_points: Vec<crate::tools::SnapPoint>,
+    pub snap_disabled: bool,
     pub error: Option<String>,
 }
 pub fn editable_selection(view: &View) -> bool {
@@ -45,16 +49,18 @@ impl Drag {
         }
         let d = view.info.as_ref()?;
         let o = view.selected.primary()?;
+        let objects: Vec<_> = view
+            .selected
+            .ordered
+            .iter()
+            .map(|o| o.object.object_id.clone())
+            .collect();
         Some(Self {
             document: d.document_id.clone(),
             revision: d.revision.clone(),
             layer: o.layer_id.clone(),
-            objects: view
-                .selected
-                .ordered
-                .iter()
-                .map(|o| o.object.object_id.clone())
-                .collect(),
+            excluded_snap_objects: objects.iter().cloned().collect(),
+            objects,
             start,
             camera,
             rect,
@@ -64,6 +70,8 @@ impl Drag {
             dragging: false,
             delta: MmPoint::new(0., 0.),
             grid: Default::default(),
+            snap_points: view.snap_points.clone(),
+            snap_disabled: false,
             error: None,
         })
     }
@@ -75,7 +83,14 @@ impl Drag {
         self.dragging |= pos.distance(self.start) * self.ppp >= THRESHOLD_PX;
         if self.dragging {
             let a = self.camera.world(self.start, self.rect);
-            let b = match self.grid.point(self.camera.world(pos, self.rect)) {
+            let b = match crate::tools::snap_point(
+                self.camera.world(pos, self.rect),
+                self.grid,
+                &self.snap_points,
+                self.camera,
+                Some(&self.excluded_snap_objects),
+                self.snap_disabled,
+            ) {
                 Ok(b) => b,
                 Err(e) => {
                     self.error = Some(e);
@@ -91,7 +106,7 @@ impl Drag {
             && self.confirmed
             && self.dragging
             && (self.delta.x_mm != 0. || self.delta.y_mm != 0.))
-            .then_some(Action::DragMove(self))
+            .then_some(Action::DragMove(Box::new(self)))
     }
 }
 /// PointerGone/blur always wins over a same-frame release.
@@ -155,6 +170,11 @@ impl Gesture {
     pub fn set_grid(&mut self, grid: crate::tools::GridSettings) {
         if let Some(d) = &mut self.object_drag {
             d.grid = grid;
+        }
+    }
+    pub fn set_snap_disabled(&mut self, disabled: bool) {
+        if let Some(d) = &mut self.object_drag {
+            d.snap_disabled = disabled;
         }
     }
     pub fn error(&self) -> Option<&str> {

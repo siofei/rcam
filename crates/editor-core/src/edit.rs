@@ -1,6 +1,6 @@
 //! Atomic, bounded object history. No file I/O or UI state enters a command.
 use super::*;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::mem::size_of;
 
 /// World axes: horizontal y=coordinate_mm, vertical x=coordinate_mm.
@@ -42,10 +42,48 @@ struct IndexedObject {
 }
 
 #[derive(Debug, Clone)]
+struct ApertureResize {
+    index: usize,
+    definition: ApertureDefinition,
+    changes: Vec<Change>,
+}
+
+#[derive(Debug, Clone)]
+struct BatchChange {
+    changes: Vec<Change>,
+    inserted_apertures: Vec<(usize, ApertureDefinition)>,
+}
+
+#[derive(Debug, Clone)]
+pub enum BatchEdit {
+    Move {
+        object_ids: Vec<String>,
+        dx_mm: f64,
+        dy_mm: f64,
+    },
+    Rotate {
+        object_ids: Vec<String>,
+        angle_deg: f64,
+        pivot: MmPoint,
+    },
+    Mirror {
+        object_ids: Vec<String>,
+        axis: MirrorAxis,
+    },
+    SetFlashSize {
+        object_ids: Vec<String>,
+        width_mm: f64,
+        height_mm: Option<f64>,
+    },
+}
+
+#[derive(Debug, Clone)]
 enum Operation {
     Modify(Vec<Change>),
     Insert(Vec<IndexedObject>),
     Delete(Vec<IndexedObject>),
+    ApertureResize(ApertureResize),
+    Batch(BatchChange),
 }
 
 #[derive(Debug, Clone)]
@@ -60,21 +98,82 @@ struct Transaction {
     bytes: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct EditHistory {
     document_id: Option<String>,
     undo: Vec<Transaction>,
     redo: Vec<Transaction>,
     // Consumed only at successful insert commit, never rewound by Undo/Delete.
     next_generated_id: u64,
+    next_generated_aperture_id: u64,
+    max_entries: usize,
+    max_bytes: usize,
+    truncated_entries: usize,
+    truncated_bytes: usize,
+}
+
+impl Default for EditHistory {
+    fn default() -> Self {
+        Self::with_limits(MAX_HISTORY_ENTRIES, MAX_HISTORY_BYTES)
+            .expect("default history limits are valid")
+    }
 }
 
 impl EditHistory {
+    pub fn with_limits(max_entries: usize, max_bytes: usize) -> Result<Self, EditError> {
+        if max_entries == 0 || max_bytes == 0 {
+            return Err(EditError::InvalidArgument);
+        }
+        Ok(Self {
+            document_id: None,
+            undo: vec![],
+            redo: vec![],
+            next_generated_id: 0,
+            next_generated_aperture_id: 0,
+            max_entries,
+            max_bytes,
+            truncated_entries: 0,
+            truncated_bytes: 0,
+        })
+    }
+
     pub fn undo_len(&self) -> usize {
         self.undo.len()
     }
     pub fn redo_len(&self) -> usize {
         self.redo.len()
+    }
+
+    pub fn bytes(&self) -> usize {
+        self.undo.iter().chain(&self.redo).map(|tx| tx.bytes).sum()
+    }
+
+    pub fn truncated_entries(&self) -> usize {
+        self.truncated_entries
+    }
+
+    pub fn truncated_bytes(&self) -> usize {
+        self.truncated_bytes
+    }
+
+    pub fn max_entries(&self) -> usize {
+        self.max_entries
+    }
+
+    pub fn max_bytes(&self) -> usize {
+        self.max_bytes
+    }
+
+    pub fn next_undo_changes_shape(&self) -> bool {
+        self.undo
+            .last()
+            .is_some_and(|tx| operation_changes_shape(&tx.operation))
+    }
+
+    pub fn next_redo_changes_shape(&self) -> bool {
+        self.redo
+            .last()
+            .is_some_and(|tx| operation_changes_shape(&tx.operation))
     }
 
     fn targets(
@@ -91,7 +190,7 @@ impl EditHistory {
         {
             return Err(EditError::InvalidArgument);
         }
-        if object_ids.len() > MAX_MOVE_OBJECTS || self.undo.len() >= MAX_HISTORY_ENTRIES {
+        if object_ids.len() > MAX_MOVE_OBJECTS {
             return Err(EditError::ResourceLimit);
         }
         let targets: HashSet<_> = object_ids.iter().map(String::as_str).collect();
@@ -132,8 +231,7 @@ impl EditHistory {
     }
 
     fn budget(&self, bytes: usize) -> Result<(), EditError> {
-        let used: usize = self.undo.iter().chain(&self.redo).map(|tx| tx.bytes).sum();
-        if bytes > MAX_HISTORY_BYTES.saturating_sub(used) {
+        if bytes > self.max_bytes {
             return Err(EditError::ResourceLimit);
         }
         Ok(())
@@ -144,6 +242,11 @@ impl EditHistory {
         self.document_id = Some(document.id.clone());
         self.redo.clear();
         self.undo.push(tx);
+        while self.undo.len() > self.max_entries || self.bytes() > self.max_bytes {
+            let evicted = self.undo.remove(0);
+            self.truncated_entries += 1;
+            self.truncated_bytes = self.truncated_bytes.saturating_add(evicted.bytes);
+        }
         ids
     }
 
@@ -264,6 +367,296 @@ impl EditHistory {
         object_ids: &[String],
     ) -> Result<Vec<String>, EditError> {
         self.structural_edit(document, layer_id, object_ids, None)
+    }
+
+    pub fn set_flash_size(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        width_mm: f64,
+        height_mm: Option<f64>,
+    ) -> Result<Vec<String>, EditError> {
+        let (layer_index, selected) = self.targets(document, layer_id, object_ids)?;
+        let layer = &document.layers[layer_index];
+        let aperture_id = selected
+            .iter()
+            .map(|&index| match &layer.objects[index].geometry {
+                SemanticGeometry::Flash { aperture_id, .. } => Ok(aperture_id.as_str()),
+                _ => Err(EditError::UnsupportedTransform),
+            })
+            .collect::<Result<HashSet<_>, _>>()?;
+        if aperture_id.len() != 1 {
+            return Err(EditError::InvalidArgument);
+        }
+        let old_id = *aperture_id.iter().next().unwrap();
+        let old = document
+            .apertures
+            .iter()
+            .find(|aperture| aperture.id == old_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "aperture",
+                id: old_id.into(),
+            })?;
+        let shape = resized_shape(&old.shape, width_mm, height_mm)?;
+        super::validate_aperture_shape(&shape).map_err(EditError::InvalidGeometry)?;
+        if shape == old.shape {
+            return Err(EditError::InvalidArgument);
+        }
+        let generated = self.next_generated_aperture_id;
+        let definition = ApertureDefinition {
+            id: format!("{}-generated-aperture-{generated}", document.id),
+            source_dcode: document
+                .apertures
+                .iter()
+                .map(|aperture| aperture.source_dcode)
+                .max()
+                .unwrap_or(9)
+                .checked_add(1)
+                .ok_or(EditError::ResourceLimit)?,
+            shape,
+        };
+        if document
+            .apertures
+            .iter()
+            .any(|aperture| aperture.id == definition.id)
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        let mut changes = Vec::with_capacity(selected.len());
+        for &index in &selected {
+            let object = &layer.objects[index];
+            let mut after = object.geometry.clone();
+            let SemanticGeometry::Flash { aperture_id, .. } = &mut after else {
+                unreachable!()
+            };
+            *aperture_id = definition.id.clone();
+            changes.push(Change {
+                object_id: object.object_id.clone(),
+                index,
+                before: object.geometry.clone(),
+                after,
+            });
+        }
+        let bytes = size_of::<Transaction>()
+            + size_of::<ApertureResize>()
+            + 512
+            + layer_id.len()
+            + aperture_shape_heap_bytes(&definition.shape)
+            + changes
+                .iter()
+                .map(|change| {
+                    size_of::<Change>()
+                        + 3 * change.object_id.len()
+                        + geometry_heap_bytes(&change.before)
+                        + geometry_heap_bytes(&change.after)
+                })
+                .sum::<usize>();
+        self.budget(bytes)?;
+        let ids = self.commit(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::ApertureResize(ApertureResize {
+                    index: document.apertures.len(),
+                    definition,
+                    changes,
+                }),
+                before_order: vec![],
+                after_order: vec![],
+                bytes,
+            },
+        );
+        self.next_generated_aperture_id =
+            generated.checked_add(1).ok_or(EditError::ResourceLimit)?;
+        Ok(ids)
+    }
+
+    pub fn edit_batch(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        steps: &[BatchEdit],
+    ) -> Result<Vec<String>, EditError> {
+        if steps.is_empty() || steps.len() > MAX_MOVE_OBJECTS {
+            return Err(EditError::InvalidArgument);
+        }
+        let layer_index = document
+            .layers
+            .iter()
+            .position(|layer| layer.id == layer_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "layer",
+                id: layer_id.into(),
+            })?;
+        let mut working = BTreeMap::<usize, SemanticGeometry>::new();
+        let mut step_indices = Vec::with_capacity(steps.len());
+        for step in steps {
+            let ids = match step {
+                BatchEdit::Move { object_ids, .. }
+                | BatchEdit::Rotate { object_ids, .. }
+                | BatchEdit::Mirror { object_ids, .. }
+                | BatchEdit::SetFlashSize { object_ids, .. } => object_ids,
+            };
+            let (step_layer, indices) = self.targets(document, layer_id, ids)?;
+            if step_layer != layer_index {
+                return Err(EditError::InvalidArgument);
+            }
+            for &index in &indices {
+                working.entry(index).or_insert_with(|| {
+                    document.layers[layer_index].objects[index].geometry.clone()
+                });
+            }
+            step_indices.push(indices);
+        }
+        let mut apertures = document.apertures.clone();
+        let mut inserted_apertures = Vec::new();
+        let mut generated = self.next_generated_aperture_id;
+        for (step, indices) in steps.iter().zip(&step_indices) {
+            match step {
+                BatchEdit::Move { dx_mm, dy_mm, .. } => {
+                    if !MmPoint::new(*dx_mm, *dy_mm).is_valid_geometry()
+                        || (*dx_mm == 0. && *dy_mm == 0.)
+                    {
+                        return Err(EditError::InvalidArgument);
+                    }
+                    for index in indices {
+                        translate(working.get_mut(index).unwrap(), *dx_mm, *dy_mm)?;
+                    }
+                }
+                BatchEdit::Rotate {
+                    angle_deg, pivot, ..
+                } => {
+                    let transform = super::transform::WorldTransform::rotation(*angle_deg, *pivot)?;
+                    for index in indices {
+                        transform.apply(working.get_mut(index).unwrap())?;
+                    }
+                }
+                BatchEdit::Mirror { axis, .. } => {
+                    let transform = super::transform::WorldTransform::reflection(*axis)?;
+                    for index in indices {
+                        transform.apply(working.get_mut(index).unwrap())?;
+                    }
+                }
+                BatchEdit::SetFlashSize {
+                    width_mm,
+                    height_mm,
+                    ..
+                } => {
+                    let aperture_ids = indices
+                        .iter()
+                        .map(|index| match working.get(index).unwrap() {
+                            SemanticGeometry::Flash { aperture_id, .. } => Ok(aperture_id.clone()),
+                            _ => Err(EditError::UnsupportedTransform),
+                        })
+                        .collect::<Result<HashSet<_>, _>>()?;
+                    if aperture_ids.len() != 1 {
+                        return Err(EditError::InvalidArgument);
+                    }
+                    let old_id = aperture_ids.iter().next().unwrap();
+                    let old = apertures
+                        .iter()
+                        .find(|aperture| aperture.id == *old_id)
+                        .ok_or_else(|| EditError::NotFound {
+                            entity: "aperture",
+                            id: old_id.clone(),
+                        })?;
+                    let shape = resized_shape(&old.shape, *width_mm, *height_mm)?;
+                    super::validate_aperture_shape(&shape).map_err(EditError::InvalidGeometry)?;
+                    if shape == old.shape {
+                        return Err(EditError::InvalidArgument);
+                    }
+                    let definition = ApertureDefinition {
+                        id: format!("{}-generated-aperture-{generated}", document.id),
+                        source_dcode: apertures
+                            .iter()
+                            .map(|aperture| aperture.source_dcode)
+                            .max()
+                            .unwrap_or(9)
+                            .checked_add(1)
+                            .ok_or(EditError::ResourceLimit)?,
+                        shape,
+                    };
+                    if apertures
+                        .iter()
+                        .any(|aperture| aperture.id == definition.id)
+                    {
+                        return Err(EditError::InvalidArgument);
+                    }
+                    generated = generated.checked_add(1).ok_or(EditError::ResourceLimit)?;
+                    let aperture_index = apertures.len();
+                    for index in indices {
+                        let SemanticGeometry::Flash { aperture_id, .. } =
+                            working.get_mut(index).unwrap()
+                        else {
+                            unreachable!()
+                        };
+                        *aperture_id = definition.id.clone();
+                    }
+                    apertures.push(definition.clone());
+                    inserted_apertures.push((aperture_index, definition));
+                }
+            }
+        }
+        let aperture_ids = apertures
+            .iter()
+            .map(|aperture| aperture.id.clone())
+            .collect();
+        let mut changes = Vec::with_capacity(working.len());
+        for (index, after) in working {
+            validate_geometry(&after, &aperture_ids).map_err(EditError::InvalidGeometry)?;
+            let object = &document.layers[layer_index].objects[index];
+            if object.geometry != after {
+                changes.push(Change {
+                    object_id: object.object_id.clone(),
+                    index,
+                    before: object.geometry.clone(),
+                    after,
+                });
+            }
+        }
+        if changes.is_empty() {
+            return Err(EditError::InvalidArgument);
+        }
+        let bytes = size_of::<Transaction>()
+            + size_of::<BatchChange>()
+            + 1024
+            + layer_id.len()
+            + changes
+                .iter()
+                .map(|change| {
+                    size_of::<Change>()
+                        + 3 * change.object_id.len()
+                        + geometry_heap_bytes(&change.before)
+                        + geometry_heap_bytes(&change.after)
+                })
+                .sum::<usize>()
+            + inserted_apertures
+                .iter()
+                .map(|(_, aperture)| {
+                    size_of::<ApertureDefinition>()
+                        + aperture.id.len()
+                        + aperture_shape_heap_bytes(&aperture.shape)
+                })
+                .sum::<usize>();
+        self.budget(bytes)?;
+        let ids = self.commit(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::Batch(BatchChange {
+                    changes,
+                    inserted_apertures,
+                }),
+                before_order: vec![],
+                after_order: vec![],
+                bytes,
+            },
+        );
+        self.next_generated_aperture_id = generated;
+        Ok(ids)
     }
 
     fn structural_edit(
@@ -474,21 +867,84 @@ fn check_transaction(
                 }
             }
         }
+        Operation::ApertureResize(resize) => {
+            for change in &resize.changes {
+                let object = layer
+                    .objects
+                    .get(change.index)
+                    .filter(|object| object.object_id == change.object_id)
+                    .ok_or(EditError::InvalidArgument)?;
+                if object.geometry
+                    != *if forward {
+                        &change.before
+                    } else {
+                        &change.after
+                    }
+                {
+                    return Err(EditError::InvalidArgument);
+                }
+            }
+            if forward {
+                if document.apertures.iter().any(|aperture| {
+                    aperture.id == resize.definition.id
+                        || aperture.source_dcode == resize.definition.source_dcode
+                }) {
+                    return Err(EditError::InvalidArgument);
+                }
+            } else if document.apertures.get(resize.index) != Some(&resize.definition) {
+                return Err(EditError::InvalidArgument);
+            }
+        }
+        Operation::Batch(batch) => {
+            for change in &batch.changes {
+                let object = layer
+                    .objects
+                    .get(change.index)
+                    .filter(|object| object.object_id == change.object_id)
+                    .ok_or(EditError::InvalidArgument)?;
+                if object.geometry
+                    != *if forward {
+                        &change.before
+                    } else {
+                        &change.after
+                    }
+                {
+                    return Err(EditError::InvalidArgument);
+                }
+            }
+            for (offset, (index, definition)) in batch.inserted_apertures.iter().enumerate() {
+                if forward {
+                    if *index != document.apertures.len() + offset
+                        || document.apertures.iter().any(|aperture| {
+                            aperture.id == definition.id
+                                || aperture.source_dcode == definition.source_dcode
+                        })
+                    {
+                        return Err(EditError::InvalidArgument);
+                    }
+                } else if document.apertures.get(*index) != Some(definition) {
+                    return Err(EditError::InvalidArgument);
+                }
+            }
+        }
     }
     Ok(())
 }
 
 fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Vec<String> {
-    let objects = &mut document.layers[tx.layer].objects;
     match &tx.operation {
-        Operation::Modify(changes) => changes
-            .iter()
-            .map(|c| {
-                objects[c.index].geometry = if forward { &c.after } else { &c.before }.clone();
-                c.object_id.clone()
-            })
-            .collect(),
+        Operation::Modify(changes) => {
+            let objects = &mut document.layers[tx.layer].objects;
+            changes
+                .iter()
+                .map(|c| {
+                    objects[c.index].geometry = if forward { &c.after } else { &c.before }.clone();
+                    c.object_id.clone()
+                })
+                .collect()
+        }
         Operation::Insert(entries) | Operation::Delete(entries) => {
+            let objects = &mut document.layers[tx.layer].objects;
             let inserting = matches!(tx.operation, Operation::Insert(_)) == forward;
             if inserting {
                 let mut merged = Vec::with_capacity(objects.len() + entries.len());
@@ -515,6 +971,125 @@ fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Ve
             }
             entries.iter().map(|e| e.object.object_id.clone()).collect()
         }
+        Operation::ApertureResize(resize) => {
+            if forward {
+                document
+                    .apertures
+                    .insert(resize.index, resize.definition.clone());
+            }
+            let objects = &mut document.layers[tx.layer].objects;
+            for change in &resize.changes {
+                objects[change.index].geometry = if forward {
+                    &change.after
+                } else {
+                    &change.before
+                }
+                .clone();
+            }
+            if !forward {
+                document.apertures.remove(resize.index);
+            }
+            resize
+                .changes
+                .iter()
+                .map(|change| change.object_id.clone())
+                .collect()
+        }
+        Operation::Batch(batch) => {
+            if forward {
+                for (index, definition) in &batch.inserted_apertures {
+                    document.apertures.insert(*index, definition.clone());
+                }
+            }
+            let objects = &mut document.layers[tx.layer].objects;
+            for change in &batch.changes {
+                objects[change.index].geometry = if forward {
+                    &change.after
+                } else {
+                    &change.before
+                }
+                .clone();
+            }
+            if !forward {
+                for (index, _) in batch.inserted_apertures.iter().rev() {
+                    document.apertures.remove(*index);
+                }
+            }
+            batch
+                .changes
+                .iter()
+                .map(|change| change.object_id.clone())
+                .collect()
+        }
+    }
+}
+
+fn operation_changes_shape(operation: &Operation) -> bool {
+    match operation {
+        Operation::ApertureResize(_) => true,
+        Operation::Batch(batch) => !batch.inserted_apertures.is_empty(),
+        Operation::Modify(_) | Operation::Insert(_) | Operation::Delete(_) => false,
+    }
+}
+
+fn resized_shape(
+    shape: &ApertureShape,
+    width_mm: f64,
+    height_mm: Option<f64>,
+) -> Result<ApertureShape, EditError> {
+    if !width_mm.is_finite() || height_mm.is_some_and(|height| !height.is_finite()) {
+        return Err(EditError::InvalidArgument);
+    }
+    Ok(match shape {
+        ApertureShape::Circle {
+            hole_diameter_mm, ..
+        } => {
+            if height_mm.is_some_and(|height| height != width_mm) {
+                return Err(EditError::InvalidArgument);
+            }
+            ApertureShape::Circle {
+                diameter_mm: width_mm,
+                hole_diameter_mm: *hole_diameter_mm,
+            }
+        }
+        ApertureShape::Rectangle {
+            hole_diameter_mm, ..
+        } => ApertureShape::Rectangle {
+            width_mm,
+            height_mm: height_mm.ok_or(EditError::InvalidArgument)?,
+            hole_diameter_mm: *hole_diameter_mm,
+        },
+        ApertureShape::Obround {
+            hole_diameter_mm, ..
+        } => ApertureShape::Obround {
+            width_mm,
+            height_mm: height_mm.ok_or(EditError::InvalidArgument)?,
+            hole_diameter_mm: *hole_diameter_mm,
+        },
+        ApertureShape::Polygon {
+            vertices,
+            rotation_deg,
+            hole_diameter_mm,
+            ..
+        } => {
+            if height_mm.is_some_and(|height| height != width_mm) {
+                return Err(EditError::InvalidArgument);
+            }
+            ApertureShape::Polygon {
+                diameter_mm: width_mm,
+                vertices: *vertices,
+                rotation_deg: *rotation_deg,
+                hole_diameter_mm: *hole_diameter_mm,
+            }
+        }
+        ApertureShape::Macro { .. } => return Err(EditError::UnsupportedTransform),
+    })
+}
+
+fn aperture_shape_heap_bytes(shape: &ApertureShape) -> usize {
+    match shape {
+        ApertureShape::Macro { primitives } => primitives.len() * size_of::<MacroPrimitive>() + 128,
+        _ => 0,
     }
 }
 

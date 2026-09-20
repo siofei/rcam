@@ -13,6 +13,7 @@ pub struct View {
     pub info: Option<DocumentInfo>,
     pub layers: Vec<LayerInfo>,
     pub apertures: Vec<editor_core::ApertureDefinition>,
+    pub snap_points: Vec<crate::tools::SnapPoint>,
     pub selected: crate::selection::SelectionSet,
     pub bounds: Option<BoundsMm>,
     pub scene: Option<Arc<Scene>>,
@@ -31,13 +32,27 @@ pub struct Model {
     serial: u64,
     pub ppm: f64,
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PivotInput {
+    SelectionCenter,
+    WorldOrigin,
+    Custom(String, String),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MirrorDirection {
+    Horizontal,
+    Vertical,
+}
 pub enum Action {
     Open(PathBuf),
     Select(MmPoint, f64, crate::selection::SelectionMode),
     SelectRect(BoundsMm, editor_core::hit_test::SelectRectMode),
     Move(String, String),
+    SetFlashSize(String, Option<String>),
+    Rotate(String, PivotInput),
+    Mirror(MirrorDirection),
     ProbeDrag(MmPoint, f64),
-    DragMove(crate::drag::Drag),
+    DragMove(Box<crate::drag::Drag>),
     Duplicate,
     Delete,
     History(bool),
@@ -65,6 +80,31 @@ fn error(code: &str, message: &str) -> ServiceError {
         details: serde_json::json!({}),
     }
 }
+fn finite(value: &str, name: &str) -> Result<f64, ServiceError> {
+    value
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| error("INVALID_ARGUMENT", &format!("{name} 必须是有限数值")))
+}
+
+pub fn selected_bounds(view: &View) -> Result<BoundsMm, ServiceError> {
+    editor_core::geometries_bounds(
+        view.selected
+            .ordered
+            .iter()
+            .map(|object| &object.object.geometry),
+        &view.apertures,
+    )
+    .map_err(|cause| error("VALIDATION_FAILED", &format!("选择集制造边界无效：{cause}")))?
+    .ok_or_else(|| error("INVALID_ARGUMENT", "选择集没有可用的制造边界"))
+}
+
+pub fn selected_center(view: &View) -> Result<MmPoint, ServiceError> {
+    Ok(selected_bounds(view)?.center())
+}
+
 impl Model {
     fn info(&self) -> Result<DocumentInfo, ServiceError> {
         self.view
@@ -175,6 +215,9 @@ impl Model {
             self.view.apertures = snapshot.apertures.clone();
             self.snapshot = Some(snapshot);
         }
+        self.view.snap_points = self.snapshot.as_ref().map_or_else(Vec::new, |snapshot| {
+            snap_points(snapshot, &self.view.layers)
+        });
         self.rebuild();
         Ok(())
     }
@@ -320,14 +363,7 @@ impl Model {
     }
     pub fn numeric_move(&mut self, dx: &str, dy: &str) -> Result<(), ServiceError> {
         self.editable()?;
-        let parse = |s: &str| {
-            s.trim()
-                .parse::<f64>()
-                .ok()
-                .filter(|v| v.is_finite())
-                .ok_or_else(|| error("INVALID_ARGUMENT", "请输入有限的毫米数值"))
-        };
-        let (dx, dy) = (parse(dx)?, parse(dy)?);
+        let (dx, dy) = (finite(dx, "ΔX")?, finite(dy, "ΔY")?);
         if dx == 0. && dy == 0. {
             self.view.message = "位移为零，未提交修改".into();
             return Ok(());
@@ -345,6 +381,89 @@ impl Model {
             },
         )?;
         self.view.message = format!("已移动 ΔX {dx} / ΔY {dy} mm");
+        self.refresh(true)
+    }
+    pub fn numeric_rotate(&mut self, angle: &str, pivot: PivotInput) -> Result<(), ServiceError> {
+        self.editable()?;
+        let angle_deg = finite(angle, "旋转角度")?;
+        let (layer_id, object_ids) = self.edit_targets()?;
+        let pivot = match pivot {
+            PivotInput::SelectionCenter => selected_center(&self.view)?,
+            PivotInput::WorldOrigin => MmPoint::new(0., 0.),
+            PivotInput::Custom(x, y) => {
+                MmPoint::new(finite(&x, "Pivot X")?, finite(&y, "Pivot Y")?)
+            }
+        };
+        let document = self.info()?;
+        self.service.objects_rotate(
+            &document.document_id,
+            &document.revision,
+            RotateParams {
+                layer_id,
+                object_ids,
+                angle_deg,
+                pivot_mm: PivotMm {
+                    x_mm: pivot.x_mm,
+                    y_mm: pivot.y_mm,
+                },
+            },
+        )?;
+        self.view.message = format!(
+            "已旋转 {angle_deg}°，Pivot ({}, {}) mm",
+            pivot.x_mm, pivot.y_mm
+        );
+        self.refresh(true)
+    }
+    pub fn set_flash_size(
+        &mut self,
+        width: &str,
+        height: Option<&str>,
+    ) -> Result<(), ServiceError> {
+        self.editable()?;
+        let (layer_id, object_ids) = self.edit_targets()?;
+        let document = self.info()?;
+        self.service.objects_set_properties(
+            &document.document_id,
+            &document.revision,
+            SetPropertiesParams {
+                layer_id,
+                object_ids,
+                width_mm: finite(width, "宽度/直径")?,
+                height_mm: height.map(|value| finite(value, "高度")).transpose()?,
+            },
+        )?;
+        self.view.message = "已通过写时复制修改 Flash 尺寸".into();
+        self.refresh(true)
+    }
+    pub fn mirror_selection(&mut self, direction: MirrorDirection) -> Result<(), ServiceError> {
+        self.editable()?;
+        let (layer_id, object_ids) = self.edit_targets()?;
+        let center = selected_center(&self.view)?;
+        let (axis, label) = match direction {
+            MirrorDirection::Horizontal => (
+                MirrorAxis::Horizontal {
+                    coordinate_mm: center.y_mm,
+                },
+                format!("水平轴 y = {} mm", center.y_mm),
+            ),
+            MirrorDirection::Vertical => (
+                MirrorAxis::Vertical {
+                    coordinate_mm: center.x_mm,
+                },
+                format!("垂直轴 x = {} mm", center.x_mm),
+            ),
+        };
+        let document = self.info()?;
+        self.service.objects_mirror(
+            &document.document_id,
+            &document.revision,
+            MirrorParams {
+                layer_id,
+                object_ids,
+                axis,
+            },
+        )?;
+        self.view.message = format!("已关于{label}镜像");
         self.refresh(true)
     }
     pub fn save(
@@ -447,6 +566,9 @@ impl Model {
             Action::Select(p, t, mode) => self.select(p, t, mode),
             Action::SelectRect(r, m) => self.select_rect(r, m),
             Action::Move(dx, dy) => self.numeric_move(&dx, &dy),
+            Action::SetFlashSize(width, height) => self.set_flash_size(&width, height.as_deref()),
+            Action::Rotate(angle, pivot) => self.numeric_rotate(&angle, pivot),
+            Action::Mirror(direction) => self.mirror_selection(direction),
             Action::ProbeDrag(p, tolerance_mm) => {
                 self.view.drag_hit = false;
                 self.view.press_hit = self.hit(p, tolerance_mm)?;
@@ -576,6 +698,60 @@ impl Model {
             );
         }
     }
+}
+
+fn snap_points(snapshot: &RenderSnapshot, layers: &[LayerInfo]) -> Vec<crate::tools::SnapPoint> {
+    use crate::tools::{SnapKind, SnapPoint};
+    let mut points = Vec::new();
+    let mut push = |point, object_id: &str, kind| {
+        points.push(SnapPoint {
+            point,
+            object_id: object_id.into(),
+            kind,
+        });
+    };
+    for layer in &snapshot.layers {
+        if !layers
+            .iter()
+            .any(|workspace| workspace.layer_id == layer.id && workspace.visible)
+        {
+            continue;
+        }
+        for object in &layer.objects {
+            let id = object.object_id.as_str();
+            match &object.geometry {
+                editor_core::SemanticGeometry::Flash { center, .. } => {
+                    push(*center, id, SnapKind::Center)
+                }
+                editor_core::SemanticGeometry::Line { start, end, .. }
+                | editor_core::SemanticGeometry::RectangularSweep { start, end, .. } => {
+                    push(*start, id, SnapKind::Endpoint);
+                    push(*end, id, SnapKind::Endpoint);
+                }
+                editor_core::SemanticGeometry::Arc { path, .. } => {
+                    push(path.start, id, SnapKind::Endpoint);
+                    push(path.end, id, SnapKind::Endpoint);
+                    push(path.center, id, SnapKind::Center);
+                }
+                editor_core::SemanticGeometry::Region { contours } => {
+                    for edge in contours.iter().flat_map(|contour| &contour.edges) {
+                        match edge {
+                            editor_core::RegionEdge::Line { start, end } => {
+                                push(*start, id, SnapKind::Endpoint);
+                                push(*end, id, SnapKind::Endpoint);
+                            }
+                            editor_core::RegionEdge::Arc(path) => {
+                                push(path.start, id, SnapKind::Endpoint);
+                                push(path.end, id, SnapKind::Endpoint);
+                                push(path.center, id, SnapKind::Center);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    points
 }
 
 /// UI policy only. The closure must call the exact service query.

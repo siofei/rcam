@@ -492,3 +492,38 @@ summary 包含 exact_count、unsupported_count、object_area_sum_mm2、object_pe
 会话非序列化shape token与有界lazy cache复用Move/Rotate/Mirror/Duplicate和历史恢复。
 缓存最多4096固定大小结果；身份最多20000项/2MiB保守计费，超限可淘汰，关闭文档全部释放。
 未来尺寸/光圈/节点编辑必须携带前后新shape identity，不能延用当前仅刚性编辑的ID映射。
+
+## S3-FINAL 已实现的编辑契约（Mac-first）
+
+本节覆盖前述历史“未实现”注记；完整 V1 契约及双平台门槛不变。capabilities 新增
+`objects.set_properties` 与 `edit.batch`，stage 为 `S3 basic editing`。
+
+`objects.set_properties` params 为
+`{layer_id,object_ids,width_mm,height_mm?}`，当前仅接受共享同一标准 C/R/O/P 定义的 Flash。
+Circle/Polygon 直径使用 width，height 省略或等于 width；Rectangle/Obround 必须给 width/height。
+编辑生成不冲突的新 aperture ID/DCode 并只重定向目标对象；Macro、混合定义、非法孔径或 no-op
+整批拒绝。成功是一个 revision/Undo，Undo/Redo 恢复定义和引用，shape metrics cache 失效。
+
+`edit.batch` params：
+
+```json
+{
+  "layer_id": "从查询取得",
+  "steps": [
+    {"op":"objects.move","object_ids":["…"],"dx_mm":5,"dy_mm":-3},
+    {"op":"objects.rotate","object_ids":["…"],"angle_deg":37,
+     "pivot_mm":{"x_mm":0,"y_mm":0}},
+    {"op":"objects.set_properties","object_ids":["…"],"width_mm":0.8}
+  ]
+}
+```
+
+当前 batch step 白名单仅为 `objects.move`、`objects.rotate`、`objects.mirror`、
+`objects.set_properties`。同层已有对象在差量暂存上顺序执行，全部通过才一次提交；成功推进一次
+revision 并新增一个 Undo。任何中间失败保留文档、对象顺序、aperture、revision 和历史。
+`document.open/close`、`gerber.export_layer` 等外部 I/O、嵌套 batch、Duplicate/Delete batch step
+均在 DTO 预检拒绝；Duplicate/Delete 自身仍是各一个原子事务。
+
+历史预算不再因达到条数上限拒绝普通新操作，而是从最旧 Undo 起按完整事务淘汰；
+`DocumentInfo`/`EditResult` 报告 `history_bytes`、`history_truncated_entries` 和
+`history_truncated_bytes`。单个事务超过 max_history_bytes 仍在修改前返回 RESOURCE_LIMIT。

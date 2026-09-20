@@ -1,5 +1,10 @@
 //! Opt-in native surface benchmark. Drives the existing egui gesture/service path.
-use crate::{EditorApp, camera::Camera, gpu::PrepareStats, state::Action};
+use crate::{
+    EditorApp,
+    camera::Camera,
+    gpu::PrepareStats,
+    state::{Action, MirrorDirection, PivotInput},
+};
 use editor_core::{MmPoint, SemanticGeometry};
 use eframe::egui::{self, pos2, vec2};
 use egui_wgpu::wgpu;
@@ -350,6 +355,23 @@ impl NativeBench {
             }
             2 if !app.busy => {
                 self.check_metrics(app);
+                if app.view.selected.ordered.len() != 1000 {
+                    self.failures
+                        .push("Window selection did not select P1K".into());
+                }
+                self.tools_records.push(json!({"phase":"window_selection","selected":app.view.selected.ordered.len(),"info":app.view.info}));
+                app.send(Action::SelectRect(
+                    app.view.bounds.unwrap(),
+                    editor_core::hit_test::SelectRectMode::Crossing,
+                ));
+                self.enter(200);
+            }
+            200 if !app.busy => {
+                if app.view.selected.ordered.len() != 1000 {
+                    self.failures
+                        .push("Crossing selection did not select P1K".into());
+                }
+                self.tools_records.push(json!({"phase":"crossing_selection","selected":app.view.selected.ordered.len(),"info":app.view.info}));
                 self.baseline = app.view.selected.ordered.clone();
                 self.save(app, "baseline.gbr");
                 self.enter(3);
@@ -533,14 +555,24 @@ impl NativeBench {
                     21 | 22 if app.measure.values() != Some((3., 4., 5.)) => {
                         self.failures.push("measure 3-4-5".into())
                     }
+                    21 | 22
+                        if app
+                            .measure
+                            .angle_deg()
+                            .is_none_or(|angle| (angle - 53.130_102_354_155_98).abs() > 1e-12) =>
+                    {
+                        self.failures.push("measure angle".into())
+                    }
                     21 if app.measure.fixed => self.failures.push("dynamic B fixed early".into()),
-                    22 if !app.measure.fixed => self.failures.push("fixed B missing".into()),
-                    23 if app.measure.a.is_some() => {
+                    22 if !app.measure.fixed || app.measure.completed.len() != 1 => self
+                        .failures
+                        .push("fixed/retained measurement missing".into()),
+                    23 if app.measure.a.is_some() || !app.measure.completed.is_empty() => {
                         self.failures.push("Escape did not clear ruler".into())
                     }
                     _ => {}
                 }
-                self.tools_records.push(json!({"phase":self.phase,"measure":app.measure.label(),"values":app.measure.values(),"fixed":app.measure.fixed,"info":info,"ppp":ctx.pixels_per_point(),"canvas_physical":[app.canvas_rect.width()*ctx.pixels_per_point(),app.canvas_rect.height()*ctx.pixels_per_point()]}));
+                self.tools_records.push(json!({"phase":self.phase,"measure":app.measure.label(),"values":app.measure.values(),"angle_deg":app.measure.angle_deg(),"retained":app.measure.completed.len(),"fixed":app.measure.fixed,"info":info,"ppp":ctx.pixels_per_point(),"canvas_physical":[app.canvas_rect.width()*ctx.pixels_per_point(),app.canvas_rect.height()*ctx.pixels_per_point()]}));
                 Self::screenshot(ctx);
                 self.enter(if self.phase == 22 {
                     220
@@ -555,7 +587,9 @@ impl NativeBench {
                 }
             }
             221 if self.tools_gate && self.since.elapsed().as_secs_f64() > 0.5 => {
-                let preserved = app.measure.fixed && app.measure.values() == Some((3., 4., 5.));
+                let preserved = app.measure.fixed
+                    && app.measure.values() == Some((3., 4., 5.))
+                    && app.measure.completed.len() == 1;
                 if !preserved {
                     self.failures
                         .push("text-focused Escape cleared measurement".into());
@@ -642,7 +676,7 @@ impl NativeBench {
             33 if self.tools_gate && !app.busy => {
                 let coords = app.view.selected.ordered.len() == 1
                     && matches!(app.view.selected.primary().unwrap().object.geometry,SemanticGeometry::Flash{center,..} if center==MmPoint::new(21.,14.));
-                if !coords || app.measure.a.is_some() {
+                if !coords || app.measure.a.is_some() || !app.measure.completed.is_empty() {
                     self.failures.push("reopen coordinate/measure reset".into());
                 }
                 self.tools_records.push(
@@ -652,6 +686,155 @@ impl NativeBench {
                 self.enter(34);
             }
             34 if self.tools_gate && self.since.elapsed().as_secs_f64() > 0.5 => {
+                app.send(Action::Duplicate);
+                self.enter(35);
+            }
+            35 if self.tools_gate && !app.busy => {
+                let total = app
+                    .view
+                    .scene
+                    .as_ref()
+                    .map_or(0, |scene| scene.objects.len());
+                if total != 1001 || app.view.selected.ordered.len() != 1 {
+                    self.failures.push("native Duplicate state".into());
+                }
+                self.tools_records.push(json!({"phase":"duplicate","scene_total":total,"selected":app.view.selected.ordered,"info":app.view.info}));
+                app.send(Action::Delete);
+                self.enter(36);
+            }
+            36 if self.tools_gate && !app.busy => {
+                let total = app
+                    .view
+                    .scene
+                    .as_ref()
+                    .map_or(0, |scene| scene.objects.len());
+                if total != 1000 || !app.view.selected.ordered.is_empty() {
+                    self.failures.push("native Delete state".into());
+                }
+                self.tools_records
+                    .push(json!({"phase":"delete","scene_total":total,"info":app.view.info}));
+                app.send(Action::History(false));
+                self.enter(37);
+            }
+            37 if self.tools_gate && !app.busy => {
+                let total = app
+                    .view
+                    .scene
+                    .as_ref()
+                    .map_or(0, |scene| scene.objects.len());
+                if total != 1001 {
+                    self.failures.push("native Delete Undo state".into());
+                }
+                app.send(Action::History(true));
+                self.enter(38);
+            }
+            38 if self.tools_gate && !app.busy => {
+                let total = app
+                    .view
+                    .scene
+                    .as_ref()
+                    .map_or(0, |scene| scene.objects.len());
+                if total != 1000 {
+                    self.failures.push("native Delete Redo state".into());
+                }
+                self.tools_records.push(
+                    json!({"phase":"delete_undo_redo","scene_total":total,"info":app.view.info}),
+                );
+                app.send(Action::Select(
+                    MmPoint::new(21., 14.),
+                    0.,
+                    crate::selection::SelectionMode::Replace,
+                ));
+                self.enter(39);
+            }
+            39 if self.tools_gate && !app.busy => {
+                if app.view.selected.ordered.len() != 1 {
+                    self.failures.push("native transform selection".into());
+                    self.finish(app, ctx);
+                    return;
+                }
+                app.send(Action::Rotate("37".into(), PivotInput::WorldOrigin));
+                self.enter(40);
+            }
+            40 if self.tools_gate && !app.busy => {
+                let (sine, cosine) = 37_f64.to_radians().sin_cos();
+                let expected = MmPoint::new(21. * cosine - 14. * sine, 21. * sine + 14. * cosine);
+                let correct = matches!(app.view.selected.primary().map(|o| &o.object.geometry),Some(SemanticGeometry::Flash{center,..}) if center.distance_mm(expected)<1e-8);
+                if !correct {
+                    self.failures.push("native Rotate coordinates".into());
+                }
+                self.tools_records.push(json!({"phase":"rotate","coordinates_correct":correct,"expected_center_mm":[expected.x_mm,expected.y_mm],"selected":app.view.selected.ordered,"info":app.view.info}));
+                app.send(Action::Mirror(MirrorDirection::Horizontal));
+                self.enter(41);
+            }
+            41 if self.tools_gate && !app.busy => {
+                let (sine, cosine) = 37_f64.to_radians().sin_cos();
+                let expected = MmPoint::new(21. * cosine - 14. * sine, 21. * sine + 14. * cosine);
+                let correct = matches!(app.view.selected.primary().map(|o| &o.object.geometry),Some(SemanticGeometry::Flash{center,..}) if center.distance_mm(expected)<1e-8);
+                if !correct {
+                    self.failures.push("native Mirror coordinates".into());
+                }
+                self.tools_records.push(json!({"phase":"mirror","coordinates_correct":correct,"selected":app.view.selected.ordered,"info":app.view.info}));
+                app.send(Action::SetFlashSize("0.75".into(), None));
+                self.enter(42);
+            }
+            42 if self.tools_gate && !app.busy => {
+                let selected_aperture =
+                    match app.view.selected.primary().map(|o| &o.object.geometry) {
+                        Some(SemanticGeometry::Flash { aperture_id, .. }) => Some(aperture_id),
+                        _ => None,
+                    };
+                let cow = selected_aperture.is_some_and(|id| {
+                    app.view.apertures.iter().any(|aperture| {
+                        aperture.id == *id
+                            && matches!(aperture.shape, editor_core::ApertureShape::Circle { diameter_mm, .. } if diameter_mm == 0.75)
+                    })
+                }) && app.view.apertures.iter().any(|aperture| {
+                    matches!(aperture.shape, editor_core::ApertureShape::Circle { diameter_mm, .. } if diameter_mm == 0.5)
+                });
+                if !cow {
+                    self.failures.push("native Flash size COW".into());
+                }
+                self.tools_records.push(json!({"phase":"flash_size_cow","cow_correct":cow,"apertures":app.view.apertures,"selected":app.view.selected.ordered,"info":app.view.info}));
+                self.save(app, "s3-final.gbr");
+                self.enter(43);
+            }
+            43 if self.tools_gate && !app.busy => {
+                app.send(Action::Close(true));
+                self.enter(44);
+            }
+            44 if self.tools_gate && !app.busy => {
+                app.send(Action::Open(self.out.join("s3-final.gbr")));
+                self.enter(45);
+            }
+            45 if self.tools_gate && !app.busy && !app.fit => {
+                let (sine, cosine) = 37_f64.to_radians().sin_cos();
+                let expected = MmPoint::new(21. * cosine - 14. * sine, 21. * sine + 14. * cosine);
+                app.send(Action::Select(
+                    expected,
+                    1e-6,
+                    crate::selection::SelectionMode::Replace,
+                ));
+                self.enter(46);
+            }
+            46 if self.tools_gate && !app.busy => {
+                let selected_aperture =
+                    match app.view.selected.primary().map(|o| &o.object.geometry) {
+                        Some(SemanticGeometry::Flash { aperture_id, .. }) => Some(aperture_id),
+                        _ => None,
+                    };
+                let reopened = selected_aperture.is_some_and(|id| {
+                    app.view.apertures.iter().any(|aperture| {
+                        aperture.id == *id
+                            && matches!(aperture.shape, editor_core::ApertureShape::Circle { diameter_mm, .. } if (diameter_mm - 0.75).abs() < 1e-9)
+                    })
+                });
+                if !reopened {
+                    self.failures
+                        .push("native Save As/Reopen COW geometry".into());
+                }
+                self.tools_records.push(json!({"phase":"s3_save_reopen","reopened_geometry_correct":reopened,"selected":app.view.selected.ordered,"info":app.view.info}));
+                Self::screenshot(ctx);
                 self.finish(app, ctx)
             }
             _ => {}

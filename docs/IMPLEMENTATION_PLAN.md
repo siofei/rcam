@@ -95,3 +95,49 @@ GeometryMetrics已实现，完整S2-B3在renderer修复前被1000对象显示预
 ## 2026-09-20 S2-B3.2
 
 当前范围：视口候选去重/曝光排序、局部预算、事件时 selection flags、原生窗口 benchmark。详见 S2_B3_2_PLAN.md 与 ADR0021；冻结 50ms/300ms 门槛不变。P100K preview 成本采集保留预算拒绝，不能声明 P100K 性能通过。最终结果在独立 public evidence 中绑定受测 clean commit；不启动后续功能。
+
+## 2026-09-20 S2-C1
+
+Grid/Snap/Measure 已阶段性通过，范围与证据见 S2_C1_PLAN.md、ADR0022、S2_C1_REVIEW.md。
+
+## 2026-09-20 S2-C2
+
+任务 RCam_MAC_FIRST_S2C2_TRANSFORM_GUI_NEXT_TASK.md；需求 R10/R11/R14/R18/R19/R21/R22；
+局部 AT-033/034/039/040/041/043/054/087/090/091。复用 S1-B2b 的 objects.rotate/objects.mirror，
+属性面板提供任意角、明确 Pivot 与选择集中心水平/垂直世界轴。SelectionSet 一次请求/事务/Undo；
+Grid 不参与 Transform。只读 core bounds helper、editor-app、测试、文档/manifest/证据可修改；
+不改制造变换、writer、renderer、依赖或验收身份。Mac-first，Windows deferred / not executed。
+完成并复审后停止，不自动开始 S4-A。
+
+## 阶段编号校正说明（2026-09-20）
+
+正式阶段按 DESIGN_V1 恢复为：
+
+```text
+S1  Gerber Semantic / Writer
+S2  View / Layer / Navigation / Renderer / Selection
+S3  Basic Editing
+    ├─ Move / Numeric Move
+    ├─ Direct Drag
+    ├─ Duplicate / Delete
+    ├─ Multi-selection / Window / Crossing
+    ├─ Rotate / Mirror
+    ├─ Undo / Redo
+    ├─ Grid / Snap
+    ├─ Measure
+    ├─ GeometryMetrics（附加能力）
+    └─ Renderer performance closeout（附加能力）
+S4  Vector Text / Save workflow
+```
+
+历史 `S2-B1`、`S2-B2`、`S2-B3`、`S2-C1`、`S2-C2` 文件、ADR、evidence、commit 和
+review 不重命名；它们保留历史身份，但其中直接编辑、事务、Grid/Snap/Measure、metrics 与
+P1K renderer closeout 实际覆盖了正式 S3 的部分范围。
+
+## 2026-09-20 S3-FINAL（当前）
+
+正式核对 R10/R11/R13，并回归 R08/R09/R14-R19/R21/R22。补齐标准 Flash 尺寸 COW、
+`edit.batch` 的单 revision/单 Undo 原子事务、按完整事务淘汰的可解释历史预算、显式对象
+端点/中心 Snap 和 mm/in 显示；保留既有 Move/Drag/Duplicate/Delete/Rotate/Mirror、
+Grid/Measure、GeometryMetrics 与 P1K 门禁。Mac-first；Windows deferred / not executed。
+不开始 S4 文字、任务系统、Post-V1 格式或 P100K。

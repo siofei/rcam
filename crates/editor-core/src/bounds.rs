@@ -30,6 +30,13 @@ impl BoundsMm {
         }
     }
 
+    pub fn center(self) -> MmPoint {
+        MmPoint::new(
+            self.min_x_mm + (self.max_x_mm - self.min_x_mm) / 2.,
+            self.min_y_mm + (self.max_y_mm - self.min_y_mm) / 2.,
+        )
+    }
+
     fn expand(self, x: f64, y: f64) -> Self {
         Self {
             min_x_mm: self.min_x_mm - x,
@@ -69,24 +76,34 @@ impl SemanticDocument {
         if layer_id.is_some_and(|id| !self.layers.iter().any(|layer| layer.id == id)) {
             return Err(SemanticError::Invalid("unknown bounds layer".into()));
         }
-        let apertures: HashMap<_, _> = self
-            .apertures
-            .iter()
-            .map(|aperture| (aperture.id.as_str(), &aperture.shape))
-            .collect();
-        let mut result: Option<BoundsMm> = None;
-        for layer in &self.layers {
-            if layer_id.is_some_and(|id| layer.id != id) {
-                continue;
-            }
-            for object in &layer.objects {
-                if let Some(bounds) = geometry_bounds(&object.geometry, &apertures)? {
-                    result = Some(result.map_or(bounds, |previous| previous.union(bounds)));
-                }
-            }
-        }
-        Ok(result)
+        geometries_bounds(
+            self.layers
+                .iter()
+                .filter(|layer| layer_id.is_none_or(|id| layer.id == id))
+                .flat_map(|layer| layer.objects.iter().map(|object| &object.geometry)),
+            &self.apertures,
+        )
     }
+}
+
+/// Union bounds for an explicit manufacturing-geometry selection.
+///
+/// This is intentionally independent of renderer meshes and screen pixels.
+pub fn geometries_bounds<'a>(
+    geometries: impl IntoIterator<Item = &'a SemanticGeometry>,
+    apertures: &[ApertureDefinition],
+) -> Result<Option<BoundsMm>, SemanticError> {
+    let apertures: HashMap<_, _> = apertures
+        .iter()
+        .map(|aperture| (aperture.id.as_str(), &aperture.shape))
+        .collect();
+    let mut result = None;
+    for geometry in geometries {
+        if let Some(bounds) = geometry_bounds(geometry, &apertures)? {
+            result = Some(result.map_or(bounds, |previous: BoundsMm| previous.union(bounds)));
+        }
+    }
+    Ok(result)
 }
 
 fn geometry_bounds(

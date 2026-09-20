@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_FILES = ['.gitignore', 'AGENTS.md', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
               'README.md', 'THIRD_PARTY_NOTICES.md']
-DIRECTORIES = ['crates', 'docs', '.github', 'scripts', 'fixtures/synthetic', 'evidence-public']
+DIRECTORIES = ['crates', 'docs', '.github', 'scripts', 'fixtures/synthetic']
 SUFFIXES = {'.rs', '.wgsl', '.toml', '.md', '.json', '.py', '.yml', '.yaml', '.gbr', '.sha256', '.txt', '.log', '.png', '.jpg', '.gbx'}
 
 

@@ -1,5 +1,5 @@
 use crate::selection::SelectionMode::{Add, Remove, Replace};
-use crate::state::{Action, Model};
+use crate::state::{Action, MirrorDirection, Model, PivotInput};
 use editor_core::{MmPoint, SemanticGeometry};
 use editor_service::LayerUpdateParams;
 use std::{
@@ -8,7 +8,7 @@ use std::{
 };
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const SOURCE: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,2*%\n%ADD11C,4X2*%\nD10*\nX10000000Y20000000D03*\nD11*\nX20000000Y20000000D03*\nM02*\n";
-fn setup() -> (Model, PathBuf) {
+fn setup_source(name: &str, source: &[u8]) -> (Model, PathBuf) {
     let base = std::env::var_os("RCAM_GUI_EVIDENCE")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
@@ -18,11 +18,36 @@ fn setup() -> (Model, PathBuf) {
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("中文 # source.gbx");
-    std::fs::write(&path, SOURCE).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, source).unwrap();
     let mut m = Model::default();
     m.open(&path).unwrap();
     (m, dir)
+}
+fn setup() -> (Model, PathBuf) {
+    setup_source("中文 # source.gbx", SOURCE.as_bytes())
+}
+fn fixture(name: &str) -> Vec<u8> {
+    std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic")
+            .join(name),
+    )
+    .unwrap()
+}
+fn select_all(m: &mut Model) {
+    let document = m.view.info.as_ref().unwrap().document_id.clone();
+    let snapshot = m.service.render_snapshot(&document).unwrap();
+    let layer = &snapshot.layers[0];
+    m.view.selected.ordered = layer
+        .objects
+        .iter()
+        .cloned()
+        .map(|object| editor_service::ObjectInfo {
+            layer_id: layer.id.clone(),
+            object,
+        })
+        .collect();
 }
 fn select(m: &mut Model) {
     m.select(MmPoint::new(10., 20.), 0., Replace).unwrap();
@@ -788,6 +813,8 @@ fn cross_layer_selection_refuses_whole_edit() {
     let selected = m.view.selected.clone();
     for action in [
         Action::Move("1".into(), "1".into()),
+        Action::Rotate("90".into(), PivotInput::WorldOrigin),
+        Action::Mirror(MirrorDirection::Horizontal),
         Action::Duplicate,
         Action::Delete,
     ] {
@@ -1051,4 +1078,401 @@ fn s2c1_invalid_snap_cannot_commit() {
     assert!(drag.error.is_some());
     assert!(drag.release().is_none());
     assert_eq!(m.view.info, before);
+}
+
+const TRANSFORM_SOURCE: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,2*%\n%ADD11R,4X2*%\nD10*\nX1000000Y2000000D03*\nD11*\nX5000000Y8000000D03*\nM02*\n";
+
+fn transformed_point(point: MmPoint, angle_deg: f64, pivot: MmPoint) -> MmPoint {
+    let angle = angle_deg.to_radians();
+    let (sin, cos) = angle.sin_cos();
+    let x = point.x_mm - pivot.x_mm;
+    let y = point.y_mm - pivot.y_mm;
+    MmPoint::new(
+        pivot.x_mm + x * cos - y * sin,
+        pivot.y_mm + x * sin + y * cos,
+    )
+}
+
+fn geometry_list(m: &Model) -> Vec<SemanticGeometry> {
+    m.service
+        .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
+        .unwrap()
+        .layers[0]
+        .objects
+        .iter()
+        .map(|object| object.geometry.clone())
+        .collect()
+}
+
+fn flash_centers(m: &Model) -> Vec<MmPoint> {
+    geometry_list(m)
+        .into_iter()
+        .map(|geometry| match geometry {
+            SemanticGeometry::Flash { center, .. } => center,
+            _ => panic!("not flash"),
+        })
+        .collect()
+}
+
+#[test]
+fn s2c2_selection_center_uses_union_manufacturing_bounds() {
+    let (mut m, _) = setup();
+    multiselect(&mut m);
+    let bounds = crate::state::selected_bounds(&m.view).unwrap();
+    assert_eq!(bounds.min_x_mm, 9.);
+    assert_eq!(bounds.max_x_mm, 22.);
+    assert_eq!(bounds.min_y_mm, 18.);
+    assert_eq!(bounds.max_y_mm, 22.);
+    assert_eq!(
+        crate::state::selected_center(&m.view).unwrap(),
+        MmPoint::new(15.5, 20.)
+    );
+    assert_ne!(crate::state::selected_center(&m.view).unwrap().x_mm, 15.);
+}
+
+#[test]
+fn s2c2_single_flash_quarter_turn_and_custom_pivot_use_service() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    m.run(Action::Rotate("90".into(), PivotInput::WorldOrigin));
+    assert!(m.view.error.is_none());
+    assert_eq!(center(&m), MmPoint::new(-20., 10.));
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+    m.run(Action::History(false));
+    let pivot = MmPoint::new(1.25, -2.5);
+    m.run(Action::Rotate(
+        "37".into(),
+        PivotInput::Custom(pivot.x_mm.to_string(), pivot.y_mm.to_string()),
+    ));
+    let expected = transformed_point(MmPoint::new(10., 20.), 37., pivot);
+    assert!(center(&m).distance_mm(expected) < 1e-9);
+}
+
+#[test]
+fn s2c2_multi_rotate_uses_one_pivot_and_one_transaction() {
+    let (mut m, _) = setup();
+    multiselect(&mut m);
+    m.run(Action::Rotate("90".into(), PivotInput::SelectionCenter));
+    assert!(m.view.error.is_none());
+    assert_eq!(
+        flash_centers(&m),
+        vec![MmPoint::new(15.5, 14.5), MmPoint::new(15.5, 24.5)]
+    );
+    let info = m.view.info.as_ref().unwrap();
+    assert_eq!(info.revision, "1");
+    assert_eq!(info.undo_entries, 1);
+    m.run(Action::History(false));
+    assert_eq!(
+        flash_centers(&m),
+        vec![MmPoint::new(10., 20.), MmPoint::new(20., 20.)]
+    );
+}
+
+#[test]
+fn s2c2_horizontal_and_vertical_mirror_use_explicit_selection_axes() {
+    let (mut horizontal, _) = setup_source("mirror-horizontal.gbr", TRANSFORM_SOURCE.as_bytes());
+    select_all(&mut horizontal);
+    assert_eq!(
+        crate::state::selected_center(&horizontal.view).unwrap(),
+        MmPoint::new(3.5, 5.)
+    );
+    horizontal.run(Action::Mirror(MirrorDirection::Horizontal));
+    assert_eq!(
+        flash_centers(&horizontal),
+        vec![MmPoint::new(1., 8.), MmPoint::new(5., 2.)]
+    );
+
+    let (mut vertical, _) = setup_source("mirror-vertical.gbr", TRANSFORM_SOURCE.as_bytes());
+    select_all(&mut vertical);
+    vertical.run(Action::Mirror(MirrorDirection::Vertical));
+    assert_eq!(
+        flash_centers(&vertical),
+        vec![MmPoint::new(6., 2.), MmPoint::new(2., 8.)]
+    );
+}
+
+#[test]
+fn s2c2_arc_arbitrary_rotate_and_mirror_direction_are_preserved() {
+    let source = fixture("s1a1/g74_cw_quarter.gbr");
+    let (mut rotate, _) = setup_source("arc-rotate.gbr", &source);
+    select_all(&mut rotate);
+    let SemanticGeometry::Arc { path: before, .. } = geometry_list(&rotate)[0] else {
+        panic!("not arc")
+    };
+    let pivot = MmPoint::new(2., 3.);
+    rotate.run(Action::Rotate(
+        "37".into(),
+        PivotInput::Custom("2".into(), "3".into()),
+    ));
+    let SemanticGeometry::Arc { path: after, .. } = geometry_list(&rotate)[0] else {
+        panic!("not arc")
+    };
+    assert!(
+        after
+            .start
+            .distance_mm(transformed_point(before.start, 37., pivot))
+            < 1e-9
+    );
+    assert!(
+        after
+            .end
+            .distance_mm(transformed_point(before.end, 37., pivot))
+            < 1e-9
+    );
+    assert!(
+        after
+            .center
+            .distance_mm(transformed_point(before.center, 37., pivot))
+            < 1e-9
+    );
+    assert_eq!(after.direction, before.direction);
+    assert_eq!(after.full_circle, before.full_circle);
+
+    let (mut mirror, _) = setup_source("arc-mirror.gbr", &source);
+    select_all(&mut mirror);
+    let axis = crate::state::selected_center(&mirror.view).unwrap().y_mm;
+    mirror.run(Action::Mirror(MirrorDirection::Horizontal));
+    let SemanticGeometry::Arc {
+        path: reflected, ..
+    } = geometry_list(&mirror)[0]
+    else {
+        panic!("not arc")
+    };
+    assert_eq!(reflected.start.x_mm, before.start.x_mm);
+    assert!((reflected.start.y_mm - (2. * axis - before.start.y_mm)).abs() < 1e-9);
+    assert_ne!(reflected.direction, before.direction);
+}
+
+#[test]
+fn s2c2_region_rotate_preserves_contours_and_edge_order() {
+    let (mut m, _) = setup_source("region.gbr", &fixture("s1a/region_arc.gbr"));
+    select_all(&mut m);
+    let SemanticGeometry::Region { contours: before } = geometry_list(&m)[0].clone() else {
+        panic!("not region")
+    };
+    m.run(Action::Rotate(
+        "37".into(),
+        PivotInput::Custom("2".into(), "3".into()),
+    ));
+    let SemanticGeometry::Region { contours: after } = geometry_list(&m)[0].clone() else {
+        panic!("not region")
+    };
+    assert_eq!(after.len(), before.len());
+    for (old, new) in before.iter().zip(&after) {
+        assert_eq!(new.role, old.role);
+        assert_eq!(new.edges.len(), old.edges.len());
+    }
+}
+
+#[test]
+fn s2c2_rectangular_sweep_quarter_turns_and_37_rejection_are_atomic() {
+    let (mut m, _) = setup_source(
+        "rectangular-sweep.gbr",
+        &fixture("s0c/rectangular_draw.gbr"),
+    );
+    select_all(&mut m);
+    let original = geometry_list(&m);
+    for angle in ["90", "-90"] {
+        m.run(Action::Rotate(angle.into(), PivotInput::WorldOrigin));
+        assert!(m.view.error.is_none());
+        for geometry in geometry_list(&m) {
+            assert!(matches!(
+                geometry,
+                SemanticGeometry::RectangularSweep {
+                    width_mm: 1.,
+                    height_mm: 2.,
+                    ..
+                }
+            ));
+        }
+        assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+        m.run(Action::History(false));
+        assert_eq!(geometry_list(&m), original);
+    }
+    let before = m.view.info.clone();
+    m.run(Action::Rotate("37".into(), PivotInput::WorldOrigin));
+    assert_eq!(m.view.error.as_ref().unwrap().code, "UNSUPPORTED_FEATURE");
+    assert_eq!(m.view.info, before);
+    assert_eq!(geometry_list(&m), original);
+}
+
+#[test]
+fn s2c2_locked_layer_rejects_rotate_and_mirror_without_partial_change() {
+    let (mut m, _) = setup_source("locked.gbr", TRANSFORM_SOURCE.as_bytes());
+    select_all(&mut m);
+    patch(&mut m, None, Some(true), None);
+    let before = m.view.info.clone();
+    let geometry = geometry_list(&m);
+    for action in [
+        Action::Rotate("90".into(), PivotInput::WorldOrigin),
+        Action::Mirror(MirrorDirection::Vertical),
+    ] {
+        m.run(action);
+        assert_eq!(m.view.error.as_ref().unwrap().code, "LAYER_LOCKED");
+        assert_eq!(m.view.info, before);
+        assert_eq!(geometry_list(&m), geometry);
+    }
+}
+
+#[test]
+fn s2c2_arbitrary_angle_and_custom_pivot_are_not_quantized() {
+    let (mut m, _) = setup_source("grid-independent.gbr", TRANSFORM_SOURCE.as_bytes());
+    m.select(MmPoint::new(1., 2.), 0., Replace).unwrap();
+    let pivot = MmPoint::new(0.123456789, -0.456789123);
+    m.run(Action::Rotate(
+        "37.125".into(),
+        PivotInput::Custom(pivot.x_mm.to_string(), pivot.y_mm.to_string()),
+    ));
+    let expected = transformed_point(MmPoint::new(1., 2.), 37.125, pivot);
+    assert!(center(&m).distance_mm(expected) < 1e-9);
+}
+
+#[test]
+fn s2c2_rotate_mirror_keep_cached_metrics_exactly_unchanged() {
+    let (mut m, _) = setup_source("metrics.gbr", TRANSFORM_SOURCE.as_bytes());
+    m.run(Action::Select(MmPoint::new(1., 2.), 0., Replace));
+    m.run(Action::Select(MmPoint::new(5., 8.), 0., Add));
+    let before: Vec<_> = m
+        .view
+        .metrics
+        .iter()
+        .map(|item| item.value.clone())
+        .collect();
+    assert_eq!(before.len(), 2);
+    m.run(Action::Rotate("37".into(), PivotInput::SelectionCenter));
+    assert_eq!(
+        m.view
+            .metrics
+            .iter()
+            .map(|item| item.value.clone())
+            .collect::<Vec<_>>(),
+        before
+    );
+    m.run(Action::Mirror(MirrorDirection::Vertical));
+    assert_eq!(
+        m.view
+            .metrics
+            .iter()
+            .map(|item| item.value.clone())
+            .collect::<Vec<_>>(),
+        before
+    );
+}
+
+#[test]
+fn s2c2_undo_redo_save_and_reopen_preserve_transformed_geometry() {
+    let (mut m, dir) = setup_source("transform-source.gbr", TRANSFORM_SOURCE.as_bytes());
+    select_all(&mut m);
+    let original = geometry_list(&m);
+    m.run(Action::Rotate("90".into(), PivotInput::WorldOrigin));
+    m.run(Action::Mirror(MirrorDirection::Vertical));
+    let transformed = geometry_list(&m);
+    assert_ne!(transformed, original);
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 2);
+    m.run(Action::History(false));
+    m.run(Action::History(false));
+    assert_eq!(geometry_list(&m), original);
+    m.run(Action::History(true));
+    m.run(Action::History(true));
+    assert_eq!(geometry_list(&m), transformed);
+    let output = dir.join("transform-output.gbr");
+    m.save(&output, m.view.layers[0].layer_id.clone(), None)
+        .unwrap();
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 2);
+    m.open(&output).unwrap();
+    assert_eq!(geometry_list(&m), transformed);
+}
+
+#[test]
+fn s2c2_zero_and_non_finite_inputs_fail_without_revision_or_history() {
+    let (mut m, _) = setup();
+    select(&mut m);
+    let before = m.view.info.clone();
+    for action in [
+        Action::Rotate("0".into(), PivotInput::WorldOrigin),
+        Action::Rotate("NaN".into(), PivotInput::WorldOrigin),
+        Action::Rotate("inf".into(), PivotInput::WorldOrigin),
+        Action::Rotate("37".into(), PivotInput::Custom("NaN".into(), "0".into())),
+    ] {
+        m.run(action);
+        assert_eq!(m.view.error.as_ref().unwrap().code, "INVALID_ARGUMENT");
+        assert_eq!(m.view.info, before);
+        assert_eq!(center(&m), MmPoint::new(10., 20.));
+    }
+}
+
+#[test]
+fn s2c2_transform_text_fields_share_existing_focus_shortcut_guard() {
+    assert!(!crate::drag::shortcuts_allowed(true, false, false));
+    assert!(crate::drag::shortcuts_allowed(false, false, false));
+}
+
+#[test]
+fn s3_flash_size_gui_path_is_cow_undoable_and_roundtrips() {
+    let source = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,2*%\nD10*\nX10000000Y20000000D03*\nX20000000Y20000000D03*\nM02*\n";
+    let (mut m, dir) = setup_source("shared-aperture.gbr", source.as_bytes());
+    select(&mut m);
+    let before = geometry_list(&m);
+    let before_apertures = m.view.apertures.clone();
+    m.run(Action::SetFlashSize("4".into(), None));
+    assert!(m.view.error.is_none());
+    let after = geometry_list(&m);
+    let (
+        SemanticGeometry::Flash {
+            aperture_id: changed,
+            ..
+        },
+        SemanticGeometry::Flash {
+            aperture_id: unchanged,
+            ..
+        },
+    ) = (&after[0], &after[1])
+    else {
+        panic!()
+    };
+    assert_ne!(changed, unchanged);
+    assert_eq!(unchanged, "aperture-10");
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+    m.run(Action::History(false));
+    assert_eq!(geometry_list(&m), before);
+    assert_eq!(m.view.apertures, before_apertures);
+    m.run(Action::History(true));
+    assert_eq!(geometry_list(&m), after);
+    let output = dir.join("resized-flash.gbr");
+    m.save(&output, m.view.layers[0].layer_id.clone(), None)
+        .unwrap();
+    m.open(&output).unwrap();
+    assert_eq!(geometry_list(&m).len(), 2);
+    let shapes: Vec<_> = geometry_list(&m)
+        .iter()
+        .map(|geometry| match geometry {
+            SemanticGeometry::Flash { aperture_id, .. } => m
+                .view
+                .apertures
+                .iter()
+                .find(|aperture| &aperture.id == aperture_id)
+                .unwrap()
+                .shape
+                .clone(),
+            _ => panic!(),
+        })
+        .collect();
+    assert!(matches!(
+        shapes[0],
+        editor_core::ApertureShape::Circle {
+            diameter_mm: 4.,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn s3_snap_candidates_come_from_visible_manufacturing_geometry() {
+    let (mut m, _) = setup();
+    assert!(m.view.snap_points.iter().any(|candidate| {
+        candidate.point == MmPoint::new(10., 20.)
+            && candidate.kind == crate::tools::SnapKind::Center
+    }));
+    patch(&mut m, Some(false), None, None);
+    assert!(m.view.snap_points.is_empty());
 }

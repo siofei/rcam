@@ -2,6 +2,89 @@
 use crate::camera::Camera;
 use editor_core::{MmPoint, grid::snap_scalar};
 use eframe::egui::{self, Color32, Rect, Stroke};
+use std::collections::HashSet;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DisplayUnit {
+    #[default]
+    Mm,
+    Inch,
+}
+impl DisplayUnit {
+    fn value(self, millimetres: f64) -> f64 {
+        match self {
+            Self::Mm => millimetres,
+            Self::Inch => millimetres / 25.4,
+        }
+    }
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Self::Mm => "mm",
+            Self::Inch => "in",
+        }
+    }
+    pub fn point_label(self, point: MmPoint) -> String {
+        format!(
+            "X {:.6}  Y {:.6} {}",
+            self.value(point.x_mm),
+            self.value(point.y_mm),
+            self.suffix()
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SnapKind {
+    Endpoint,
+    Center,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SnapPoint {
+    pub point: MmPoint,
+    pub object_id: String,
+    pub kind: SnapKind,
+}
+
+pub fn snap_point(
+    raw: MmPoint,
+    grid: GridSettings,
+    candidates: &[SnapPoint],
+    camera: Camera,
+    excluded_object_ids: Option<&HashSet<String>>,
+    temporarily_disabled: bool,
+) -> Result<MmPoint, String> {
+    if !raw.is_finite() {
+        return Err("坐标不是有限值".into());
+    }
+    if !grid.snap_enabled || temporarily_disabled {
+        return Ok(raw);
+    }
+    let radius_mm = 8. / camera.scale;
+    if !radius_mm.is_finite() || radius_mm <= 0. {
+        return Err("当前缩放无法计算吸附半径".into());
+    }
+    let best = candidates
+        .iter()
+        .filter(|candidate| {
+            excluded_object_ids.is_none_or(|excluded| !excluded.contains(&candidate.object_id))
+        })
+        .filter_map(|candidate| {
+            let distance = raw.distance_mm(candidate.point);
+            (distance <= radius_mm).then_some((candidate, distance))
+        })
+        .min_by(|(left, left_distance), (right, right_distance)| {
+            left_distance
+                .total_cmp(right_distance)
+                .then_with(|| left.kind.cmp(&right.kind))
+                .then_with(|| left.object_id.cmp(&right.object_id))
+        });
+    if let Some((candidate, _)) = best {
+        Ok(candidate.point)
+    } else {
+        grid.point(raw)
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct GridSettings {
@@ -87,11 +170,27 @@ pub enum ActiveTool {
     Select,
     Measure,
 }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Measurement {
+    pub a: MmPoint,
+    pub b: MmPoint,
+}
+impl Measurement {
+    pub fn values(self) -> Option<(f64, f64, f64, f64)> {
+        let (dx, dy) = (self.b.x_mm - self.a.x_mm, self.b.y_mm - self.a.y_mm);
+        let distance = dx.hypot(dy);
+        let angle_deg = dy.atan2(dx).to_degrees().rem_euclid(360.);
+        (dx.is_finite() && dy.is_finite() && distance.is_finite() && angle_deg.is_finite())
+            .then_some((dx, dy, distance, angle_deg))
+    }
+}
+
 #[derive(Default)]
 pub struct MeasureState {
     pub a: Option<MmPoint>,
     pub b: Option<MmPoint>,
     pub fixed: bool,
+    pub completed: Vec<Measurement>,
 }
 impl MeasureState {
     pub fn clear(&mut self) {
@@ -105,6 +204,10 @@ impl MeasureState {
         } else {
             self.b = Some(p);
             self.fixed = true;
+            self.completed.push(Measurement {
+                a: self.a.expect("measurement start exists"),
+                b: p,
+            });
         }
     }
     pub fn hover(&mut self, p: Option<MmPoint>) {
@@ -113,44 +216,112 @@ impl MeasureState {
         }
     }
     pub fn values(&self) -> Option<(f64, f64, f64)> {
-        let (a, b) = (self.a?, self.b?);
-        let (dx, dy) = (b.x_mm - a.x_mm, b.y_mm - a.y_mm);
-        let distance = dx.hypot(dy);
-        (dx.is_finite() && dy.is_finite() && distance.is_finite()).then_some((dx, dy, distance))
+        let (dx, dy, distance, _) = Measurement {
+            a: self.a?,
+            b: self.b?,
+        }
+        .values()?;
+        Some((dx, dy, distance))
+    }
+    pub fn angle_deg(&self) -> Option<f64> {
+        Measurement {
+            a: self.a?,
+            b: self.b?,
+        }
+        .values()
+        .map(|(_, _, _, angle)| angle)
     }
     pub fn label(&self) -> String {
+        self.label_in(DisplayUnit::Mm)
+    }
+    pub fn label_in(&self, unit: DisplayUnit) -> String {
+        let retained = self.completed.len();
         let Some(a) = self.a else {
-            return "两点直线测距 · 点击 A，然后点击 B · Esc 清除".into();
+            return format!(
+                "两点直线测距 · 已保留 {retained} 条 · 点击 A，然后点击 B · Esc 清除全部"
+            );
         };
-        let mut label = format!("A ({:.6}, {:.6}) mm", a.x_mm, a.y_mm);
-        if let (Some(b), Some((dx, dy, d))) = (self.b, self.values()) {
+        let mut label = format!(
+            "两点直线测距 · 已保留 {retained} 条 · +X 轴逆时针角度\nA ({:.6}, {:.6}) {}",
+            unit.value(a.x_mm),
+            unit.value(a.y_mm),
+            unit.suffix()
+        );
+        if let (Some(b), Some((dx, dy, d)), Some(angle)) = (self.b, self.values(), self.angle_deg())
+        {
             label.push_str(&format!(
-                "\nB ({:.6}, {:.6}) mm\nΔX {dx:.6}  ΔY {dy:.6} mm\nDistance {d:.6} mm · {}",
-                b.x_mm,
-                b.y_mm,
+                "\nB ({:.6}, {:.6}) {}\nΔX {:.6}  ΔY {:.6} {}\nDistance {:.6} {}  Angle {angle:.6}° · {}",
+                unit.value(b.x_mm),
+                unit.value(b.y_mm),
+                unit.suffix(),
+                unit.value(dx),
+                unit.value(dy),
+                unit.suffix(),
+                unit.value(d),
+                unit.suffix(),
                 if self.fixed { "已固定" } else { "动态" }
             ));
         }
         label
     }
-    pub fn paint(&self, painter: &egui::Painter, camera: Camera, rect: Rect) {
-        if let Some(a) = self.a {
-            let p = camera.screen(a, rect);
-            painter.circle_filled(p, 3., Color32::YELLOW);
+    pub fn paint_in(&self, painter: &egui::Painter, camera: Camera, rect: Rect, unit: DisplayUnit) {
+        for measurement in &self.completed {
+            paint_measurement(painter, camera, rect, *measurement, unit);
+        }
+        if !self.fixed
+            && let Some(a) = self.a
+        {
             if let Some(b) = self.b {
-                let q = camera.screen(b, rect);
-                painter.line_segment([p, q], Stroke::new(1., Color32::YELLOW));
-                painter.circle_filled(q, 3., Color32::YELLOW);
+                paint_measurement(painter, camera, rect, Measurement { a, b }, unit);
+            } else {
+                painter.circle_filled(camera.screen(a, rect), 3., Color32::YELLOW);
             }
         }
         overlay_label(
             painter,
             rect.left_top() + egui::vec2(12., 36.),
             egui::Align2::LEFT_TOP,
-            self.label(),
+            self.label_in(unit),
             Color32::YELLOW,
         );
     }
+}
+
+fn paint_measurement(
+    painter: &egui::Painter,
+    camera: Camera,
+    rect: Rect,
+    measurement: Measurement,
+    unit: DisplayUnit,
+) {
+    let (p, q) = (
+        camera.screen(measurement.a, rect),
+        camera.screen(measurement.b, rect),
+    );
+    painter.line_segment([p, q], Stroke::new(1., Color32::YELLOW));
+    painter.circle_filled(p, 3., Color32::YELLOW);
+    painter.circle_filled(q, 3., Color32::YELLOW);
+    let Some((_, _, distance, angle_deg)) = measurement.values() else {
+        return;
+    };
+    let delta = q - p;
+    let length = delta.length();
+    let offset = if length > 0. {
+        egui::vec2(-delta.y, delta.x) * (14. / length)
+    } else {
+        egui::vec2(0., -14.)
+    };
+    overlay_label(
+        painter,
+        p + delta * 0.5 + offset,
+        egui::Align2::CENTER_CENTER,
+        format!(
+            "{:.6} {}  ∠ {angle_deg:.6}°",
+            unit.value(distance),
+            unit.suffix()
+        ),
+        Color32::YELLOW,
+    );
 }
 
 /// Opaque backing keeps readouts legible over dense selected manufacturing geometry.
@@ -193,15 +364,92 @@ mod tests {
         }
     }
     #[test]
-    fn measure_dynamic_fixed_and_escape() {
+    fn measure_angle_multiple_retention_and_escape() {
         let mut m = MeasureState::default();
         m.click(MmPoint::new(0., 0.));
         m.hover(Some(MmPoint::new(3., 4.)));
         assert_eq!(m.values(), Some((3., 4., 5.)));
+        assert!((m.angle_deg().unwrap() - 53.130_102_354_155_98).abs() < 1e-12);
         m.click(MmPoint::new(3., 4.));
         m.hover(Some(MmPoint::new(8., 8.)));
         assert_eq!(m.values(), Some((3., 4., 5.)));
+        assert_eq!(m.completed.len(), 1);
+        m.click(MmPoint::new(10., 10.));
+        m.hover(Some(MmPoint::new(9., 9.)));
+        m.click(MmPoint::new(9., 9.));
+        assert_eq!(m.completed.len(), 2);
+        assert!((m.angle_deg().unwrap() - 225.).abs() < 1e-12);
+        assert!(m.label().contains("已保留 2 条"));
+        assert!(m.label().contains("Angle 225.000000°"));
         m.clear();
-        assert!(m.a.is_none() && m.values().is_none());
+        assert!(m.a.is_none() && m.values().is_none() && m.completed.is_empty());
+    }
+    #[test]
+    fn measurement_angle_is_world_ccw_and_normalized() {
+        for (b, expected) in [
+            (MmPoint::new(1., 0.), 0.),
+            (MmPoint::new(0., 1.), 90.),
+            (MmPoint::new(-1., 0.), 180.),
+            (MmPoint::new(0., -1.), 270.),
+        ] {
+            let measurement = Measurement {
+                a: MmPoint::new(0., 0.),
+                b,
+            };
+            assert_eq!(measurement.values().unwrap().3, expected);
+        }
+    }
+    #[test]
+    fn object_snap_precedes_grid_and_uses_logical_point_radius() {
+        let grid = GridSettings {
+            visible: true,
+            spacing_mm: 1.,
+            snap_enabled: true,
+        };
+        let candidate = SnapPoint {
+            point: MmPoint::new(1.4, 2.4),
+            object_id: "object-1".into(),
+            kind: SnapKind::Endpoint,
+        };
+        let camera = Camera {
+            scale: 10.,
+            ..Default::default()
+        };
+        assert_eq!(
+            snap_point(
+                MmPoint::new(1.45, 2.45),
+                grid,
+                std::slice::from_ref(&candidate),
+                camera,
+                None,
+                false
+            )
+            .unwrap(),
+            candidate.point
+        );
+        assert_eq!(
+            snap_point(
+                MmPoint::new(1.45, 2.45),
+                grid,
+                &[candidate],
+                camera,
+                None,
+                true
+            )
+            .unwrap(),
+            MmPoint::new(1.45, 2.45)
+        );
+    }
+    #[test]
+    fn inch_display_does_not_change_manufacturing_values() {
+        let mut measure = MeasureState::default();
+        measure.click(MmPoint::new(0., 0.));
+        measure.click(MmPoint::new(25.4, 0.));
+        assert_eq!(measure.values(), Some((25.4, 0., 25.4)));
+        assert!(
+            measure
+                .label_in(DisplayUnit::Inch)
+                .contains("Distance 1.000000 in")
+        );
     }
 }

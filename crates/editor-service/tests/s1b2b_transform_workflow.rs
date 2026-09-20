@@ -692,22 +692,18 @@ fn core_history_limits_are_atomic() {
         h.rotate_objects(&mut doc, &layer, &ids, 90., MmPoint::new(0., 0.))
             .unwrap();
     }
-    let old = doc.clone();
-    assert_eq!(
-        h.rotate_objects(&mut doc, &layer, &ids, 37., MmPoint::new(0., 0.)),
-        Err(EditError::ResourceLimit)
-    );
-    assert_eq!(
-        h.mirror_objects(
-            &mut doc,
-            &layer,
-            &ids,
-            MirrorAxis::Vertical { coordinate_mm: 0. }
-        ),
-        Err(EditError::ResourceLimit)
-    );
-    assert_eq!(doc, old);
+    h.rotate_objects(&mut doc, &layer, &ids, 37., MmPoint::new(0., 0.))
+        .unwrap();
+    h.mirror_objects(
+        &mut doc,
+        &layer,
+        &ids,
+        MirrorAxis::Vertical { coordinate_mm: 0. },
+    )
+    .unwrap();
     assert_eq!(h.undo_len(), 100);
+    assert_eq!(h.truncated_entries(), 2);
+    assert!(h.bytes() <= editor_core::edit::MAX_HISTORY_BYTES);
 }
 #[test]
 fn overflow_and_roundoff_reject_without_history() {
