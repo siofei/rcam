@@ -1015,3 +1015,10 @@ DCode 的写时复制，只重定向目标 Flash；Macro 明确拒绝。GUI 与 
 历史预算按完整事务淘汰最旧 Undo，报告累计 truncation；单个事务超过字节预算时在修改前拒绝。
 Snap 使用 8 个 egui 逻辑点换算的制造半径，显式端点/中心优先于网格，稳定 ID 决胜，Alt 临时关闭；
 单位切换只改变 Grid/坐标/测距显示，不改 f64 mm 模型。详见 S3_FINAL_COVERAGE.md。
+
+### S4-A1 Mac-first vector text core
+
+Scope and local AT mapping: [S4_A1_PLAN.md](S4_A1_PLAN.md); geometry, font,
+resource and API decisions: [ADR 0024](adr/0024-s4a1-vector-text.md).
+AT-047–052 headless coverage does not replace GUI/IME, independent viewer
+or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.

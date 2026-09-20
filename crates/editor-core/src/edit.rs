@@ -659,6 +659,115 @@ impl EditHistory {
         Ok(ids)
     }
 
+    /// Append generated manufacturing geometry as one bounded history transaction.
+    pub fn insert_generated(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        geometries: Vec<SemanticGeometry>,
+    ) -> Result<Vec<String>, EditError> {
+        if geometries.is_empty()
+            || self
+                .document_id
+                .as_deref()
+                .is_some_and(|id| id != document.id)
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        let layer_index = document
+            .layers
+            .iter()
+            .position(|l| l.id == layer_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "layer",
+                id: layer_id.into(),
+            })?;
+        let total: usize = document.layers.iter().map(|l| l.objects.len()).sum();
+        let edges: usize = document
+            .layers
+            .iter()
+            .flat_map(|l| &l.objects)
+            .map(|o| region_edges(&o.geometry))
+            .sum();
+        if geometries.len() > MAX_MOVE_OBJECTS
+            || total.saturating_add(geometries.len()) > MAX_EDIT_DOCUMENT_OBJECTS
+            || edges.saturating_add(geometries.iter().map(region_edges).sum())
+                > MAX_EDIT_REGION_EDGES
+        {
+            return Err(EditError::ResourceLimit);
+        }
+        let next = self
+            .next_generated_id
+            .checked_add(geometries.len() as u64)
+            .ok_or(EditError::ResourceLimit)?;
+        let layer = &document.layers[layer_index];
+        let bytes = size_of::<Transaction>()
+            + 1024
+            + layer_id.len()
+            + layer
+                .objects
+                .iter()
+                .map(|o| 4 * (o.object_id.len() + 96) + size_of::<SemanticObject>())
+                .sum::<usize>()
+            + geometries
+                .iter()
+                .map(|g| {
+                    3 * (size_of::<IndexedObject>()
+                        + geometry_heap_bytes(g)
+                        + 2 * document.id.len()
+                        + 512)
+                })
+                .sum::<usize>();
+        self.budget(bytes)?;
+        let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
+        let existing: HashSet<_> = document
+            .layers
+            .iter()
+            .flat_map(|l| &l.objects)
+            .map(|o| o.object_id.as_str())
+            .collect();
+        let operation_id = format!("{}-generated-op-{}", document.id, self.next_generated_id);
+        let mut entries = Vec::with_capacity(geometries.len());
+        for (i, geometry) in geometries.into_iter().enumerate() {
+            validate_geometry(&geometry, &aperture_ids).map_err(EditError::InvalidGeometry)?;
+            let object_id = format!(
+                "{}-generated-object-{}",
+                document.id,
+                self.next_generated_id + i as u64
+            );
+            if existing.contains(object_id.as_str()) {
+                return Err(EditError::InvalidArgument);
+            }
+            entries.push(IndexedObject {
+                index: layer.objects.len() + i,
+                object: SemanticObject {
+                    object_id,
+                    geometry,
+                    exposure: Exposure::Dark,
+                    origin: ObjectOrigin::Generated {
+                        operation_id: operation_id.clone(),
+                    },
+                },
+            });
+        }
+        let before_order: Vec<_> = layer.objects.iter().map(|o| o.object_id.clone()).collect();
+        let mut after_order = before_order.clone();
+        after_order.extend(entries.iter().map(|e| e.object.object_id.clone()));
+        let ids = self.commit(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::Insert(entries),
+                before_order,
+                after_order,
+                bytes,
+            },
+        );
+        self.next_generated_id = next;
+        Ok(ids)
+    }
+
     fn structural_edit(
         &mut self,
         document: &mut SemanticDocument,

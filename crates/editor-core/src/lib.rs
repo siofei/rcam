@@ -1615,7 +1615,9 @@ fn cross(a: MmPoint, b: MmPoint, c: MmPoint) -> f64 {
 }
 
 fn point_on_segment(point: MmPoint, start: MmPoint, end: MmPoint) -> bool {
-    cross(start, end, point).abs() <= EPSILON_MM
+    // Cross products have mm^2 units; normalize by edge length so the
+    // frozen epsilon remains a physical distance for tiny font Regions too.
+    cross(start, end, point).abs() <= EPSILON_MM * start.distance_mm(end)
         && point.x_mm >= start.x_mm.min(end.x_mm) - EPSILON_MM
         && point.x_mm <= start.x_mm.max(end.x_mm) + EPSILON_MM
         && point.y_mm >= start.y_mm.min(end.y_mm) - EPSILON_MM
@@ -2136,6 +2138,53 @@ impl std::error::Error for CoreError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn small_region_segment_tolerance_has_distance_units() {
+        for scale in [0.00005, 0.001, 1., 1000.] {
+            let a = MmPoint::new(0., 0.);
+            let b = MmPoint::new(scale, 0.);
+            assert!(!point_on_segment(
+                MmPoint::new(scale * 0.5, 2. * EPSILON_MM),
+                a,
+                b
+            ));
+            assert!(point_on_segment(
+                MmPoint::new(scale * 0.5, 0.5 * EPSILON_MM),
+                a,
+                b
+            ));
+        }
+        let a = MmPoint::new(0., 0.);
+        let b = MmPoint::new(0.0014, 0.);
+        let c = MmPoint::new(0., 0.00005);
+        let contour = RegionContour {
+            role: RegionRole::Solid,
+            edges: vec![
+                RegionEdge::Line { start: a, end: b },
+                RegionEdge::Line { start: b, end: c },
+                RegionEdge::Line { start: c, end: a },
+            ],
+        };
+        assert!(validate_contour(&contour).is_ok());
+        assert!(
+            validate_contour(&RegionContour {
+                role: RegionRole::Solid,
+                edges: vec![
+                    RegionEdge::Line { start: a, end: b },
+                    RegionEdge::Line {
+                        start: b,
+                        end: MmPoint::new(0.0007, 0.)
+                    },
+                    RegionEdge::Line {
+                        start: MmPoint::new(0.0007, 0.),
+                        end: a
+                    }
+                ]
+            })
+            .is_err()
+        );
+    }
 
     fn circle(diameter_mm: f64, hole_diameter_mm: Option<f64>) -> CircleAperture {
         CircleAperture::new(diameter_mm, hole_diameter_mm).unwrap()

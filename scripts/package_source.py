@@ -2,6 +2,8 @@
 import argparse
 import hashlib
 import json
+import platform
+import subprocess
 from pathlib import Path
 import zipfile
 import source_manifest
@@ -27,10 +29,24 @@ def package(destination, *, stage='unspecified', commit='unavailable'):
     entries = [(p.relative_to(root).as_posix(), p.read_bytes())
                for p in source_manifest.source_files()]
     entries.append(('MANIFEST.sha256', manifest.encode('utf-8')))
+    status = subprocess.run(["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=root, capture_output=True, text=True)
+    # Extracted source packages have no Git directory; inherit attested metadata.
+    inherited = json.loads((root/"PACKAGE_INFO.json").read_text()) if (root/"PACKAGE_INFO.json").exists() else {}
+    clean = not status.stdout.strip() if status.returncode == 0 else inherited.get("clean_worktree")
+    rust = next(line.split("=", 1)[1].strip().strip('"') for line in (root/"rust-toolchain.toml").read_text().splitlines() if line.startswith("channel ="))
     package_info = dict(
         schema_version=1,
         stage=stage,
         git_commit=commit,
+        commit=commit,
+        clean_worktree=clean,
+        platform=platform.system()+"-"+platform.machine(),
+        rust_version=rust,
+        source_zip_sha256=None,
+        source_zip_sha256_note="External sidecar and public evidence; embedding a ZIP own digest is circular",
+        included_paths=[name for name,_ in sorted(entries)],
+        excluded_paths=[".git", "target", ".tools", "fixtures/private", "fonts", "evidence", "evidence-public", "exports"],
+        manifest_count=len(entries),
         source_manifest_sha256=hashlib.sha256(manifest.encode('utf-8')).hexdigest(),
         source_file_count=len(source_manifest.source_files()),
         supplemental_only=False,

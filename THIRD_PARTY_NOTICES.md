@@ -52,3 +52,14 @@ API signatures and feature gates checked against the locked crates' generated of
 bindings in the local Cargo source cache; license declarations inspected in each locked Cargo manifest.
 No third-party source copied. The UI loads a local macOS system CJK font in memory;
 no user/system font is copied into Git, source archives or app bundles.
+
+## S4-A1 text outlines
+
+`editor-text` directly uses existing locked `ttf-parser` 0.25.1,
+MIT OR Apache-2.0, https://github.com/harfbuzz/ttf-parser. Purpose: static
+TrueType/OpenType outlines on macOS and Windows. Alternative rustybuzz shaping
+is deferred for the bounded single-line ASCII/CJK scope. No font is bundled.
+Local acceptance uses installed Arial Unicode.ttf face 0 (SHA-256
+876af2cd4854644e7f3e7feb2f688997fdb3343c6df6693611209c9dfb47ccec),
+with local-use provenance and no redistribution. Font licensing is not inferred
+from the filename or OS availability; callers supply their authorized source.

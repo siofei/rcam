@@ -527,3 +527,30 @@ revision 并新增一个 Undo。任何中间失败保留文档、对象顺序、
 历史预算不再因达到条数上限拒绝普通新操作，而是从最旧 Undo 起按完整事务淘汰；
 `DocumentInfo`/`EditResult` 报告 `history_bytes`、`history_truncated_entries` 和
 `history_truncated_bytes`。单个事务超过 max_history_bytes 仍在修改前返回 RESOURCE_LIMIT。
+
+### S4-A1 implemented `text.create`
+
+Mutation uses `document_id`, required `expected_revision`, then params:
+```json
+{
+  "layer_id": "layer-from-open",
+  "layout": {
+    "text": "中文ABC123", "x_mm": 10.0, "y_mm": 20.0,
+    "height_mm": 3.0, "tracking_mm": 0.0,
+    "h_align": "left", "v_align": "baseline", "rotation_deg": 0.0
+  },
+  "font": {
+    "path": "explicit-authorized-font.ttf", "sha256": "64-hex-digest",
+    "face_index": 0, "license_status": "caller-supplied authorization",
+    "redistribution_allowed": false
+  }
+}
+```
+Result: `generated_object_ids`, `revision`, `undo_entries_added = 1`, `font`,
+`manufacturing_error_bound_mm = 0.001`. All output objects share a Generated
+operation ID and append Dark geometry in one transaction. Failed font/hash,
+missing glyph, empty/control-containing text, stale revision, locked layer,
+nonfinite parameters or exceeded budgets leave geometry/revision/history intact.
+Unknown nested fields are rejected. File access authority is host-owned.
+Horizontal anchors: left/center/right; vertical: baseline/bottom/middle/top.
+Limits and supported script ranges: ADR 0024. `text.preview` remains unsupported.

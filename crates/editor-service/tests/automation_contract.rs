@@ -116,7 +116,7 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
         );
     }
     {
-        let operation = "text.create";
+        let operation = "text.preview";
         assert!(
             !capabilities
                 .supported_operations

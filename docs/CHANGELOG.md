@@ -161,3 +161,10 @@ ADR 0012：移除 SemanticLayer UI字段；新增 layer.update 和独立 workspa
 Snap 补齐显式 endpoint/center、8 逻辑点半径、稳定优先级和 Alt 临时关闭；坐标/Grid/Measure 支持
 mm/in 纯显示切换。扩展原生 harness 覆盖 Window/Crossing、P1K drag、Duplicate/Delete/Undo/Redo、
 Rotate/Mirror、Flash COW、Grid Snap、Measure、Save As/Reopen；Windows 与 S4 保持未执行。
+
+### S4-A1 Mac-first vector text core
+
+Scope and local AT mapping: [S4_A1_PLAN.md](S4_A1_PLAN.md); geometry, font,
+resource and API decisions: [ADR 0024](adr/0024-s4a1-vector-text.md).
+AT-047–052 headless coverage does not replace GUI/IME, independent viewer
+or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.

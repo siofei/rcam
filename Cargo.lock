@@ -509,9 +509,19 @@ name = "editor-service"
 version = "0.1.0"
 dependencies = [
  "editor-core",
+ "editor-text",
  "gerber-io",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "editor-text"
+version = "0.1.0"
+dependencies = [
+ "editor-core",
+ "serde",
+ "ttf-parser",
 ]
 
 [[package]]

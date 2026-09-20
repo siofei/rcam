@@ -4,6 +4,7 @@
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
 mod metrics;
+mod text;
 pub use editor_core::edit::MirrorAxis;
 use editor_core::edit::{
     BatchEdit, EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
@@ -12,6 +13,7 @@ use editor_core::{
     ApertureShape, CircleAperture, DocumentSnapshot, DrawObject, Exposure, Geometry, Layer,
     MmPoint, SemanticDocument, SemanticGeometry, SemanticObject,
 };
+pub use editor_text::{HorizontalAlign, Layout as TextLayout, VerticalAlign};
 use gerber_io::{S0Error, S0Scene, S1Error, S1Scene, export_s1_new_path, parse_s0, parse_s1};
 pub use metrics::{MetricValue, MetricsItem, MetricsParams, MetricsResult, MetricsSummary};
 use serde::{Deserialize, Serialize};
@@ -22,6 +24,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs, io};
+pub use text::{FontIdentity, TextParams, TextResult};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -131,6 +134,14 @@ impl FileAccessPolicy {
     }
 
     fn read_path(&self, path: &str) -> Result<(PathBuf, Vec<u8>), ServiceError> {
+        self.read_path_limited(path, gerber_io::S1_MAX_SOURCE_BYTES)
+    }
+
+    fn read_path_limited(
+        &self,
+        path: &str,
+        max: usize,
+    ) -> Result<(PathBuf, Vec<u8>), ServiceError> {
         let path = self.resolve(path)?;
         let canonical =
             fs::canonicalize(&path).map_err(|error| ServiceError::io("read", &path, error))?;
@@ -142,7 +153,6 @@ impl FileAccessPolicy {
         if !metadata.is_file() {
             return Err(ServiceError::permission(&canonical, "read regular file"));
         }
-        let max = gerber_io::S1_MAX_SOURCE_BYTES;
         if metadata.len() > max as u64 {
             return Err(ServiceError::resource(
                 "source_bytes",
@@ -662,7 +672,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S3 basic editing".into(),
+            stage: "S4-A1 vector text core".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -680,6 +690,7 @@ impl ApplicationService {
                 "objects.delete".into(),
                 "objects.set_properties".into(),
                 "edit.batch".into(),
+                "text.create".into(),
                 "history.undo".into(),
                 "history.redo".into(),
                 "layers.list".into(),
@@ -694,9 +705,7 @@ impl ApplicationService {
                 "document.validate".into(),
                 "gerber.export_layer".into(),
             ],
-            unsupported_operations: vec![
-                "text.create".into(),
-            ],
+            unsupported_operations: vec![],
             supported_gerber_subset: vec![
                 "FS absolute coordinates".into(),
                 "FS incremental coordinates (I/G91)".into(),
@@ -1749,6 +1758,7 @@ impl ApplicationService {
             | "objects.delete"
             | "objects.set_properties"
             | "edit.batch"
+            | "text.create"
             | "history.undo"
             | "history.redo"
             | "document.close"
@@ -1793,6 +1803,12 @@ impl ApplicationService {
                     )?)
                     .map_err(serialize_error)?,
                     "objects.set_properties" => serde_json::to_value(self.objects_set_properties(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "text.create" => serde_json::to_value(self.text_create(
                         id,
                         revision,
                         parse_params(&request.params)?,

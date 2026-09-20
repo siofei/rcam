@@ -1837,3 +1837,10 @@ Clear 独立对象、曝光顺序、workspace 独立、严格错误和编辑/历
 Macro 与独立矩形分区材料距离对照；整次查询资源/数值失败不得返回部分 ID。
 本轮不替代 AT-027 GUI 普通/几何两种模式、AT-028 循环选择及其他 GUI 步骤；
 96 个有效 case、原阈值与 required_platforms 不变。
+
+### S4-A1 Mac-first vector text core
+
+Scope and local AT mapping: [S4_A1_PLAN.md](S4_A1_PLAN.md); geometry, font,
+resource and API decisions: [ADR 0024](adr/0024-s4a1-vector-text.md).
+AT-047–052 headless coverage does not replace GUI/IME, independent viewer
+or Windows evidence. Final V1 and CORE10 thresholds remain unchanged.

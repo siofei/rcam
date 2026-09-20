@@ -556,7 +556,7 @@ fn capabilities_and_strict_dtos_match_implemented_operations() {
         );
     }
     {
-        let op = "text.create";
+        let op = "text.preview";
         assert!(
             !caps["supported_operations"]
                 .as_array()

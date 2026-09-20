@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/editor-core",
+    "crates/editor-text",
     "crates/gerber-io",
     "crates/editor-service",
     "crates/editor-app",
@@ -13,6 +14,7 @@ rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+editor-text = { path = "crates/editor-text" }
 editor-core = { path = "crates/editor-core" }
 gerber-io = { path = "crates/gerber-io" }
 editor-service = { path = "crates/editor-service" }

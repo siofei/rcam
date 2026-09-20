@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, process::Command};
 
-// Reviewed normal dependencies of the locked S0 service. Adding any package
+// Reviewed normal dependencies through S4-A1 (ADR 0024: editor-text + ttf-parser). Adding any package
 // requires an explicit boundary review, including native window/dialog crates.
-const ALLOWED: &str = "editor-service editor-core gerber-io gerber-types gerber_parser serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn chrono iana-time-zone core-foundation-sys num-traits num-rational num-bigint num-integer strum strum_macros heck thiserror thiserror-impl uuid anyhow lazy-regex lazy-regex-proc_macros regex regex-automata regex-syntax aho-corasick memchr once_cell log itoa zmij windows-core windows-implement windows-interface windows-result windows-strings windows-link";
+const ALLOWED: &str = "editor-service editor-core editor-text ttf-parser gerber-io gerber-types gerber_parser serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn chrono iana-time-zone core-foundation-sys num-traits num-rational num-bigint num-integer strum strum_macros heck thiserror thiserror-impl uuid anyhow lazy-regex lazy-regex-proc_macros regex regex-automata regex-syntax aho-corasick memchr once_cell log itoa zmij windows-core windows-implement windows-interface windows-result windows-strings windows-link";
 
 fn unreviewed(tree: &str) -> BTreeSet<&str> {
     let allowed: BTreeSet<_> = ALLOWED.split_whitespace().collect();
