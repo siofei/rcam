@@ -31,6 +31,11 @@ impl EditorApp {
                     .iter()
                     .any(|l| l.layer_id == p.params.layer_id && l.visible && !l.locked)
         }) {
+            if self.text.floating.is_some() || self.text.pick_reference {
+                self.text.cancel();
+                self.tool = ActiveTool::Select;
+                return;
+            }
             self.text.changed();
         }
     }
@@ -116,6 +121,11 @@ impl EditorApp {
             });
         if self.text.context != context {
             self.text.context = context;
+            if self.text.floating.is_some() || self.text.pick_reference {
+                self.text.cancel();
+                self.tool = ActiveTool::Select;
+                return;
+            }
             self.text.changed();
         }
         self.invalidate_text_overlay();
@@ -147,7 +157,10 @@ impl EditorApp {
             self.send(Action::FontCatalog);
             return;
         }
-        if self.ime_active {
+        // The commit must reach TextEdit before a worker can disable its UI.
+        // raw_input_hook runs before tick_text; ime_active alone is already false
+        // on the commit frame while the draft still contains the preedit text.
+        if self.ime_active || self.ime_event {
             return;
         }
         if self.text.ready(now) {
@@ -177,6 +190,27 @@ impl EditorApp {
             && !self.text.text.is_empty()
         {
             ctx.request_repaint_after(text_tool::DEBOUNCE);
+        }
+    }
+    pub(crate) fn commit_text(&mut self) {
+        if self.busy {
+            return;
+        }
+        if let Some(request) = self.text.placement_request() {
+            if std::env::var_os("RCAM_INTERACTION_LOG").is_some() {
+                eprintln!(
+                    "text_placement_commit generation={} anchor=({}, {}) expected_revision={}",
+                    request.generation,
+                    request.params.layout.x_mm,
+                    request.params.layout.y_mm,
+                    request.revision
+                );
+            }
+
+            self.text.pending_apply = Some(self.text.generation);
+            self.text.submitted = Some(self.text.generation);
+            self.text.status = "正在提交一次文字事务…".into();
+            self.send(Action::TextCreate(request));
         }
     }
     pub(crate) fn text_controls(&mut self, ui: &mut egui::Ui) {
@@ -302,7 +336,7 @@ impl EditorApp {
                     .unwrap_or_default()
                     .to_string_lossy(),
             );
-            ui.label(format!("SHA-256 {}", font.identity.sha256));
+
             ui.small("本地字体已验证；使用许可由用户负责，字体文件不随软件分发");
         }
         ui.separator();
@@ -347,7 +381,7 @@ impl EditorApp {
             }
         });
         changed |= field(ui, "自定义曲线误差 mm", &mut self.text.tolerance);
-        ui.small("0.00001–0.00025 mm；越小对象越多、生成越慢，与缩放无关");
+        ui.small("0.00001–0.00025 mm；越小边界节点越多，与缩放无关");
         let mut mode = self.text.placement;
         ui.horizontal(|ui| {
             ui.selectable_value(&mut mode, Placement::Mouse, "鼠标");
@@ -386,6 +420,7 @@ impl EditorApp {
                     .clicked()
                 {
                     self.text.pick_reference = true;
+                    self.modal = None;
                 }
             }
         }
@@ -401,29 +436,44 @@ impl EditorApp {
             }
         }
         ui.label(&self.text.status);
-        ui.small(format!("预览可见候选：{}", self.text.candidates));
+        if let Some(p) = &self.text.preview {
+            let (mut contours, mut edges) = (0, 0);
+            for g in &p.geometries {
+                if let editor_core::SemanticGeometry::Region { contours: cs } = g {
+                    contours += cs.len();
+                    edges += cs.iter().map(|c| c.edges.len()).sum::<usize>();
+                }
+            }
+            ui.small(format!(
+                "对象 {} · 轮廓 {contours} · 边界 {edges}",
+                p.geometries.len()
+            ));
+        }
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !self.busy && !self.ime_active && self.text.preview.is_some(),
-                    egui::Button::new("Apply 创建文字"),
+                    egui::Button::new(if self.text.placement == Placement::Mouse {
+                        "开始放置"
+                    } else {
+                        "Apply 创建文字"
+                    }),
                 )
                 .clicked()
-                && let Some(p) = self.text.preview.take()
+                || (self.dialog_enter(ui) && self.text.preview.is_some())
             {
-                let request = Request {
-                    generation: self.text.generation,
-                    document: p.document_id.clone(),
-                    revision: p.revision.clone(),
-                    params: p.params.clone(),
-                };
-                self.text.pending_apply = Some(self.text.generation);
-                self.text.submitted = Some(self.text.generation);
-                self.text.status = "正在提交一次文字事务…".into();
-                self.send(Action::TextCreate(request));
-            }
-            if ui.button("Cancel 取消").clicked() {
-                self.text.cancel();
+                if self.text.placement == Placement::Mouse {
+                    if self.text.start_placement() {
+                        self.modal = None;
+                        ui.memory_mut(|m| {
+                            if let Some(id) = m.focused() {
+                                m.surrender_focus(id);
+                            }
+                        });
+                    }
+                } else {
+                    self.commit_text();
+                }
             }
         });
         ui.small("不自动搭桥；普通 Gerber 重开后仅保留制造几何");

@@ -1,5 +1,11 @@
 # 文档变更记录
 
+## 2026-09-20 · S4-A2.1
+
+ADR 0027/0028 冻结参数 Modal、文字 contour/Line/Arc、局部 cut-in、浮动放置。
+停止 slab 生产路径，保持原制造总误差与 writer 格式；Global Units 等待本阶段 PASS。
+原生和自动证据分别记录，不变更双平台 V1 门槛。
+
 ## 2026-09-20 · S4-A2 Completion 与 Canvas UX 增补（实施中）
 
 在 246f57e foundation 上继续文字 GUI、字体身份、typed 异步预览、三种定位、

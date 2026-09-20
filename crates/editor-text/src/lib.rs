@@ -1,4 +1,5 @@
 //! Bounded font outlines -> f64 manufacturing Regions, independent of display.
+mod contours;
 mod offset;
 use editor_core::{MmPoint, RegionContour, RegionEdge, RegionRole, SemanticGeometry};
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ fn default_tolerance_mm() -> f64 {
 }
 pub const MAX_CHARACTERS: usize = 128;
 const MAX_EDGES: usize = 4096;
+#[cfg(test)]
 const MAX_REGIONS: usize = 10000;
 const MAX_WORK: usize = 8_000_000;
 
@@ -321,7 +323,7 @@ pub fn generate_timed(
     let mut pen = 0.;
     for (id, advance, visible) in glyphs {
         if visible {
-            let mut outline = Outline::new(layout.curve_tolerance_mm / scale);
+            let mut outline = Outline::new(layout.curve_tolerance_mm * 0.4 / scale);
             face.outline_glyph(id, &mut outline)
                 .ok_or(TextError::UnsupportedOutline)?;
             if outline.failed {
@@ -363,14 +365,16 @@ pub fn generate_timed(
             .collect::<Result<_, _>>()?;
     }
     timings.offset_ms = offset_started.elapsed().as_secs_f64() * 1000.;
+    let outlines = outlines
+        .iter()
+        .map(|c| offset::material(c, 0.))
+        .collect::<Result<Vec<_>, _>>()?;
     let all: Vec<_> = outlines.iter().flatten().flatten().copied().collect();
     let xmin = all.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
     let xmax = all.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max);
-    let low = all.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
-    let high = all.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max);
-    // Erosion at an acute extremum can retreat by more than delta. Never
-    // advertise the requested visible height when that normalization is lost.
-    if layout.outline_offset_mm != 0. && ((high - low) - layout.height_mm).abs() > 0.00008 {
+    let ymin = all.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
+    let ymax = all.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max);
+    if layout.outline_offset_mm != 0. && ((ymax - ymin) - layout.height_mm).abs() > 0.00008 {
         return Err(TextError::InvalidTopology);
     }
     let anchor_x = match layout.h_align {
@@ -380,113 +384,95 @@ pub fn generate_timed(
     };
     let anchor_y = match layout.v_align {
         VerticalAlign::Baseline => 0.,
-        VerticalAlign::Bottom => low,
-        VerticalAlign::Middle => (low + high) * 0.5,
-        VerticalAlign::Top => high,
+        VerticalAlign::Bottom => ymin,
+        VerticalAlign::Middle => (ymin + ymax) * 0.5,
+        VerticalAlign::Top => ymax,
     };
     let (sin, cos) = layout.rotation_deg.to_radians().sin_cos();
-    let transform = |p: Point| {
+    // Rotation is frozen before fitting. Fit on the existing 1 nm writer lattice,
+    // then apply the freely translated anchor once. Pointer motion cannot refit.
+    let local = |p: Point| {
         let x = p[0] - anchor_x;
         let y = p[1] - anchor_y;
-        MmPoint::new(
-            layout.x_mm + x * cos - y * sin,
-            layout.y_mm + x * sin + y * cos,
-        )
+        [x * cos - y * sin, x * sin + y * cos]
     };
     let mut geometries = Vec::new();
-    let mut collapsed = Vec::new();
     let mut work = 0;
-    for contours in outlines {
-        for polygon in decompose(&contours, &mut work)? {
-            let mut points: Vec<_> = polygon.into_iter().map(transform).collect();
-            let original = points.clone();
-            points.dedup_by(|a, b| a.distance_mm(*b) <= 0.000004);
-            if points
-                .first()
-                .zip(points.last())
-                .is_some_and(|(a, b)| a.distance_mm(*b) <= 0.000004)
-            {
-                points.pop();
-            }
-            // A slab may be long but sub-resolution in its perpendicular
-            // direction. Endpoint deduplication alone does not detect it.
-            // Only omit it if the existing retained-boundary certificate below
-            // proves its entire convex hull remains within the 4 nm budget.
-            let thin = points
-                .iter()
-                .enumerate()
-                .flat_map(|(i, a)| points[i + 1..].iter().map(move |b| (*a, *b)))
-                .max_by(|(a, b), (c, d)| a.distance_mm(*b).total_cmp(&c.distance_mm(*d)))
-                .is_some_and(|(a, b)| {
-                    points.iter().all(|p| {
-                        segment_distance([p.x_mm, p.y_mm], [a.x_mm, a.y_mm], [b.x_mm, b.y_mm])
-                            <= 0.000001
-                    })
-                });
-            if points.len() < 3 || thin {
-                collapsed.push(original);
-                continue;
-            }
-            if points.iter().any(|p| {
-                !p.x_mm.is_finite()
-                    || !p.y_mm.is_finite()
-                    || p.x_mm.abs() > 1e6
-                    || p.y_mm.abs() > 1e6
-            }) {
-                return Err(TextError::UnsupportedOutline);
-            }
-            let edges = (0..points.len())
-                .map(|i| RegionEdge::Line {
-                    start: points[i],
-                    end: points[(i + 1) % points.len()],
-                })
+    for outline in outlines {
+        let rotated: Vec<_> = outline
+            .into_iter()
+            .map(|c| c.into_iter().map(local).collect())
+            .collect();
+        let normalized = offset::material(&rotated, 0.)?;
+        for polygon in contours::join(normalized)? {
+            let mut points: Vec<_> = polygon
+                .into_iter()
+                .map(|p| [(p[0] * 1e6).round() / 1e6, (p[1] * 1e6).round() / 1e6])
                 .collect();
-            geometries.push(SemanticGeometry::Region {
-                contours: vec![RegionContour {
-                    role: RegionRole::Solid,
-                    edges,
-                }],
-            });
-            if geometries.len() > MAX_REGIONS {
-                return Err(TextError::ResourceLimit);
-            }
-        }
-    }
-    // Never silently remove an isolated thin feature. Certify that each
-    // collapsed convex slab lies within 4 nm of ONE retained boundary segment.
-    // Convexity then bounds every interior point, not just sampled vertices.
-    for polygon in collapsed {
-        let mut certified = false;
-        'search: for geometry in &geometries {
-            let SemanticGeometry::Region { contours } = geometry else {
-                unreachable!()
+            points.dedup();
+            let edges = contours::fit(&points, layout.curve_tolerance_mm * 0.5, &mut work)?;
+            let contour = RegionContour {
+                role: RegionRole::Solid,
+                edges,
             };
-            for edge in contours.iter().flat_map(|c| &c.edges) {
-                work += 1;
-                if work > MAX_WORK {
-                    return Err(TextError::ResourceLimit);
-                }
-                let RegionEdge::Line { start, end } = edge else {
-                    unreachable!()
-                };
-                if polygon.iter().all(|p| {
-                    segment_distance(
-                        [p.x_mm, p.y_mm],
-                        [start.x_mm, start.y_mm],
-                        [end.x_mm, end.y_mm],
-                    ) <= 0.000004 + 1e-10
-                }) {
-                    certified = true;
-                    break 'search;
-                }
-            }
-        }
-        if !certified {
-            return Err(TextError::UnsupportedOutline);
+            editor_core::validate_region_contour(&contour).map_err(|e| {
+                eprintln!("text topology: {e}");
+                TextError::InvalidTopology
+            })?;
+            geometries.push(SemanticGeometry::Region {
+                contours: vec![contour],
+            });
         }
     }
     if geometries.is_empty() {
         return Err(TextError::UnsupportedOutline);
+    }
+    // Restore exact alignment after bounded fitting when axes are unrotated.
+    // This is one common translation, preserving the writer lattice differences.
+    let bounds = editor_core::geometries_bounds(&geometries, &[])
+        .map_err(|_| TextError::InvalidTopology)?
+        .ok_or(TextError::InvalidTopology)?;
+    let (shift_x, shift_y) = if layout.rotation_deg == 0. {
+        (
+            match layout.h_align {
+                HorizontalAlign::Left => bounds.min_x_mm,
+                HorizontalAlign::Center => (bounds.min_x_mm + bounds.max_x_mm) * 0.5,
+                HorizontalAlign::Right => bounds.max_x_mm,
+            },
+            match layout.v_align {
+                VerticalAlign::Baseline => 0.,
+                VerticalAlign::Bottom => bounds.min_y_mm,
+                VerticalAlign::Middle => (bounds.min_y_mm + bounds.max_y_mm) * 0.5,
+                VerticalAlign::Top => bounds.max_y_mm,
+            },
+        )
+    } else {
+        (0., 0.)
+    };
+    let translate = |p: &mut MmPoint| {
+        p.x_mm += layout.x_mm - shift_x;
+        p.y_mm += layout.y_mm - shift_y;
+    };
+    for g in &mut geometries {
+        let SemanticGeometry::Region { contours } = g else {
+            unreachable!()
+        };
+        for c in contours {
+            for e in &mut c.edges {
+                match e {
+                    RegionEdge::Line { start, end } => {
+                        translate(start);
+                        translate(end);
+                    }
+                    RegionEdge::Arc(a) => {
+                        translate(&mut a.start);
+                        translate(&mut a.end);
+                        translate(&mut a.center);
+                    }
+                }
+            }
+            editor_core::validate_region_contour(c).map_err(|_| TextError::InvalidTopology)?;
+        }
     }
     timings.generation_ms = started.elapsed().as_secs_f64() * 1000.;
     Ok((geometries, timings))
@@ -494,6 +480,7 @@ pub fn generate_timed(
 
 // Vertical slab decomposition uses the font's nonzero winding rule. Every
 // output is a local solid polygon; holes produce no exposure of either polarity.
+#[cfg(test)]
 fn decompose(contours: &[Vec<Point>], work: &mut usize) -> Result<Vec<Vec<Point>>, TextError> {
     let mut edges = Vec::new();
     let mut levels = Vec::new();
@@ -598,38 +585,65 @@ mod tests {
             outline_offset_mm: 0.,
         }
     }
-    fn points(g: &[SemanticGeometry]) -> Vec<MmPoint> {
-        g.iter()
-            .flat_map(|g| match g {
-                SemanticGeometry::Region { contours } => contours
-                    .iter()
-                    .flat_map(|c| &c.edges)
-                    .map(|e| match e {
-                        RegionEdge::Line { start, .. } => *start,
-                        _ => panic!(),
-                    })
-                    .collect::<Vec<_>>(),
-                _ => panic!(),
-            })
-            .collect()
+    fn boundary_edges(g: &[SemanticGeometry]) -> Vec<RegionEdge> {
+        g.iter().flat_map(|g|{let SemanticGeometry::Region{contours}=g else{panic!()};
+            contours.iter().flat_map(|c|c.edges.iter().filter(|e|!matches!(e,RegionEdge::Line{start,end} if c.edges.iter().any(|o|matches!(o,RegionEdge::Line{start:a,end:b} if a==end && b==start)))).cloned()).collect::<Vec<_>>()}).collect()
+    }
+    fn edge_sample(edge: &RegionEdge, t: f64) -> MmPoint {
+        match edge {
+            RegionEdge::Line { start, end } => MmPoint::new(
+                start.x_mm + (end.x_mm - start.x_mm) * t,
+                start.y_mm + (end.y_mm - start.y_mm) * t,
+            ),
+            RegionEdge::Arc(a) => {
+                let a = editor_core::canonical_region_contour(&RegionContour {
+                    role: RegionRole::Solid,
+                    edges: vec![RegionEdge::Arc(*a)],
+                })
+                .unwrap();
+                let RegionEdge::Arc(a) = a.edges[0] else {
+                    panic!()
+                };
+                let start = (a.start.y_mm - a.center.y_mm).atan2(a.start.x_mm - a.center.x_mm);
+                let sign = if a.direction == editor_core::ArcDirection::Clockwise {
+                    -1.
+                } else {
+                    1.
+                };
+                let angle = start + sign * a.sweep_radians().unwrap() * t;
+                MmPoint::new(
+                    a.center.x_mm + a.radius() * angle.cos(),
+                    a.center.y_mm + a.radius() * angle.sin(),
+                )
+            }
+        }
+    }
+    pub(super) fn edge_distance(p: MmPoint, e: &RegionEdge) -> f64 {
+        match e {
+            RegionEdge::Line { start, end } => segment_distance(
+                [p.x_mm, p.y_mm],
+                [start.x_mm, start.y_mm],
+                [end.x_mm, end.y_mm],
+            ),
+            RegionEdge::Arc(a) => {
+                let from = (a.start.y_mm - a.center.y_mm).atan2(a.start.x_mm - a.center.x_mm);
+                let to = (p.y_mm - a.center.y_mm).atan2(p.x_mm - a.center.x_mm);
+                let d = if a.direction == editor_core::ArcDirection::Clockwise {
+                    (from - to).rem_euclid(std::f64::consts::TAU)
+                } else {
+                    (to - from).rem_euclid(std::f64::consts::TAU)
+                };
+                if d <= a.sweep_radians().unwrap() {
+                    (p.distance_mm(a.center) - a.radius()).abs()
+                } else {
+                    p.distance_mm(a.start).min(p.distance_mm(a.end))
+                }
+            }
+        }
     }
     fn bounds(g: &[SemanticGeometry]) -> [f64; 4] {
-        points(g).iter().fold(
-            [
-                f64::INFINITY,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                f64::NEG_INFINITY,
-            ],
-            |b, p| {
-                [
-                    b[0].min(p.x_mm),
-                    b[1].min(p.y_mm),
-                    b[2].max(p.x_mm),
-                    b[3].max(p.y_mm),
-                ]
-            },
-        )
+        let b = editor_core::geometries_bounds(g, &[]).unwrap().unwrap();
+        [b.min_x_mm, b.min_y_mm, b.max_x_mm, b.max_y_mm]
     }
     #[test]
     fn ascii_cjk_holes_height_and_alignment() {
@@ -696,13 +710,32 @@ mod tests {
             l.y_mm = 20.;
             let rotated = generate(&bytes, 0, &l).unwrap();
             let (s, c) = angle.to_radians().sin_cos();
-            for (p, q) in points(&g).iter().zip(points(&rotated)) {
-                assert!(
-                    q.distance_mm(MmPoint::new(
-                        10. + p.x_mm * c - p.y_mm * s,
-                        20. + p.x_mm * s + p.y_mm * c
-                    )) < 1e-10
-                );
+            // Cut-ins and fitted subdivisions are representation details and
+            // can differ after rotation. Compare the actual material boundary
+            // bidirectionally against the unchanged 0.001 mm manufacturing gate.
+            let source = boundary_edges(&g);
+            let target = boundary_edges(&rotated);
+            for (edges, other, inverse) in [(&source, &target, false), (&target, &source, true)] {
+                for edge in edges {
+                    for i in 0..=32 {
+                        let p = edge_sample(edge, i as f64 / 32.);
+                        let q = if inverse {
+                            let x = p.x_mm - 10.;
+                            let y = p.y_mm - 20.;
+                            MmPoint::new(x * c + y * s, -x * s + y * c)
+                        } else {
+                            MmPoint::new(
+                                10. + p.x_mm * c - p.y_mm * s,
+                                20. + p.x_mm * s + p.y_mm * c,
+                            )
+                        };
+                        let error = other
+                            .iter()
+                            .map(|e| edge_distance(q, e))
+                            .fold(f64::INFINITY, f64::min);
+                        assert!(error < 0.001, "rotated boundary error {error}");
+                    }
+                }
             }
         }
     }

@@ -1851,3 +1851,12 @@ AT-047–052/054/086/088–092/095/097: read-only preview and accepted precision
 parity are headless additions, not substitutes for original native steps.
 The known thin-slab rejection in S4_A2_REVIEW.md remains an open limitation.
 No case identities, required_platforms or pass thresholds change.
+
+### S4-A2.1 局部覆盖补充
+
+AT-015/031–034/037/040/043–054/063–065/086–095 的局部覆盖见 S4_A2_1_PLAN.md。
+轮廓拟合增加独立误差、孔洞/组件、cut-in 包络、writer/reopen 与三字体矩阵；
+UI 增加独占弹窗、IME 事件保护、浮动平移/吸附/一次提交/零修改取消。
+96 个有效用例、AT-079 退役记录、required_platforms 和原始门槛均不变。
+旋转后的拟合/连接边编号不是稳定身份；几何测试比较双向材料边界误差，
+不以不同表示之间的顶点按序配对替代几何真值。已有核心刚性变换测试保留。

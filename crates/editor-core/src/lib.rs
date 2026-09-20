@@ -936,6 +936,27 @@ fn validate_geometry(
     Ok(())
 }
 
+/// Check one joined pair while fitting a boundary, using the same analytic
+/// intersection rule as final contour validation. This is not whole-ring proof.
+pub fn region_join_is_simple(first: &RegionEdge, second: &RegionEdge) -> bool {
+    if edge_end(first).distance_mm(edge_start(second)) > EPSILON_MM {
+        return false;
+    }
+    let contour = RegionContour {
+        role: RegionRole::Solid,
+        edges: vec![first.clone(), second.clone()],
+    };
+    let Ok(canonical) = canonical_region_contour(&contour) else {
+        return false;
+    };
+    !edges_intersect_beyond(&canonical.edges[0], &canonical.edges[1], edge_end(first))
+}
+
+/// Validate a generated contour against the same topology rules used on import.
+pub fn validate_region_contour(contour: &RegionContour) -> Result<(), SemanticError> {
+    validate_contour(contour)
+}
+
 fn validate_contour(contour: &RegionContour) -> Result<(), SemanticError> {
     if contour.role != RegionRole::Solid {
         return Err(SemanticError::Invalid(
@@ -1077,6 +1098,11 @@ fn validate_region_envelopes(
     original: &RegionContour,
     canonical: &RegionContour,
 ) -> Result<(), SemanticError> {
+    // A retraced cut-in attaches at a boundary endpoint but is not adjacent
+    // in contour order on its return trip. Apply the SAME endpoint contact
+    // bound used for adjacent edges after the intersection validator has proven
+    // the connector pair. Interior envelope intersections remain rejected.
+    let (cutin_points, _, _) = contour_cutins(&original.edges);
     let mut pairs = 0usize;
     for (index, edge) in original.edges.iter().enumerate() {
         let RegionEdge::Arc(arc) = edge else {
@@ -1111,6 +1137,23 @@ fn validate_region_envelopes(
             } else {
                 [None, None]
             };
+            let mut allowed = allowed;
+            for endpoint in [edge_start(edge), edge_end(edge)] {
+                if cutin_points
+                    .iter()
+                    .any(|p| p.distance_mm(endpoint) <= EPSILON_MM)
+                    && [edge_start(candidate), edge_end(candidate)]
+                        .iter()
+                        .any(|p| p.distance_mm(endpoint) <= EPSILON_MM)
+                    && !allowed
+                        .iter()
+                        .flatten()
+                        .any(|p| p.distance_mm(endpoint) <= EPSILON_MM)
+                    && let Some(slot) = allowed.iter_mut().find(|p| p.is_none())
+                {
+                    *slot = Some(endpoint);
+                }
+            }
             let mut boundaries = vec![canonical.edges[other].clone()];
             if let RegionEdge::Arc(other_arc) = candidate
                 && other_arc.arc_deviation() > other_arc.numeric_tolerance()
@@ -1121,18 +1164,18 @@ fn validate_region_envelopes(
                     .iter()
                     .any(|part| edge_enters_envelope(part, *other_arc, allowed))
                 {
-                    return Err(SemanticError::Invalid(
-                        "Region arc uncertainty envelopes overlap".into(),
-                    ));
+                    return Err(SemanticError::Invalid(format!(
+                        "Region arc uncertainty envelopes overlap ({index},{other})"
+                    )));
                 }
             }
             if boundaries
                 .iter()
                 .any(|part| edge_enters_envelope(part, *arc, allowed))
             {
-                return Err(SemanticError::Invalid(
-                    "Region boundary enters an arc uncertainty envelope".into(),
-                ));
+                return Err(SemanticError::Invalid(format!(
+                    "Region boundary enters an arc uncertainty envelope ({index},{other}) arc={arc:?} other={candidate:?}"
+                )));
             }
         }
     }
@@ -1214,9 +1257,10 @@ fn edge_enters_envelope(
     let mut parameters = vec![0.0, 1.0];
     for boundary in arc_envelope_boundaries(arc) {
         for point in edge_intersection_points(edge, &boundary) {
-            if contains(point) {
-                return true;
-            }
+            // Intersection helpers also return epsilon-near endpoint contacts.
+            // Such a point can be off the candidate edge. Evaluate membership
+            // only on its candidate parameter below, never on that off-edge point.
+
             let parameter = match edge {
                 RegionEdge::Line { start, end } => {
                     let dx = end.x_mm - start.x_mm;
@@ -1413,9 +1457,10 @@ fn validate_contour_intersections(edges: &[RegionEdge]) -> Result<(), SemanticEr
                     )
                 }
             {
-                return Err(SemanticError::Invalid(
-                    "region contour has overlapping adjacent edges".into(),
-                ));
+                return Err(SemanticError::Invalid(format!(
+                    "region contour has overlapping adjacent edges ({index},{other}): {:?} / {:?}",
+                    edges[index], edges[other]
+                )));
             }
         }
         active.push(index);
@@ -2368,5 +2413,67 @@ mod cutin_direction_regression {
         edges[3] = line(2., 2., 2., 0.);
         assert!(contour_cutins(&edges).2);
         assert!(!legal_cutin_pair(&edges[0], &line(1., 1., 0.1, 0.)));
+    }
+}
+
+#[cfg(test)]
+mod text_cutin_regression {
+    use super::*;
+    #[test]
+    fn retraced_cutin_arc_endpoint_is_legal_but_interior_crossing_is_not() {
+        let p = |x, y| MmPoint::new(x, y);
+        let outer = [
+            p(-5., 0.),
+            p(0., 5.0000001),
+            p(5., 0.),
+            p(0., -5.),
+            p(-5., 0.),
+        ];
+        let mut edges = Vec::new();
+        for w in outer.windows(2) {
+            edges.push(RegionEdge::Arc(ArcGeometry {
+                start: w[0],
+                end: w[1],
+                center: p(0., 0.),
+                direction: ArcDirection::Clockwise,
+                full_circle: false,
+                source: Some(ArcSource {
+                    resolution_mm: 1e-6,
+                    single_quadrant: false,
+                }),
+            }));
+        }
+        for w in [
+            p(-5., 0.),
+            p(-2., 0.),
+            p(-2., -2.),
+            p(2., -2.),
+            p(2., 2.),
+            p(-2., 2.),
+            p(-2., 0.),
+            p(-5., 0.),
+        ]
+        .windows(2)
+        {
+            edges.push(RegionEdge::Line {
+                start: w[0],
+                end: w[1],
+            });
+        }
+        let mut contour = RegionContour {
+            role: RegionRole::Solid,
+            edges,
+        };
+        validate_region_contour(&contour).unwrap();
+        // Crossing the outer boundary is still rejected, regardless of cut-ins.
+        contour.edges[6] = RegionEdge::Line {
+            start: p(-2., -2.),
+            end: p(6., -2.),
+        };
+        contour.edges[7] = RegionEdge::Line {
+            start: p(6., -2.),
+            end: p(2., 2.),
+        };
+        assert!(validate_region_contour(&contour).is_err());
     }
 }

@@ -42,6 +42,7 @@ pub enum Reply {
     },
 }
 pub struct Draft {
+    pub floating: Option<MmPoint>,
     pub context: Option<(String, String, String, String)>,
     pub text: String,
     pub height: String,
@@ -84,6 +85,7 @@ pub struct Draft {
 impl Default for Draft {
     fn default() -> Self {
         Self {
+            floating: None,
             context: None,
             text: String::new(),
             height: "3".into(),
@@ -135,6 +137,7 @@ fn number(value: &str) -> Result<f64, String> {
 }
 impl Draft {
     pub fn changed(&mut self) {
+        self.floating = None;
         self.generation = self
             .generation
             .checked_add(1)
@@ -145,9 +148,14 @@ impl Draft {
         self.status = "等待预览…".into();
     }
     pub fn cancel(&mut self) {
+        if self.floating.is_some() && std::env::var_os("RCAM_INTERACTION_LOG").is_some() {
+            eprintln!("text_placement_cancel generation={}", self.generation);
+        }
+
         self.changed();
         self.font_generation += 1;
         self.text.clear();
+        self.pending_apply = None;
         self.pending_font = None;
         self.pending_postscript = None;
         self.changed_at = None;
@@ -270,6 +278,36 @@ impl Draft {
                 .as_ref()
                 .is_some_and(|f| f.identity == r.params.font)
     }
+    pub fn start_placement(&mut self) -> bool {
+        let Some(p) = &self.preview else {
+            return false;
+        };
+        if std::env::var_os("RCAM_INTERACTION_LOG").is_some() {
+            eprintln!(
+                "text_placement_begin generation={} objects={}",
+                self.generation,
+                p.geometries.len()
+            );
+        }
+        self.submitted = Some(self.generation);
+        self.changed_at = None;
+        self.floating = Some(MmPoint::new(p.params.layout.x_mm, p.params.layout.y_mm));
+        true
+    }
+    pub fn placement_request(&self) -> Option<Request> {
+        let p = self.preview.as_ref()?;
+        let mut params = p.params.clone();
+        if let Some(anchor) = self.floating {
+            params.layout.x_mm = anchor.x_mm;
+            params.layout.y_mm = anchor.y_mm;
+        }
+        Some(Request {
+            generation: self.generation,
+            document: p.document_id.clone(),
+            revision: p.revision.clone(),
+            params,
+        })
+    }
     pub fn paint(
         &mut self,
         painter: &egui::Painter,
@@ -280,47 +318,61 @@ impl Draft {
         let Some(preview) = &self.preview else {
             return;
         };
-        let mut mesh = egui::Mesh::default();
+        let origin = MmPoint::new(preview.params.layout.x_mm, preview.params.layout.y_mm);
+        let anchor = self.floating.unwrap_or(origin);
+        let screen = |p: MmPoint| {
+            camera.screen(
+                MmPoint::new(
+                    p.x_mm + anchor.x_mm - origin.x_mm,
+                    p.y_mm + anchor.y_mm - origin.y_mm,
+                ),
+                rect,
+            )
+        };
+        let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(70, 240, 180));
         for geometry in &preview.geometries {
             let SemanticGeometry::Region { contours } = geometry else {
                 continue;
             };
             for contour in contours {
-                let world: Vec<_> = contour
-                    .edges
-                    .iter()
-                    .filter_map(|e| match e {
-                        RegionEdge::Line { start, .. } => Some(*start),
-                        _ => None,
-                    })
-                    .collect();
-                if world.len() < 3 {
-                    continue;
-                }
-                let lo = camera.world(rect.left_bottom(), rect);
-                let hi = camera.world(rect.right_top(), rect);
-                if world.iter().all(|p| p.x_mm < lo.x_mm)
-                    || world.iter().all(|p| p.x_mm > hi.x_mm)
-                    || world.iter().all(|p| p.y_mm < lo.y_mm)
-                    || world.iter().all(|p| p.y_mm > hi.y_mm)
-                {
-                    continue;
-                }
-                let points: Vec<_> = world.into_iter().map(|p| camera.screen(p, rect)).collect();
                 self.candidates += 1;
-                let base = mesh.vertices.len() as u32;
-                for p in &points {
-                    mesh.colored_vertex(
-                        *p,
-                        egui::Color32::from_rgba_unmultiplied(70, 240, 180, 150),
-                    );
-                }
-                for i in 1..points.len() - 1 {
-                    mesh.add_triangle(base, base + i as u32, base + i as u32 + 1);
+                for edge in &contour.edges {
+                    match edge {
+                        RegionEdge::Line { start, end } => {
+                            if contour.edges.iter().any(|other| matches!(other,RegionEdge::Line{start:a,end:b} if a==end && b==start)) {continue;}
+                            painter.line_segment([screen(*start), screen(*end)], stroke);
+                        }
+                        RegionEdge::Arc(arc) => {
+                            let sweep = arc.sweep_radians().unwrap_or(0.);
+                            let step = 4.
+                                * (0.2 / (camera.scale * 2. * arc.radius()))
+                                    .min(1.)
+                                    .sqrt()
+                                    .asin();
+                            let count = (sweep / step).ceil().clamp(1., 4096.) as usize;
+                            let start = (arc.start.y_mm - arc.center.y_mm)
+                                .atan2(arc.start.x_mm - arc.center.x_mm);
+                            let direction = if arc.direction == editor_core::ArcDirection::Clockwise
+                            {
+                                -1.
+                            } else {
+                                1.
+                            };
+                            let points = (0..=count)
+                                .map(|i| {
+                                    let a = start + direction * sweep * i as f64 / count as f64;
+                                    screen(MmPoint::new(
+                                        arc.center.x_mm + arc.radius() * a.cos(),
+                                        arc.center.y_mm + arc.radius() * a.sin(),
+                                    ))
+                                })
+                                .collect();
+                            painter.add(egui::Shape::line(points, stroke));
+                        }
+                    }
                 }
             }
         }
-        painter.add(egui::Shape::mesh(mesh));
     }
 }
 

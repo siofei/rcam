@@ -393,14 +393,21 @@ fn accepted_custom_precision_exports_and_reopens_within_writer_budget() {
         for (a, b) in a.iter().zip(b) {
             assert_eq!(a.edges.len(), b.edges.len());
             for (a, b) in a.edges.iter().zip(&b.edges) {
-                let (
-                    editor_core::RegionEdge::Line { start: a, end: b },
-                    editor_core::RegionEdge::Line { start: c, end: d },
-                ) = (a, b)
-                else {
-                    panic!("expected line Region")
-                };
-                assert!(a.distance_mm(*c) < 0.000001 && b.distance_mm(*d) < 0.000001);
+                match (a, b) {
+                    (
+                        editor_core::RegionEdge::Line { start: a, end: b },
+                        editor_core::RegionEdge::Line { start: c, end: d },
+                    ) => assert!(a.distance_mm(*c) < 1e-6 && b.distance_mm(*d) < 1e-6),
+                    (editor_core::RegionEdge::Arc(a), editor_core::RegionEdge::Arc(b)) => {
+                        assert!(
+                            a.start.distance_mm(b.start) < 1e-6 && a.end.distance_mm(b.end) < 1e-6
+                        );
+                        assert!(a.center.distance_mm(b.center) < 1e-6);
+                        assert_eq!(a.direction, b.direction);
+                        assert_eq!(a.full_circle, b.full_circle);
+                    }
+                    _ => panic!("manufacturing edge kind changed on reopen"),
+                }
             }
         }
     }

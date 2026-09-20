@@ -165,3 +165,18 @@ manufacturing precision and read-only text.preview sharing create validation.
 Formal Text GUI/IME/Preview worker, material offset and placement remain pending.
 The retained high-precision thin-slab limitation is recorded in S4_A2_REVIEW.md.
 Full S4/V1, Windows and final S4-A2 acceptance are not claimed.
+
+
+### S4-A2.1 — 参数弹窗、文字轮廓和浮动放置
+
+当前实现与验收边界见 docs/S4_A2_1_PLAN.md、docs/S4_A2_1_REVIEW.md、
+ADR 0027 / 0028（docs 内路径去掉 docs/ 前缀）。
+参数型功能使用独占 Modal；连续画布操作保持直接交互。
+Vertical slab text geometry = retired；contour/Line/Arc Region = production path，
+每个材料连通组件一个对象，字洞使用局部 retraced cut-in，writer 不经过 slab。
+Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
+GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
+
+Global Units & Manufacturing Precision Foundation：**BLOCKED UNTIL S4-A2.1 PASS**。
+本轮不启动 Global Units、DXF/SVG/PLT、Final Layer Boolean Area 或 Windows。
+阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。

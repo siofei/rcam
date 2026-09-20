@@ -914,7 +914,7 @@ fn multi_selection_panel_labels_object_sum_not_layer_area() {
     let multiple = crate::metrics_panel::lines(&m.view).join("\n");
     assert!(multiple.contains("已精确：2 / 2"));
     assert!(multiple.contains("对象面积合计：12.566371 mm²"));
-    assert!(multiple.contains("分解对象周长合计（非字形外轮廓）：25.132741 mm"));
+    assert!(multiple.contains("对象制造边界周长合计（含孔边）：25.132741 mm"));
     for forbidden in ["实际开口面积", "钢网总开口面积", "最终面积"] {
         assert!(!multiple.contains(forbidden));
     }
@@ -1696,7 +1696,9 @@ fn committed_text_fits_retina_viewport_sample_budget() {
         crate::gpu::prepare_measured(scene, camera, rect, 2., &flags, MmPoint::new(0., 0.))
             .unwrap();
     assert!(prepared.stats.estimated_work < 2_000_000_000.);
-    assert!(prepared.stats.candidate_count > 700);
+    // The frozen text no longer contributes hundreds of slab candidates.
+    assert!(prepared.stats.candidate_count > 0 && prepared.stats.candidate_count < 700);
+    assert_eq!(m.view.selected.ordered.len(), 5);
 }
 
 #[cfg(target_os = "macos")]
@@ -1756,4 +1758,82 @@ fn system_font_catalog_resolves_named_ttc_faces_without_document_mutation() {
         "system_font_catalog_count={} resolved_ttc_faces={indices:?}",
         fonts.len()
     );
+}
+
+#[test]
+fn floating_text_translation_snap_cancel_commit_and_camera_parity() {
+    let (mut m, _) = setup();
+    let mut d = text_draft(&mut m);
+    let request = text_request(&m, &d);
+    m.run(Action::TextPreview(request));
+    let crate::text_tool::Reply::Preview { result, .. } =
+        m.view.text_reply.as_ref().unwrap().as_ref()
+    else {
+        panic!()
+    };
+    let preview = result.as_ref().unwrap().clone();
+    d.preview = Some(preview.clone());
+    assert!(d.start_placement());
+    let generation = d.generation;
+    let initial = m.view.info.clone();
+    let rect =
+        eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO, eframe::egui::vec2(800., 600.));
+    let mut camera = crate::camera::Camera::default();
+    for i in 0..7 {
+        let raw = camera.world(
+            eframe::egui::pos2(100. + i as f32 * 37., 200. + i as f32 * 13.),
+            rect,
+        );
+        let point = crate::tools::GridSettings {
+            snap_enabled: true,
+            ..Default::default()
+        }
+        .point(raw)
+        .unwrap();
+        d.floating = Some(point);
+        assert_eq!(d.generation, generation);
+        assert!(std::sync::Arc::ptr_eq(
+            d.preview.as_ref().unwrap(),
+            &preview
+        ));
+        assert!(!d.ready(std::time::Instant::now()));
+        let request = d.placement_request().unwrap();
+        assert_eq!(request.params.layout.x_mm, point.x_mm);
+        assert_eq!(request.params.layout.y_mm, point.y_mm);
+        camera.scale *= 1.4;
+    }
+    assert_eq!(m.view.info, initial);
+    let request = d.placement_request().unwrap();
+    let anchor = d.floating.unwrap();
+    m.run(Action::TextCreate(request));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+    assert_eq!(m.view.selected.ordered.len(), preview.geometries.len());
+    let translated: Vec<_> = m
+        .view
+        .selected
+        .ordered
+        .iter()
+        .map(|o| o.object.geometry.clone())
+        .collect();
+    let actual = editor_core::geometries_bounds(&translated, &[])
+        .unwrap()
+        .unwrap();
+    let expected = editor_core::geometries_bounds(&preview.geometries, &[])
+        .unwrap()
+        .unwrap();
+    assert!(
+        (actual.min_x_mm - expected.min_x_mm - anchor.x_mm + preview.params.layout.x_mm).abs()
+            < 1e-10
+    );
+    assert!(
+        (actual.min_y_mm - expected.min_y_mm - anchor.y_mm + preview.params.layout.y_mm).abs()
+            < 1e-10
+    );
+    m.run(Action::History(false));
+    m.run(Action::History(true));
+    let state = m.view.info.clone();
+    d.cancel();
+    assert!(d.floating.is_none() && d.preview.is_none());
+    assert_eq!(m.view.info, state);
 }

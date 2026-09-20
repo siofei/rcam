@@ -125,7 +125,7 @@ fn text_transaction_undo_redo_export_reopen_and_metrics() {
                 },
             )
             .unwrap();
-        assert_eq!(metrics.summary.unsupported_count, 0);
+        assert_eq!(metrics.summary.unsupported_count, 0, "{metrics:?}");
         assert!(metrics.summary.object_area_sum_mm2 > 0.);
         r.service.history_undo(&r.id, "1").unwrap();
         assert_eq!(r.objects(), original);
@@ -174,12 +174,21 @@ fn text_transaction_undo_redo_export_reopen_and_metrics() {
                 .flat_map(|c| &c.edges)
                 .zip(e.iter().flat_map(|c| &c.edges))
             {
-                let (RegionEdge::Line { start: a, end: b }, RegionEdge::Line { start: c, end: d }) =
-                    (a, e)
-                else {
-                    panic!()
-                };
-                assert!(a.distance_mm(*c) < 1e-6 && b.distance_mm(*d) < 1e-6);
+                match (a, e) {
+                    (
+                        RegionEdge::Line { start: a, end: b },
+                        RegionEdge::Line { start: c, end: d },
+                    ) => assert!(a.distance_mm(*c) < 1e-6 && b.distance_mm(*d) < 1e-6),
+                    (RegionEdge::Arc(a), RegionEdge::Arc(b)) => {
+                        assert!(
+                            a.start.distance_mm(b.start) < 1e-6 && a.end.distance_mm(b.end) < 1e-6
+                        );
+                        assert!(a.center.distance_mm(b.center) < 1e-6);
+                        assert_eq!(a.direction, b.direction);
+                        assert_eq!(a.full_circle, b.full_circle);
+                    }
+                    _ => panic!("manufacturing edge kind changed on reopen"),
+                }
             }
         }
         assert_eq!(

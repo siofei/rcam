@@ -1,0 +1,298 @@
+//! One parameter dialog owns focus and draft state at a time.
+use crate::{EditorApp, PivotMode, state::Action, tools};
+use eframe::egui;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ActiveModal {
+    Text,
+    Move,
+    Rotate,
+    Mirror,
+    Flash,
+    Grid,
+    Rename,
+}
+impl ActiveModal {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Text => "文字",
+            Self::Move => "数值移动",
+            Self::Rotate => "旋转",
+            Self::Mirror => "镜像",
+            Self::Flash => "Flash 尺寸属性",
+            Self::Grid => "网格 / 吸附设置",
+            Self::Rename => "图层名称",
+        }
+    }
+}
+impl EditorApp {
+    pub(crate) fn open_modal(&mut self, modal: ActiveModal) {
+        if self.busy || self.close_prompt || self.modal.is_some() {
+            return;
+        }
+        self.text.cancel();
+        self.drag = None;
+        self.measure.clear();
+        self.tool = if modal == ActiveModal::Text {
+            tools::ActiveTool::Text
+        } else {
+            tools::ActiveTool::Select
+        };
+        self.ui_error = None;
+        self.view.error = None;
+        self.modal = Some(modal);
+        self.modal_pending = None;
+        if modal == ActiveModal::Rename
+            && let Some(layer) = self
+                .view
+                .layers
+                .iter()
+                .find(|l| Some(&l.layer_id) == self.layer.as_ref())
+        {
+            self.rename = layer.display_name.clone();
+        }
+        self.mirror_direction = crate::state::MirrorDirection::Horizontal;
+        self.spacing = self.grid.spacing_mm.to_string();
+        self.draft_snap = self.grid.snap_enabled;
+        self.dx = "0".into();
+        self.dy = "0".into();
+        self.angle = "90".into();
+        self.pivot_mode = PivotMode::SelectionCenter;
+        self.size_aperture_id = None;
+        self.sync_size_fields();
+    }
+    pub(crate) fn cancel_modal(&mut self) {
+        self.modal = None;
+        self.modal_pending = None;
+        self.text.cancel();
+        self.tool = tools::ActiveTool::Select;
+        self.ui_error = None;
+        self.view.error = None;
+    }
+    pub(crate) fn dialog_enter(&self, ui: &egui::Ui) -> bool {
+        !self.busy
+            && !self.ime_active
+            && !self.ime_event
+            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+    }
+    pub(crate) fn parameter_modal(&mut self, ctx: &egui::Context) {
+        let Some(modal) = self.modal else {
+            return;
+        };
+        let response =
+            egui::Modal::new(egui::Id::new("manufacturing-parameters")).show(ctx, |ui| {
+                ui.set_width(440_f32.min(ctx.content_rect().width() - 48.).max(180.));
+                ui.heading(modal.title());
+                egui::ScrollArea::vertical()
+                    .max_height((ctx.content_rect().height() - 160.).max(100.))
+                    .show(ui, |ui| {
+                        ui.add_enabled_ui(!self.busy, |ui| match modal {
+                            ActiveModal::Text => self.text_controls(ui),
+                            ActiveModal::Rotate | ActiveModal::Mirror => {
+                                self.transform_controls(ui)
+                            }
+                            ActiveModal::Flash => self.flash_size_controls(ui),
+                            ActiveModal::Move => {
+                                ui.label("ΔX mm");
+                                ui.text_edit_singleline(&mut self.dx);
+                                ui.label("ΔY mm");
+                                ui.text_edit_singleline(&mut self.dy);
+                                if ui.button("应用位移").clicked() || self.dialog_enter(ui) {
+                                    self.send(Action::Move(self.dx.clone(), self.dy.clone()));
+                                }
+                            }
+                            ActiveModal::Grid => {
+                                ui.label("网格步长 mm");
+                                ui.text_edit_singleline(&mut self.spacing);
+                                ui.checkbox(&mut self.draft_snap, "Grid Snap");
+                                ui.small("对象优先于网格；Alt 临时关闭吸附");
+                                if ui.button("应用设置").clicked() || self.dialog_enter(ui) {
+                                    match self.spacing.parse::<f64>() {
+                                        Ok(v)
+                                            if editor_core::grid::snap_scalar(0., v, 0.)
+                                                .is_ok() =>
+                                        {
+                                            self.grid.spacing_mm = v;
+                                            self.grid.snap_enabled = self.draft_snap;
+                                            self.modal = None;
+                                        }
+                                        _ => self.ui_error = Some("网格步长必须是有限正数".into()),
+                                    }
+                                }
+                            }
+                            ActiveModal::Rename => {
+                                ui.text_edit_singleline(&mut self.rename);
+                                if (ui.button("应用名称").clicked() || self.dialog_enter(ui))
+                                    && let (Some(d), Some(layer)) = (&self.view.info, &self.layer)
+                                {
+                                    self.send(Action::Layer(editor_service::LayerUpdateParams {
+                                        layer_id: layer.clone(),
+                                        expected_workspace_revision: d.workspace_revision.clone(),
+                                        display_name: Some(self.rename.clone()),
+                                        visible: None,
+                                        locked: None,
+                                    }));
+                                }
+                            }
+                        });
+                        if let Some(error) = &self.ui_error {
+                            ui.colored_label(egui::Color32::YELLOW, error);
+                        }
+                        if let Some(error) = &self.view.error {
+                            ui.colored_label(
+                                egui::Color32::YELLOW,
+                                format!("{}: {}", error.code, error.message),
+                            );
+                        }
+                    });
+                if self.busy {
+                    ui.spinner();
+                }
+                if ui
+                    .add_enabled(self.modal_pending.is_none(), egui::Button::new("取消"))
+                    .clicked()
+                {
+                    self.cancel_modal();
+                }
+            });
+        if self.modal_pending.is_none()
+            && !self.ime_active
+            && !self.ime_event
+            && response.should_close()
+        {
+            self.cancel_modal();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn app() -> EditorApp {
+        let (tx, _requests) = std::sync::mpsc::sync_channel(1);
+        let (_reply, rx) = std::sync::mpsc::sync_channel(1);
+        EditorApp {
+            tx,
+            rx,
+            view: crate::state::View::default(),
+            busy: false,
+            sequence: 0,
+            camera: crate::camera::Camera::default(),
+            last_good: None,
+            grid: Default::default(),
+            grid_visual: Default::default(),
+            spacing: "0.1".into(),
+            tool: Default::default(),
+            text: Default::default(),
+            modal: None,
+            modal_pending: None,
+            draft_snap: false,
+            ime_event: false,
+            measure: Default::default(),
+            fit: false,
+            dx: "0".into(),
+            dy: "0".into(),
+            angle: "90".into(),
+            pivot_mode: crate::PivotMode::SelectionCenter,
+            mirror_direction: crate::state::MirrorDirection::Horizontal,
+            pivot_x: "0".into(),
+            pivot_y: "0".into(),
+            size_aperture_id: None,
+            size_width: String::new(),
+            size_height: String::new(),
+            display_unit: Default::default(),
+            layer: None,
+            rename: String::new(),
+            close_prompt: false,
+            quit_after_close: false,
+            allow_quit: false,
+            format: egui_wgpu::wgpu::TextureFormat::Bgra8Unorm,
+            adapter: String::new(),
+            ui_error: None,
+            last_title: String::new(),
+            canvas_rect: egui::Rect::NOTHING,
+            display_error: None,
+            display_pending: false,
+            drag: None,
+            bench: None,
+            selected_flags: Default::default(),
+            timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
+            last_frame: std::time::Instant::now(),
+            text_input_at_event: false,
+            ime_active: false,
+            reported_ppp: 0.,
+        }
+    }
+    fn frame(app: &mut EditorApp, ctx: &egui::Context, key: Option<egui::Key>) {
+        let mut raw = egui::RawInput::default();
+        if let Some(key) = key {
+            raw.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        let _ = ctx.run(raw, |ctx| app.parameter_modal(ctx));
+    }
+    #[test]
+    fn ime_commit_frame_does_not_submit_preedit_draft() {
+        let mut app = app();
+        app.tool = tools::ActiveTool::Text;
+        app.text.catalog_requested = true;
+        app.text.text = "zhong".into();
+        app.text.changed();
+        let now = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        app.ime_event = true;
+        app.ime_active = false;
+        app.tick_text(&egui::Context::default(), now);
+        assert!(app.text.submitted.is_none());
+        app.ime_event = false;
+        app.tick_text(&egui::Context::default(), now);
+        assert!(app.text.submitted.is_some());
+    }
+    #[test]
+    fn context_change_cancels_floating_placement() {
+        let mut app = app();
+        app.tool = tools::ActiveTool::Text;
+        app.text.floating = Some(editor_core::MmPoint { x_mm: 1., y_mm: 2. });
+        app.text.context = Some(("old".into(), "0".into(), "0".into(), "layer".into()));
+        app.tick_text(&egui::Context::default(), std::time::Instant::now());
+        assert!(app.tool == tools::ActiveTool::Select);
+        assert!(app.text.floating.is_none());
+        assert!(app.text.preview.is_none());
+    }
+    #[test]
+    fn exclusive_draft_cancel_invalid_enter_and_ime() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        app.open_modal(ActiveModal::Grid);
+        app.open_modal(ActiveModal::Text);
+        assert_eq!(app.modal, Some(ActiveModal::Grid));
+        app.spacing = "0.25".into();
+        frame(&mut app, &ctx, None);
+        assert_eq!(app.grid.spacing_mm, 0.1);
+        app.ime_active = true;
+        frame(&mut app, &ctx, Some(egui::Key::Enter));
+        assert_eq!(app.grid.spacing_mm, 0.1);
+        app.ime_active = false;
+        app.ime_event = true;
+        frame(&mut app, &ctx, Some(egui::Key::Enter));
+        assert_eq!(app.grid.spacing_mm, 0.1);
+        app.ime_event = false;
+        frame(&mut app, &ctx, Some(egui::Key::Escape));
+        assert_eq!(app.modal, None);
+        assert_eq!(app.grid.spacing_mm, 0.1);
+        app.open_modal(ActiveModal::Grid);
+        app.spacing = "NaN".into();
+        frame(&mut app, &ctx, None);
+        frame(&mut app, &ctx, Some(egui::Key::Enter));
+        assert_eq!(app.modal, Some(ActiveModal::Grid));
+        assert!(app.ui_error.is_some());
+        app.spacing = "0.25".into();
+        frame(&mut app, &ctx, None);
+        frame(&mut app, &ctx, Some(egui::Key::Enter));
+        assert_eq!(app.modal, None);
+        assert_eq!(app.grid.spacing_mm, 0.25);
+    }
+}
