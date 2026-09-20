@@ -6,11 +6,20 @@ pub const MAX_CELL_REFERENCES: usize = 1_000_000;
 const MAX_OBJECTS_PER_CELL: usize = 16_384;
 #[derive(Clone, Debug, Default)]
 pub struct RenderIndex {
+    pub world: [f32; 4],
     pub grid: [f32; 4], // local-world origin and inverse cell size
     pub cols: u32,
     pub rows: u32,
     pub data: Vec<u32>, // offsets (absolute), then ordered object indices
     pub max_candidates: usize,
+}
+#[derive(Debug, Default)]
+pub struct ViewportRenderSet {
+    pub world_bounds: [f64; 4],
+    pub cell_range: Option<[usize; 4]>,
+    pub ordered_candidate_ids: Vec<u32>,
+    pub max_candidates_in_view: usize,
+    pub cell_references_visited: usize,
 }
 fn limit(resource: &str, limit: usize, actual: usize) -> String {
     format!("RESOURCE_LIMIT: resource={resource} limit={limit} actual={actual}")
@@ -81,6 +90,14 @@ impl RenderIndex {
                 return Err("VALIDATION_FAILED: render index scale".into());
             }
             let mut index = Self {
+                // Translation/subtraction can round in opposite directions in WGSL.
+                // Expand only the global early-out envelope; cell grid and material tests stay unchanged.
+                world: std::array::from_fn(|k| {
+                    let axis = k % 2;
+                    let pad =
+                        world[axis].abs().max(world[axis + 2].abs()).max(1.) * f32::EPSILON * 8.;
+                    world[k] + if k < 2 { -pad } else { pad }
+                }),
                 grid,
                 cols: cols as u32,
                 rows: rows as u32,
@@ -138,6 +155,47 @@ impl RenderIndex {
             }
             return Ok(index);
         }
+    }
+    /// Conservative query in scene-local world mm; never scans the scene.
+    pub fn viewport(&self, bounds: [f64; 4]) -> ViewportRenderSet {
+        let mut result = ViewportRenderSet {
+            world_bounds: bounds,
+            ..Default::default()
+        };
+        if (0..2).any(|k| {
+            bounds[k + 2] < f64::from(self.world[k]) || bounds[k] > f64::from(self.world[k + 2])
+        }) {
+            return result;
+        }
+        let cell = |v: f64, k: usize| {
+            (((v - f64::from(self.grid[k])) * f64::from(self.grid[k + 2]))
+                .floor()
+                .max(0.) as usize)
+                .min(if k == 0 {
+                    self.cols as usize - 1
+                } else {
+                    self.rows as usize - 1
+                })
+        };
+        let range = [
+            cell(bounds[0], 0).saturating_sub(1),
+            cell(bounds[1], 1).saturating_sub(1),
+            (cell(bounds[2], 0) + 1).min(self.cols as usize - 1),
+            (cell(bounds[3], 1) + 1).min(self.rows as usize - 1),
+        ];
+        result.cell_range = Some(range);
+        for y in range[1]..=range[3] {
+            for x in range[0]..=range[2] {
+                let c = y * self.cols as usize + x;
+                let ids = &self.data[self.data[c] as usize..self.data[c + 1] as usize];
+                result.max_candidates_in_view = result.max_candidates_in_view.max(ids.len());
+                result.cell_references_visited += ids.len();
+                result.ordered_candidate_ids.extend_from_slice(ids);
+            }
+        }
+        result.ordered_candidate_ids.sort_unstable();
+        result.ordered_candidate_ids.dedup();
+        result
     }
     fn range(&self, b: [f32; 4]) -> [usize; 4] {
         // One-cell halo protects CPU/GPU f32 rounding at grid boundaries.

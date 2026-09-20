@@ -1,0 +1,20 @@
+[
+  {
+    "name": "P10K_CIRCLES",
+    "object_count": 10000,
+    "sha256": "365096313684ec08828a6455dbcc634d1c3d6a26bae6299a836be481885a50c1",
+    "generator": "generate_s2b32.py v1"
+  },
+  {
+    "name": "P100K_CIRCLES",
+    "object_count": 100000,
+    "sha256": "8111ecada7a66defe30f614cd3851a328d861bbab4c595cb12ee3131fa465a31",
+    "generator": "generate_s2b32.py v1"
+  },
+  {
+    "name": "SPARSE_DENSE",
+    "object_count": 1100,
+    "sha256": "b154257efdcc5a530cb57f9ce9b6f057fb0993f254145a7fc6d8e09ccba5888b",
+    "generator": "generate_s2b32.py v1"
+  }
+]

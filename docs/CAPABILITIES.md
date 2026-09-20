@@ -132,3 +132,7 @@ Windows deferred / not executed；具体门禁与原生证据以本阶段报告�
 生产 renderer 使用有界有序 world-space bins，选择边缘也查候选，reference renderer 保留。
 S2-B3 full stage blocked before renderer fix；本次是否关闭由原生1000 selection/drag证据决定。
 不新增 Grid/Snap、文字、Final Layer Area、多格式；Windows deferred / not executed。
+
+## 2026-09-20 S2-B3.2
+
+当前范围：视口候选去重/曝光排序、局部预算、事件时 selection flags、原生窗口 benchmark。详见 S2_B3_2_PLAN.md 与 ADR0021；冻结 50ms/300ms 门槛不变。P100K preview 成本采集保留预算拒绝，不能声明 P100K 性能通过。最终结果在独立 public evidence 中绑定受测 clean commit；不启动后续功能。

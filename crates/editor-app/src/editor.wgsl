@@ -1,4 +1,4 @@
-struct Uniforms { view:vec4<f32>, camera:vec4<f32>, counts:vec4<u32>, preview:vec4<f32>, grid:vec4<f32> }
+struct Uniforms { view:vec4<f32>, camera:vec4<f32>, counts:vec4<u32>, preview:vec4<f32>, grid:vec4<f32>, world:vec4<f32> }
 struct Object { tag:vec4<u32>, bounds:vec4<f32> }
 struct Primitive { tag:vec4<u32>, a:vec4<f32>, b:vec4<f32> }
 @group(0) @binding(0) var<uniform> u:Uniforms;
@@ -8,6 +8,7 @@ struct Primitive { tag:vec4<u32>, a:vec4<f32>, b:vec4<f32> }
 @group(0) @binding(4) var<storage,read> selected:array<u32>;
 @group(0) @binding(5) var<storage,read> bins:array<u32>;
 fn cell(p:vec2<f32>)->u32 {
+ if any(p<u.world.xy) || any(p>u.world.zw) {return 0xffffffffu;}
  let xy=vec2<u32>(clamp(floor((p-u.grid.xy)*u.grid.zw),vec2(0.),vec2<f32>(u.counts.yz)-vec2(1.)));
  return xy.y*u.counts.y+xy.x;
 }
@@ -45,6 +46,7 @@ fn sample_scene(p:vec2<f32>)->vec3<f32> {
     var color=vec3(0.055,0.072,0.085);var layer=0u;var covered=false;
     let palette=array<vec3<f32>,4>(vec3(0.28,0.77,0.66),vec3(0.39,0.64,0.90),vec3(0.80,0.52,0.81),vec3(0.88,0.70,0.39));
     let c=cell(p);
+    if c==0xffffffffu {return color;}
     for(var cursor=bins[c];cursor<bins[c+1u];cursor++) {
         let i=bins[cursor];
         let o=objects[i];if o.tag.w==0u {continue;}
@@ -65,7 +67,7 @@ fn sample_scene(p:vec2<f32>)->vec3<f32> {
     let queries=array<vec2<f32>,4>(p+vec2(e,0.),p-vec2(e,0.),p+vec2(0.,e),p-vec2(0.,e));
     var cursors:array<u32,4>;
     var ends:array<u32,4>;
-    for(var k=0u;k<4u;k++) {let c=cell(queries[k]);cursors[k]=bins[c];ends[k]=bins[c+1u];}
+    for(var k=0u;k<4u;k++) {let c=cell(queries[k]);if c!=0xffffffffu {cursors[k]=bins[c];ends[k]=bins[c+1u];}}
     loop {
         var i=u.counts.x;
         for(var k=0u;k<4u;k++) {if cursors[k]<ends[k] {i=min(i,bins[cursors[k]]);}}

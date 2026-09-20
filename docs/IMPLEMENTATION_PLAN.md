@@ -87,7 +87,11 @@ Rotate/Mirror GUI、Grid/Snap、测距、文字、生产renderer及格式交换�
 主代理实施与核验，范围见S2_B3_PLAN.md。GeometryMetrics解析计算、lazy cache、独立查询与属性面板、UTF-8源码包回归。
 Mac-first；Windows deferred / not executed。完成后停止，不扩展最终Layer Area或后续阶段。
 
-## 当前任务 S2-B3.1
+## 历史任务 S2-B3.1
 GeometryMetrics已实现，完整S2-B3在renderer修复前被1000对象显示预算阻塞。
 按S2_B3_1_PLAN.md和ADR0020推进有界world bins、reference parity与P1K原生门禁。
 保持原验收阈值，原生十秒拖动三轮缺证据时继续B1，不扩展后续功能。
+
+## 2026-09-20 S2-B3.2
+
+当前范围：视口候选去重/曝光排序、局部预算、事件时 selection flags、原生窗口 benchmark。详见 S2_B3_2_PLAN.md 与 ADR0021；冻结 50ms/300ms 门槛不变。P100K preview 成本采集保留预算拒绝，不能声明 P100K 性能通过。最终结果在独立 public evidence 中绑定受测 clean commit；不启动后续功能。

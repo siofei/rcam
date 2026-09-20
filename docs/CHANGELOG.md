@@ -133,3 +133,7 @@ ADR 0012：移除 SemanticLayer UI字段；新增 layer.update 和独立 workspa
 - 主renderer使用有序world-space候选；保留reference、原AA/局部材料/跨层合成。
 - 预览独立索引，LOD导航复用基础索引；冻结原1000圆样本，增加像素parity和指标/writer/history不变性检查。
 - 不改96用例/阈值或双平台门槛；最终门禁结果单独证据交付。
+
+## 2026-09-20 S2-B3.2
+
+当前范围：视口候选去重/曝光排序、局部预算、事件时 selection flags、原生窗口 benchmark。详见 S2_B3_2_PLAN.md 与 ADR0021；冻结 50ms/300ms 门槛不变。P100K preview 成本采集保留预算拒绝，不能声明 P100K 性能通过。最终结果在独立 public evidence 中绑定受测 clean commit；不启动后续功能。

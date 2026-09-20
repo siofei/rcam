@@ -14,13 +14,14 @@ pub struct Uniforms {
     pub counts: [u32; 4],
     pub preview: [f32; 4],
     pub grid: [f32; 4],
+    pub world: [f32; 4],
 }
 pub fn uniforms(
     scene: &Scene,
     camera: Camera,
     rect: egui::Rect,
     ppp: f32,
-    selected: &[&str],
+    selected: &[u32],
 ) -> Result<Uniforms, String> {
     uniforms_preview(
         scene,
@@ -36,7 +37,7 @@ pub fn uniforms_preview(
     camera: Camera,
     rect: egui::Rect,
     ppp: f32,
-    selected: &[&str],
+    selected: &[u32],
     delta: editor_core::MmPoint,
 ) -> Result<Uniforms, String> {
     prepare(scene, camera, rect, ppp, selected, delta).map(|v| v.0)
@@ -46,11 +47,64 @@ pub fn prepare(
     camera: Camera,
     rect: egui::Rect,
     ppp: f32,
-    selected: &[&str],
+    selected: &[u32],
     delta: editor_core::MmPoint,
 ) -> Result<(Uniforms, Arc<crate::render_index::RenderIndex>), String> {
+    prepare_measured(scene, camera, rect, ppp, selected, delta).map(|p| (p.uniforms, p.index))
+}
+#[derive(Default, Clone, Debug)]
+pub struct PrepareStats {
+    pub candidate_count: usize,
+    pub object_visits: usize,
+    pub cell_references_visited: usize,
+    pub max_candidates_in_view: usize,
+    pub preview_index_ms: f64,
+    pub cpu_prepare_ms: f64,
+    pub estimated_work: f64,
+}
+pub struct Prepared {
+    pub uniforms: Uniforms,
+    pub index: Arc<crate::render_index::RenderIndex>,
+    pub stats: PrepareStats,
+}
+pub fn viewport_bounds(
+    scene: &Scene,
+    camera: Camera,
+    rect: egui::Rect,
+    ppp: f32,
+) -> Result<[f64; 4], String> {
+    let ppm = camera.scale * f64::from(ppp);
+    if !ppm.is_finite() || ppm <= 0. || !rect.is_positive() {
+        return Err("VALIDATION_FAILED: viewport".into());
+    }
+    // 1.5px selection edge + 0.25px AA + rounding allowance. Query adds a cell halo too.
+    let margin = 2. / ppm;
+    let half_x = f64::from(rect.width()) / camera.scale / 2. + margin;
+    let half_y = f64::from(rect.height()) / camera.scale / 2. + margin;
+    let cx = camera.center.x_mm - scene.anchor.x_mm;
+    let cy = camera.center.y_mm - scene.anchor.y_mm;
+    let bounds = [cx - half_x, cy - half_y, cx + half_x, cy + half_y];
+    if bounds.iter().any(|v| !v.is_finite()) {
+        return Err("VALIDATION_FAILED: viewport bounds".into());
+    }
+    Ok(bounds)
+}
+pub fn prepare_measured(
+    scene: &Scene,
+    camera: Camera,
+    rect: egui::Rect,
+    ppp: f32,
+    selected: &[u32],
+    delta: editor_core::MmPoint,
+) -> Result<Prepared, String> {
+    let started = std::time::Instant::now();
+    if selected.len() != scene.objects.len() {
+        return Err("VALIDATION_FAILED: selection flags length".into());
+    }
+    let bounds = viewport_bounds(scene, camera, rect, ppp)?;
     let preview = [scene.scalar(delta.x_mm)?, scene.scalar(delta.y_mm)?, 0., 0.];
-    let selected_flags = selection_flags(scene, selected);
+    let selected_flags = selected;
+    let mut stats = PrepareStats::default();
     let width = rect.width() * ppp;
     let height = rect.height() * ppp;
     let pixels = f64::from(width) * f64::from(height);
@@ -60,14 +114,24 @@ pub fn prepare(
     let index = if delta.x_mm == 0. && delta.y_mm == 0. {
         scene.index.clone()
     } else {
-        Arc::new(crate::render_index::RenderIndex::build(
+        let start = std::time::Instant::now();
+        let index = Arc::new(crate::render_index::RenderIndex::build(
             &scene.objects,
-            &selected_flags,
+            selected_flags,
             [preview[0], preview[1]],
-        )?)
+        )?);
+        stats.preview_index_ms = start.elapsed().as_secs_f64() * 1000.;
+        index
     };
-    let mut work = pixels * index.max_candidates as f64 * 20.;
-    for (index, object) in scene.objects.iter().enumerate() {
+    let viewport = index.viewport(bounds);
+    stats.candidate_count = viewport.ordered_candidate_ids.len();
+    stats.max_candidates_in_view = viewport.max_candidates_in_view;
+    stats.cell_references_visited = viewport.cell_references_visited;
+    let mut work = pixels * viewport.max_candidates_in_view as f64 * 20.;
+    for id in &viewport.ordered_candidate_ids {
+        let index = *id as usize;
+        let object = &scene.objects[index];
+        stats.object_visits += 1;
         if object.meta[3] == 0 {
             continue;
         }
@@ -79,6 +143,12 @@ pub fn prepare(
             for v in b {
                 scene.scalar(f64::from(v))?;
             }
+        }
+        if (0..2).any(|k| {
+            f64::from(b[k + 2]) < viewport.world_bounds[k]
+                || f64::from(b[k]) > viewport.world_bounds[k + 2]
+        }) {
+            continue;
         }
         let left =
             ((f64::from(b[0]) - cx) * ppm + f64::from(width) / 2.).clamp(0., f64::from(width));
@@ -106,8 +176,12 @@ pub fn prepare(
             "RESOURCE_LIMIT: resource=candidate_sample_work limit=2000000000 actual={work}"
         ));
     }
-    Ok((
-        Uniforms {
+    stats.estimated_work = work;
+    stats.cpu_prepare_ms = started.elapsed().as_secs_f64() * 1000.;
+    Ok(Prepared {
+        stats,
+        uniforms: Uniforms {
+            world: index.world,
             grid: index.grid,
             preview,
             view: [rect.left() * ppp, rect.top() * ppp, width, height],
@@ -120,7 +194,7 @@ pub fn prepare(
             counts: [scene.objects.len() as u32, index.cols, index.rows, 0],
         },
         index,
-    ))
+    })
 }
 pub fn selection_flags(scene: &Scene, selected: &[&str]) -> Vec<u32> {
     let ids: std::collections::HashSet<_> = selected.iter().copied().collect();
@@ -134,6 +208,7 @@ pub struct Resources {
     pub pipeline: wgpu::RenderPipeline,
     pub uniform: wgpu::Buffer,
     pub selected: wgpu::Buffer,
+    selection_identity: Option<Arc<Vec<u32>>>,
     pub bind: wgpu::BindGroup,
     pub serial: u64,
     pub index: Arc<crate::render_index::RenderIndex>,
@@ -263,6 +338,7 @@ impl Resources {
             pipeline,
             uniform,
             selected,
+            selection_identity: None,
             bind,
             serial: scene.serial,
             index: scene.index.clone(),
@@ -275,10 +351,11 @@ impl Resources {
     }
 }
 pub struct Callback {
+    pub painted: Option<(Arc<std::sync::atomic::AtomicU64>, u64)>,
     pub scene: Arc<Scene>,
     pub index: Arc<crate::render_index::RenderIndex>,
     pub uniforms: Uniforms,
-    pub selected: Vec<u32>,
+    pub selected: Arc<Vec<u32>>,
     pub format: wgpu::TextureFormat,
 }
 impl egui_wgpu::CallbackTrait for Callback {
@@ -326,8 +403,13 @@ impl egui_wgpu::CallbackTrait for Callback {
                 r.index = self.index.clone();
             }
             queue.write_buffer(&r.uniform, 0, bytemuck::bytes_of(&self.uniforms));
-            if !self.selected.is_empty() {
+            if !self.selected.is_empty()
+                && r.selection_identity
+                    .as_ref()
+                    .is_none_or(|v| !Arc::ptr_eq(v, &self.selected))
+            {
                 queue.write_buffer(&r.selected, 0, bytemuck::cast_slice(&self.selected));
+                r.selection_identity = Some(self.selected.clone());
             }
         }
         vec![]
@@ -352,6 +434,9 @@ impl egui_wgpu::CallbackTrait for Callback {
             pass.set_pipeline(&r.pipeline);
             pass.set_bind_group(0, &r.bind, &[]);
             pass.draw(0..3, 0..1);
+            if let Some((stamp, id)) = &self.painted {
+                stamp.store(*id, std::sync::atomic::Ordering::Release);
+            }
         }
     }
 }

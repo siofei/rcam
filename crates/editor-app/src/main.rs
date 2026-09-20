@@ -7,10 +7,13 @@ mod display_tests;
 mod drag;
 mod gpu;
 mod metrics_panel;
+mod native_bench;
 mod platform;
 mod render_index;
 mod selection;
 mod state;
+#[cfg(test)]
+mod viewport_tests;
 
 use camera::Camera;
 use eframe::egui::{self, Color32, RichText, Vec2};
@@ -43,7 +46,9 @@ struct EditorApp {
     canvas_rect: egui::Rect,
     display_error: Option<String>,
     drag: Option<drag::Gesture>,
+    bench: Option<native_bench::NativeBench>,
     timing: bool,
+    selected_flags: std::sync::Arc<Vec<u32>>,
     last_frame: Instant,
 }
 impl EditorApp {
@@ -90,7 +95,7 @@ impl EditorApp {
             .as_ref()
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
-        eprintln!("RCam S2-B3.1 native GPU: {adapter}");
+        eprintln!("RCam S2-B3.2 native GPU: {adapter}");
         Self {
             tx,
             rx,
@@ -113,6 +118,8 @@ impl EditorApp {
             canvas_rect: egui::Rect::NOTHING,
             display_error: None,
             drag: None,
+            bench: native_bench::NativeBench::from_env(gpu.device.clone()),
+            selected_flags: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
             last_frame: Instant::now(),
         }
@@ -214,6 +221,12 @@ impl EditorApp {
     }
 }
 impl eframe::App for EditorApp {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(mut bench) = self.bench.take() {
+            bench.input(self, ctx, raw);
+            self.bench = Some(bench);
+        }
+    }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let now = Instant::now();
         if self.timing {
@@ -238,6 +251,10 @@ impl eframe::App for EditorApp {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
+            self.selected_flags =
+                std::sync::Arc::new(self.view.scene.as_ref().map_or_else(Vec::new, |scene| {
+                    gpu::selection_flags(scene, &self.view.selected.ids())
+                }));
             self.busy = false;
             if let Some(drag) = &mut self.drag {
                 if self.view.error.is_none() {
@@ -261,6 +278,12 @@ impl eframe::App for EditorApp {
             if self.quit_after_close && self.view.info.is_none() {
                 self.allow_quit = true;
             }
+        }
+        if ctx.current_pass_index() == 0
+            && let Some(mut bench) = self.bench.take()
+        {
+            bench.tick(self, ctx);
+            self.bench = Some(bench);
         }
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -296,6 +319,7 @@ impl eframe::App for EditorApp {
             }
         }
         // Validate the current view before enabling manufacturing actions.
+        let validation_start = Instant::now();
         self.display_error = self.view.scene.as_ref().and_then(|scene| {
             if !self.canvas_rect.is_positive() {
                 return Some("正在准备画布".into());
@@ -308,10 +332,11 @@ impl eframe::App for EditorApp {
                 self.camera,
                 self.canvas_rect,
                 ctx.pixels_per_point(),
-                &self.view.selected.ids(),
+                &self.selected_flags,
             )
             .err()
         });
+        let validation_ms = validation_start.elapsed().as_secs_f64() * 1000.;
         let modal_open = self.close_prompt
             || self.view.error.as_ref().is_some_and(|e| {
                 e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
@@ -731,27 +756,35 @@ impl eframe::App for EditorApp {
                 if let Some(scene) = &self.view.scene
                     && !needs_lod
                 {
-                    match gpu::prepare(
+                    match gpu::prepare_measured(
                         scene,
                         self.camera,
                         rect,
                         ctx.pixels_per_point(),
-                        &self.view.selected.ids(),
+                        &self.selected_flags,
                         self.drag
                             .as_ref()
                             .map_or(editor_core::MmPoint::new(0., 0.), |d| d.delta),
                     ) {
-                        Ok((uniforms, index)) => {
+                        Ok(mut prepared) => {
+                            prepared.stats.cpu_prepare_ms += validation_ms;
+                            if let Some(mut bench) = self.bench.take() {
+                                bench.record(self, &prepared.stats, ctx.pixels_per_point(), now);
+                                self.bench = Some(bench);
+                            }
+                            let uniforms = prepared.uniforms;
+                            let index = prepared.index;
                             self.display_error = None;
                             painter.add(egui_wgpu::Callback::new_paint_callback(
                                 rect,
                                 gpu::Callback {
+                                    painted: self
+                                        .bench
+                                        .as_ref()
+                                        .map(|b| (b.painted.clone(), b.frame_id)),
                                     index,
                                     scene: scene.clone(),
-                                    selected: gpu::selection_flags(
-                                        scene,
-                                        &self.view.selected.ids(),
-                                    ),
+                                    selected: self.selected_flags.clone(),
                                     uniforms,
                                     format: self.format,
                                 },
@@ -850,6 +883,10 @@ impl eframe::App for EditorApp {
                     Color32::LIGHT_GRAY,
                 );
             });
+        if let Some(mut bench) = self.bench.take() {
+            bench.ensure_record(self, ctx.pixels_per_point(), now);
+            self.bench = Some(bench);
+        }
         if self.close_prompt {
             egui::Modal::new(egui::Id::new("close-confirmation")).show(ctx, |ui| {
                 ui.heading("保留未保存修改？");
@@ -956,17 +993,35 @@ fn geometry_properties(ui: &mut egui::Ui, g: &editor_core::SemanticGeometry) {
     }
 }
 fn main() -> eframe::Result {
-    eframe::run_native(
+    let result = eframe::run_native(
         "RCam",
         eframe::NativeOptions {
             renderer: eframe::Renderer::Wgpu,
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([1280., 800.])
-                .with_min_inner_size([980., 620.]),
+                .with_min_inner_size(
+                    if std::env::var("RCAM_NATIVE_BENCH").ok().as_deref() == Some("s2b32") {
+                        [800., 400.]
+                    } else {
+                        [980., 620.]
+                    },
+                ),
             ..Default::default()
         },
         Box::new(|cc| Ok(Box::new(EditorApp::new(cc)))),
-    )
+    );
+    if std::env::var("RCAM_NATIVE_BENCH").ok().as_deref() == Some("s2b32") {
+        let passed = std::env::var_os("RCAM_BENCH_OUT")
+            .and_then(|p| {
+                std::fs::read(std::path::PathBuf::from(p).join("native-results.json")).ok()
+            })
+            .and_then(|s| serde_json::from_slice::<serde_json::Value>(&s).ok())
+            .is_some_and(|r| r["status"] == "PASS");
+        if !passed {
+            std::process::exit(1);
+        }
+    }
+    result
 }
 
 fn aperture_properties(ui: &mut egui::Ui, a: &editor_core::ApertureShape) {

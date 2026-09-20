@@ -1,4 +1,4 @@
-# RCam Gerber editor — Mac-first S2-B3.1
+# RCam Gerber editor — Mac-first S2-B3.2
 
 S2-B3 增加独立对象解析面积/周长、会话lazy cache和后台属性面板。多选只显示对象合计；复杂几何明确不可计算，不代表图层最终开口面积。任务范围见 [S2-B3计划](docs/S2_B3_PLAN.md)。
 
@@ -97,3 +97,5 @@ recorded in `docs/DRAG_FIX_REVIEW.md`.
 
 S2-B3 GeometryMetrics implemented；完整 S2-B3 在 renderer 修复前受 1000 对象原生门禁阻塞。
 S2-B3.1 active：生产显示改用有序 world-space bins，原 renderer 保留为 reference；见 [ADR0020](docs/adr/0020-scalable-render-index.md)。最终 native 门禁以本轮独立 evidence 报告为准，不由代码实现推断通过。
+
+S2-B3.2：viewport-local preparation/budget 与 opt-in 原生 Metal benchmark，见 [计划](docs/S2_B3_2_PLAN.md) 和 [ADR0021](docs/adr/0021-viewport-native-gates.md)。最终收口结论由同一 clean commit 的独立 evidence 提供；P100K、PMIX 全 AT-075、Windows 与 V1 仍未通过。

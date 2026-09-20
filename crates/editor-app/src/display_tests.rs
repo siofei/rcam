@@ -225,6 +225,7 @@ fn metal_probes(selected_count: usize) {
         }
         let uniform = Uniforms {
             grid: [0.; 4],
+            world: [0.; 4],
             preview: if preview { [3., -2., 0., 0.] } else { [0.; 4] },
             view: [0.; 4],
             camera: [0.; 4],
@@ -390,6 +391,7 @@ fn native_metal_reference_production_pixel_parity() {
         })
         .collect();
     for name in [
+        "s2b3_2/SPARSE_DENSE.gbr",
         "s2b3_1/P1K_CIRCLES.gbr",
         "s2a3/gui_primitives.gbr",
         "s1a/standard_hole_over_line.gbr",
@@ -418,7 +420,18 @@ fn native_metal_reference_production_pixel_parity() {
         let mut info = layers[0].clone();
         info.layer_id = "parity-upper".into();
         layers.push(info);
-        let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 1000., 1).unwrap();
+        let scene = Scene::build(
+            &snapshot,
+            &layers,
+            MmPoint::new(0., 0.),
+            if name.contains("SPARSE_DENSE") {
+                100.
+            } else {
+                1000.
+            },
+            1,
+        )
+        .unwrap();
         let _render = crate::gpu::Resources::new(&device, wgpu::TextureFormat::Rgba8Unorm, &scene);
         let b = scene.objects.iter().fold(
             [
@@ -437,139 +450,154 @@ fn native_metal_reference_production_pixel_parity() {
         );
         for selection in [0, 1, scene.ids.len()] {
             for delta in [MmPoint::new(0., 0.), MmPoint::new(3., -2.)] {
-                let camera = crate::camera::Camera {
-                    center: MmPoint::new(
-                        f64::from((b[0] + b[2]) / 2.),
-                        f64::from((b[1] + b[3]) / 2.),
-                    ),
-                    scale: 90. / f64::from((b[2] - b[0]).max(b[3] - b[1]).max(1.)),
-                };
-                let ids: Vec<_> = scene
-                    .ids
-                    .iter()
-                    .take(selection)
-                    .map(String::as_str)
-                    .collect();
-                let (uniform, index) = crate::gpu::prepare(
-                    &scene,
-                    camera,
-                    eframe::egui::Rect::from_min_size(
-                        eframe::egui::Pos2::ZERO,
-                        eframe::egui::vec2(128., 128.),
-                    ),
-                    1.,
-                    &ids,
-                    delta,
-                )
-                .unwrap();
-                let flags = crate::gpu::selection_flags(&scene, &ids);
-                let buf = |data: &[u8], usage| {
-                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: None,
-                        contents: if data.is_empty() { &[0; 16] } else { data },
-                        usage,
-                    })
-                };
-                let buffers = [
-                    buf(bytemuck::bytes_of(&uniform), wgpu::BufferUsages::UNIFORM),
-                    buf(
-                        bytemuck::cast_slice(&scene.objects),
-                        wgpu::BufferUsages::STORAGE,
-                    ),
-                    buf(
-                        bytemuck::cast_slice(&scene.primitives),
-                        wgpu::BufferUsages::STORAGE,
-                    ),
-                    buf(
-                        bytemuck::cast_slice(&scene.points),
-                        wgpu::BufferUsages::STORAGE,
-                    ),
-                    buf(bytemuck::cast_slice(&flags), wgpu::BufferUsages::STORAGE),
-                    buf(
-                        bytemuck::cast_slice(&index.data),
-                        wgpu::BufferUsages::STORAGE,
-                    ),
-                ];
-                let mut images = Vec::new();
-                for (mode, pipeline) in pipelines.iter().enumerate() {
-                    let output = device.create_buffer(&wgpu::BufferDescriptor {
-                        label: None,
-                        size: 128 * 128 * 16,
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                        mapped_at_creation: false,
-                    });
-                    let read = device.create_buffer(&wgpu::BufferDescriptor {
-                        label: None,
-                        size: output.size(),
-                        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                        mapped_at_creation: false,
-                    });
-                    let mut entries: Vec<_> = buffers
-                        .iter()
-                        .take(if mode == 0 { 5 } else { 6 })
-                        .enumerate()
-                        .map(|(i, b)| wgpu::BindGroupEntry {
-                            binding: i as u32,
-                            resource: b.as_entire_binding(),
-                        })
-                        .collect();
-                    entries.push(wgpu::BindGroupEntry {
-                        binding: 6,
-                        resource: output.as_entire_binding(),
-                    });
-                    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: None,
-                        layout: &pipeline.get_bind_group_layout(0),
-                        entries: &entries,
-                    });
-                    let mut encoder = device.create_command_encoder(&Default::default());
-                    {
-                        let mut pass = encoder.begin_compute_pass(&Default::default());
-                        pass.set_pipeline(pipeline);
-                        pass.set_bind_group(0, &group, &[]);
-                        pass.dispatch_workgroups(16, 16, 1);
+                for view_mode in 0..3 {
+                    let mut camera = crate::camera::Camera {
+                        center: MmPoint::new(
+                            f64::from((b[0] + b[2]) / 2.),
+                            f64::from((b[1] + b[3]) / 2.),
+                        ),
+                        scale: 90. / f64::from((b[2] - b[0]).max(b[3] - b[1]).max(1.)),
+                    };
+                    if view_mode == 1 {
+                        camera.scale *= 5.;
+                        camera.center = MmPoint::new(5., 5.);
                     }
-                    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, output.size());
-                    queue.submit([encoder.finish()]);
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    read.slice(..)
-                        .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-                    device
-                        .poll(wgpu::PollType::Wait {
-                            submission_index: None,
-                            timeout: Some(Duration::from_secs(30)),
+                    if view_mode == 2 {
+                        if name.contains("SPARSE_DENSE") {
+                            camera.scale = 8.;
+                            camera.center = MmPoint::new(1000., 1000.);
+                        } else {
+                            camera.center.x_mm += f64::from(b[2] - b[0]) * 0.45;
+                            camera.scale *= 2.;
+                        }
+                    }
+                    let ids: Vec<_> = scene
+                        .ids
+                        .iter()
+                        .take(selection)
+                        .map(String::as_str)
+                        .collect();
+                    let (uniform, index) = crate::gpu::prepare(
+                        &scene,
+                        camera,
+                        eframe::egui::Rect::from_min_size(
+                            eframe::egui::Pos2::ZERO,
+                            eframe::egui::vec2(128., 128.),
+                        ),
+                        1.,
+                        &crate::gpu::selection_flags(&scene, &ids),
+                        delta,
+                    )
+                    .unwrap();
+                    let flags = crate::gpu::selection_flags(&scene, &ids);
+                    let buf = |data: &[u8], usage| {
+                        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: None,
+                            contents: if data.is_empty() { &[0; 16] } else { data },
+                            usage,
                         })
-                        .unwrap();
-                    rx.recv().unwrap().unwrap();
-                    images.push(read.slice(..).get_mapped_range().to_vec());
-                }
-                let differences = images[0]
-                    .chunks_exact(16)
-                    .zip(images[1].chunks_exact(16))
-                    .filter(|(a, b)| a != b)
-                    .count();
-                if differences > 0 {
-                    for (i, (a, b)) in images[0]
+                    };
+                    let buffers = [
+                        buf(bytemuck::bytes_of(&uniform), wgpu::BufferUsages::UNIFORM),
+                        buf(
+                            bytemuck::cast_slice(&scene.objects),
+                            wgpu::BufferUsages::STORAGE,
+                        ),
+                        buf(
+                            bytemuck::cast_slice(&scene.primitives),
+                            wgpu::BufferUsages::STORAGE,
+                        ),
+                        buf(
+                            bytemuck::cast_slice(&scene.points),
+                            wgpu::BufferUsages::STORAGE,
+                        ),
+                        buf(bytemuck::cast_slice(&flags), wgpu::BufferUsages::STORAGE),
+                        buf(
+                            bytemuck::cast_slice(&index.data),
+                            wgpu::BufferUsages::STORAGE,
+                        ),
+                    ];
+                    let mut images = Vec::new();
+                    for (mode, pipeline) in pipelines.iter().enumerate() {
+                        let output = device.create_buffer(&wgpu::BufferDescriptor {
+                            label: None,
+                            size: 128 * 128 * 16,
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                            mapped_at_creation: false,
+                        });
+                        let read = device.create_buffer(&wgpu::BufferDescriptor {
+                            label: None,
+                            size: output.size(),
+                            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
+                        let mut entries: Vec<_> = buffers
+                            .iter()
+                            .take(if mode == 0 { 5 } else { 6 })
+                            .enumerate()
+                            .map(|(i, b)| wgpu::BindGroupEntry {
+                                binding: i as u32,
+                                resource: b.as_entire_binding(),
+                            })
+                            .collect();
+                        entries.push(wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: output.as_entire_binding(),
+                        });
+                        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: None,
+                            layout: &pipeline.get_bind_group_layout(0),
+                            entries: &entries,
+                        });
+                        let mut encoder = device.create_command_encoder(&Default::default());
+                        {
+                            let mut pass = encoder.begin_compute_pass(&Default::default());
+                            pass.set_pipeline(pipeline);
+                            pass.set_bind_group(0, &group, &[]);
+                            pass.dispatch_workgroups(16, 16, 1);
+                        }
+                        encoder.copy_buffer_to_buffer(&output, 0, &read, 0, output.size());
+                        queue.submit([encoder.finish()]);
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        read.slice(..)
+                            .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
+                        device
+                            .poll(wgpu::PollType::Wait {
+                                submission_index: None,
+                                timeout: Some(Duration::from_secs(30)),
+                            })
+                            .unwrap();
+                        rx.recv().unwrap().unwrap();
+                        images.push(read.slice(..).get_mapped_range().to_vec());
+                    }
+                    let differences = images[0]
                         .chunks_exact(16)
                         .zip(images[1].chunks_exact(16))
-                        .enumerate()
-                        .filter(|(_, (a, b))| a != b)
-                        .take(8)
-                    {
-                        println!(
-                            "DIFF {i} {:?} {:?}",
-                            bytemuck::cast_slice::<u8, f32>(a),
-                            bytemuck::cast_slice::<u8, f32>(b)
-                        );
+                        .filter(|(a, b)| a != b)
+                        .count();
+                    if differences > 0 {
+                        for (i, (a, b)) in images[0]
+                            .chunks_exact(16)
+                            .zip(images[1].chunks_exact(16))
+                            .enumerate()
+                            .filter(|(_, (a, b))| a != b)
+                            .take(8)
+                        {
+                            println!(
+                                "DIFF {i} {:?} {:?}",
+                                bytemuck::cast_slice::<u8, f32>(a),
+                                bytemuck::cast_slice::<u8, f32>(b)
+                            );
+                        }
                     }
+                    assert_eq!(
+                        differences, 0,
+                        "{name} selection={selection} delta={delta:?}"
+                    );
+                    println!(
+                        "PASS exact RGBA parity {name} selection={selection} delta={delta:?} view={view_mode} pixels=16384"
+                    );
                 }
-                assert_eq!(
-                    differences, 0,
-                    "{name} selection={selection} delta={delta:?}"
-                );
-                println!(
-                    "PASS exact RGBA parity {name} selection={selection} delta={delta:?} pixels=16384"
-                );
             }
         }
     }
@@ -648,7 +676,7 @@ fn thousand_circles_metrics_writer_navigation_preview_and_history() {
             camera,
             rect,
             1.,
-            &model.view.selected.ids(),
+            &gpu::selection_flags(scene, &model.view.selected.ids()),
             MmPoint::new(n as f64 / 10., -2.),
         )
         .unwrap();
@@ -742,13 +770,21 @@ fn native_metal_p1k_offscreen_timing() {
         while start.elapsed().as_secs_f64() < 10. {
             let frame = std::time::Instant::now();
             let delta = MmPoint::new((start.elapsed().as_secs_f64() * 2.).sin() * 2., 1.);
-            let (uniforms, index) =
-                crate::gpu::prepare(&scene, camera, rect, 1., &selected, delta).unwrap();
+            let (uniforms, index) = crate::gpu::prepare(
+                &scene,
+                camera,
+                rect,
+                1.,
+                &crate::gpu::selection_flags(&scene, &selected),
+                delta,
+            )
+            .unwrap();
             let callback = crate::gpu::Callback {
+                painted: None,
                 scene: scene.clone(),
                 index,
                 uniforms,
-                selected: vec![1; 1000],
+                selected: Arc::new(vec![1; 1000]),
                 format: wgpu::TextureFormat::Rgba8Unorm,
             };
             let mut encoder = device.create_command_encoder(&Default::default());
