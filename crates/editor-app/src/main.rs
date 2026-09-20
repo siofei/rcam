@@ -731,7 +731,13 @@ impl eframe::App for EditorApp {
         let text_focus = self.text_input_at_event || ctx.wants_keyboard_input();
         if !modal_open && !self.ime_active && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.measure.clear();
-            if self.tool == tools::ActiveTool::Text {
+            if self.text.floating.is_some() {
+                self.text.resume_dialog();
+                self.modal = Some(ActiveModal::Text);
+                ctx.input_mut(|i| {
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
+                });
+            } else if self.tool == tools::ActiveTool::Text {
                 self.text.cancel();
                 self.tool = tools::ActiveTool::Select;
             }
@@ -819,24 +825,122 @@ impl eframe::App for EditorApp {
                 ui.menu_button("编辑", |ui| {
                     self.history_buttons(ui);
                     self.object_buttons(ui);
+                    ui.separator();
+                    ui.add_enabled_ui(
+                        self.usable() && drag::editable_selection(&self.view),
+                        |ui| {
+                            for (label, modal) in [
+                                ("移动…", ActiveModal::Move),
+                                ("旋转…", ActiveModal::Rotate),
+                                ("镜像…", ActiveModal::Mirror),
+                                ("Flash 属性…", ActiveModal::Flash),
+                            ] {
+                                if ui.button(label).clicked() {
+                                    self.open_modal(modal);
+                                    ui.close();
+                                }
+                            }
+                        },
+                    );
                 });
                 ui.menu_button("插入", |ui| {
                     if ui
-                        .add_enabled(self.usable(), egui::Button::new("文字…"))
+                        .add_enabled(self.usable(), egui::Button::new("文本…"))
                         .clicked()
                     {
                         self.open_modal(ActiveModal::Text);
                         ui.close();
                     }
                 });
+                ui.menu_button("工具", |ui| {
+                    for (label, tool) in [
+                        ("选择", tools::ActiveTool::Select),
+                        ("测距", tools::ActiveTool::Measure),
+                    ] {
+                        if ui.button(label).clicked() {
+                            self.text.cancel();
+                            self.tool = tool;
+                            self.measure.clear();
+                            ui.close();
+                        }
+                    }
+                });
+                ui.menu_button("图层", |ui| {
+                    if ui
+                        .add_enabled(
+                            self.layer.is_some() && !self.busy,
+                            egui::Button::new("重命名…"),
+                        )
+                        .clicked()
+                    {
+                        self.open_modal(ActiveModal::Rename);
+                        ui.close();
+                    }
+                    if let Some(layer) = self
+                        .view
+                        .layers
+                        .iter()
+                        .find(|l| Some(&l.layer_id) == self.layer.as_ref())
+                        .cloned()
+                    {
+                        for (label, visibility) in [
+                            (
+                                if layer.visible {
+                                    "隐藏当前层"
+                                } else {
+                                    "显示当前层"
+                                },
+                                true,
+                            ),
+                            (
+                                if layer.locked {
+                                    "解锁当前层"
+                                } else {
+                                    "锁定当前层"
+                                },
+                                false,
+                            ),
+                        ] {
+                            if ui
+                                .add_enabled(!self.busy, egui::Button::new(label))
+                                .clicked()
+                            {
+                                if let Some(d) = &self.view.info {
+                                    self.send(Action::Layer(editor_service::LayerUpdateParams {
+                                        layer_id: layer.layer_id.clone(),
+                                        expected_workspace_revision: d.workspace_revision.clone(),
+                                        display_name: None,
+                                        visible: visibility.then_some(!layer.visible),
+                                        locked: (!visibility).then_some(!layer.locked),
+                                    }));
+                                }
+                                ui.close();
+                            }
+                        }
+                    }
+                });
                 ui.menu_button("视图", |ui| {
+                    ui.checkbox(&mut self.grid.visible, "显示网格");
+                    if ui.button("网格 / 吸附设置…").clicked() {
+                        self.open_modal(ActiveModal::Grid);
+                        ui.close();
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label("坐标显示单位");
+                        ui.selectable_value(&mut self.display_unit, tools::DisplayUnit::Mm, "mm");
+                        ui.selectable_value(
+                            &mut self.display_unit,
+                            tools::DisplayUnit::Inch,
+                            "inch",
+                        );
+                    });
                     if ui.button("适合窗口  F").clicked() {
                         self.fit = true;
                         ui.close();
                     }
                 });
                 ui.menu_button("帮助", |ui| {
-                    ui.label("S2-C2 · Mac Rotate / Mirror GUI");
+                    ui.label("S4-A2.2 · 文本与参数交互");
                     ui.label(
                         "几何选择包括 Clear；Ctrl 点击加选，Shift 点击减选，双向框选，整组编辑。",
                     );
@@ -1010,7 +1114,6 @@ impl eframe::App for EditorApp {
                             }
                         }
                         ui.separator();
-                        self.object_buttons(ui);
                         ui.add_enabled_ui(
                             self.usable() && drag::editable_selection(&self.view),
                             |ui| {
@@ -1061,7 +1164,7 @@ impl eframe::App for EditorApp {
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Select, "选择");
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Measure, "测距");
                 if ui
-                    .add_enabled(self.usable(), egui::Button::new("文字…"))
+                    .add_enabled(self.usable(), egui::Button::new("文本…"))
                     .clicked()
                 {
                     self.open_modal(ActiveModal::Text);
@@ -1328,9 +1431,6 @@ impl eframe::App for EditorApp {
                     self.last_good = None;
                 }
                 if let Some(last) = &self.last_good {
-                    if !rendered {
-                        self.display_error = None;
-                    }
                     painter.add(egui_wgpu::Callback::new_paint_callback(
                         rect,
                         gpu::Callback {

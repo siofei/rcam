@@ -1860,3 +1860,12 @@ UI 增加独占弹窗、IME 事件保护、浮动平移/吸附/一次提交/零�
 96 个有效用例、AT-079 退役记录、required_platforms 和原始门槛均不变。
 旋转后的拟合/连接边编号不是稳定身份；几何测试比较双向材料边界误差，
 不以不同表示之间的顶点按序配对替代几何真值。已有核心刚性变换测试保留。
+
+### S4-A2.2 local extensions (same AT identities)
+
+AT-046/047/050/052: multiline baseline layout and one history transaction; original
+ASCII stroke font as default, explicit Chinese rejection, system-font Chinese still
+supported, stroke width and export/reopen verified. AT-031–034/040: multiline Enter
+is text input, Confirm hides modal, floating Escape restores draft without mutation,
+canvas click commits once. Menu entries route to existing actions. Previous newline
+rejection and floating-Esc-discard expectations are superseded by the user request.

@@ -216,17 +216,34 @@ impl EditorApp {
     pub(crate) fn text_controls(&mut self, ui: &mut egui::Ui) {
         self.invalidate_text_overlay();
         let mut changed = false;
-        ui.label("单行中文 / ASCII");
-        changed |= ui
-            .add(
-                egui::TextEdit::singleline(&mut self.text.text)
-                    .id(egui::Id::new("manufacturing-text"))
-                    .desired_width(f32::INFINITY),
-            )
-            .changed();
-        if self.ime_active {
-            ui.label("输入法组合中；确认候选后才生成预览");
-        }
+        ui.horizontal(|ui| {
+            ui.label("图层");
+            egui::ComboBox::from_id_salt("text-layer")
+                .selected_text(
+                    self.view
+                        .layers
+                        .iter()
+                        .find(|l| Some(&l.layer_id) == self.layer.as_ref())
+                        .map_or("请选择图层", |l| l.display_name.as_str()),
+                )
+                .show_ui(ui, |ui| {
+                    for layer in &self.view.layers {
+                        if ui
+                            .add_enabled(
+                                layer.visible && !layer.locked,
+                                egui::Button::new(&layer.display_name),
+                            )
+                            .clicked()
+                        {
+                            self.layer = Some(layer.layer_id.clone());
+                            changed = true;
+                            ui.close();
+                        }
+                    }
+                });
+        });
+        ui.label("字型");
+        let mut builtin_selected = false;
         let mut system_font = None;
         let selected = self.text.font.as_ref().map_or_else(
             || "选择系统字体…".into(),
@@ -238,6 +255,19 @@ impl EditorApp {
             .selected_text(selected)
             .height(280.)
             .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(
+                        self.text.font.as_ref().is_some_and(|f| {
+                            f.identity.path == editor_service::BUILTIN_STROKE_PATH
+                        }),
+                        "RCam 默认线条字体（ASCII）",
+                    )
+                    .clicked()
+                {
+                    builtin_selected = true;
+                    ui.close();
+                }
+                ui.separator();
                 ui.add(
                     egui::TextEdit::singleline(&mut self.text.font_search)
                         .hint_text("搜索字体家族 / 字形"),
@@ -266,83 +296,118 @@ impl EditorApp {
                     );
                 }
             });
+        if builtin_selected {
+            self.text.font_generation += 1;
+            self.text.pending_font = None;
+            self.text.pending_postscript = None;
+            self.text.font_path = None;
+            self.text.offset = "0".into();
+            self.text.accept_font(editor_service::builtin_stroke_font());
+        }
         if let Some(font) = system_font {
             self.text.queue_font(font.path);
             self.text.pending_postscript = Some(font.postscript);
         }
-        ui.horizontal(|ui| {
-            ui.small(self.text.catalog.as_ref().map_or_else(
-                || "读取系统字体…".into(),
-                |f| format!("系统字体 {} 款", f.len()),
-            ));
-            if ui
-                .add_enabled(!self.busy, egui::Button::new("刷新").small())
-                .clicked()
-            {
-                self.text.catalog_requested = false;
-            }
-        });
-        if let Some(error) = &self.text.catalog_error {
-            ui.label(error);
-        }
-        if ui.button("选择字体文件… TTF / OTF / TTC").clicked() {
-            match crate::platform::choose_path(false, "font") {
-                Ok(Some(path)) => {
-                    self.text.face = 0;
-                    self.text.queue_font(path);
-                }
-                Ok(None) => {}
-                Err(e) => self.text.status = e,
-            }
-        }
-        let mut recent = None;
-        egui::ComboBox::from_id_salt("recent-text-font")
-            .selected_text("最近字体（本次会话）")
-            .show_ui(ui, |ui| {
-                for f in &self.text.recent {
-                    if ui
-                        .selectable_label(
-                            false,
-                            format!(
-                                "{} / {} · face {}",
-                                f.family, f.subfamily, f.identity.face_index
-                            ),
-                        )
-                        .clicked()
-                    {
-                        recent = Some(f.clone());
-                    }
+        ui.collapsing("更多字体选项…", |ui| {
+            ui.horizontal(|ui| {
+                ui.small(self.text.catalog.as_ref().map_or_else(
+                    || "读取系统字体…".into(),
+                    |f| format!("系统字体 {} 款", f.len()),
+                ));
+                if ui
+                    .add_enabled(!self.busy, egui::Button::new("刷新").small())
+                    .clicked()
+                {
+                    self.text.catalog_requested = false;
                 }
             });
-        if let Some(f) = recent {
-            self.text.face = f.identity.face_index;
-            self.text.queue_font(f.identity.path.into());
-        }
-        let face_changed = ui
-            .horizontal(|ui| {
-                ui.label("Face Index");
-                ui.add(egui::DragValue::new(&mut self.text.face).range(0..=1024))
-                    .changed()
-            })
-            .inner;
-        if face_changed && let Some(path) = self.text.font_path.clone() {
-            self.text.queue_font(path);
-        }
-        if let Some(font) = &self.text.font {
-            ui.label(format!("{} / {}", font.family, font.subfamily));
-            ui.label(
-                std::path::Path::new(&font.identity.path)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-            );
+            if let Some(error) = &self.text.catalog_error {
+                ui.label(error);
+            }
+            if ui.button("选择字体文件… TTF / OTF / TTC").clicked() {
+                match crate::platform::choose_path(false, "font") {
+                    Ok(Some(path)) => {
+                        self.text.face = 0;
+                        self.text.queue_font(path);
+                    }
+                    Ok(None) => {}
+                    Err(e) => self.text.status = e,
+                }
+            }
+            let mut recent = None;
+            egui::ComboBox::from_id_salt("recent-text-font")
+                .selected_text("最近字体（本次会话）")
+                .show_ui(ui, |ui| {
+                    for f in &self.text.recent {
+                        if ui
+                            .selectable_label(
+                                false,
+                                format!(
+                                    "{} / {} · face {}",
+                                    f.family, f.subfamily, f.identity.face_index
+                                ),
+                            )
+                            .clicked()
+                        {
+                            recent = Some(f.clone());
+                        }
+                    }
+                });
+            if let Some(f) = recent {
+                self.text.face = f.identity.face_index;
+                if f.identity.path == editor_service::BUILTIN_STROKE_PATH {
+                    self.text.font_generation += 1;
+                    self.text.pending_font = None;
+                    self.text.pending_postscript = None;
+                    self.text.font_path = None;
+                    self.text.offset = "0".into();
+                    self.text.accept_font(f);
+                } else {
+                    self.text.queue_font(f.identity.path.into());
+                }
+            }
+            let face_changed = ui
+                .horizontal(|ui| {
+                    ui.label("Face Index");
+                    ui.add(egui::DragValue::new(&mut self.text.face).range(0..=1024))
+                        .changed()
+                })
+                .inner;
+            if face_changed && let Some(path) = self.text.font_path.clone() {
+                self.text.queue_font(path);
+            }
+            if let Some(font) = &self.text.font {
+                ui.label(format!("{} / {}", font.family, font.subfamily));
+                ui.label(
+                    std::path::Path::new(&font.identity.path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
+                );
 
-            ui.small("本地字体已验证；使用许可由用户负责，字体文件不随软件分发");
-        }
+                if font.identity.path == editor_service::BUILTIN_STROKE_PATH {
+                    ui.small("RCam 原创 ASCII 线条字体，随软件提供");
+                } else {
+                    ui.small("本地字体已验证；使用许可由用户负责，字体文件不随软件分发");
+                }
+            }
+        });
         ui.separator();
         changed |= field(ui, "可见字高 mm", &mut self.text.height);
-        changed |= field(ui, "轮廓补偿 Δ mm", &mut self.text.offset);
-        ui.small("正值加粗 / 负值减细；不是绝对笔画线宽");
+        let builtin = self
+            .text
+            .font
+            .as_ref()
+            .is_some_and(|f| f.identity.path == editor_service::BUILTIN_STROKE_PATH);
+        if builtin {
+            changed |= field(ui, "线条宽度 mm", &mut self.text.stroke_width);
+            ui.small("内置 ASCII 线条字体；中文请选择其他字型");
+        } else {
+            changed |= field(ui, "轮廓补偿 Δ mm", &mut self.text.offset);
+            ui.small("正值加粗 / 负值减细；不是绝对笔画线宽");
+        }
+        changed |= field(ui, "基线距离 mm", &mut self.text.baseline_spacing);
+        ui.small("0 = 自动（1.3 × 字高）；换行向下排列");
         changed |= field(ui, "字距 mm", &mut self.text.tracking);
         changed |= field(ui, "旋转 °", &mut self.text.rotation);
         ui.horizontal(|ui| {
@@ -368,20 +433,25 @@ impl EditorApp {
                     .changed();
             }
         });
-        ui.label("制造精度");
-        ui.horizontal(|ui| {
-            for (label, tol) in text_tool::PRESETS {
-                if ui
-                    .selectable_label(self.text.tolerance.parse::<f64>().ok() == Some(tol), label)
-                    .clicked()
-                {
-                    self.text.tolerance = tol.to_string();
-                    changed = true;
+        ui.collapsing("制造精度…", |ui| {
+            ui.label("制造精度");
+            ui.horizontal(|ui| {
+                for (label, tol) in text_tool::PRESETS {
+                    if ui
+                        .selectable_label(
+                            self.text.tolerance.parse::<f64>().ok() == Some(tol),
+                            label,
+                        )
+                        .clicked()
+                    {
+                        self.text.tolerance = tol.to_string();
+                        changed = true;
+                    }
                 }
-            }
+            });
+            changed |= field(ui, "自定义曲线误差 mm", &mut self.text.tolerance);
+            ui.small("0.00001–0.00025 mm；越小边界节点越多，与缩放无关");
         });
-        changed |= field(ui, "自定义曲线误差 mm", &mut self.text.tolerance);
-        ui.small("0.00001–0.00025 mm；越小边界节点越多，与缩放无关");
         let mut mode = self.text.placement;
         ui.horizontal(|ui| {
             ui.selectable_value(&mut mode, Placement::Mouse, "鼠标");
@@ -393,8 +463,10 @@ impl EditorApp {
         }
         match self.text.placement {
             Placement::Mouse | Placement::Absolute => {
-                changed |= field(ui, "X mm", &mut self.text.x);
-                changed |= field(ui, "Y mm", &mut self.text.y);
+                if mode == Placement::Absolute {
+                    changed |= field(ui, "X mm", &mut self.text.x);
+                    changed |= field(ui, "Y mm", &mut self.text.y);
+                }
                 if mode == Placement::Mouse {
                     changed |= ui
                         .checkbox(&mut self.text.snap_text, "文字锚点吸附网格（独立开关）")
@@ -424,6 +496,22 @@ impl EditorApp {
                 }
             }
         }
+        ui.separator();
+        ui.label(format!(
+            "文本（{} / 128 字符，可多行）",
+            self.text.text.chars().count()
+        ));
+        changed |= ui
+            .add(
+                egui::TextEdit::multiline(&mut self.text.text)
+                    .id(egui::Id::new("manufacturing-text"))
+                    .desired_rows(4)
+                    .desired_width(f32::INFINITY),
+            )
+            .changed();
+        if self.ime_active {
+            ui.label("输入法组合中；确认候选后才生成预览");
+        }
         if changed {
             self.text.changed();
         }
@@ -442,10 +530,12 @@ impl EditorApp {
                 if let editor_core::SemanticGeometry::Region { contours: cs } = g {
                     contours += cs.len();
                     edges += cs.iter().map(|c| c.edges.len()).sum::<usize>();
+                } else if matches!(g, editor_core::SemanticGeometry::Line { .. }) {
+                    edges += 1;
                 }
             }
             ui.small(format!(
-                "对象 {} · 轮廓 {contours} · 边界 {edges}",
+                "对象 {} · 轮廓 {contours} · 线段/边界 {edges}",
                 p.geometries.len()
             ));
         }
@@ -453,14 +543,12 @@ impl EditorApp {
             if ui
                 .add_enabled(
                     !self.busy && !self.ime_active && self.text.preview.is_some(),
-                    egui::Button::new(if self.text.placement == Placement::Mouse {
-                        "开始放置"
-                    } else {
-                        "Apply 创建文字"
-                    }),
+                    egui::Button::new("确定"),
                 )
                 .clicked()
-                || (self.dialog_enter(ui) && self.text.preview.is_some())
+                || (self.dialog_enter(ui)
+                    && !ui.memory(|m| m.has_focus(egui::Id::new("manufacturing-text")))
+                    && self.text.preview.is_some())
             {
                 if self.text.placement == Placement::Mouse {
                     if self.text.start_placement() {
@@ -476,6 +564,6 @@ impl EditorApp {
                 }
             }
         });
-        ui.small("不自动搭桥；普通 Gerber 重开后仅保留制造几何");
+        ui.small("确定后点击画布放置；Esc 返回此弹窗修改。普通 Gerber 不保留原文。");
     }
 }

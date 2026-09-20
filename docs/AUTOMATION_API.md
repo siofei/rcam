@@ -577,3 +577,19 @@ reports font read/hash and geometry timings. Typed host-only `font_inspect`
 uses explicit file access and returns family/subfamily plus verified identity;
 it is not a new public JSON operation. Full native S4-A2 acceptance remains
 pending; see ADR 0025 and review.
+
+### S4-A2.2 multiline and built-in stroke font
+
+`text.preview` / `text.create` retain their atomic contract. `layout` accepts LF
+newlines, `baseline_spacing_mm` (default 0 = 1.3 × height; positive explicit mm),
+and `stroke_width_mm` (default 0.15 mm; only used by the built-in stroke font).
+The 128-character limit includes newlines. Outline font glyphs share a scale across
+the block; height describes the glyph envelope, not the multiline block height.
+
+The built-in font identity is returned by the Rust helper `builtin_stroke_font()`:
+path `builtin:rcam-stroke-v1`, face 0, SHA-256 of the bundled original
+`editor-text/src/stroke_font.txt`. It needs no font-file permission. The service
+verifies this identity and emits real `Line` geometry, with positive width less
+than height. Its height is the capital-letter envelope, lowercase is proportionally
+smaller. Printable ASCII only; unsupported characters fail the entire operation.
+Local system fonts continue to require explicit file access and validated hashes.

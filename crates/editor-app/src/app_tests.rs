@@ -1775,6 +1775,16 @@ fn floating_text_translation_snap_cancel_commit_and_camera_parity() {
     d.preview = Some(preview.clone());
     assert!(d.start_placement());
     let generation = d.generation;
+    let original_text = d.text.clone();
+    d.resume_dialog();
+    assert!(d.floating.is_none());
+    assert_eq!(d.text, original_text);
+    assert!(std::sync::Arc::ptr_eq(
+        d.preview.as_ref().unwrap(),
+        &preview
+    ));
+    assert_eq!(d.generation, generation);
+    assert!(d.start_placement());
     let initial = m.view.info.clone();
     let rect =
         eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO, eframe::egui::vec2(800., 600.));
@@ -1836,4 +1846,54 @@ fn floating_text_translation_snap_cancel_commit_and_camera_parity() {
     d.cancel();
     assert!(d.floating.is_none() && d.preview.is_none());
     assert_eq!(m.view.info, state);
+}
+
+#[test]
+fn multiline_stroke_undo_redo_then_chinese_remains_renderable() {
+    use eframe::egui;
+    let (mut m, _) = setup_source("text-display.gbr", &fixture("s0_polarity.gbr"));
+    let rect = egui::Rect::from_min_size(egui::pos2(156., 90.), egui::vec2(786., 658.));
+    let camera = crate::camera::Camera {
+        center: MmPoint::new(0., 0.),
+        scale: 64.17,
+    };
+    m.run(Action::Viewport(
+        camera.center,
+        editor_core::BoundsMm {
+            min_x_mm: -13.,
+            min_y_mm: -11.,
+            max_x_mm: 13.,
+            max_y_mm: 11.,
+        },
+        256.,
+    ));
+    let draft = crate::text_tool::Draft {
+        text: "abcABC\n0123".into(),
+        height: "1".into(),
+        x: "-2.890759".into(),
+        y: "-5.003636".into(),
+        ..Default::default()
+    };
+    m.run(Action::TextCreate(text_request(&m, &draft)));
+    m.run(Action::History(false));
+    m.run(Action::History(true));
+    let mut draft = text_draft(&mut m);
+    draft.text = "中文\nAB".into();
+    draft.height = "1".into();
+    draft.x = "2.545322".into();
+    draft.y = "-5.003636".into();
+    m.run(Action::TextCreate(text_request(&m, &draft)));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    let scene = m.view.scene.as_ref().unwrap();
+    assert_eq!(scene.objects.len(), 77);
+    // All four 1 mm glyphs must have tight sweep bounds, including shallow arcs.
+    for o in &scene.objects[73..] {
+        assert!(o.bounds[2] - o.bounds[0] < 2.);
+        assert!(o.bounds[3] - o.bounds[1] < 2.);
+    }
+    let flags = crate::gpu::selection_flags(scene, &m.view.selected.ids());
+    let prepared =
+        crate::gpu::prepare_measured(scene, camera, rect, 2., &flags, MmPoint::new(0., 0.))
+            .unwrap();
+    eprintln!("multiline display work {}", prepared.stats.estimated_work);
 }

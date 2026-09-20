@@ -409,6 +409,37 @@ fn native_metal_reference_production_pixel_parity() {
         "s1a1/g75_region_deviation_safe.gbr",
     ] {
         let (mut snapshot, mut layers) = fixture(name);
+        if name == "s1a1/g75_region_deviation_safe.gbr" {
+            // A 1 mm-wide Region with a radius-100 mm shallow arc. The render
+            // envelope must follow its sweep, never the full circle.
+            let a = MmPoint::new(-0.5, 0.);
+            let b = MmPoint::new(0.5, 0.);
+            let c = MmPoint::new(0.5, -1.);
+            let d = MmPoint::new(-0.5, -1.);
+            snapshot.layers[0].objects.push(SemanticObject {
+                object_id: "shallow-arc-region".into(),
+                exposure: Exposure::Dark,
+                origin: ObjectOrigin::Imported { command_index: 0 },
+                geometry: SemanticGeometry::Region {
+                    contours: vec![RegionContour {
+                        role: RegionRole::Solid,
+                        edges: vec![
+                            RegionEdge::Arc(ArcGeometry {
+                                start: a,
+                                end: b,
+                                center: MmPoint::new(0., 100.),
+                                direction: ArcDirection::CounterClockwise,
+                                full_circle: false,
+                                source: None,
+                            }),
+                            RegionEdge::Line { start: b, end: c },
+                            RegionEdge::Line { start: c, end: d },
+                            RegionEdge::Line { start: d, end: a },
+                        ],
+                    }],
+                },
+            });
+        }
         // Add a separate layer with Clear over the first layer's Dark.
         let mut upper = snapshot.layers[0].clone();
         upper.id = "parity-upper".into();

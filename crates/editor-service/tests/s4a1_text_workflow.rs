@@ -63,6 +63,8 @@ impl Run {
                 v_align: VerticalAlign::Bottom,
                 rotation_deg: 0.,
                 curve_tolerance_mm: editor_text::TOLERANCE_MM,
+                baseline_spacing_mm: 0.,
+                stroke_width_mm: 0.15,
                 outline_offset_mm: 0.,
             },
         }
@@ -270,7 +272,7 @@ fn all_rejections_leave_document_history_and_revision_unchanged() {
     let original = r.objects();
     let before = r.service.document_get(&r.id).unwrap();
     let mut failures = vec![];
-    for text in ["", " ", "A\nB", "A\u{9fff}"] {
+    for text in ["", " ", "A\tB", "A\u{9fff}"] {
         failures.push(r.params(text));
     }
     let mut p = r.params("A");
@@ -334,4 +336,89 @@ fn json_contract_advertises_and_dispatches_text() {
     let reply=r.service.execute_json(&json!({"api_version":1,"request_id":"text","op":"text.create","document_id":r.id,"expected_revision":"0","params":r.params("A")}).to_string());
     assert!(reply["status"] == "completed", "{reply}");
     assert_eq!(r.service.document_get(&r.id).unwrap().revision, "1");
+}
+
+#[test]
+fn multiline_stroke_and_outline_share_atomic_export_workflow() {
+    for stroke in [true, false] {
+        let mut r = Run::new();
+        let before = r.objects();
+        let mut params = r.params(if stroke { "abcABC\n0123" } else { "中文\nAB" });
+        params.layout.baseline_spacing_mm = 4.5;
+        if stroke {
+            params.font = builtin_stroke_font().identity;
+        }
+        let preview = r.service.text_preview(&r.id, "0", params.clone()).unwrap();
+        assert_eq!(r.objects(), before);
+        let made = r.service.text_create(&r.id, "0", params.clone()).unwrap();
+        assert_eq!(made.undo_entries_added, 1);
+        let expected = r.objects();
+        assert_eq!(
+            expected[1..]
+                .iter()
+                .map(|o| o.geometry.clone())
+                .collect::<Vec<_>>(),
+            preview.geometries
+        );
+        r.service.history_undo(&r.id, "1").unwrap();
+        assert_eq!(r.objects(), before);
+        r.service.history_redo(&r.id, "2").unwrap();
+        assert_eq!(r.objects(), expected);
+        let output = r.dir.join("multiline.gbr");
+        r.service
+            .export_layer(
+                &r.id,
+                "3",
+                ExportParams {
+                    layer_id: r.layer.clone(),
+                    path: output.to_string_lossy().into(),
+                    overwrite: OverwritePolicy {
+                        mode: "deny".into(),
+                        expected_sha256: None,
+                    },
+                    metadata_policy: MetadataPolicy {
+                        mode: "require_confirmation".into(),
+                        categories: None,
+                    },
+                },
+            )
+            .unwrap();
+        let bytes = std::fs::read(&output).unwrap();
+        let parsed = gerber_io::parse_s1(&bytes, "multiline-reopen").unwrap();
+        assert_eq!(parsed.document.layers[0].objects.len(), expected.len());
+        if stroke {
+            for (actual, expected) in parsed.document.layers[0]
+                .objects
+                .iter()
+                .zip(&expected)
+                .skip(1)
+            {
+                let (
+                    SemanticGeometry::Line {
+                        start: a,
+                        end: b,
+                        width_mm: w,
+                    },
+                    SemanticGeometry::Line {
+                        start: c,
+                        end: d,
+                        width_mm: v,
+                    },
+                ) = (&actual.geometry, &expected.geometry)
+                else {
+                    panic!()
+                };
+                assert!(
+                    a.distance_mm(*c) < 1e-6 && b.distance_mm(*d) < 1e-6 && (w - v).abs() < 1e-6
+                );
+            }
+            params.layout.text = "中文".into();
+            assert!(r.service.text_create(&r.id, "3", params.clone()).is_err());
+            assert_eq!(r.objects(), expected);
+            params.layout.text = "ABC".into();
+            params.font.sha256 = "0".repeat(64);
+            assert!(r.service.text_create(&r.id, "3", params).is_err());
+            assert_eq!(r.service.document_get(&r.id).unwrap().revision, "3");
+        }
+    }
 }

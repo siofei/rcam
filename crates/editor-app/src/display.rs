@@ -229,48 +229,21 @@ impl Scene {
                 }
                 let end = scene.primitives.len();
                 let mut bounds = scene.primitive_bounds(start, end);
-                // Region envelope must be LOD-independent; full-circle envelopes are conservative.
-                if let SemanticGeometry::Region { contours } = &object.geometry {
+                // Use the actual arc sweeps, not full-circle envelopes: a nearly
+                // straight text edge can have a huge radius. Keep bounds independent
+                // of display LOD and round outward to enclose local f32 vertices.
+                if matches!(object.geometry, SemanticGeometry::Region { .. }) {
+                    let exact = geometries_bounds([&object.geometry], &[])
+                        .map_err(|e| format!("VALIDATION_FAILED: {e}"))?
+                        .ok_or("VALIDATION_FAILED: empty Region bounds")?;
+                    let lo = scene.point(MmPoint::new(exact.min_x_mm, exact.min_y_mm))?;
+                    let hi = scene.point(MmPoint::new(exact.max_x_mm, exact.max_y_mm))?;
                     bounds = [
-                        f32::INFINITY,
-                        f32::INFINITY,
-                        f32::NEG_INFINITY,
-                        f32::NEG_INFINITY,
+                        lo[0].next_down(),
+                        lo[1].next_down(),
+                        hi[0].next_up(),
+                        hi[1].next_up(),
                     ];
-                    for contour in contours {
-                        let contour = canonical_region_contour(contour)
-                            .map_err(|e| format!("VALIDATION_FAILED: {e}"))?;
-                        for edge in contour.edges {
-                            let (lo, hi) = match edge {
-                                RegionEdge::Line { start, end } => (
-                                    MmPoint::new(
-                                        start.x_mm.min(end.x_mm),
-                                        start.y_mm.min(end.y_mm),
-                                    ),
-                                    MmPoint::new(
-                                        start.x_mm.max(end.x_mm),
-                                        start.y_mm.max(end.y_mm),
-                                    ),
-                                ),
-                                RegionEdge::Arc(a) => (
-                                    MmPoint::new(
-                                        a.center.x_mm - a.radius(),
-                                        a.center.y_mm - a.radius(),
-                                    ),
-                                    MmPoint::new(
-                                        a.center.x_mm + a.radius(),
-                                        a.center.y_mm + a.radius(),
-                                    ),
-                                ),
-                            };
-                            let lo = scene.point(lo)?;
-                            let hi = scene.point(hi)?;
-                            for k in 0..2 {
-                                bounds[k] = bounds[k].min(lo[k]);
-                                bounds[k + 2] = bounds[k + 2].max(hi[k]);
-                            }
-                        }
-                    }
                 }
                 scene.objects.push(Object {
                     meta: [

@@ -94,6 +94,6 @@ cargo build --release --locked -p editor-app
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
 
-当前活动开发阶段为 Mac-first S4-A2.1 UI / Text Contours / Floating Placement；
-以 docs/S4_A2_1_PLAN.md 和 REVIEW 为范围与证据记录。Global Units 必须等待 S4-A2.1 PASS。
+当前活动开发阶段为 Mac-first S4-A2.2 Multiline Text / Stroke Font / Menu Interaction；
+以 docs/S4_A2_2_PLAN.md 和 REVIEW 为范围与证据记录。Global Units 必须等待 S4-A2.1 PASS。
 Windows deferred / not executed，最终双平台 V1 门槛保持不变。

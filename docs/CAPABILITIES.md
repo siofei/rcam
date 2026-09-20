@@ -180,3 +180,13 @@ GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终�
 Global Units & Manufacturing Precision Foundation：**BLOCKED UNTIL S4-A2.1 PASS**。
 本轮不启动 Global Units、DXF/SVG/PLT、Final Layer Boolean Area 或 Windows。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
+
+### S4-A2.2 — 多行文本和菜单交互
+
+后续范围见 [S4_A2_2_PLAN](S4_A2_2_PLAN.md)。字型下拉默认使用 RCam 原创
+ASCII 线条字体；中文选择本地系统轮廓字体。文本支持多行，Enter 换行，
+鼠标模式确定后隐藏弹窗，Esc 恢复原草稿，画布单击提交一次 Undo 事务。
+“插入 → 文本…”和“编辑 → 删除”提供菜单入口；编辑、工具、图层、视图补齐现有功能入口。
+默认线条字体输出真实有限宽度 Line，轮廓字体继续使用 S4-A2.1 Region / Line / Arc 路径。
+基线距离 0 为自动 1.3 × 字高；128 字符上限保留。
+实际测试和未执行项见 [S4_A2_2_REVIEW](S4_A2_2_REVIEW.md)，Windows 未执行。

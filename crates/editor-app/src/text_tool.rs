@@ -46,6 +46,8 @@ pub struct Draft {
     pub context: Option<(String, String, String, String)>,
     pub text: String,
     pub height: String,
+    pub baseline_spacing: String,
+    pub stroke_width: String,
     pub offset: String,
     pub tracking: String,
     pub rotation: String,
@@ -89,6 +91,8 @@ impl Default for Draft {
             context: None,
             text: String::new(),
             height: "3".into(),
+            baseline_spacing: "0".into(),
+            stroke_width: "0.15".into(),
             offset: "0".into(),
             tracking: "0".into(),
             rotation: "0".into(),
@@ -105,7 +109,7 @@ impl Default for Draft {
             has_reference: false,
             pick_reference: false,
             snap_text: false,
-            font: None,
+            font: Some(editor_service::builtin_stroke_font()),
             recent: vec![],
             catalog: None,
             catalog_requested: false,
@@ -146,6 +150,13 @@ impl Draft {
         self.submitted = None;
         self.preview = None;
         self.status = "等待预览…".into();
+    }
+    pub fn resume_dialog(&mut self) {
+        if std::env::var_os("RCAM_INTERACTION_LOG").is_some() {
+            eprintln!("text_placement_resume generation={}", self.generation);
+        }
+        self.floating = None;
+        self.status = "已返回文字设置；草稿保留，制造内容未改变".into();
     }
     pub fn cancel(&mut self) {
         if self.floating.is_some() && std::env::var_os("RCAM_INTERACTION_LOG").is_some() {
@@ -220,6 +231,8 @@ impl Draft {
                 x_mm: anchor.x_mm,
                 y_mm: anchor.y_mm,
                 height_mm: number(&self.height)?,
+                baseline_spacing_mm: number(&self.baseline_spacing)?,
+                stroke_width_mm: number(&self.stroke_width)?,
                 outline_offset_mm: number(&self.offset)?,
                 tracking_mm: number(&self.tracking)?,
                 rotation_deg: number(&self.rotation)?,
@@ -331,6 +344,19 @@ impl Draft {
         };
         let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(70, 240, 180));
         for geometry in &preview.geometries {
+            if let SemanticGeometry::Line {
+                start,
+                end,
+                width_mm,
+            } = geometry
+            {
+                self.candidates += 1;
+                painter.line_segment(
+                    [screen(*start), screen(*end)],
+                    egui::Stroke::new((*width_mm * camera.scale) as f32, stroke.color),
+                );
+                continue;
+            }
             let SemanticGeometry::Region { contours } = geometry else {
                 continue;
             };

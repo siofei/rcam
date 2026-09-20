@@ -1,8 +1,10 @@
 //! Bounded font outlines -> f64 manufacturing Regions, independent of display.
 mod contours;
 mod offset;
+mod stroke;
 use editor_core::{MmPoint, RegionContour, RegionEdge, RegionRole, SemanticGeometry};
 use serde::{Deserialize, Serialize};
+pub use stroke::{STROKE_SOURCE, generate_stroke};
 use ttf_parser::{Face, OutlineBuilder};
 
 pub const TOLERANCE_MM: f64 = 0.00025;
@@ -10,6 +12,9 @@ pub const TOLERANCE_MM: f64 = 0.00025;
 pub const MAX_TOLERANCE_MM: f64 = TOLERANCE_MM;
 /// Smaller requests cannot be certified against cleanup and writer resolution.
 pub const MIN_TOLERANCE_MM: f64 = 0.00001;
+fn default_stroke_width() -> f64 {
+    0.15
+}
 fn default_tolerance_mm() -> f64 {
     TOLERANCE_MM
 }
@@ -37,6 +42,10 @@ pub enum VerticalAlign {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Layout {
+    #[serde(default)]
+    pub baseline_spacing_mm: f64,
+    #[serde(default = "default_stroke_width")]
+    pub stroke_width_mm: f64,
     pub text: String,
     pub x_mm: f64,
     pub y_mm: f64,
@@ -238,13 +247,7 @@ pub fn generate(
     generate_timed(bytes, face_index, layout).map(|(geometry, _)| geometry)
 }
 
-pub fn generate_timed(
-    bytes: &[u8],
-    face_index: u32,
-    layout: &Layout,
-) -> Result<(Vec<SemanticGeometry>, GenerationTimings), TextError> {
-    let started = std::time::Instant::now();
-    let mut timings = GenerationTimings::default();
+fn validate_layout(layout: &Layout) -> Result<(), TextError> {
     let values = [
         layout.x_mm,
         layout.y_mm,
@@ -253,6 +256,7 @@ pub fn generate_timed(
         layout.rotation_deg,
         layout.curve_tolerance_mm,
         layout.outline_offset_mm,
+        layout.baseline_spacing_mm,
     ];
     if !values.iter().all(|v| v.is_finite())
         || layout.curve_tolerance_mm <= 0.
@@ -264,7 +268,9 @@ pub fn generate_timed(
         || layout.tracking_mm.abs() > 1000.
         || layout.rotation_deg.abs() > 1e9
         || layout.text.trim().is_empty()
-        || layout.text.chars().any(char::is_control)
+        || layout.baseline_spacing_mm < 0.
+        || layout.baseline_spacing_mm > 10000.
+        || layout.text.chars().any(|c| c.is_control() && c != '\n')
     {
         return Err(TextError::InvalidArgument);
     }
@@ -272,6 +278,17 @@ pub fn generate_timed(
     {
         return Err(TextError::ResourceLimit);
     }
+    Ok(())
+}
+
+pub fn generate_timed(
+    bytes: &[u8],
+    face_index: u32,
+    layout: &Layout,
+) -> Result<(Vec<SemanticGeometry>, GenerationTimings), TextError> {
+    let started = std::time::Instant::now();
+    let mut timings = GenerationTimings::default();
+    validate_layout(layout)?;
     let parse_started = std::time::Instant::now();
     let face = Face::parse(bytes, face_index).map_err(|_| TextError::InvalidFont)?;
     timings.parse_ms = parse_started.elapsed().as_secs_f64() * 1000.;
@@ -283,6 +300,10 @@ pub fn generate_timed(
     let mut ymax = f64::NEG_INFINITY;
     // First pass establishes visible outline height; no screen/font raster metrics.
     for ch in layout.text.chars() {
+        if ch == '\n' {
+            glyphs.push((ttf_parser::GlyphId(0), 0., false));
+            continue;
+        }
         if !(ch.is_ascii()
             || ('\u{3000}'..='\u{303f}').contains(&ch)
             || ('\u{3400}'..='\u{9fff}').contains(&ch)
@@ -320,8 +341,20 @@ pub fn generate_timed(
         return Err(TextError::UnsupportedOutline);
     }
     let mut outlines = Vec::new();
+    let mut outline_baselines = Vec::new();
     let mut pen = 0.;
+    let mut baseline = 0.;
+    let spacing = if layout.baseline_spacing_mm == 0. {
+        layout.height_mm * 1.3
+    } else {
+        layout.baseline_spacing_mm
+    };
     for (id, advance, visible) in glyphs {
+        if id.0 == 0 {
+            pen = 0.;
+            baseline -= spacing;
+            continue;
+        }
         if visible {
             let mut outline = Outline::new(layout.curve_tolerance_mm * 0.4 / scale);
             face.outline_glyph(id, &mut outline)
@@ -332,10 +365,11 @@ pub fn generate_timed(
             for contour in &mut outline.contours {
                 for p in contour {
                     p[0] = p[0] * scale + pen;
-                    p[1] *= scale;
+                    p[1] = p[1] * scale + baseline;
                 }
             }
             outlines.push(outline.contours);
+            outline_baselines.push(baseline);
         }
         pen += advance * scale + layout.tracking_mm;
     }
@@ -344,19 +378,29 @@ pub fn generate_timed(
         // Erosion does not distribute over overlapping glyph unions. Refuse
         // ambiguous overlapping bounding intervals rather than erode separately.
         if layout.outline_offset_mm < 0. {
-            let mut intervals: Vec<_> = outlines
+            let boxes: Vec<_> = outlines
                 .iter()
                 .map(|cs| {
-                    cs.iter()
-                        .flatten()
-                        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
-                            (lo.min(p[0]), hi.max(p[0]))
-                        })
+                    cs.iter().flatten().fold(
+                        (
+                            f64::INFINITY,
+                            f64::NEG_INFINITY,
+                            f64::INFINITY,
+                            f64::NEG_INFINITY,
+                        ),
+                        |(x0, x1, y0, y1), p| {
+                            (x0.min(p[0]), x1.max(p[0]), y0.min(p[1]), y1.max(p[1]))
+                        },
+                    )
                 })
                 .collect();
-            intervals.sort_by(|a, b| a.0.total_cmp(&b.0));
-            if intervals.windows(2).any(|w| w[0].1 >= w[1].0) {
-                return Err(TextError::InvalidTopology);
+            for (i, a) in boxes.iter().enumerate() {
+                if boxes[i + 1..]
+                    .iter()
+                    .any(|b| a.1 >= b.0 && b.1 >= a.0 && a.3 >= b.2 && b.3 >= a.2)
+                {
+                    return Err(TextError::InvalidTopology);
+                }
             }
         }
         outlines = outlines
@@ -374,7 +418,16 @@ pub fn generate_timed(
     let xmax = all.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max);
     let ymin = all.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
     let ymax = all.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max);
-    if layout.outline_offset_mm != 0. && ((ymax - ymin) - layout.height_mm).abs() > 0.00008 {
+    let (glyph_min, glyph_max) = outlines
+        .iter()
+        .zip(&outline_baselines)
+        .flat_map(|(cs, b)| cs.iter().flatten().map(move |p| p[1] - b))
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), y| {
+            (lo.min(y), hi.max(y))
+        });
+    if layout.outline_offset_mm != 0.
+        && ((glyph_max - glyph_min) - layout.height_mm).abs() > 0.00008
+    {
         return Err(TextError::InvalidTopology);
     }
     let anchor_x = match layout.h_align {
@@ -582,7 +635,53 @@ mod tests {
             v_align: VerticalAlign::Bottom,
             rotation_deg: 0.,
             curve_tolerance_mm: TOLERANCE_MM,
+            baseline_spacing_mm: 0.,
+            stroke_width_mm: 0.15,
             outline_offset_mm: 0.,
+        }
+    }
+    #[test]
+    fn builtin_ascii_multiline_geometry_and_limits() {
+        let mut l = layout("A\nA");
+        l.baseline_spacing_mm = 4.5;
+        let g = generate_stroke(&l).unwrap();
+        assert!(
+            g.iter()
+                .all(|g| matches!(g, SemanticGeometry::Line {width_mm,..} if *width_mm==0.15))
+        );
+        let b = editor_core::geometries_bounds(&g, &[]).unwrap().unwrap();
+        assert!(((b.max_y_mm - b.min_y_mm) - 7.5).abs() < 1e-10);
+        l.rotation_deg = 90.;
+        let r = editor_core::geometries_bounds(&generate_stroke(&l).unwrap(), &[])
+            .unwrap()
+            .unwrap();
+        assert!(((r.max_x_mm - r.min_x_mm) - 7.5).abs() < 1e-10);
+        for c in '!'..='~' {
+            l.text = c.to_string();
+            assert!(
+                !generate_stroke(&l)
+                    .unwrap_or_else(|e| panic!("{c}: {e:?}"))
+                    .is_empty()
+            );
+        }
+        l.text = "中".into();
+        assert_eq!(generate_stroke(&l), Err(TextError::MissingGlyph('中')));
+        l.text = "A".repeat(129);
+        assert_eq!(generate_stroke(&l), Err(TextError::ResourceLimit));
+        l.text = "A".into();
+        l.stroke_width_mm = 0.;
+        assert_eq!(generate_stroke(&l), Err(TextError::InvalidArgument));
+    }
+    #[test]
+    fn outline_multiline_uses_shared_scale_and_preserves_offset_gate() {
+        let bytes = font();
+        let mut l = layout("中\n中");
+        l.baseline_spacing_mm = 4.5;
+        for offset in [0., 0.01, -0.01] {
+            l.outline_offset_mm = offset;
+            let g = generate(&bytes, 0, &l).unwrap();
+            let b = editor_core::geometries_bounds(&g, &[]).unwrap().unwrap();
+            assert!(((b.max_y_mm - b.min_y_mm) - 7.5).abs() < 0.00008);
         }
     }
     fn boundary_edges(g: &[SemanticGeometry]) -> Vec<RegionEdge> {
@@ -742,7 +841,7 @@ mod tests {
     #[test]
     fn invalid_input_is_rejected() {
         let bytes = font();
-        for text in ["", "  ", "A\nB", "A\tB"] {
+        for text in ["", "  ", "A\tB"] {
             assert!(generate(&bytes, 0, &layout(text)).is_err());
         }
         assert_eq!(

@@ -56,6 +56,8 @@ fn geometry_matrix() {
                     tracking_mm: 0.,
                     rotation_deg: 37.,
                     curve_tolerance_mm: 0.00025,
+                    baseline_spacing_mm: 0.,
+                    stroke_width_mm: 0.15,
                     outline_offset_mm: 0.,
                     h_align: HorizontalAlign::Left,
                     v_align: VerticalAlign::Bottom,

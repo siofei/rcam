@@ -50,6 +50,20 @@ pub struct TextTimings {
     pub font_hash_ms: f64,
     pub geometry: editor_text::GenerationTimings,
 }
+pub const BUILTIN_STROKE_PATH: &str = "builtin:rcam-stroke-v1";
+pub fn builtin_stroke_font() -> FontInfo {
+    FontInfo {
+        identity: FontIdentity {
+            path: BUILTIN_STROKE_PATH.into(),
+            sha256: sha256_hex(editor_text::STROKE_SOURCE.as_bytes()),
+            face_index: 0,
+            license_status: "RCam original bundled ASCII stroke glyphs; project license".into(),
+            redistribution_allowed: true,
+        },
+        family: "RCam 默认线条字体（ASCII）".into(),
+        subfamily: "Regular".into(),
+    }
+}
 impl ApplicationService {
     /// Host must grant the user-selected path first. Font bytes never leave the service.
     pub fn font_inspect(&self, path: &str, face_index: u32) -> Result<FontInfo, ServiceError> {
@@ -119,6 +133,27 @@ impl ApplicationService {
                 "font",
                 "explicit SHA-256 and license status are required",
             ));
+        }
+        if params.font.path == BUILTIN_STROKE_PATH {
+            if params.font.sha256 != builtin_stroke_font().identity.sha256
+                || params.font.face_index != 0
+            {
+                return Err(ServiceError::invalid_field(
+                    "font",
+                    "built-in stroke font identity mismatch",
+                ));
+            }
+            let started = std::time::Instant::now();
+            let geometries = editor_text::generate_stroke(&params.layout).map_err(|e| {
+                ServiceError { code: if e == TextError::ResourceLimit { "RESOURCE_LIMIT" } else { "INVALID_ARGUMENT" }.into(), message: match e { TextError::MissingGlyph(c) => format!("线条字体不支持 {c:?}；中文请选择系统字体"), _ => format!("检查字高、线宽（0 < 线宽 < 字高）及基线距离；线条字体不支持轮廓补偿。{e:?}") }, details: serde_json::json!({"field":"text"}) }
+            })?;
+            record
+                .history
+                .validate_generated(&record.document, &params.layer_id, &geometries)
+                .map_err(map_edit_error)?;
+            let mut timings = TextTimings::default();
+            timings.geometry.generation_ms = started.elapsed().as_secs_f64() * 1000.;
+            return Ok((geometries, timings));
         }
         let policy = self
             .file_access

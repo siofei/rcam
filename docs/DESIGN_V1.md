@@ -1057,3 +1057,11 @@ GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终�
 Global Units & Manufacturing Precision Foundation：**BLOCKED UNTIL S4-A2.1 PASS**。
 本轮不启动 Global Units、DXF/SVG/PLT、Final Layer Boolean Area 或 Windows。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
+
+### S4-A2.2 text interaction amendment
+
+The explicit user request supersedes the earlier single-line-only and floating-Esc
+cancel rules. See [S4-A2.2](S4_A2_2_PLAN.md): multiline text, an original built-in
+ASCII centerline font, selectable local outline fonts, Confirm → floating → click,
+and floating Escape → resume draft modal. Manufacturing changes still use one
+ApplicationService transaction. Global Units and Windows remain deferred.

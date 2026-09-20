@@ -103,3 +103,10 @@ Core Text enumerates available installed font metadata; Core Foundation owns
 and type-checks descriptor attributes. The app retains no redistributed font
 bytes. This uses the existing objc2 ecosystem, with minimal catalog features,
 in preference to handwritten FFI or approximate directory scans.
+
+## Original RCam ASCII stroke font (S4-A2.2)
+
+`crates/editor-text/src/stroke_font.txt` contains original centerline glyph data
+created for RCam under the workspace MIT OR Apache-2.0 license. No CircuitCAM font,
+Hershey dataset, operating-system font bytes, or third-party glyph table was copied.
+CircuitCAM screenshots supplied by the user inform interaction behavior only.

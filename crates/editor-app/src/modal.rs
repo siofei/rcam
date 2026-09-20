@@ -14,7 +14,7 @@ pub(crate) enum ActiveModal {
 impl ActiveModal {
     fn title(self) -> &'static str {
         match self {
-            Self::Text => "文字",
+            Self::Text => "插入文本",
             Self::Move => "数值移动",
             Self::Rotate => "旋转",
             Self::Mirror => "镜像",
@@ -85,55 +85,71 @@ impl EditorApp {
                 egui::ScrollArea::vertical()
                     .max_height((ctx.content_rect().height() - 160.).max(100.))
                     .show(ui, |ui| {
-                        ui.add_enabled_ui(!self.busy, |ui| match modal {
-                            ActiveModal::Text => self.text_controls(ui),
-                            ActiveModal::Rotate | ActiveModal::Mirror => {
-                                self.transform_controls(ui)
-                            }
-                            ActiveModal::Flash => self.flash_size_controls(ui),
-                            ActiveModal::Move => {
-                                ui.label("ΔX mm");
-                                ui.text_edit_singleline(&mut self.dx);
-                                ui.label("ΔY mm");
-                                ui.text_edit_singleline(&mut self.dy);
-                                if ui.button("应用位移").clicked() || self.dialog_enter(ui) {
-                                    self.send(Action::Move(self.dx.clone(), self.dy.clone()));
+                        ui.add_enabled_ui(
+                            !self.busy
+                                || (modal == ActiveModal::Text
+                                    && self.modal_pending.is_none()
+                                    && self.text.pending_apply.is_none()),
+                            |ui| match modal {
+                                ActiveModal::Text => self.text_controls(ui),
+                                ActiveModal::Rotate | ActiveModal::Mirror => {
+                                    self.transform_controls(ui)
                                 }
-                            }
-                            ActiveModal::Grid => {
-                                ui.label("网格步长 mm");
-                                ui.text_edit_singleline(&mut self.spacing);
-                                ui.checkbox(&mut self.draft_snap, "Grid Snap");
-                                ui.small("对象优先于网格；Alt 临时关闭吸附");
-                                if ui.button("应用设置").clicked() || self.dialog_enter(ui) {
-                                    match self.spacing.parse::<f64>() {
-                                        Ok(v)
-                                            if editor_core::grid::snap_scalar(0., v, 0.)
-                                                .is_ok() =>
-                                        {
-                                            self.grid.spacing_mm = v;
-                                            self.grid.snap_enabled = self.draft_snap;
-                                            self.modal = None;
-                                        }
-                                        _ => self.ui_error = Some("网格步长必须是有限正数".into()),
+                                ActiveModal::Flash => self.flash_size_controls(ui),
+                                ActiveModal::Move => {
+                                    ui.label("ΔX mm");
+                                    ui.text_edit_singleline(&mut self.dx);
+                                    ui.label("ΔY mm");
+                                    ui.text_edit_singleline(&mut self.dy);
+                                    if ui.button("应用位移").clicked() || self.dialog_enter(ui)
+                                    {
+                                        self.send(Action::Move(self.dx.clone(), self.dy.clone()));
                                     }
                                 }
-                            }
-                            ActiveModal::Rename => {
-                                ui.text_edit_singleline(&mut self.rename);
-                                if (ui.button("应用名称").clicked() || self.dialog_enter(ui))
-                                    && let (Some(d), Some(layer)) = (&self.view.info, &self.layer)
-                                {
-                                    self.send(Action::Layer(editor_service::LayerUpdateParams {
-                                        layer_id: layer.clone(),
-                                        expected_workspace_revision: d.workspace_revision.clone(),
-                                        display_name: Some(self.rename.clone()),
-                                        visible: None,
-                                        locked: None,
-                                    }));
+                                ActiveModal::Grid => {
+                                    ui.label("网格步长 mm");
+                                    ui.text_edit_singleline(&mut self.spacing);
+                                    ui.checkbox(&mut self.draft_snap, "Grid Snap");
+                                    ui.small("对象优先于网格；Alt 临时关闭吸附");
+                                    if ui.button("应用设置").clicked() || self.dialog_enter(ui)
+                                    {
+                                        match self.spacing.parse::<f64>() {
+                                            Ok(v)
+                                                if editor_core::grid::snap_scalar(0., v, 0.)
+                                                    .is_ok() =>
+                                            {
+                                                self.grid.spacing_mm = v;
+                                                self.grid.snap_enabled = self.draft_snap;
+                                                self.modal = None;
+                                            }
+                                            _ => {
+                                                self.ui_error =
+                                                    Some("网格步长必须是有限正数".into())
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                        });
+                                ActiveModal::Rename => {
+                                    ui.text_edit_singleline(&mut self.rename);
+                                    if (ui.button("应用名称").clicked() || self.dialog_enter(ui))
+                                        && let (Some(d), Some(layer)) =
+                                            (&self.view.info, &self.layer)
+                                    {
+                                        self.send(Action::Layer(
+                                            editor_service::LayerUpdateParams {
+                                                layer_id: layer.clone(),
+                                                expected_workspace_revision: d
+                                                    .workspace_revision
+                                                    .clone(),
+                                                display_name: Some(self.rename.clone()),
+                                                visible: None,
+                                                locked: None,
+                                            },
+                                        ));
+                                    }
+                                }
+                            },
+                        );
                         if let Some(error) = &self.ui_error {
                             ui.colored_label(egui::Color32::YELLOW, error);
                         }
@@ -234,6 +250,21 @@ mod tests {
             });
         }
         let _ = ctx.run(raw, |ctx| app.parameter_modal(ctx));
+    }
+    #[test]
+    fn multiline_enter_does_not_apply_and_preview_busy_keeps_text_editable() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        app.open_modal(ActiveModal::Text);
+        app.text.text = "abc".into();
+        frame(&mut app, &ctx, None);
+        ctx.memory_mut(|m| m.request_focus(egui::Id::new("manufacturing-text")));
+        frame(&mut app, &ctx, Some(egui::Key::End));
+        app.busy = true; // read-only preview in flight must not swallow input
+        frame(&mut app, &ctx, Some(egui::Key::Enter));
+        assert!(app.text.text.contains('\n'));
+        assert_eq!(app.modal, Some(ActiveModal::Text));
+        assert!(app.text.pending_apply.is_none());
     }
     #[test]
     fn ime_commit_frame_does_not_submit_preedit_draft() {
