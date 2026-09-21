@@ -116,10 +116,13 @@ def gate_f(obs, actions):
     ev = {}
     if reorder:
         t = reorder[0][0]
-        i = first(obs, lambda o: o['t_ms'] >= t and o['display_order'])
         prev = [o for o in obs if o['t_ms'] < t and o['display_order']]
-        ok = bool(prev) and i is not None and prev[-1]['display_order'] != obs[i]['display_order']
-        ev = {'before': prev[-1]['display_order'] if prev else None, 'after': obs[i]['display_order'] if i is not None else None}
+        # The service answers a few frames after the Action is logged: look for the first
+        # observation within the next 5 s whose order differs from the pre-action order.
+        after = next((o for o in obs if t <= o['t_ms'] <= t + 5000 and o['display_order']
+                      and prev and o['display_order'] != prev[-1]['display_order']), None)
+        ok = bool(prev) and after is not None and sorted(prev[-1]['display_order']) == sorted(after['display_order'])
+        ev = {'before': prev[-1]['display_order'] if prev else None, 'after': after['display_order'] if after else None}
     c.add('F09', 'Drag reorder changes order', ok, ev)
     # 10 dirty/generated strong delete confirmation
     i = first(obs, lambda o: o['layer_dialog']['kind'] == 'Delete' and o['layer_dialog']['risk'] == 'NonEmptyDirty' and not o['layer_dialog']['acknowledged'])
@@ -133,10 +136,11 @@ def gate_f(obs, actions):
            'modified': obs[i]['layer_dialog'].get('modified') if i is not None else None,
            'generated': obs[i]['layer_dialog'].get('generated') if i is not None else None})
     # 11 delete last layer -> empty workspace
-    rmi = first(obs, lambda o: len(o['layers']) == 0 and o['manufacturing_revision'] is not None and o['t_ms'] > 0)
     prior = first(obs, lambda o: len(o['layers']) == 1)
+    rmi = first(obs, lambda o: len(o['layers']) == 0, prior + 1) if prior is not None else None
+    removed = acts(actions, r'^RemoveLayer ')
     c.add('F11', 'Deleting the last layer leaves an empty Workspace',
-          (rmi is not None and prior is not None and prior < rmi) or None, {'one_layer': prior, 'empty': rmi})
+          (rmi is not None and bool(removed)) or None, {'one_layer': prior, 'empty': rmi, 'remove_actions': removed[-1:]})
     # 12 undo restores same layer / style / order
     ok = None
     ev = {}
