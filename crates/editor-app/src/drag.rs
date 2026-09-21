@@ -29,6 +29,7 @@ pub struct Drag {
     pub error: Option<String>,
 }
 pub fn editable_selection(view: &View) -> bool {
+    let classifier = crate::state::Classifier::new(&view.layers, &view.apertures);
     view.blocked.is_none()
         && view.scene.is_some()
         && !view.selected.ordered.is_empty()
@@ -36,10 +37,8 @@ pub fn editable_selection(view: &View) -> bool {
             view.selected
                 .primary()
                 .is_some_and(|p| p.layer_id == o.layer_id)
-                && view
-                    .layers
-                    .iter()
-                    .any(|l| l.layer_id == o.layer_id && l.visible && !l.locked)
+                && classifier.visible(o)
+                && classifier.edit_refusal(o).is_none()
         })
 }
 impl Drag {

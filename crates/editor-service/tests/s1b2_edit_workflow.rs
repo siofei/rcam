@@ -224,25 +224,33 @@ fn missing_layer_has_layer_not_found_details() {
     assert_eq!(error.details, json!({"entity":"document","id":"absent"}));
 }
 #[test]
-fn export_reports_saved_target_without_claiming_source_was_modified() {
+fn export_is_a_copy_it_never_links_the_source_or_clears_project_dirty() {
+    // S4-B1: Gerber is Import/Export only. Export writes a copy; it is not a Save.
     let mut r = Run::new();
     let original = r.info();
     assert_eq!(original["last_saved_path"], Value::Null);
     let ids = r.ids();
     r.duplicate(&ids, "0", 12.0, 0.0);
+    assert_eq!(r.info()["dirty"], true);
     r.roundtrip("1");
     let info = r.info();
     assert_eq!(info["source_path"], original["source_path"]);
     assert_eq!(info["source_sha256"], original["source_sha256"]);
-    assert!(
-        info["last_saved_path"]
-            .as_str()
-            .unwrap()
-            .ends_with("edited.gbr")
+    assert_eq!(
+        info["last_saved_path"],
+        Value::Null,
+        "an exported path never becomes a save target"
     );
-    assert_eq!(info["dirty"], false);
+    assert_eq!(
+        info["dirty"], true,
+        "Export must not move the project baseline"
+    );
     r.history("history.undo", "1");
-    assert_eq!(r.info()["dirty"], true);
+    assert_eq!(
+        r.info()["dirty"],
+        false,
+        "dirty is relative to the Workspace baseline, never to an exported file"
+    );
     let before = r.info();
     assert_ne!(
         r.call(
@@ -250,11 +258,12 @@ fn export_reports_saved_target_without_claiming_source_was_modified() {
             Some("2"),
             r.export_params("source.gbr")
         )["status"],
-        "completed"
+        "completed",
+        "export never overwrites an existing file"
     );
     assert_eq!(r.info(), before);
     r.history("history.redo", "2");
-    assert_eq!(r.info()["dirty"], false);
+    assert_eq!(r.info()["dirty"], true);
 }
 #[test]
 fn duplicate_flash_has_new_stable_id() {
@@ -717,10 +726,14 @@ fn empty_layer_exports_and_reopens_after_delete_all() {
     r.delete(&ids, "0");
     let scene = r.roundtrip("1");
     assert!(scene.document.layers[0].objects.is_empty());
-    assert_eq!(r.info()["dirty"], false);
+    assert_eq!(
+        r.info()["dirty"],
+        true,
+        "Export does not clear project dirty"
+    );
     r.history("history.undo", "1");
     assert_eq!(r.ids(), ids);
-    assert_eq!(r.info()["dirty"], true);
+    assert_eq!(r.info()["dirty"], false);
 }
 
 #[test]

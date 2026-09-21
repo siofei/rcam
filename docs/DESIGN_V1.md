@@ -622,9 +622,9 @@ V1 的正式输出模式是 **“Gerber 几何文件”**。不承诺恢复或�
 2. 在内存／受控临时区域生成输出，做结构、语义和数值范围检查。
 3. 将输出重新解析为独立场景，比较几何与曝光结果；检查引用、数量及包围盒，不能只比对象数。
 4. 写目标同目录临时文件，检查写入与 flush／同步错误，再执行该平台经过测试的安全替换。
-5. 完成后更新对应图层的保存基线；失败保留脏状态和原文件，清理临时文件。
+5. 完成后更新对应输出的 saved precision 基线；失败保留脏状态和原文件，清理临时文件。自 S4-B1 起 Export **不清除 Workspace dirty**（见第 22 章）。
 
-默认使用“另存为当前图层”。显式覆盖现有文件时必须确认，并在覆盖前检查该文件是否被外部修改。Windows 上的已存在目标替换、文件占用与杀毒软件锁定不能按 POSIX rename 的行为想当然处理。
+历史默认为“另存为当前图层”，S4-B1 起改称 **Export Gerber…**（Gerber 只导入/导出，不是 Save）。显式覆盖现有文件时必须确认，并在覆盖前检查该文件是否被外部修改。Windows 上的已存在目标替换、文件占用与杀毒软件锁定不能按 POSIX rename 的行为想当然处理。
 
 可提供可配置的版本备份，但备份不代替安全替换。**进程级故障不损坏旧文件是 V1 门槛；突然断电的跨文件系统持久性需要另行验证，不作无依据保证。**
 
@@ -632,7 +632,7 @@ V1 的正式输出模式是 **“Gerber 几何文件”**。不承诺恢复或�
 
 每个图层独立保存为 Gerber；不能在用户点击“保存”时暗中合并所有图层。关闭程序时列出所有未保存图层，逐一保存或确认放弃。
 
-V1 不提供专有工程文件；图层颜色、临时选择、Undo 历史和文字原文分组不保证随普通 Gerber 保存。后续 `.gproj` 工程格式可以保存这些信息，但不能以项目文件可恢复来降低 Gerber 输出验收标准。
+V1 不提供专有工程文件；图层颜色、临时选择、Undo 历史和文字原文分组不保证随普通 Gerber 保存。后续 `.rcam` 工程格式（S4-B2/B3，见第 22 章；此前称 `.gproj`）可以保存这些信息，但不能以项目文件可恢复来降低 Gerber 输出验收标准。
 
 ### 12.5 往返验证不能只依赖自己
 
@@ -924,6 +924,94 @@ cargo test --locked -p editor-service --test headless_workflow
 - [S17] OpenAI `AGENTS.md` 指引：`https://developers.openai.com/codex/guides/agents-md/`
 - [S18] Cargo.toml 与 Cargo.lock：`https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html`
 
+## 22. 长期架构方向（钢网设计，2026-09-21 合并）
+
+> 本章合并自《RCam 长期架构指导》，用于跨阶段防止遗漏已接受的架构决策。它描述**方向和阶段归属**，不表示已实现；
+> 实际状态以各阶段 REVIEW 为准。当前开发主线 Mac-first，Windows 后置。决策记录见
+> [ADR 0029](adr/0029-multi-gerber-workspace.md)、[ADR 0030](adr/0030-reusable-blocks-and-forward-reservations.md)，
+> 开发约束摘要在 `AGENTS.md` 的 “Forward Architecture Reservations”。
+
+### 22.1 产品定位
+
+RCam 的主要用途是 **PCB 钢网/Stencil 制造图形设计、编辑、检查与工程管理**。除了普通 Gerber 编辑，优先级包括：精确制造几何、
+多 Layer、钢网开口编辑、可复用 Block、对象捕捉、Grid/Snap/Measure、工程项目 `.rcam`、PCB Board Coordinate/PnP/RefDes、
+大量重复开口的性能、Gerber/Drill 导入导出。
+
+### 22.2 文件生命周期
+
+- **Gerber = Import / Export format**，不是 RCam 的原生保存格式。Import 后 Gerber bytes → RCam semantic manufacturing model，
+  与磁盘源文件解耦。不支持 live source link、写回原 gbr、基于 mtime 的重载、外部文件绑定；只保存 provenance（原文件名、
+  imported SHA-256、导入时间）。
+- **Native Project = `.rcam`**（S4-B2 定格式，S4-B3 做 New/Open/Save/Save As、Migration、Recovery、Recent Projects）。
+  Export Gerber 不能清 project dirty，也不能成为 project save target。S4-B1 不冻结 `.rcam` 任何字段。
+- Gerber 兼容：Extended Gerber/RS-274X 从 FS/MO/AD 自动确定；Legacy/Hybrid 在无歧义时规范化；纯 RS-274-D 或有歧义时**永不猜测**，
+  进入 Legacy Import Modal，由用户提供格式/单位/零压缩/光圈表。
+
+### 22.3 Multi-Layer Workspace 与 Layer UI
+
+每个 Layer：稳定 LayerId、LayerKind、display_name、制造内容、View/Style 状态、可选 import provenance。Workspace 支持
+Visible/Selectable/Locked/Color/Z-order/Active/Solo/Filled/Outline/ZeroWidth/Category Style；**View state 不得污染 Gerber Writer**。
+
+Layer UI 采用单列 compact list（可调宽、有最小宽度）：`▶ ≡ ■ Layer Name 👁 🔒 ▣ ⋯`；高频项 Active、拖动/Z 序、颜色、
+Visible、Locked、Display Mode、More；`Selectable` 与分类细项放 Layer Settings；右键与 `⋯` 同一菜单。宽度不足时名称 UTF-8 安全省略，
+优先保证控件可用，完整名称可在 tooltip/Settings/Rename modal 查看；面板宽度是 UI preference，不属于制造状态。
+
+颜色：确定性 auto palette + presets + recent + full picker；分类色继承图层色或覆盖，未来随 `.rcam` 持久化。
+
+分类：Stroke、Circle、Rectangle、Obround、Polygon、ApertureMacro、ApertureBlock、RegionFreeform、GeneratedText、Other，
+每类有 color/visible/selectable/locked。有效状态：`effective_visible = layer.visible && class.visible`；
+`effective_selectable = effective_visible && layer.selectable && class.selectable`；`effective_locked = layer.locked || class.locked`。
+Locked-but-selectable 仍允许 select/measure/snap/查看属性，但不允许制造编辑。
+
+Display Mode：Filled（真实制造 composite）、Outline（制造边界 hairline）、ZeroWidth（Stroke 中心线，Flash/Region 轮廓 hairline），
+全部属于 View State。
+
+Layer 增删：`+` 提供 New Empty Layer / Import Gerber / 未来 Import Drill。删除：空层低风险直接删 + Undo；非空强确认；dirty/generated
+更强确认；始终是 RCam Document 事务；允许删除最后一层，留下 empty Workspace。
+
+### 22.4 Drill、Board Coordinate、PnP
+
+- `LayerKind::Drill` 必须在 Layer model 预留；至少 DrillHit/DrillSlot/Route；每个 import 独立 Tool namespace；显示同样有
+  Filled/Outline/ZeroWidth；Drill 同样只 Import/Export，不与磁盘源文件 live-link。
+- 内部 canonical 仍是 Manufacturing World = f64 mm。预留 Source → Board → Manufacturing World 三种坐标，统一 `CoordinateTransform2D`，
+  仅 translation/rotation/reflection，避免任意 scale/shear 进入制造定位语义。
+- Component Placement/RefDes 是独立模型（ComponentId、refdes、BoardPoint、rotation、side、footprint、value），不塞进普通 Gerber
+  SemanticObject；未来 `R123 → ComponentPlacement → Board→World → Camera Focus/Highlight`。
+
+### 22.5 Reusable Block
+
+钢网核心对象为 `BlockDefinition` + `BlockInstance`。Definition 是项目级可复用制造几何；Instance 属于某个 Layer，含
+definition_id + translation/rotation/mirror，**不支持 non-uniform scale/shear，第一版禁止 nested block**。修改 Definition 更新所有
+Instance；修改 Instance 只改 transform。Gerber Export 时 flatten；不要把 RCam Block 等同于 Gerber `%AB`。`.rcam v1` 冻结前必须已有 Block core。
+
+### 22.6 Object Snap 与 Grip
+
+统一 `SnapKind/SnapFeature/SnapFeatureId/SnapQuery/SnapCandidate/SnapFeatureProvider/SnapResolver`，目标支持 Endpoint/Vertex、Midpoint、
+Center、Quadrant、Intersection、Nearest，后续 Tangent/Perpendicular。Region/AM/Block 从**制造边界**提供 snap，不是 GPU/显示几何。
+采用 “screen-radius → 附近对象空间查询 → lazy feature generation”，**禁止全局预生成所有 snap 点**。Grid/Object Snap 由同一 Resolver 处理。
+Grip 不等于 Object Snap：现在只预留稳定 feature identity（`SnapFeatureId`/`GripFeatureId`）。
+
+### 22.7 Command / Shortcut
+
+建立 `CommandRegistry/CommandId/Keymap/ShortcutContext/ShortcutResolver/CommandDispatcher`。Menu/Toolbar/Context Menu/Shortcut 全部调用同一个
+CommandId。Context 优先级：IME/TextInput > Modal > Tool > Canvas > Global。逻辑修饰键 Primary/Secondary/Shift/Alt（macOS Cmd / Windows Ctrl）。
+用户 keymap override 属于 AppPreferences，不属于 `.rcam`。Automation API 不模拟快捷键，仍直接调用 ApplicationService。
+
+### 22.8 阶段归属
+
+| 阶段 | 必须包含 |
+|---|---|
+| S4-B1 | Multi-Layer Workspace、Layer UI/style/filter、layer add/delete/order、Gerber Import 语义；Drill Layer / Board Coordinate / Block / Object Snap / Command-Shortcut 架构**占位** |
+| S4-B2 | Block Core、`.rcam` Native Project Model/schema v1、Workspace state 持久化、Snap settings 持久化 |
+| S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects |
+| S4-C | 完整 Object Snap、Grip Editing、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette |
+
+### 22.9 基本不变量
+
+无论未来增加什么功能：Manufacturing geometry = f64 mm；GPU/display = 局部/camera-relative f32；Renderer mesh/像素永不回推制造几何；
+View/Workspace state 永不改变 Gerber 输出；Gerber Import 与源文件解耦；Gerber 是 Export 而非 Project Save；ApplicationService 是制造修改边界；
+GUI/Shortcut/Automation 共享业务逻辑。
+
 ### S1-A.1 圆弧语义澄清
 
 依据 [ADR 0007](adr/0007-s1-a1-arc-and-legacy-policy.md)，G75 支持合法非零 deviation 的目标，
@@ -1054,8 +1142,8 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
-Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded，见 GLOBAL_UNITS_PRECISION_REVIEW）。
+S4-B1 Multi-Gerber Workspace 已实现并通过云端自动测试，原生 Mac 验收待执行，**尚未标记 PASS**（见 S4_B1_REVIEW）；DXF/SVG/PLT、Final Layer Boolean Area、Windows、`.rcam`（S4-B2）仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
 
 ### S4-A2.2 text interaction amendment
@@ -1070,6 +1158,13 @@ ApplicationService transaction. Global Units is the current slice; Windows remai
 ### Global Units / Manufacturing Precision (current)
 
 See [plan](GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded）。
 Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
-Windows deferred / not executed; full V1 not claimed; P100K not complete.
+Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 release。
+
+### S4-B1 Multi-Gerber Workspace（2026-09-21）
+
+实现范围、任务书边界和验收状态见 [S4_B1_PLAN](S4_B1_PLAN.md)、[S4_B1_REVIEW](S4_B1_REVIEW.md)。
+一个 Workspace 含多个独立 Gerber Layer；Gerber 只 Import/Export（第 22 章）；Export 不清 dirty、不建 source link；
+Save/Save As 为 `.rcam` 保留。View state（颜色/可见/可选/锁定/层序/显示模式/分类样式/面板宽度）不影响 writer bytes。
+不冻结 `.rcam`；S4-B2 待审查后另行启动。原生 Mac 验收未执行前不声称 S4-B1 PASS。

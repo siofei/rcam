@@ -543,18 +543,20 @@ fn export_reopen_matches_edited_document() {
     for (a, b) in moved.iter().zip(&objects) {
         assert_eq!(a.object.exposure, b.object.exposure);
     }
-    assert_eq!(run.info()["dirty"], false);
-    run.history("history.undo", "3");
+    // Export is a copy: project dirty is relative to the Workspace baseline only.
     assert_eq!(run.info()["dirty"], true);
-    run.history("history.redo", "4");
+    run.history("history.undo", "3");
     assert_eq!(run.info()["dirty"], false);
+    run.history("history.redo", "4");
+    assert_eq!(run.info()["dirty"], true);
 }
 #[test]
 fn source_file_is_never_modified() {
     let mut run = Run::new("source-protection", MIXED.as_bytes());
     run.move_all("0");
     let failed=run.call("gerber.export_layer",Some("1"),json!({"layer_id":run.layer,"path":"source.gbr","overwrite":{"mode":"deny"},"metadata_policy":{"mode":"require_confirmation"}}));
-    assert_eq!(failed["status"], "error");
+    // An existing file (here the imported original) is never replaced.
+    assert_eq!(failed["status"], "confirmation_required");
     assert_eq!(run.info()["dirty"], true);
     run.roundtrip("1");
     assert_eq!(

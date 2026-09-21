@@ -188,7 +188,11 @@ pub fn prepare_measured(
                 scene.scalar(camera.center.x_mm - scene.anchor.x_mm)?,
                 scene.scalar(camera.center.y_mm - scene.anchor.y_mm)?,
                 (camera.scale * f64::from(ppp)) as f32,
-                0.,
+                // Selection-halo probe distance: about 1.5 device px, rounded once on the CPU.
+                // The extra 1.23 % keeps probes off exact pixel-centre ties: geometry aligned
+                // to half-pixel positions would otherwise land on a shape boundary, where the
+                // in/out answer depends on last-bit rounding of the shader compiler.
+                (1.5 * 1.0123 / (camera.scale * f64::from(ppp))) as f32,
             ],
             counts: [scene.objects.len() as u32, index.cols, index.rows, 0],
         },

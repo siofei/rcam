@@ -28,6 +28,7 @@ fn o(b: [f32; 4]) -> Object {
     Object {
         meta: [0, 1, 1, 1],
         bounds: b,
+        ..Default::default()
     }
 }
 fn rect() -> Rect {
@@ -41,6 +42,7 @@ fn viewport_physical_margin_large_object_order_and_empty() {
         Object {
             meta: [0, 1, 0, 2],
             bounds: [0., 0., 1., 1.],
+            ..Default::default()
         },
     ]);
     let camera = Camera {

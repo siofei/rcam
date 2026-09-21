@@ -9,7 +9,6 @@ pub(crate) enum ActiveModal {
     Mirror,
     Flash,
     Grid,
-    Rename,
     Units,
 }
 impl ActiveModal {
@@ -21,7 +20,6 @@ impl ActiveModal {
             Self::Mirror => "镜像",
             Self::Flash => "Flash 尺寸属性",
             Self::Grid => "网格 / 吸附设置",
-            Self::Rename => "图层名称",
             Self::Units => "单位 / 制造精度",
         }
     }
@@ -47,15 +45,6 @@ impl EditorApp {
         self.view.error = None;
         self.modal = Some(modal);
         self.modal_pending = None;
-        if modal == ActiveModal::Rename
-            && let Some(layer) = self
-                .view
-                .layers
-                .iter()
-                .find(|l| Some(&l.layer_id) == self.layer.as_ref())
-        {
-            self.rename = layer.display_name.clone();
-        }
         self.mirror_direction = crate::state::MirrorDirection::Horizontal;
         self.spacing = if modal == ActiveModal::Units {
             (self.precision().resolution_mm * 1000.).to_string()
@@ -154,25 +143,6 @@ impl EditorApp {
                                         }
                                     }
                                 }
-                                ActiveModal::Rename => {
-                                    ui.text_edit_singleline(&mut self.rename);
-                                    if (ui.button("应用名称").clicked() || self.dialog_enter(ui))
-                                        && let (Some(d), Some(layer)) =
-                                            (&self.view.info, &self.layer)
-                                    {
-                                        self.send(Action::Layer(
-                                            editor_service::LayerUpdateParams {
-                                                layer_id: layer.clone(),
-                                                expected_workspace_revision: d
-                                                    .workspace_revision
-                                                    .clone(),
-                                                display_name: Some(self.rename.clone()),
-                                                visible: None,
-                                                locked: None,
-                                            },
-                                        ));
-                                    }
-                                }
                             },
                         );
                         if let Some(error) = &self.ui_error {
@@ -242,7 +212,13 @@ mod tests {
             size_height: String::new(),
             display_unit: Default::default(),
             layer: None,
-            rename: String::new(),
+            layer_dialog: None,
+            layer_dialog_close_on_success: false,
+            pending_summary: None,
+            expanded_layers: Default::default(),
+            toast: None,
+            last_structure_serial: 0,
+            new_after_prompt: false,
             close_prompt: false,
             quit_after_close: false,
             allow_quit: false,

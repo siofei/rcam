@@ -269,6 +269,7 @@ fn locked_layer_is_rejected_and_does_not_modify_manufacturing_state() {
                 display_name: None,
                 visible: None,
                 locked: Some(true),
+                ..Default::default()
             },
         )
         .unwrap();

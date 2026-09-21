@@ -1,4 +1,5 @@
 //! Display-only analytic primitives and adaptive Region contours. Never writer input.
+use editor_core::workspace::{DisplayClass, LayerDisplayMode, aperture_shape_map, classify_object};
 use editor_core::*;
 use editor_service::{LayerInfo, RenderSnapshot};
 use std::collections::HashMap;
@@ -10,6 +11,22 @@ const MAX_ITEMS: usize = 200_000;
 pub struct Object {
     pub meta: [u32; 4],
     pub bounds: [f32; 4],
+    /// View style: `[0x00RRGGBB, mode, 0, 0]`; mode 0 = Filled, 1 = boundary
+    /// hairline, 2 = centre-line hairline. Never manufacturing data.
+    pub style: [u32; 4],
+}
+
+/// Style mode of an object in the shader.
+pub const MODE_FILLED: u32 = 0;
+pub const MODE_EDGE: u32 = 1;
+pub const MODE_CENTERLINE: u32 = 2;
+/// Marker in `Primitive::meta[3]`: draw this stroke as a screen-stable hairline.
+pub const HAIRLINE: u32 = 1;
+/// Screen-stable hairline used for boundary and centre-line display, in physical pixels.
+pub const HAIRLINE_PX: f64 = 1.0;
+
+pub fn pack_color(color: editor_core::workspace::Color) -> u32 {
+    (u32::from(color.r) << 16) | (u32::from(color.g) << 8) | u32::from(color.b)
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -92,14 +109,23 @@ impl Scene {
             .iter()
             .map(|a| (&a.id, &a.shape))
             .collect();
+        let shape_map = aperture_shape_map(&snapshot.apertures);
         for (layer_index, layer) in snapshot.layers.iter().enumerate() {
             let ws = layers
                 .iter()
                 .find(|l| l.layer_id == layer.id)
                 .ok_or("NOT_FOUND: layer workspace")?;
-            // Validate hidden layers too: hiding cannot bypass display support checks.
+            let layer_visible = ws.visible && ws.effective_visible;
+            let zero_width = ws.display_mode == LayerDisplayMode::ZeroWidth;
+            // Validate hidden layers and hidden categories too: hiding cannot bypass display support checks.
             for object in &layer.objects {
+                let class = classify_object(object, &shape_map);
+                let class_style = ws.classes.iter().find(|c| c.class == class);
+                let visible = layer_visible && class_style.is_none_or(|c| c.visible);
+                let color = class_style.map_or(ws.base_color, |c| c.effective_color);
                 let start = scene.primitives.len();
+                // Stroke-like geometry is drawn as its centre line in ZeroWidth.
+                let hairline = zero_width && class == DisplayClass::Stroke;
                 match &object.geometry {
                     SemanticGeometry::Flash {
                         center,
@@ -115,7 +141,7 @@ impl Scene {
                         start,
                         end,
                         width_mm,
-                    } => scene.capsule(*start, *end, *width_mm / 2., Exposure::Dark)?,
+                    } => scene.stroke(*start, *end, *width_mm / 2., hairline)?,
                     SemanticGeometry::RectangularSweep {
                         start,
                         end,
@@ -127,36 +153,40 @@ impl Scene {
                                 "UNSUPPORTED_FEATURE: oblique rectangular display sweep".into()
                             );
                         }
-                        let center = MmPoint::new(
-                            (start.x_mm + end.x_mm) / 2.,
-                            (start.y_mm + end.y_mm) / 2.,
-                        );
-                        scene.polygon(
-                            &rectangle(
-                                center,
-                                (end.x_mm - start.x_mm).abs() + width_mm,
-                                (end.y_mm - start.y_mm).abs() + height_mm,
-                            ),
-                            Exposure::Dark,
-                            true,
-                        )?;
+                        if hairline {
+                            scene.stroke(*start, *end, 1e-3, true)?;
+                        } else {
+                            let center = MmPoint::new(
+                                (start.x_mm + end.x_mm) / 2.,
+                                (start.y_mm + end.y_mm) / 2.,
+                            );
+                            scene.polygon(
+                                &rectangle(
+                                    center,
+                                    (end.x_mm - start.x_mm).abs() + width_mm,
+                                    (end.y_mm - start.y_mm).abs() + height_mm,
+                                ),
+                                Exposure::Dark,
+                                true,
+                            )?;
+                        }
                     }
                     SemanticGeometry::Arc { path, width_mm } => {
                         if !path.is_valid() {
                             return Err("VALIDATION_FAILED: display arc".into());
                         }
                         if path.zero_sweep() {
-                            scene.capsule(path.start, path.end, *width_mm / 2., Exposure::Dark)?;
+                            scene.stroke(path.start, path.end, *width_mm / 2., hairline)?;
                         } else {
                             let c = path.canonical_circle();
-                            scene.capsule(path.start, c.start, *width_mm / 2., Exposure::Dark)?;
-                            scene.capsule(c.end, path.end, *width_mm / 2., Exposure::Dark)?;
+                            scene.stroke(path.start, c.start, *width_mm / 2., hairline)?;
+                            scene.stroke(c.end, path.end, *width_mm / 2., hairline)?;
                             let center = scene.point(c.center)?;
                             let angle =
                                 (c.start.y_mm - c.center.y_mm).atan2(c.start.x_mm - c.center.x_mm);
                             let sweep = c.sweep_radians().ok_or("VALIDATION_FAILED: arc sweep")?;
                             scene.primitives.push(Primitive {
-                                meta: [2, 1, 0, 0],
+                                meta: [2, 1, 0, if hairline { HAIRLINE } else { 0 }],
                                 a: [
                                     center[0],
                                     center[1],
@@ -245,18 +275,30 @@ impl Scene {
                         hi[1].next_up(),
                     ];
                 }
+                let mode = match (ws.display_mode, hairline) {
+                    (LayerDisplayMode::Filled, _) => MODE_FILLED,
+                    (LayerDisplayMode::ZeroWidth, true) => MODE_CENTERLINE,
+                    _ => MODE_EDGE,
+                };
+                if mode != MODE_FILLED {
+                    // Hairlines extend about a pixel beyond the exact geometry.
+                    let pad = (2. * HAIRLINE_PX / ppm) as f32;
+                    bounds = [
+                        bounds[0] - pad,
+                        bounds[1] - pad,
+                        bounds[2] + pad,
+                        bounds[3] + pad,
+                    ];
+                }
                 scene.objects.push(Object {
                     meta: [
                         start as u32,
                         end as u32,
                         u32::from(object.exposure == Exposure::Dark),
-                        if ws.visible {
-                            layer_index as u32 + 1
-                        } else {
-                            0
-                        },
+                        if visible { layer_index as u32 + 1 } else { 0 },
                     ],
                     bounds,
+                    style: [pack_color(color), mode, 0, 0],
                 });
                 scene.ids.push(object.object_id.clone());
             }
@@ -312,6 +354,29 @@ impl Scene {
         ])
     }
     fn capsule(&mut self, a: MmPoint, b: MmPoint, r: f64, e: Exposure) -> Result<(), String> {
+        self.capsule_marked(a, b, r, e, 0)
+    }
+    /// A stroke: its swept capsule, or in ZeroWidth a screen-stable centre-line
+    /// hairline. Both validate the true width so display support checks are identical.
+    fn stroke(&mut self, a: MmPoint, b: MmPoint, r: f64, hairline: bool) -> Result<(), String> {
+        if hairline {
+            if !r.is_finite() || r <= 0. {
+                return Err("VALIDATION_FAILED: display radius".into());
+            }
+            // The radius is replaced by the shader; keep it representable.
+            self.capsule_marked(a, b, r.min(1e-3), Exposure::Dark, HAIRLINE)
+        } else {
+            self.capsule(a, b, r, Exposure::Dark)
+        }
+    }
+    fn capsule_marked(
+        &mut self,
+        a: MmPoint,
+        b: MmPoint,
+        r: f64,
+        e: Exposure,
+        mark: u32,
+    ) -> Result<(), String> {
         self.check_budget(1)?;
         if !r.is_finite() || r <= 0. {
             return Err("VALIDATION_FAILED: display radius".into());
@@ -319,7 +384,7 @@ impl Scene {
         let a = self.point(a)?;
         let b = self.point(b)?;
         self.primitives.push(Primitive {
-            meta: [0, u32::from(e == Exposure::Dark), 0, 0],
+            meta: [0, u32::from(e == Exposure::Dark), 0, mark],
             a: [a[0], a[1], b[0], b[1]],
             b: [self.scalar(r)?, 0., 0., 0.],
         });

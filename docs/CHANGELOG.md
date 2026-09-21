@@ -1,5 +1,13 @@
 # 文档变更记录
 
+## 2026-09-21 · S4-B1 Multi-Gerber Workspace + 长期架构指导合并
+
+新增 ADR 0029（Workspace / Gerber Import-Export / View State）、ADR 0030（Block/Snap/Command/Board 长期预留）、
+S4_B1_PLAN / S4_B1_REVIEW。DESIGN_V1 新增第 22 章“长期架构方向（钢网设计）”并修订 12.3/12.4 的 Save 语义；
+AGENTS.md 合并 Forward Architecture Reservations、Layer UI 与阶段顺序；IMPLEMENTATION_PLAN 冻结 S4-B1→B2→B3→C 路线；
+AUTOMATION_API 增加多层 Workspace 扩展；Global Units 收口为 PASS（Mac-first bounded）。
+S4-B1 原生 Mac 验收未执行，未宣称 PASS；`.rcam` 未冻结；不自动开始 S4-B2。
+
 ## 2026-09-20 · Global Units / Manufacturing Precision
 
 四单位显示与后缀解析统一，默认制造分辨率 0.1 µm，与 FS 编码、显示位数、网格和曲线预算分开。

@@ -79,6 +79,7 @@ def main():
         ['python3', 'scripts/source_manifest.py', '--check'],
         ['python3', 'scripts/test_audit_core10.py'],
         ['python3', 'scripts/test_package_source.py'],
+        ['python3', 'scripts/test_package_release.py'],
         ['cargo', 'test', '--release', '--locked', '-p', 'editor-app',
          'native_metal_reference_production_pixel_parity', '--', '--ignored', '--nocapture'],
     ]

@@ -255,6 +255,7 @@ mod tests {
                 Object {
                     meta: [0, 1, (i % 2) as u32, (i / 500 + 1) as u32],
                     bounds: [x, y, x + 1., y + 1.],
+                    ..Default::default()
                 }
             })
             .collect()

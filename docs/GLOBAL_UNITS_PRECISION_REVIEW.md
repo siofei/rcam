@@ -4,7 +4,11 @@
 [PLAN](GLOBAL_UNITS_PRECISION_PLAN.md); policy decisions are in
 [ADR 0026](adr/0026-global-units-manufacturing-precision.md).
 S4-A2.1 and S4-A2.2 are bounded Mac-first PASS prerequisites. Windows deferred /
-not executed; full V1 and P100K are not claimed. Stop before S4-B1.
+not executed; full V1, P100K and a complete CORE10 release are not claimed.
+
+**Status (2026-09-21, S4-B1 Gate 0.3): Global Units & Manufacturing Precision = PASS (Mac-first bounded).** This closes the
+foundation slice only; it does not extend to Windows, full V1, P100K or complete CORE10. S4-B1 work is tracked in
+[S4_B1_REVIEW](S4_B1_REVIEW.md).
 
 ## Delivered behavior
 

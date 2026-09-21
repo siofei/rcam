@@ -12,7 +12,7 @@
 
 每个任务写明 S0–S6 阶段、R01–R22 需求编号、AT-xxx 用例编号和允许修改的模块。只实施一个可运行、可测试的小闭环，不一次生成整套空按钮或未接入的占位模块。
 
-第一版必须完成：导入、图层、导航、选择、移动／复制／删除／旋转／镜像、数值编辑、Undo/Redo、网格／吸附／测距、中英文矢量文字、Gerber 安全另存为与重新打开；GUI 共用的无界面应用服务及真实接口集成测试。
+第一版必须完成：导入、图层、导航、选择、移动／复制／删除／旋转／镜像、数值编辑、Undo/Redo、网格／吸附／测距、中英文矢量文字、Gerber 安全导出（Export Gerber，自 S4-B1 起不再是 Save/Save As）与重新导入；GUI 共用的无界面应用服务及真实接口集成测试。
 
 范围外功能按设计安全拒绝。不能为了兼容而跳过未知命令，也不能把“拒绝全部真实文件”当作 V1 可用；S0 需冻结 REAL30 与 CORE10，核心 10 份真实样本最终必须 10/10 编辑往返成功。
 
@@ -94,7 +94,55 @@ cargo build --release --locked -p editor-app
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
 
-当前活动开发阶段为 Mac-first S4 Global Units & Manufacturing Precision Foundation；
-以 docs/GLOBAL_UNITS_PRECISION_PLAN.md 和 REVIEW 为范围与证据记录。
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。不自动开始 S4-B1。
+当前活动开发阶段为 Mac-first S4-B1 Multi-Gerber Workspace（见 docs/S4_B1_PLAN.md、
+docs/S4_B1_REVIEW.md、ADR 0029 / 0030）。Global Units & Manufacturing Precision Foundation
+按 Mac-first 范围收口（见 GLOBAL_UNITS_PRECISION_REVIEW）；不声称 Windows、完整 V1、P100K 或完整 CORE10。
+S4-B1 完成后停止并提交审查：**不自动开始 S4-B2**，不冻结 `.rcam` 格式。
+没有 Mac 原生证据（Metal parity、原生 GUI、ZIP 打包）时，不得声称“S4-B1 PASS”。
 Windows deferred / not executed，最终双平台 V1 门槛保持不变。
+
+## Forward Architecture Reservations（长期约束，S4-B1 合并）
+
+以下架构必须保留，不得因为当前阶段尚未实现完整 UI 而写死模型。完整背景见 `docs/DESIGN_V1.md`
+“长期架构方向（钢网设计）”一节与 `docs/IMPLEMENTATION_PLAN.md` 的阶段顺序。
+
+1. **Gerber 只 Import / Export**：导入后与磁盘源文件解耦（仅保存 filename、imported SHA-256、import time 作为 provenance）；
+   不做 live source link、mtime reload、写回原 gbr。未来 Save/Save As 只针对 `.rcam`。Export 不清 dirty、不建立 source link、不改变 layer identity。
+2. **LayerKind 可扩展**：不能写死 `Layer == Gerber`；必须允许未来 Drill/Excellon（DrillHit/DrillSlot/Route，独立 Tool namespace）。
+3. **Board Coordinates**：Manufacturing World 继续 f64 mm；预留 Source→Board→World，`CoordinateTransform2D` 仅 translation/rotation/reflection，禁止默认 scale/shear。
+4. **Component Placement**：ComponentPlacement/RefDes/PnP 独立于普通 Gerber SemanticObject。
+5. **Reusable Blocks**：BlockDefinition + BlockInstance；实例只允许 translation/rotation/reflection；第一版禁止 nested block；
+   Definition 修改更新全部 instances；Gerber Export flatten；RCam Block ≠ Gerber `%AB`；`.rcam v1` 冻结前必须已有 Block core。
+6. **Object Snap**：统一 SnapFeatureProvider / SnapQuery / SnapCandidate / SnapFeatureId / SnapResolver；以 Manufacturing Boundary 为真值，
+   不得从 GPU/tessellation/像素反推；Grip 不等于 Object Snap，现阶段只预留稳定 feature identity。
+7. **Shortcut Architecture**：CommandId/Registry + Keymap + ShortcutContext（IME/TextInput > Modal > Tool > Canvas > Global）；
+   Menu/Toolbar/Context Menu/Shortcut 共用 Command；逻辑修饰键 Primary/Secondary/Shift/Alt；用户 keymap 属于 AppPreferences；Automation 仍调用 ApplicationService，不模拟快捷键。
+8. **Layer View State**：颜色、Visible、Selectable、Locked、Z-order、Filled/Outline/ZeroWidth、category styles、面板宽度均不得改变 Gerber Writer 输出，也不产生制造 revision。
+9. **Layer Delete**：空层可低风险直接删除；非空强确认；dirty/generated 更强确认；必须 one transaction + Undo（恢复同一 LayerId、z-order、样式）；允许删除最后一层；headless `remove_layer` 非空需 `allow_non_empty`。
+10. **No global snap-point database**：Snap 使用屏幕半径 → 空间索引 → 附近对象 lazy features。
+11. **No nested block in first block version**：避免循环引用和迁移复杂度。
+12. **ApplicationService remains mutation boundary**：GUI、Command、Shortcut、Automation 不得绕过。
+
+### Accepted Layer UI
+
+LayerPanel 单列 compact list、可拖拽调宽、有最小宽度：
+
+```text
+▶  ≡  ■  Layer Name      👁  🔒  ▣  ⋯
+```
+
+右键与 `⋯` 使用同一个 context menu。颜色同时支持确定性 auto palette、presets、recent colors、full picker；分类色继承图层色或覆盖。
+手动列表顺序 = display Z-order。必须支持：Active Layer、Solo（双击图层名切换，再次双击取消）、Show/Hide All Layers、Fit Layer、Visible、Selectable、Locked、Filled/Outline/ZeroWidth、
+Category color/filter/lock、New Empty Layer、Import Gerber、Delete + Undo。Selectable 放 Layer Settings，不长期占 Layer row。
+
+宽度不足时：保持 Active/Color/Visible/Locked/DisplayMode/More 可用；图层名用 UTF-8 安全省略号截断；完整名称在 tooltip / Settings / Rename modal 可见；
+到最小宽度后不再缩小，绝不允许控件重叠。面板宽度只是 UI preference，不改制造状态或 Gerber 输出。
+
+### 阶段顺序
+
+```text
+S4-B1 Multi-Layer Workspace + reservations
+→ S4-B2 Block Core + .rcam schema v1
+→ S4-B3 Project lifecycle
+→ S4-C Full stencil editing (Snap/Grip/Block/PnP/RefDes)
+```

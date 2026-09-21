@@ -150,7 +150,7 @@ fn workspace_noop_does_not_increment_revision() {
     let before = r.info();
     assert_eq!(r.update(json!({})), before);
     assert_eq!(
-        r.update(json!({"visible":true,"locked":false,"display_name":"source.gbr"})),
+        r.update(json!({"visible":true,"locked":false,"display_name":"source"})),
         before
     );
 }
@@ -272,21 +272,16 @@ fn manufacturing_edit_still_changes_dirty() {
     );
 }
 #[test]
-fn export_after_manufacturing_edit_clears_dirty() {
+fn export_never_clears_project_dirty_or_links_the_output() {
     let mut r = Run::new();
     r.move_one();
     r.update(json!({"locked":true}));
     r.export("saved.gbr");
     let info = r.info();
-    assert_eq!(info["dirty"], false);
+    assert_eq!(info["dirty"], true, "Export is a copy, not a Save");
     assert_eq!(info["revision"], "1");
     assert_eq!(info["workspace_revision"], "1");
-    assert!(
-        info["last_saved_path"]
-            .as_str()
-            .unwrap()
-            .ends_with("saved.gbr")
-    );
+    assert_eq!(info["last_saved_path"], Value::Null);
 }
 #[test]
 fn layer_update_unknown_layer_is_typed_not_found() {
@@ -376,6 +371,7 @@ fn workspace_capability_and_dto_roundtrip() {
         display_name: Some("钢网".into()),
         visible: Some(false),
         locked: None,
+        ..Default::default()
     };
     assert_eq!(
         serde_json::from_str::<editor_service::LayerUpdateParams>(

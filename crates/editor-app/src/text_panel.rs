@@ -29,7 +29,7 @@ impl EditorApp {
                     .view
                     .layers
                     .iter()
-                    .any(|l| l.layer_id == p.params.layer_id && l.visible && !l.locked)
+                    .any(|l| l.layer_id == p.params.layer_id && crate::state::text_target_ok(l))
         }) {
             if self.text.floating.is_some() || self.text.pick_reference {
                 self.text.cancel();
@@ -235,7 +235,7 @@ impl EditorApp {
                     for layer in &self.view.layers {
                         if ui
                             .add_enabled(
-                                layer.visible && !layer.locked,
+                                crate::state::text_target_ok(layer),
                                 egui::Button::new(&layer.display_name),
                             )
                             .clicked()

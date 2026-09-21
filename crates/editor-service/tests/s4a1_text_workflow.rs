@@ -109,9 +109,9 @@ fn text_transaction_undo_redo_export_reopen_and_metrics() {
         let mut op = None;
         for o in &expected[1..] {
             assert_eq!(o.exposure, Exposure::Dark);
-            let ObjectOrigin::Generated { operation_id } = &o.origin else {
-                panic!()
-            };
+            // Text objects carry the text-specific generated origin (display class).
+            assert!(matches!(o.origin, ObjectOrigin::GeneratedText { .. }));
+            let operation_id = o.origin.operation_id().expect("generated object");
             if let Some(previous) = op {
                 assert_eq!(previous, operation_id);
             }
@@ -319,6 +319,7 @@ fn all_rejections_leave_document_history_and_revision_unchanged() {
                 display_name: None,
                 visible: None,
                 locked: Some(true),
+                ..Default::default()
             },
         )
         .unwrap();

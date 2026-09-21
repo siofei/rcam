@@ -84,6 +84,145 @@ enum Operation {
     Delete(Vec<IndexedObject>),
     ApertureResize(ApertureResize),
     Batch(BatchChange),
+    /// Whole-layer structure change (import batch, new empty layer, remove).
+    Layers(LayerMove),
+}
+
+/// A self-contained layer handed to `EditHistory::add_layers`: the layer and
+/// the apertures it exclusively owns (already namespace-remapped).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerAdd {
+    pub layer: SemanticLayer,
+    pub apertures: Vec<ApertureDefinition>,
+}
+
+/// Effect of a layer transaction on the layer set. The service uses it to keep
+/// its workspace side table (colours, order, active layer) in step with Undo/Redo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LayerEffect {
+    Added(Vec<String>),
+    Removed(Vec<String>),
+}
+
+/// Layers and apertures that move between the document and this transaction.
+/// Data is moved, never cloned: while the layers are in the document the
+/// transaction only remembers their positions and identities.
+#[derive(Debug, Clone)]
+struct LayerMove {
+    forward_inserts: bool,
+    layer_slots: Vec<(usize, String)>,
+    aperture_slots: Vec<(usize, String)>,
+    held_layers: Vec<SemanticLayer>,
+    held_apertures: Vec<ApertureDefinition>,
+}
+
+impl LayerMove {
+    fn held(&self) -> bool {
+        !self.held_layers.is_empty() || !self.held_apertures.is_empty()
+    }
+
+    fn payload_bytes(&self) -> usize {
+        let layers: usize = self
+            .held_layers
+            .iter()
+            .map(|layer| {
+                layer.id.len()
+                    + 64
+                    + layer
+                        .objects
+                        .iter()
+                        .map(|o| {
+                            size_of::<SemanticObject>()
+                                + o.object_id.len()
+                                + origin_bytes(&o.origin)
+                                + geometry_heap_bytes(&o.geometry)
+                                + 32
+                        })
+                        .sum::<usize>()
+            })
+            .sum();
+        let apertures: usize = self
+            .held_apertures
+            .iter()
+            .map(|a| {
+                size_of::<ApertureDefinition>() + a.id.len() + aperture_shape_heap_bytes(&a.shape)
+            })
+            .sum();
+        size_of::<Transaction>() + 512 + layers + apertures
+    }
+
+    fn resident_bytes(&self) -> usize {
+        size_of::<Transaction>()
+            + 512
+            + self
+                .layer_slots
+                .iter()
+                .chain(&self.aperture_slots)
+                .map(|(_, id)| id.len() + 32)
+                .sum::<usize>()
+    }
+
+    fn ids(&self) -> Vec<String> {
+        self.layer_slots.iter().map(|(_, id)| id.clone()).collect()
+    }
+
+    /// Put the held layers/apertures back at their recorded positions.
+    fn insert_into(&mut self, document: &mut SemanticDocument) -> Result<(), EditError> {
+        if self.held_layers.len() != self.layer_slots.len()
+            || self.held_apertures.len() != self.aperture_slots.len()
+            || self
+                .layer_slots
+                .iter()
+                .enumerate()
+                .any(|(i, (slot, _))| *slot > document.layers.len() + i)
+            || self
+                .aperture_slots
+                .iter()
+                .enumerate()
+                .any(|(i, (slot, _))| *slot > document.apertures.len() + i)
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        for ((slot, _), layer) in self.layer_slots.iter().zip(self.held_layers.drain(..)) {
+            document.layers.insert(*slot, layer);
+        }
+        for ((slot, _), aperture) in self
+            .aperture_slots
+            .iter()
+            .zip(self.held_apertures.drain(..))
+        {
+            document.apertures.insert(*slot, aperture);
+        }
+        Ok(())
+    }
+
+    /// Remove the layers/apertures from the document and hold them here.
+    fn extract_from(&mut self, document: &mut SemanticDocument) -> Result<(), EditError> {
+        if self
+            .layer_slots
+            .iter()
+            .any(|(slot, id)| document.layers.get(*slot).map(|l| &l.id) != Some(id))
+            || self
+                .aperture_slots
+                .iter()
+                .any(|(slot, id)| document.apertures.get(*slot).map(|a| &a.id) != Some(id))
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        let mut layers = Vec::with_capacity(self.layer_slots.len());
+        for (slot, _) in self.layer_slots.iter().rev() {
+            layers.push(document.layers.remove(*slot));
+        }
+        layers.reverse();
+        let mut apertures = Vec::with_capacity(self.aperture_slots.len());
+        for (slot, _) in self.aperture_slots.iter().rev() {
+            apertures.push(document.apertures.remove(*slot));
+        }
+        apertures.reverse();
+        self.held_layers = layers;
+        self.held_apertures = apertures;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -757,6 +896,26 @@ impl EditHistory {
         layer_id: &str,
         geometries: Vec<SemanticGeometry>,
     ) -> Result<Vec<String>, EditError> {
+        self.insert_generated_with(document, layer_id, geometries, false)
+    }
+
+    /// Same transaction as `insert_generated`, but objects carry the text origin.
+    pub fn insert_generated_text(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        geometries: Vec<SemanticGeometry>,
+    ) -> Result<Vec<String>, EditError> {
+        self.insert_generated_with(document, layer_id, geometries, true)
+    }
+
+    fn insert_generated_with(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        geometries: Vec<SemanticGeometry>,
+        text: bool,
+    ) -> Result<Vec<String>, EditError> {
         let (layer_index, next, bytes) = self.generated_plan(document, layer_id, &geometries)?;
         let layer = &document.layers[layer_index];
         let operation_id = format!("{}-generated-op-{}", document.id, self.next_generated_id);
@@ -773,8 +932,14 @@ impl EditHistory {
                     object_id,
                     geometry,
                     exposure: Exposure::Dark,
-                    origin: ObjectOrigin::Generated {
-                        operation_id: operation_id.clone(),
+                    origin: if text {
+                        ObjectOrigin::GeneratedText {
+                            operation_id: operation_id.clone(),
+                        }
+                    } else {
+                        ObjectOrigin::Generated {
+                            operation_id: operation_id.clone(),
+                        }
                     },
                 },
             });
@@ -866,8 +1031,15 @@ impl EditHistory {
                     document.id,
                     self.next_generated_id + n as u64
                 );
-                object.origin = ObjectOrigin::Generated {
-                    operation_id: operation_id.clone(),
+                // A copy of generated text remains text for display classification.
+                object.origin = if matches!(object.origin, ObjectOrigin::GeneratedText { .. }) {
+                    ObjectOrigin::GeneratedText {
+                        operation_id: operation_id.clone(),
+                    }
+                } else {
+                    ObjectOrigin::Generated {
+                        operation_id: operation_id.clone(),
+                    }
                 };
                 translate(&mut object.geometry, dx, dy)?;
                 validate_geometry(&object.geometry, &aperture_ids)
@@ -929,11 +1101,312 @@ impl EditHistory {
         Ok(ids)
     }
 
+    /// Effect on the layer set of undoing the next transaction, if it is a layer one.
+    pub fn peek_undo_layer_effect(&self) -> Option<LayerEffect> {
+        Self::layer_effect(self.undo.last()?, false)
+    }
+
+    /// Effect on the layer set of redoing the next transaction, if it is a layer one.
+    pub fn peek_redo_layer_effect(&self) -> Option<LayerEffect> {
+        Self::layer_effect(self.redo.last()?, true)
+    }
+
+    /// Layer ids referenced by layer transactions still on the Undo/Redo stacks.
+    /// The service keeps Workspace side data only for these.
+    pub fn layer_transaction_ids(&self) -> HashSet<String> {
+        self.undo
+            .iter()
+            .chain(&self.redo)
+            .filter_map(|tx| match &tx.operation {
+                Operation::Layers(mv) => Some(mv.ids()),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    fn layer_effect(tx: &Transaction, forward: bool) -> Option<LayerEffect> {
+        let Operation::Layers(mv) = &tx.operation else {
+            return None;
+        };
+        let ids = mv.ids();
+        Some(if mv.forward_inserts == forward {
+            LayerEffect::Added(ids)
+        } else {
+            LayerEffect::Removed(ids)
+        })
+    }
+
+    fn push_layer_transaction(&mut self, document: &SemanticDocument, mut tx: Transaction) {
+        if let Operation::Layers(mv) = &tx.operation {
+            tx.bytes = if mv.held() {
+                mv.payload_bytes()
+            } else {
+                mv.resident_bytes()
+            };
+        }
+        self.document_id = Some(document.id.clone());
+        self.redo.clear();
+        self.undo.push(tx);
+        while self.undo.len() > self.max_entries || self.bytes() > self.max_bytes {
+            let evicted = self.undo.remove(0);
+            self.truncated_entries += 1;
+            self.truncated_bytes = self.truncated_bytes.saturating_add(evicted.bytes);
+        }
+    }
+
+    /// Append self-contained layers as ONE transaction. Ids must not collide with
+    /// anything already in the document; nothing changes on failure.
+    pub fn add_layers(
+        &mut self,
+        document: &mut SemanticDocument,
+        adds: Vec<LayerAdd>,
+    ) -> Result<Vec<String>, EditError> {
+        if adds.is_empty()
+            || self
+                .document_id
+                .as_deref()
+                .is_some_and(|id| id != document.id)
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        let new_objects: usize = adds.iter().map(|a| a.layer.objects.len()).sum();
+        let new_edges: usize = adds
+            .iter()
+            .flat_map(|a| &a.layer.objects)
+            .map(|o| region_edges(&o.geometry))
+            .sum();
+        let total: usize = document.layers.iter().map(|l| l.objects.len()).sum();
+        let edges: usize = document
+            .layers
+            .iter()
+            .flat_map(|l| &l.objects)
+            .map(|o| region_edges(&o.geometry))
+            .sum();
+        if total.saturating_add(new_objects) > MAX_EDIT_DOCUMENT_OBJECTS
+            || edges.saturating_add(new_edges) > MAX_EDIT_REGION_EDGES
+        {
+            return Err(EditError::ResourceLimit);
+        }
+        // The new content must be valid on its own (ids, apertures, geometry).
+        let mut layers = Vec::with_capacity(adds.len());
+        let mut apertures = Vec::new();
+        for add in adds {
+            layers.push(add.layer);
+            apertures.extend(add.apertures);
+        }
+        let candidate = SemanticDocument {
+            id: document.id.clone(),
+            unit: document.unit.clone(),
+            format: document.format.clone(),
+            layers,
+            apertures,
+            source: SourceMetadata::default(),
+        };
+        candidate.validate().map_err(EditError::InvalidGeometry)?;
+        let existing_layers: HashSet<&str> =
+            document.layers.iter().map(|l| l.id.as_str()).collect();
+        let existing_objects: HashSet<&str> = document
+            .layers
+            .iter()
+            .flat_map(|l| &l.objects)
+            .map(|o| o.object_id.as_str())
+            .collect();
+        let existing_apertures: HashSet<&str> =
+            document.apertures.iter().map(|a| a.id.as_str()).collect();
+        let existing_codes: HashSet<(&str, i32)> = document
+            .apertures
+            .iter()
+            .map(|a| (aperture_namespace(&a.id), a.source_dcode))
+            .collect();
+        if candidate.layers.iter().any(|l| {
+            existing_layers.contains(l.id.as_str())
+                || l.objects
+                    .iter()
+                    .any(|o| existing_objects.contains(o.object_id.as_str()))
+        }) || candidate.apertures.iter().any(|a| {
+            existing_apertures.contains(a.id.as_str())
+                || existing_codes.contains(&(aperture_namespace(&a.id), a.source_dcode))
+        }) {
+            return Err(EditError::InvalidArgument);
+        }
+        let first_layer = document.layers.len();
+        let first_aperture = document.apertures.len();
+        let mut mv = LayerMove {
+            forward_inserts: true,
+            layer_slots: candidate
+                .layers
+                .iter()
+                .enumerate()
+                .map(|(i, l)| (first_layer + i, l.id.clone()))
+                .collect(),
+            aperture_slots: candidate
+                .apertures
+                .iter()
+                .enumerate()
+                .map(|(i, a)| (first_aperture + i, a.id.clone()))
+                .collect(),
+            held_layers: candidate.layers,
+            held_apertures: candidate.apertures,
+        };
+        if mv.payload_bytes() > self.max_bytes {
+            return Err(EditError::ResourceLimit);
+        }
+        mv.insert_into(document)?;
+        let ids = mv.ids();
+        self.push_layer_transaction(
+            document,
+            Transaction {
+                layer_id: String::new(),
+                layer: 0,
+                operation: Operation::Layers(mv),
+                before_order: vec![],
+                after_order: vec![],
+                bytes: 0,
+            },
+        );
+        Ok(ids)
+    }
+
+    /// Remove one layer as ONE transaction, together with the apertures only that
+    /// layer uses (plus unused apertures of `owned_namespace`). Undo restores the
+    /// same layer, position and apertures.
+    pub fn remove_layer(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        owned_namespace: Option<&str>,
+    ) -> Result<String, EditError> {
+        if self
+            .document_id
+            .as_deref()
+            .is_some_and(|id| id != document.id)
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        let layer_index = document
+            .layers
+            .iter()
+            .position(|l| l.id == layer_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "layer",
+                id: layer_id.into(),
+            })?;
+        fn used_by(layer: &SemanticLayer) -> HashSet<&str> {
+            layer
+                .objects
+                .iter()
+                .filter_map(|o| match &o.geometry {
+                    SemanticGeometry::Flash { aperture_id, .. } => Some(aperture_id.as_str()),
+                    _ => None,
+                })
+                .collect()
+        }
+        let own = used_by(&document.layers[layer_index]);
+        let others: HashSet<&str> = document
+            .layers
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != layer_index)
+            .flat_map(|(_, l)| used_by(l))
+            .collect();
+        let aperture_slots: Vec<(usize, String)> = document
+            .apertures
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| {
+                !others.contains(a.id.as_str())
+                    && (own.contains(a.id.as_str())
+                        || owned_namespace.is_some_and(|ns| aperture_namespace(&a.id) == ns))
+            })
+            .map(|(i, a)| (i, a.id.clone()))
+            .collect();
+        let held_bytes = document.layers[layer_index]
+            .objects
+            .iter()
+            .map(|o| {
+                size_of::<SemanticObject>()
+                    + o.object_id.len()
+                    + origin_bytes(&o.origin)
+                    + geometry_heap_bytes(&o.geometry)
+                    + 32
+            })
+            .sum::<usize>()
+            + aperture_slots.len() * (size_of::<ApertureDefinition>() + 128)
+            + size_of::<Transaction>()
+            + 512;
+        if held_bytes > self.max_bytes {
+            return Err(EditError::ResourceLimit);
+        }
+        let mut mv = LayerMove {
+            forward_inserts: false,
+            layer_slots: vec![(layer_index, layer_id.to_string())],
+            aperture_slots,
+            held_layers: vec![],
+            held_apertures: vec![],
+        };
+        mv.extract_from(document)?;
+        self.push_layer_transaction(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::Layers(mv),
+                before_order: vec![],
+                after_order: vec![],
+                bytes: 0,
+            },
+        );
+        Ok(layer_id.to_string())
+    }
+
+    /// Undo (`forward == false`) or redo the top layer transaction.
+    fn step_layers(
+        &mut self,
+        document: &mut SemanticDocument,
+        forward: bool,
+    ) -> Result<Vec<String>, EditError> {
+        let mut tx = if forward {
+            self.redo.pop()
+        } else {
+            self.undo.pop()
+        }
+        .ok_or(EditError::EmptyHistory)?;
+        let Operation::Layers(mv) = &mut tx.operation else {
+            unreachable!("caller checked the operation kind")
+        };
+        let inserts = mv.forward_inserts == forward;
+        let result = if inserts {
+            mv.insert_into(document)
+        } else {
+            mv.extract_from(document)
+        };
+        let ids = mv.ids();
+        if result.is_ok() {
+            tx.bytes = if mv.held() {
+                mv.payload_bytes()
+            } else {
+                mv.resident_bytes()
+            };
+        }
+        // Success moves the transaction to the opposite stack; failure puts it back.
+        let to_undo = forward == result.is_ok();
+        if to_undo {
+            self.undo.push(tx);
+        } else {
+            self.redo.push(tx);
+        }
+        result.map(|()| ids)
+    }
+
     pub fn undo(&mut self, document: &mut SemanticDocument) -> Result<Vec<String>, EditError> {
         if self.document_id.as_deref() != Some(document.id.as_str()) {
             return Err(EditError::EmptyHistory);
         }
         let tx = self.undo.last().ok_or(EditError::EmptyHistory)?;
+        if matches!(tx.operation, Operation::Layers(_)) {
+            return self.step_layers(document, false);
+        }
         check_transaction(document, tx, false)?;
         let ids = apply(document, tx, false);
         self.redo.push(self.undo.pop().unwrap());
@@ -944,6 +1417,9 @@ impl EditHistory {
             return Err(EditError::EmptyHistory);
         }
         let tx = self.redo.last().ok_or(EditError::EmptyHistory)?;
+        if matches!(tx.operation, Operation::Layers(_)) {
+            return self.step_layers(document, true);
+        }
         check_transaction(document, tx, true)?;
         let ids = apply(document, tx, true);
         self.undo.push(self.redo.pop().unwrap());
@@ -956,12 +1432,17 @@ fn check_transaction(
     tx: &Transaction,
     forward: bool,
 ) -> Result<(), EditError> {
+    if matches!(tx.operation, Operation::Layers(_)) {
+        // Verified by `LayerMove::{insert_into, extract_from}` before mutation.
+        return Ok(());
+    }
     let layer = document
         .layers
         .get(tx.layer)
         .filter(|l| l.id == tx.layer_id)
         .ok_or(EditError::InvalidArgument)?;
     match &tx.operation {
+        Operation::Layers(_) => {}
         Operation::Modify(changes) => {
             for c in changes {
                 let o = layer
@@ -1071,6 +1552,8 @@ fn check_transaction(
 
 fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Vec<String> {
     match &tx.operation {
+        // Layer moves mutate the transaction itself and never reach this path.
+        Operation::Layers(_) => Vec::new(),
         Operation::Modify(changes) => {
             let objects = &mut document.layers[tx.layer].objects;
             changes
@@ -1166,7 +1649,10 @@ fn operation_changes_shape(operation: &Operation) -> bool {
     match operation {
         Operation::ApertureResize(_) => true,
         Operation::Batch(batch) => !batch.inserted_apertures.is_empty(),
-        Operation::Modify(_) | Operation::Insert(_) | Operation::Delete(_) => false,
+        Operation::Modify(_)
+        | Operation::Insert(_)
+        | Operation::Delete(_)
+        | Operation::Layers(_) => false,
     }
 }
 
@@ -1234,7 +1720,9 @@ fn aperture_shape_heap_bytes(shape: &ApertureShape) -> usize {
 fn origin_bytes(origin: &ObjectOrigin) -> usize {
     match origin {
         ObjectOrigin::Imported { .. } => 0,
-        ObjectOrigin::Generated { operation_id } => operation_id.len(),
+        ObjectOrigin::Generated { operation_id } | ObjectOrigin::GeneratedText { operation_id } => {
+            operation_id.len()
+        }
     }
 }
 fn region_edges(geometry: &SemanticGeometry) -> usize {

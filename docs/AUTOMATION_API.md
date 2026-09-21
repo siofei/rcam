@@ -607,3 +607,34 @@ capability table for operation discovery. DisplayUnit is UI-only; all API values
 remain mm/mm². Existing export parameters remain unchanged and use the record's
 policy; successful export saves its baseline. See ADR 0026 for exact custom limits,
 rounding, text tolerance compatibility and policy behavior on reopen.
+
+
+## Multi-Gerber Workspace extension (S4-B1, API v1)
+
+`system.capabilities` lists exactly the operations that can be dispatched; a supported operation is never also listed as unsupported.
+All ids are strings (`layer-{n}`, `src-{n}`; counters are never reused). Workspace structure and view operations take
+`expected_revision` (document) and, for view-only changes, `expected_workspace_revision`. All values remain mm/mm².
+
+| operation | notes |
+|---|---|
+| `document.new` | creates an empty, clean Workspace (no source file); takes no `document_id`/`expected_revision`. Closing a Workspace with unexported changes (`document.close`) needs `params.discard_changes=true`, otherwise `CONFIRMATION_REQUIRED`; the GUI's New Workspace applies the same rule. |
+| `document.import_gerber_layers` | `params: {paths: []}`; all files succeed or none is added; one revision, one Undo; each file becomes a layer on top of the panel with an auto colour and import provenance (`original_file_name`, `sha256`, `imported_at`; never a link). Object/aperture ids are namespaced `src-N::…`. |
+| `document.import_gerber_layer` | single-file form of the above. Importing the same file twice yields two independent layers. |
+| `document.create_empty_layer` | `params: {display_name?}`; becomes active, top of the panel, auto colour; one Undo. |
+| `layer.summary` | `{layer_id}` → object/imported/generated/modified counts, `manufacturing_dirty`, `DeleteRisk` (`empty`, `non_empty_clean`, `non_empty_dirty`). Read-only. |
+| `document.remove_layer` | `{layer_id, allow_non_empty}`. A layer with objects is rejected unless `allow_non_empty=true`. One Undo restores the same LayerId, z-order, style, apertures and active layer. The last layer may be removed. Never touches disk files. |
+| `layers.reorder` | `{expected_workspace_revision, layer_ids: []}` (every id once, top first). Workspace-only. |
+| `layers.set_active` / `layers.set_solo` | workspace-only; Solo hides other layers temporarily and never shows a user-hidden layer. |
+| `layer.update`, `layers.update_many` | atomic across layers: `display_name`, `visible`, `locked`, `selectable`, `base_color` (`#rrggbb`), `color_mode` (`layer_color`, `category_color`), `display_mode` (`filled`, `outline`, `zero_width`), `classes[]` per DisplayClass (`class` or null for all, `visible`, `selectable`, `locked`, `color_override` = `#rrggbb` or `"inherit"`), `reset_classes`. View state only: no manufacturing revision change and no writer-byte change. |
+| `layers.reset_colors` | re-applies the deterministic palette. |
+| `layers.list` | rows in panel order (`z_index` 0 = top) with effective_visible / is_active / is_solo / classes / provenance. |
+| `render.snapshot` | layers are **bottom-first** (composite order) and carry view style; hidden layers/classes are excluded from candidates. |
+| `document.visible_bounds` | union of effective-visible layers/classes (used by Fit). |
+| `gerber.export_layer` | one layer per call from an isolated snapshot; existing overwrite policy; does not clear dirty, create a source link or change LayerId. |
+
+There is **no `document.save` for a Workspace**: Gerber is Import/Export only and Save/Save As are reserved for the future `.rcam`
+(S4-B2/B3). Effective state: `effective_visible = layer.visible && class.visible`; `effective_selectable = effective_visible && layer.selectable &&
+class.selectable`; `effective_locked = layer.locked || class.locked`. A locked layer/class rejects every manufacturing edit through the service,
+independent of any GUI state. Text creation targets an explicit layer (the GUI passes the active layer) and obeys the same rules.
+Dirty is the Workspace content hash against its baseline (not a file) and is cached per manufacturing revision.
+

@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发切片为 Mac-first Global Units / Manufacturing Precision，尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+当前开发切片为 Mac-first S4-B1 Multi-Gerber Workspace（Global Units 已 PASS Mac-first bounded），尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -177,8 +177,8 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
-Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded，见 GLOBAL_UNITS_PRECISION_REVIEW）。
+S4-B1 Multi-Gerber Workspace 已实现并通过云端自动测试，原生 Mac 验收待执行，**尚未标记 PASS**（见 S4_B1_REVIEW）；DXF/SVG/PLT、Final Layer Boolean Area、Windows、`.rcam`（S4-B2）仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
 
 ### S4-A2.2 — 多行文本和菜单交互
@@ -195,6 +195,22 @@ ASCII 线条字体；中文选择本地系统轮廓字体。文本支持多行�
 ### Global Units / Manufacturing Precision (current)
 
 See [plan](GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded）。
 Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
-Windows deferred / not executed; full V1 not claimed; P100K not complete.
+Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 release。
+
+### S4-B1 Multi-Gerber Workspace（实现完成，原生验收待执行）
+
+| 能力 | 边界 |
+|---|---|
+| 多 Gerber Workspace | 每个导入文件是独立 Layer（`layer-{n}`，来源 `src-{n}`，计数器不复用）；对象/光圈带命名空间；批量导入原子 |
+| Gerber 文件生命周期 | 只 Import / Export；无 source link / mtime reload / 写回原文件；Save/Save As 保留给 `.rcam`（S4-B2/B3），当前 disabled |
+| 单层导出 | `gerber.export_layer`；沿用安全写出流水线与 `overwrite` 策略；不清 dirty；使用文档级精度 |
+| New Empty Layer / 删除 | 空层直删 + Undo；非空需 `allow_non_empty`（GUI 强确认）；dirty/generated 更强确认；允许删除最后一层；Undo 恢复同 LayerId/z-order/样式 |
+| Layer View State | 颜色 + 自动配色、Visible/Selectable/Locked、Active、Solo、Z 序、Filled/Outline/ZeroWidth、DisplayClass 分类样式；不改变 writer bytes |
+| 有效状态 | `effective_visible/selectable/locked` = 层与类别的组合；锁定由服务强制 |
+| 渲染/命中 | layer-aware RenderSnapshot / RenderIndex；隐藏层和类别不进入渲染与命中候选 |
+| 占位类型 | LayerKind::Drill、Board/CoordinateTransform2D/ComponentPlacement、BlockDefinition/Instance、Snap 类型、Command/Keymap：**仅类型与测试，无产品入口，不构成已支持能力** |
+| 未做 | `.rcam`、Block core、Object Snap 全功能、Drill 导入、PnP/RefDes、DXF/SVG/PLT、图层合并/跨层 Boolean、Windows、P100K |
+
+Mac 上 fmt/check/clippy/test/release 与 Metal parity（288 例）已通过、原生 GUI 已做冒烟核查；固定 ZIP 交付、fresh extract 与 §107 逐项原生检查尚未完成，见 S4_B1_REVIEW；不得据此声称 “S4-B1 PASS”。

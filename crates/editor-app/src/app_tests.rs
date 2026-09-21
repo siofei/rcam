@@ -61,9 +61,17 @@ fn patch(m: &mut Model, visible: Option<bool>, locked: Option<bool>, name: Optio
         display_name: name,
         visible,
         locked,
+        ..Default::default()
     };
     m.run(Action::Layer(p));
     assert!(m.view.error.is_none());
+}
+/// Gerber export never clears Workspace dirty, so re-opening the exported file
+/// replaces the Workspace explicitly (discarding the edits, as a user would confirm).
+fn reopen(m: &mut Model, path: &std::path::Path) {
+    m.run(Action::Close(true));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    m.open(path).unwrap();
 }
 fn center(m: &Model) -> MmPoint {
     match m.view.selected.primary().unwrap().object.geometry {
@@ -155,23 +163,21 @@ fn numeric_invalid_not_submitted() {
     }
 }
 #[test]
-fn save_as_keeps_source_and_last_saved_identity() {
+fn export_is_a_copy_it_keeps_the_workspace_dirty_and_unlinked() {
     let (mut m, dir) = setup();
     select(&mut m);
     let source = m.view.info.as_ref().unwrap().source_path.clone();
     m.numeric_move("5", "-3").unwrap();
     let target = dir.join("输出 # 1.gbr");
     let l = m.view.layers[0].layer_id.clone();
+    let revision = m.view.info.as_ref().unwrap().revision.clone();
     m.save(&target, l, None).unwrap();
     let d = m.view.info.clone().unwrap();
-    assert!(!d.dirty);
-    assert_eq!(d.source_path, source);
-    assert_eq!(
-        d.last_saved_path.as_deref(),
-        std::fs::canonicalize(&target).unwrap().to_str()
-    );
+    assert!(d.dirty, "Gerber export never clears Workspace dirty");
+    assert_eq!(d.revision, revision);
+    assert_eq!(d.source_path, source, "export creates no source link");
     assert_eq!(std::fs::read_to_string(source).unwrap(), SOURCE);
-    m.open(&target).unwrap();
+    reopen(&mut m, &target);
     m.select(MmPoint::new(15., 17.), 0., Replace).unwrap();
     assert_eq!(center(&m), MmPoint::new(15., 17.));
 }
@@ -253,10 +259,12 @@ fn selection_uses_hit_test_order_topmost_layer() {
         visible,
         locked: true,
         object_count: 2,
+        ..Default::default()
     };
+    // The panel lists layers top first; that is also hit-test priority.
     let layers = vec![
-        make("bottom", true),
         make("top", true),
+        make("bottom", true),
         make("hidden", false),
     ];
     let mut calls = vec![];
@@ -537,7 +545,7 @@ fn direct_manipulation_save_reopen_preserves_final_geometry() {
     let path = dir.join("direct-final.gbr");
     m.save(&path, m.view.layers[0].layer_id.clone(), None)
         .unwrap();
-    m.open(&path).unwrap();
+    reopen(&mut m, &path);
     assert_eq!(m.view.layers[0].object_count, 3);
     m.select(MmPoint::new(15., 17.), 0., Replace).unwrap();
     assert_eq!(center(&m), MmPoint::new(15., 17.));
@@ -697,7 +705,7 @@ fn multi_drag_commits_one_transaction() {
     let target = dir.join("multi.gbr");
     m.save(&target, m.view.layers[0].layer_id.clone(), None)
         .unwrap();
-    m.open(&target).unwrap();
+    reopen(&mut m, &target);
     m.select(MmPoint::new(15., 17.), 0., Replace).unwrap();
     m.select(MmPoint::new(26.5, 17.), 0., Add).unwrap();
     assert_eq!(m.view.selected.ordered.len(), 2);
@@ -1379,7 +1387,7 @@ fn s2c2_undo_redo_save_and_reopen_preserve_transformed_geometry() {
     m.save(&output, m.view.layers[0].layer_id.clone(), None)
         .unwrap();
     assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 2);
-    m.open(&output).unwrap();
+    reopen(&mut m, &output);
     assert_eq!(geometry_list(&m), transformed);
 }
 
@@ -1441,7 +1449,7 @@ fn s3_flash_size_gui_path_is_cow_undoable_and_roundtrips() {
     let output = dir.join("resized-flash.gbr");
     m.save(&output, m.view.layers[0].layer_id.clone(), None)
         .unwrap();
-    m.open(&output).unwrap();
+    reopen(&mut m, &output);
     assert_eq!(geometry_list(&m).len(), 2);
     let shapes: Vec<_> = geometry_list(&m)
         .iter()

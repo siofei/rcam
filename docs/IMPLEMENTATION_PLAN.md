@@ -160,14 +160,40 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
-Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded，见 GLOBAL_UNITS_PRECISION_REVIEW）。
+S4-B1 Multi-Gerber Workspace 已实现并通过云端自动测试，原生 Mac 验收待执行，**尚未标记 PASS**（见 S4_B1_REVIEW）；DXF/SVG/PLT、Final Layer Boolean Area、Windows、`.rcam`（S4-B2）仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
 
 
 ### Global Units / Manufacturing Precision (current)
 
 See [plan](GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded）。
 Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
-Windows deferred / not executed; full V1 not claimed; P100K not complete.
+Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 release。
+
+## 2026-09-21 S4-B1 Multi-Gerber Workspace（当前；实现完成，原生验收待执行）
+
+Global Units & Manufacturing Precision 已收口为 PASS（Mac-first bounded）。本阶段范围、允许模块、不做清单见
+[S4_B1_PLAN](S4_B1_PLAN.md)，实际证据和未执行项见 [S4_B1_REVIEW](S4_B1_REVIEW.md)。
+Gate 0（capabilities 一致性、`SHA256SUMS.txt` 只含本阶段两个 ZIP）先于功能完成。
+完成后**停止并提交审查，不自动开始 S4-B2**；没有 Mac 原生证据不得标记 “S4-B1 PASS”。
+
+## 长期路线（S4-B1 之后，冻结顺序）
+
+```text
+S4-B1 Multi-Layer Workspace + reservations
+→ S4-B2 Block Core + .rcam schema v1
+→ S4-B3 Project lifecycle
+→ S4-C Full stencil editing (Snap/Grip/Block/PnP/RefDes)
+```
+
+| 阶段 | 内容 | 前置/约束 |
+|---|---|---|
+| S4-B2 | BlockDefinition/BlockInstance core（无 nested，仅 translation/rotation/reflection，Export flatten）；`.rcam` Native Project Model / schema v1；Workspace state 与 Snap settings 持久化 | S4-B1 审查通过；`.rcam v1` 冻结前必须已有 Block core |
+| S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects；此后 Save 才可启用，Gerber 仍只 Export | S4-B2 |
+| S4-C | 完整 Object Snap、Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | S4-B3；Drill/Board Coordinate 按需要在此前后拆分立项 |
+
+每个阶段启动前先写任务书、需求/验收/ADR；架构方向见 DESIGN_V1 第 22 章与 ADR 0029/0030，长期约束见 AGENTS.md。
+Windows、完整 V1、P100K、完整 CORE10 release 的门槛不因上述路线改变。
+

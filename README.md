@@ -1,4 +1,4 @@
-# RCam Gerber editor — Mac-first Global Units / Manufacturing Precision
+# RCam Gerber editor — Mac-first S4-B1 Multi-Gerber Workspace
 
 S3-FINAL 正式收口基础编辑：GUI 制造修改统一走 `ApplicationService`；补齐标准 C/R/O/P
 Flash 尺寸写时复制、单事务 `edit.batch`、完整事务边界的 Undo 预算淘汰、对象端点/中心优先
@@ -129,8 +129,8 @@ Vertical slab text geometry = retired；contour/Line/Arc Region = production pat
 Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；取消不改制造内容。
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。Global Units 已按 v2 任务启动，验收见 GLOBAL_UNITS_PRECISION_REVIEW。
-Global Units 为当前切片；DXF/SVG/PLT、Final Layer Boolean Area 和 Windows 仍未启动。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded，见 GLOBAL_UNITS_PRECISION_REVIEW）。
+S4-B1 Multi-Gerber Workspace 已实现；Mac 原生 fmt/check/clippy/全量测试/release/Metal parity 已通过、原生 GUI 已冒烟核查，固定 ZIP 与 §107 逐项检查待执行，**尚未标记 PASS**（见 S4_B1_REVIEW）；DXF/SVG/PLT、Final Layer Boolean Area、Windows、`.rcam`（S4-B2）仍未启动。
 阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
 
 ### S4-A2.2 — 多行文本和菜单交互
@@ -147,6 +147,27 @@ ASCII 线条字体；中文选择本地系统轮廓字体。文本支持多行�
 ### Global Units / Manufacturing Precision (current)
 
 See [plan](docs/GLOBAL_UNITS_PRECISION_PLAN.md) and the corresponding review for current evidence.
-S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）。
+S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded）。
 Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
-Windows deferred / not executed; full V1 not claimed; P100K not complete.
+Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 release。
+
+
+### S4-B1 — Multi-Gerber Workspace（当前切片，原生验收部分完成）
+
+一个 Workspace 可同时包含多个独立 Gerber 图层（Top/Bottom Paste、Outline、Mark…）。计划与边界见
+[S4_B1_PLAN](docs/S4_B1_PLAN.md)，实际证据与未执行项见 [S4_B1_REVIEW](docs/S4_B1_REVIEW.md)，
+决策见 [ADR 0029](docs/adr/0029-multi-gerber-workspace.md) 与 [ADR 0030](docs/adr/0030-reusable-blocks-and-forward-reservations.md)。
+
+- **Gerber 只 Import / Export。** 导入后与磁盘文件解耦（仅保留文件名、SHA-256、导入时间作 provenance）。
+  菜单为 **Export Gerber…**（单层，不清 dirty、不建立 source link）；Save / Save As 为未来 `.rcam` 保留，当前不可用。
+- 新建空图层、多选/拖放批量导入（全部成功或全部不加入，一次 Undo）、同一文件可导入两次成为两个独立图层。
+- 每层独立颜色（确定性自动配色 + 预设/最近/拾色器）、Visible / Selectable / Locked / Active / Solo / Z 序、
+  Filled / Outline / ZeroWidth；按对象类别（Stroke/Circle/Rectangle/Obround/Polygon/AM/Region/文字…）着色与过滤/锁定。
+  这些都是 View state，不改变 Gerber 输出。
+- 删除图层：空层直接删除，非空强确认，含修改/生成内容更强确认；一步 Undo 恢复同一 LayerId、层序与样式；允许删除最后一层。
+- 面板可调宽，名称超长时省略号，完整名称见 tooltip / 设置 / 重命名。
+- 长期架构约束（Block、Object Snap、Command/Shortcut、Board Coordinate、Drill）已合并进 AGENTS.md 与 DESIGN_V1，
+  S4-B1 只保留占位类型；下一阶段 S4-B2（`.rcam` + Block Core）**不会**自动开始。
+
+状态：Global Units & Manufacturing Precision = PASS（Mac-first bounded）。S4-B1 云端自动测试通过；Metal parity、
+固定 ZIP 交付、fresh extract 与 §107 逐项原生检查尚未执行，因此**不声称 S4-B1 PASS**。Windows、完整 V1、P100K、完整 CORE10 均未宣称。

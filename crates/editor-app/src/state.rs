@@ -1,4 +1,5 @@
 use crate::display::Scene;
+use editor_core::workspace::{DisplayClass, aperture_shape_map, classify_object};
 use editor_core::{BoundsMm, MmPoint};
 use editor_service::*;
 use std::{
@@ -26,6 +27,79 @@ pub struct View {
     pub display_transient: Option<String>,
     pub drag_hit: bool,
     pub press_hit: Option<ObjectInfo>,
+    /// Answer to the last `Action::LayerSummary`; drives the Delete Layer dialog.
+    pub layer_summary: Option<LayerSummaryResult>,
+    /// The last successful batch import, for the diagnostics summary.
+    pub import: Option<ImportLayersResult>,
+    /// The layer removed by the last `Action::RemoveLayer` (drives the Undo toast).
+    pub removed: Option<RemoveLayerResult>,
+    /// Bumped whenever a layer was created or imported; the UI fits/refocuses on it.
+    pub structure_serial: u64,
+    /// Answer to `Action::FitLayer`; the UI fits the camera to it once.
+    pub focus_bounds: Option<BoundsMm>,
+}
+
+/// Class-aware view of the selection policy, built once per query.
+pub struct Classifier<'a> {
+    layers: &'a [LayerInfo],
+    shapes: std::collections::HashMap<&'a str, &'a editor_core::ApertureShape>,
+}
+impl<'a> Classifier<'a> {
+    pub fn new(layers: &'a [LayerInfo], apertures: &'a [editor_core::ApertureDefinition]) -> Self {
+        Self {
+            layers,
+            shapes: aperture_shape_map(apertures),
+        }
+    }
+    pub fn class(&self, object: &ObjectInfo) -> DisplayClass {
+        classify_object(&object.object, &self.shapes)
+    }
+    fn style(&self, object: &ObjectInfo) -> Option<(&LayerInfo, Option<&ClassStyleInfo>)> {
+        let layer = self.layers.iter().find(|l| l.layer_id == object.layer_id)?;
+        let class = self.class(object);
+        Some((layer, layer.classes.iter().find(|c| c.class == class)))
+    }
+    pub fn visible(&self, object: &ObjectInfo) -> bool {
+        self.style(object)
+            .is_some_and(|(l, c)| l.visible && l.effective_visible && c.is_none_or(|c| c.visible))
+    }
+    /// `effective_visible && layer.selectable && class.selectable`
+    pub fn selectable(&self, object: &ObjectInfo) -> bool {
+        self.visible(object)
+            && self
+                .style(object)
+                .is_some_and(|(l, c)| l.selectable && c.is_none_or(|c| c.selectable))
+    }
+    /// Which policy refuses an edit of this object, if any.
+    pub fn edit_refusal(&self, object: &ObjectInfo) -> Option<&'static str> {
+        match self.style(object) {
+            None => Some("NOT_FOUND"),
+            Some((l, _)) if l.locked => Some("LAYER_LOCKED"),
+            Some((_, Some(c))) if c.locked => Some("OBJECT_CLASS_LOCKED"),
+            _ => None,
+        }
+    }
+}
+
+/// A layer can receive generated text: visible, not locked, and its
+/// generated-text category neither hidden nor locked.
+pub fn text_target_ok(layer: &LayerInfo) -> bool {
+    layer.visible
+        && layer.effective_visible
+        && !layer.locked
+        && layer
+            .classes
+            .iter()
+            .find(|c| c.class == DisplayClass::GeneratedText)
+            .is_none_or(|c| c.visible && !c.locked)
+}
+
+fn operation_id(origin: &editor_core::ObjectOrigin) -> Option<&str> {
+    match origin {
+        editor_core::ObjectOrigin::Generated { operation_id }
+        | editor_core::ObjectOrigin::GeneratedText { operation_id } => Some(operation_id),
+        editor_core::ObjectOrigin::Imported { .. } => None,
+    }
 }
 pub struct Model {
     pub service: ApplicationService,
@@ -51,6 +125,24 @@ pub enum MirrorDirection {
 pub enum Action {
     Precision(ManufacturingPrecision),
     Open(PathBuf),
+    /// Start an empty Workspace (refuses while there are unexported edits).
+    NewWorkspace,
+    /// Same, after the user explicitly agreed to lose unexported edits.
+    DiscardNewWorkspace,
+    /// Batch import: all files or none; every file becomes its own layer.
+    ImportGerbers(Vec<PathBuf>),
+    CreateEmptyLayer(Option<String>),
+    /// Read-only: content summary that decides which Delete Layer dialog to show.
+    LayerSummary(String),
+    RemoveLayer(String, bool),
+    ReorderLayers(Vec<String>),
+    SetActiveLayer(Option<String>),
+    SetSoloLayer(Option<String>),
+    /// Show or hide every layer in one workspace revision ("show all" also ends Solo).
+    SetAllLayersVisible(bool),
+    ResetLayerColors,
+    /// Ask for the bounds of one layer's visible objects (Fit to layer).
+    FitLayer(String),
     TextFont(u64, PathBuf, u32),
     FontCatalog,
     SystemFont(u64, PathBuf, String),
@@ -178,57 +270,129 @@ impl Model {
         }
         Ok(())
     }
+    fn workspace_revision(&self) -> Result<(String, String, String), ServiceError> {
+        let d = self.info()?;
+        Ok((d.document_id, d.revision, d.workspace_revision))
+    }
+    /// Replace the Workspace with an empty one. Refuses while the Workspace holds
+    /// manufacturing edits or unexported policy changes; the caller confirms first.
+    pub fn new_workspace(&mut self, discard: bool) -> Result<(), ServiceError> {
+        if !discard
+            && self
+                .view
+                .info
+                .as_ref()
+                .is_some_and(|d| d.dirty || d.export_policy_dirty)
+        {
+            return Err(error(
+                "CONFIRMATION_REQUIRED",
+                "当前工作区有尚未导出的修改。请先导出需要的图层，或明确放弃修改。",
+            ));
+        }
+        let fresh = self.service.document_new()?;
+        if let Some(old) = self.view.info.take() {
+            self.service.close(&old.document_id, &old.revision, true)?;
+        }
+        self.snapshot = None;
+        self.viewport = None;
+        self.world_index = Default::default();
+        self.ppm = 20.;
+        self.view = View {
+            info: Some(fresh),
+            message: "已新建空工作区".into(),
+            ..Default::default()
+        };
+        self.refresh(true)
+    }
+    /// Batch import. Files are all read, parsed and validated before any layer
+    /// exists; one failure leaves the Workspace untouched.
+    pub fn import_gerbers(&mut self, paths: &[PathBuf]) -> Result<(), ServiceError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        if self.view.info.is_none() {
+            self.new_workspace(true)?;
+        }
+        let (document_id, revision, _) = self.workspace_revision()?;
+        let mut names = Vec::new();
+        for path in paths {
+            self.service.grant_file_access(path, false)?;
+            names.push(
+                path.to_str()
+                    .ok_or_else(|| error("INVALID_ARGUMENT", "路径编码无效"))?
+                    .to_string(),
+            );
+        }
+        let result = self.service.import_gerber_layers(
+            &document_id,
+            &revision,
+            ImportGerberLayersParams { paths: names },
+        )?;
+        let diagnostics: usize = result.layers.iter().map(|l| l.diagnostics.len()).sum();
+        self.view.message = if diagnostics == 0 {
+            format!("已导入 {} 个图层（可整体撤销）", result.layers.len())
+        } else {
+            format!(
+                "已导入 {} 个图层，{diagnostics} 条解析提示（见图层设置）",
+                result.layers.len()
+            )
+        };
+        self.view.import = Some(result);
+        self.view.structure_serial += 1;
+        self.refresh(true)
+    }
+    pub fn create_empty_layer(&mut self, name: Option<String>) -> Result<(), ServiceError> {
+        let (document_id, revision, _) = self.workspace_revision()?;
+        let result = self.service.create_empty_layer(
+            &document_id,
+            &revision,
+            CreateEmptyLayerParams { display_name: name },
+        )?;
+        self.view.message = format!("已新建空图层“{}”（可撤销）", result.display_name);
+        self.view.structure_serial += 1;
+        self.refresh(true)
+    }
+    pub fn layer_summary(&mut self, layer_id: String) -> Result<(), ServiceError> {
+        let (document_id, ..) = self.workspace_revision()?;
+        self.view.layer_summary = Some(
+            self.service
+                .layer_summary(&document_id, LayerSummaryParams { layer_id })?,
+        );
+        Ok(())
+    }
+    pub fn remove_layer(
+        &mut self,
+        layer_id: String,
+        allow_non_empty: bool,
+    ) -> Result<(), ServiceError> {
+        let (document_id, revision, _) = self.workspace_revision()?;
+        let result = self.service.remove_layer(
+            &document_id,
+            &revision,
+            RemoveLayerParams {
+                layer_id,
+                allow_non_empty,
+            },
+        )?;
+        self.view.message = format!("已删除图层“{}”（可撤销）", result.display_name);
+        self.view.removed = Some(result);
+        self.view.structure_serial += 1;
+        self.refresh(true)
+    }
+    fn workspace_only<T>(
+        &mut self,
+        geometry: bool,
+        call: impl FnOnce(&mut ApplicationService, &str, &str, String) -> Result<T, ServiceError>,
+    ) -> Result<(), ServiceError> {
+        let (document_id, revision, workspace) = self.workspace_revision()?;
+        call(&mut self.service, &document_id, &revision, workspace)?;
+        self.refresh(geometry)
+    }
     fn refresh(&mut self, geometry: bool) -> Result<(), ServiceError> {
         let id = self.info()?.document_id;
         self.view.info = Some(self.service.document_get(&id)?);
         self.view.layers = self.service.layers_list(&id)?;
-        let mut bounds: Option<BoundsMm> = None;
-        for l in &self.view.layers {
-            if l.visible
-                && let Some(b) = self
-                    .service
-                    .layer_bounds(
-                        &id,
-                        LayerBoundsParams {
-                            layer_id: l.layer_id.clone(),
-                        },
-                    )?
-                    .bounds
-            {
-                bounds = Some(match bounds {
-                    None => b,
-                    Some(a) => BoundsMm {
-                        min_x_mm: a.min_x_mm.min(b.min_x_mm),
-                        min_y_mm: a.min_y_mm.min(b.min_y_mm),
-                        max_x_mm: a.max_x_mm.max(b.max_x_mm),
-                        max_y_mm: a.max_y_mm.max(b.max_y_mm),
-                    },
-                });
-            }
-        }
-        self.view.bounds = bounds;
-        let mut selected = Vec::new();
-        for o in &self.view.selected.ordered {
-            if self
-                .view
-                .layers
-                .iter()
-                .any(|l| l.layer_id == o.layer_id && l.visible)
-            {
-                match self.service.objects_get(
-                    &id,
-                    ObjectParams {
-                        layer_id: o.layer_id.clone(),
-                        object_id: o.object.object_id.clone(),
-                    },
-                ) {
-                    Ok(o) => selected.push(o),
-                    Err(e) if e.code == "NOT_FOUND" => {}
-                    Err(e) => return Err(e),
-                }
-            }
-        }
-        self.view.selected.ordered = selected;
+        self.view.bounds = self.service.visible_bounds(&id)?.bounds;
         if geometry {
             let snapshot = self.service.render_snapshot(&id)?;
             self.view.apertures = snapshot.apertures.clone();
@@ -236,6 +400,27 @@ impl Model {
                 .map_err(|e| error("VALIDATION_FAILED", &e))?;
             self.snapshot = Some(snapshot);
         }
+        // Selection follows the selectable policy: an object that became hidden or
+        // non-selectable (layer or category) leaves the selection so a later Delete
+        // cannot act on something the user cannot see. Locking never deselects.
+        let mut selected = Vec::new();
+        let previous = std::mem::take(&mut self.view.selected.ordered);
+        for o in previous {
+            match self.service.objects_get(
+                &id,
+                ObjectParams {
+                    layer_id: o.layer_id.clone(),
+                    object_id: o.object.object_id.clone(),
+                },
+            ) {
+                Ok(o) => selected.push(o),
+                Err(e) if e.code == "NOT_FOUND" => {}
+                Err(e) => return Err(e),
+            }
+        }
+        let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
+        selected.retain(|o| classifier.selectable(o));
+        self.view.selected.ordered = selected;
         self.view.snap_points = self.snapshot.as_ref().map_or_else(Vec::new, |snapshot| {
             snap_points(snapshot, &self.view.layers)
         });
@@ -302,6 +487,7 @@ impl Model {
                             y_mm: point.y_mm,
                         },
                         tolerance_mm: tolerance,
+                        selectable_only: true,
                     },
                 )
                 .map(|r| r.object_ids)
@@ -326,12 +512,17 @@ impl Model {
     ) -> Result<(), ServiceError> {
         let hit = self.hit(point, tolerance)?;
         if let Some(hit) = &hit
-            && let editor_core::ObjectOrigin::Generated { operation_id } = &hit.object.origin
+            && let Some(operation_id) = operation_id(&hit.object.origin)
             && let Some(snapshot) = &self.snapshot
         {
-            let ids:Vec<_>=snapshot.layers.iter().filter(|l|l.id==hit.layer_id).flat_map(|l|&l.objects)
-                .filter(|o|matches!(&o.origin,editor_core::ObjectOrigin::Generated {operation_id:id} if id==operation_id))
-                .map(|o|o.object_id.clone()).collect();
+            let ids: Vec<_> = snapshot
+                .layers
+                .iter()
+                .filter(|l| l.id == hit.layer_id)
+                .flat_map(|l| &l.objects)
+                .filter(|o| self::operation_id(&o.origin) == Some(operation_id))
+                .map(|o| o.object_id.clone())
+                .collect();
             if mode == crate::selection::SelectionMode::Replace {
                 self.view.selected.ordered.clear();
             }
@@ -365,13 +556,19 @@ impl Model {
         self.editable()?;
         let d = self.info()?;
         let mut selected = Vec::new();
-        for l in self.view.layers.iter().filter(|l| l.visible) {
+        for l in self
+            .view
+            .layers
+            .iter()
+            .filter(|l| l.visible && l.effective_visible && l.selectable)
+        {
             let result = self.service.objects_select_rect(
                 &d.document_id,
                 SelectRectParams {
                     layer_id: l.layer_id.clone(),
                     rect_mm,
                     mode,
+                    selectable_only: true,
                 },
             )?;
             for object_id in result.object_ids {
@@ -393,18 +590,26 @@ impl Model {
             .selected
             .primary()
             .ok_or_else(|| error("NOT_FOUND", "请先选择对象"))?;
+        let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
         for o in &self.view.selected.ordered {
-            let layer = self
-                .view
-                .layers
-                .iter()
-                .find(|l| l.layer_id == o.layer_id)
-                .ok_or_else(|| error("NOT_FOUND", "图层不存在"))?;
-            if layer.locked {
-                return Err(error("LAYER_LOCKED", "选择包含锁定层，整组操作已拒绝"));
+            match classifier.edit_refusal(o) {
+                Some("LAYER_LOCKED") => {
+                    return Err(error("LAYER_LOCKED", "选择包含锁定层，整组操作已拒绝"));
+                }
+                Some("OBJECT_CLASS_LOCKED") => {
+                    return Err(error(
+                        "OBJECT_CLASS_LOCKED",
+                        "选择包含已锁定的对象类别，整组操作已拒绝",
+                    ));
+                }
+                Some(_) => return Err(error("NOT_FOUND", "图层不存在")),
+                None => {}
             }
-            if !layer.visible {
-                return Err(error("INVALID_ARGUMENT", "选择包含隐藏层，整组操作已拒绝"));
+            if !classifier.visible(o) {
+                return Err(error(
+                    "INVALID_ARGUMENT",
+                    "选择包含隐藏对象，整组操作已拒绝",
+                ));
             }
             if o.layer_id != primary.layer_id {
                 return Err(error(
@@ -564,7 +769,8 @@ impl Model {
         match result {
             Ok(r) => {
                 self.view.info = Some(self.service.document_get(&d.document_id)?);
-                self.view.message = format!("已另存为 {}", r.path);
+                self.view.message =
+                    format!("已导出 {}（导出不改变工作区，也不建立文件关联）", r.path);
                 Ok(())
             }
             Err(mut e) => {
@@ -621,8 +827,111 @@ impl Model {
     pub fn run(&mut self, action: Action) {
         self.view.error = None;
         self.view.text_reply = None;
+        self.view.layer_summary = None;
+        self.view.import = None;
+        self.view.removed = None;
+        self.view.focus_bounds = None;
         let result = (|| match action {
             Action::Open(path) => self.open(&path),
+            Action::NewWorkspace => self.new_workspace(false),
+            Action::DiscardNewWorkspace => self.new_workspace(true),
+            Action::ImportGerbers(paths) => self.import_gerbers(&paths),
+            Action::CreateEmptyLayer(name) => self.create_empty_layer(name),
+            Action::LayerSummary(layer_id) => self.layer_summary(layer_id),
+            Action::RemoveLayer(layer_id, allow) => self.remove_layer(layer_id, allow),
+            Action::ReorderLayers(layer_ids) => {
+                self.workspace_only(true, |svc, doc, rev, workspace| {
+                    svc.layers_reorder(
+                        doc,
+                        rev,
+                        ReorderLayersParams {
+                            expected_workspace_revision: workspace,
+                            layer_ids,
+                        },
+                    )
+                })
+            }
+            Action::SetActiveLayer(layer_id) => {
+                self.workspace_only(false, |svc, doc, rev, workspace| {
+                    svc.layers_set_active(
+                        doc,
+                        rev,
+                        SetActiveLayerParams {
+                            expected_workspace_revision: workspace,
+                            layer_id,
+                        },
+                    )
+                })
+            }
+            Action::SetSoloLayer(layer_id) => {
+                self.workspace_only(false, |svc, doc, rev, workspace| {
+                    svc.layers_set_solo(
+                        doc,
+                        rev,
+                        SetSoloLayerParams {
+                            expected_workspace_revision: workspace,
+                            layer_id,
+                        },
+                    )
+                })
+            }
+            Action::SetAllLayersVisible(visible) => {
+                let updates: Vec<LayerPatch> = self
+                    .view
+                    .layers
+                    .iter()
+                    .map(|l| LayerPatch {
+                        layer_id: l.layer_id.clone(),
+                        visible: Some(visible),
+                        ..Default::default()
+                    })
+                    .collect();
+                let end_solo = visible && self.view.layers.iter().any(|l| l.is_solo);
+                self.workspace_only(false, |svc, doc, rev, workspace| {
+                    let mut workspace = workspace;
+                    let info = svc.layers_update_many(
+                        doc,
+                        rev,
+                        UpdateLayersParams {
+                            expected_workspace_revision: workspace.clone(),
+                            updates,
+                        },
+                    )?;
+                    workspace = info.workspace_revision;
+                    if end_solo {
+                        svc.layers_set_solo(
+                            doc,
+                            rev,
+                            SetSoloLayerParams {
+                                expected_workspace_revision: workspace,
+                                layer_id: None,
+                            },
+                        )?;
+                    }
+                    Ok(())
+                })
+            }
+            Action::FitLayer(layer_id) => {
+                let d = self.info()?;
+                let bounds = self
+                    .service
+                    .layer_bounds(&d.document_id, LayerBoundsParams { layer_id })?
+                    .bounds;
+                if bounds.is_none() {
+                    self.view.message = "该图层没有可缩放的内容".into();
+                }
+                self.view.focus_bounds = bounds;
+                Ok(())
+            }
+            Action::ResetLayerColors => self.workspace_only(false, |svc, doc, rev, workspace| {
+                svc.layers_reset_colors(
+                    doc,
+                    rev,
+                    ResetLayerColorsParams {
+                        expected_workspace_revision: workspace,
+                    },
+                )
+            }),
             Action::FontCatalog => {
                 self.view.text_reply = Some(Arc::new(crate::text_tool::Reply::Catalog(
                     crate::font_catalog::installed_fonts().map(Arc::new),
@@ -721,6 +1030,7 @@ impl Model {
                                 y_mm: p.y_mm,
                             },
                             tolerance_mm,
+                            selectable_only: true,
                         },
                     )?;
                     self.view.drag_hit = hits
@@ -830,7 +1140,7 @@ impl Model {
         self.refresh_metrics();
         if let Some(d) = &self.view.info {
             eprintln!(
-                "state document={} revision={} workspace={} dirty={} undo={} redo={} selected={:?} saved={:?}",
+                "state document={} revision={} workspace={} dirty={} undo={} redo={} selected={:?} layers={}",
                 d.document_id,
                 d.revision,
                 d.workspace_revision,
@@ -838,7 +1148,7 @@ impl Model {
                 d.undo_entries,
                 d.redo_entries,
                 self.view.selected.ids(),
-                d.last_saved_path
+                d.layer_ids.len()
             );
         }
     }
@@ -854,14 +1164,24 @@ fn snap_points(snapshot: &RenderSnapshot, layers: &[LayerInfo]) -> Vec<crate::to
             kind,
         });
     };
+    let shapes = aperture_shape_map(&snapshot.apertures);
     for layer in &snapshot.layers {
-        if !layers
+        let Some(workspace) = layers
             .iter()
-            .any(|workspace| workspace.layer_id == layer.id && workspace.visible)
-        {
+            .find(|workspace| workspace.layer_id == layer.id && workspace.visible)
+            .filter(|workspace| workspace.effective_visible)
+        else {
             continue;
-        }
+        };
         for object in &layer.objects {
+            let class = classify_object(object, &shapes);
+            if workspace
+                .classes
+                .iter()
+                .any(|style| style.class == class && !style.visible)
+            {
+                continue;
+            }
             let id = object.object_id.as_str();
             match &object.geometry {
                 editor_core::SemanticGeometry::Flash { center, .. } => {
@@ -903,7 +1223,11 @@ pub fn topmost_hit(
     layers: &[LayerInfo],
     mut query: impl FnMut(&str) -> Result<Vec<String>, ServiceError>,
 ) -> Result<Option<(String, String)>, ServiceError> {
-    for layer in layers.iter().rev().filter(|l| l.visible) {
+    // The panel lists layers top first, which is also hit-test priority.
+    for layer in layers
+        .iter()
+        .filter(|l| l.visible && l.effective_visible && l.selectable)
+    {
         if let Some(id) = query(&layer.layer_id)?.last() {
             return Ok(Some((layer.layer_id.clone(), id.clone())));
         }

@@ -344,7 +344,7 @@ impl Draft {
             && view
                 .layers
                 .iter()
-                .any(|l| l.layer_id == r.params.layer_id && l.visible && !l.locked)
+                .any(|l| l.layer_id == r.params.layer_id && crate::state::text_target_ok(l))
             && self
                 .font
                 .as_ref()

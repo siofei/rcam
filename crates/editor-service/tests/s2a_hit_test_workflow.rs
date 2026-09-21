@@ -263,6 +263,7 @@ fn hit_test_invalid_params_are_atomic_and_nested_fields_strict() {
                 y_mm: 0.,
             },
             tolerance_mm: 0.,
+            selectable_only: false,
         };
         assert_eq!(
             r.service.objects_hit_test(&r.id, params).unwrap_err().code,

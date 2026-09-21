@@ -123,7 +123,7 @@ impl ApplicationService {
         if record.revision == u64::MAX {
             return Err(ServiceError::resource("revision", usize::MAX, usize::MAX));
         }
-        check_workspace_edit(record, &params.layer_id)?;
+        check_new_object_class(record, &params.layer_id, DisplayClass::GeneratedText)?;
         if params.font.sha256.len() != 64
             || !params.font.sha256.bytes().all(|c| c.is_ascii_hexdigit())
             || params.font.license_status.trim().is_empty()
@@ -229,7 +229,7 @@ impl ApplicationService {
         let record = self.edit_record(document_id, expected_revision)?;
         let ids = record
             .history
-            .insert_generated(&mut record.document, &params.layer_id, geometries)
+            .insert_generated_text(&mut record.document, &params.layer_id, geometries)
             .map_err(map_edit_error)?;
         record.metrics.reconcile(&record.document, &ids);
         record.revision += 1;

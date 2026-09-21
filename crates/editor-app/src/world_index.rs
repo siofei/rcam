@@ -34,9 +34,9 @@ impl WorldIndex {
                 b.max_x_mm >= view.min_x_mm
                     && b.min_y_mm <= view.max_y_mm
                     && b.max_y_mm >= view.min_y_mm
-                    && layers
-                        .iter()
-                        .any(|l| l.layer_id == snapshot.layers[*layer].id && l.visible)
+                    && layers.iter().any(|l| {
+                        l.layer_id == snapshot.layers[*layer].id && l.visible && l.effective_visible
+                    })
             })
             .map(|(_, l, o)| (*l, *o))
             .collect();
@@ -45,6 +45,8 @@ impl WorldIndex {
         let mut result = RenderSnapshot {
             document_id: snapshot.document_id.clone(),
             revision: snapshot.revision.clone(),
+            workspace_revision: snapshot.workspace_revision.clone(),
+            styles: Vec::new(),
             apertures: snapshot.apertures.clone(),
             layers: snapshot
                 .layers

@@ -5,8 +5,15 @@
 
 mod metrics;
 mod text;
+mod workspace;
 pub use editor_core::edit::MirrorAxis;
 pub use editor_core::units::ManufacturingPrecision;
+pub use editor_core::workspace::{
+    ClassInteractionStyle, Color, ColorMode, DeleteRisk, DisplayClass, ImportProvenance,
+    LayerContentSummary, LayerDisplayMode, LayerKind, LayerViewStyle, LayerWorkspaceState,
+    auto_layer_color, class_variant_color,
+};
+pub use workspace::*;
 
 use editor_core::edit::{
     BatchEdit, EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
@@ -223,9 +230,10 @@ pub struct DocumentInfo {
     pub api_version: u32,
     pub document_id: String,
     pub revision: String,
+    /// Informational provenance of the Gerber this Workspace was opened from
+    /// (empty for a new Workspace). Never used for save/export behaviour.
     pub source_path: String,
     pub source_sha256: String,
-    pub last_saved_path: Option<String>,
     pub dirty: bool,
     pub undo_entries: usize,
     pub redo_entries: usize,
@@ -233,9 +241,17 @@ pub struct DocumentInfo {
     pub history_truncated_entries: usize,
     pub history_truncated_bytes: usize,
     pub layer_ids: Vec<String>,
+    /// Panel order, top first.
+    #[serde(default)]
+    pub display_order: Vec<String>,
+    #[serde(default)]
+    pub active_layer_id: Option<String>,
+    #[serde(default)]
+    pub solo_layer_id: Option<String>,
     pub diagnostics: Vec<String>,
 }
 
+/// One row of `layers.list`, in Layer Panel order (top of the panel first).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayerInfo {
     pub layer_id: String,
@@ -243,17 +259,99 @@ pub struct LayerInfo {
     pub visible: bool,
     pub object_count: usize,
     pub locked: bool,
+    #[serde(default = "default_true")]
+    pub selectable: bool,
+    #[serde(default)]
+    pub kind: LayerKind,
+    #[serde(default = "default_layer_color")]
+    pub base_color: Color,
+    #[serde(default)]
+    pub color_mode: ColorMode,
+    #[serde(default)]
+    pub display_mode: LayerDisplayMode,
+    /// Per-category style, in stable `DisplayClass::ALL` order.
+    #[serde(default)]
+    pub classes: Vec<ClassStyleInfo>,
+    /// Visible after the Solo override; `visible` stays the user's own setting.
+    #[serde(default = "default_true")]
+    pub effective_visible: bool,
+    #[serde(default)]
+    pub is_active: bool,
+    #[serde(default)]
+    pub is_solo: bool,
+    /// Position in the panel; 0 is the top (highest display priority).
+    #[serde(default)]
+    pub z_index: usize,
+    /// Import-time source group; `None` for layers created empty.
+    #[serde(default)]
+    pub source_id: Option<String>,
+    /// Read-only provenance (never a link to the disk file).
+    #[serde(default)]
+    pub provenance: Option<ImportProvenance>,
+    /// Parser diagnostics of the import that created this layer.
+    #[serde(default)]
+    pub import_diagnostics: Vec<String>,
 }
 
-/// Session-only state, never serialized into the manufacturing document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LayerWorkspaceState {
-    pub display_name: String,
-    pub visible: bool,
-    pub locked: bool,
+fn default_true() -> bool {
+    true
 }
 
+fn default_layer_color() -> Color {
+    auto_layer_color(0)
+}
+
+impl Default for LayerInfo {
+    fn default() -> Self {
+        Self {
+            layer_id: String::new(),
+            display_name: String::new(),
+            visible: true,
+            object_count: 0,
+            locked: false,
+            selectable: true,
+            kind: LayerKind::Gerber,
+            base_color: auto_layer_color(0),
+            color_mode: ColorMode::LayerColor,
+            display_mode: LayerDisplayMode::Filled,
+            classes: Vec::new(),
+            effective_visible: true,
+            is_active: false,
+            is_solo: false,
+            z_index: 0,
+            source_id: None,
+            provenance: None,
+            import_diagnostics: Vec::new(),
+        }
+    }
+}
+
+/// Per-category style of one layer as reported by `layers.list`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClassStyleInfo {
+    pub class: DisplayClass,
+    pub visible: bool,
+    pub selectable: bool,
+    pub locked: bool,
+    pub color_override: Option<Color>,
+    /// Colour used for this class right now (layer colour or category colour).
+    pub effective_color: Color,
+}
+
+/// Change of one category style; every field is optional.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClassStyleUpdate {
+    pub class: Option<DisplayClass>,
+    pub visible: Option<bool>,
+    pub selectable: Option<bool>,
+    pub locked: Option<bool>,
+    /// `#rrggbb`, or `"inherit"` to remove the override.
+    pub color_override: Option<String>,
+}
+
+/// Workspace-only change of one layer. Never a manufacturing edit.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayerUpdateParams {
     pub layer_id: String,
@@ -261,6 +359,21 @@ pub struct LayerUpdateParams {
     pub display_name: Option<String>,
     pub visible: Option<bool>,
     pub locked: Option<bool>,
+    #[serde(default)]
+    pub selectable: Option<bool>,
+    /// `#rrggbb`.
+    #[serde(default)]
+    pub base_color: Option<String>,
+    #[serde(default)]
+    pub color_mode: Option<ColorMode>,
+    #[serde(default)]
+    pub display_mode: Option<LayerDisplayMode>,
+    /// Category changes; `class: null` applies to every category.
+    #[serde(default)]
+    pub classes: Vec<ClassStyleUpdate>,
+    /// Restore the default category styles before applying `classes`.
+    #[serde(default)]
+    pub reset_classes: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -276,6 +389,10 @@ pub struct HitTestParams {
     pub layer_id: String,
     pub point: HitTestPoint,
     pub tolerance_mm: f64,
+    /// Apply the workspace selection policy (layer/category visible + selectable)
+    /// before the exact test. Default: pure manufacturing query.
+    #[serde(default)]
+    pub selectable_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -293,6 +410,9 @@ pub struct SelectRectParams {
     pub layer_id: String,
     pub rect_mm: editor_core::BoundsMm,
     pub mode: editor_core::hit_test::SelectRectMode,
+    /// Apply the workspace selection policy (see `HitTestParams`).
+    #[serde(default)]
+    pub selectable_only: bool,
 }
 
 /// Revision-bound read-only manufacturing envelope, including Clear objects.
@@ -321,8 +441,29 @@ pub struct ObjectInfo {
 pub struct RenderSnapshot {
     pub document_id: String,
     pub revision: String,
+    /// Changes with every colour / visibility / order / active-layer change.
+    #[serde(default)]
+    pub workspace_revision: String,
+    /// Manufacturing layers in composite order: drawn first (bottom) to last (top).
     pub layers: Vec<editor_core::SemanticLayer>,
     pub apertures: Vec<editor_core::ApertureDefinition>,
+    /// View style of every entry of `layers`, same order. Never manufacturing data.
+    #[serde(default)]
+    pub styles: Vec<RenderLayerStyle>,
+}
+
+/// View-only style handed to the renderer next to the manufacturing scene.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RenderLayerStyle {
+    pub layer_id: String,
+    /// `layer.visible` after the Solo override.
+    pub visible: bool,
+    pub selectable: bool,
+    pub locked: bool,
+    pub base_color: Color,
+    pub color_mode: ColorMode,
+    pub display_mode: LayerDisplayMode,
+    pub classes: Vec<ClassStyleInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -378,16 +519,64 @@ struct S1DocumentRecord {
     saved_precision: ManufacturingPrecision,
     metrics: metrics::MetricsCache,
     workspace_revision: u64,
+    /// Session-only view/workspace state per layer (never enters the document).
     workspace: HashMap<String, LayerWorkspaceState>,
+    /// Import provenance and import-time metadata per layer.
+    sources: HashMap<String, workspace::LayerSource>,
+    /// Panel order, top first. The single source of truth for display priority.
+    display_order: Vec<String>,
+    active_layer_id: Option<String>,
+    solo_layer_id: Option<String>,
+    /// Layers currently outside the document that Undo/Redo may bring back.
+    stash: HashMap<String, workspace::StashedLayer>,
+    /// Active layer before a layer was added, for a faithful Undo.
+    active_before_add: HashMap<String, Option<String>>,
+    /// Counters are never reused, so ids stay stable across Undo/Redo.
+    next_layer_number: u64,
+    next_source_number: u64,
+    next_color_index: usize,
     document: SemanticDocument,
-    source_path: PathBuf,
-    source_sha256: String,
-    metadata: Value,
+    /// Informational only: the first Gerber this Workspace was opened from.
+    opened_from: Option<(PathBuf, String)>,
     diagnostics: Vec<String>,
     revision: u64,
     history: EditHistory,
+    /// Baseline of "manufacturing dirty": the Workspace content when it was
+    /// created. It is never a Gerber file and Export never moves it.
     saved_content_hash: String,
-    last_saved_path: Option<String>,
+    /// `(revision, content hash)` of the document as of that manufacturing
+    /// revision; workspace-only edits (which never bump it) reuse the hash.
+    content_hash_cache: HashCache,
+}
+
+#[derive(Debug, Default)]
+struct HashCache(std::sync::Mutex<Option<(u64, String)>>);
+
+impl Clone for HashCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl S1DocumentRecord {
+    fn is_dirty(&self) -> bool {
+        let mut cache = self
+            .content_hash_cache
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match cache.as_ref() {
+            Some((revision, hash)) if *revision == self.revision => {
+                *hash != self.saved_content_hash
+            }
+            _ => {
+                let hash = content_hash(&self.document);
+                let dirty = hash != self.saved_content_hash;
+                *cache = Some((self.revision, hash));
+                dirty
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -534,6 +723,9 @@ pub struct EditResult {
     pub document_id: String,
     pub revision: String,
     pub changed_object_ids: Vec<String>,
+    /// Layers added or removed by an Undo/Redo of a layer transaction.
+    #[serde(default)]
+    pub changed_layer_ids: Vec<String>,
     pub undo_entries_added: usize,
     pub undo_entries: usize,
     pub redo_entries: usize,
@@ -684,7 +876,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-A2 service foundation (GUI pending)".into(),
+            stage: "S4-B1 Multi-Gerber Workspace (Mac-first bounded)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -717,9 +909,31 @@ impl ApplicationService {
                 "objects.get".into(),
                 "document.validate".into(),
                 "gerber.export_layer".into(),
-                    "document.set_manufacturing_precision".into(),
+                "document.set_manufacturing_precision".into(),
+                "document.new".into(),
+                "document.import_gerber_layers".into(),
+                "document.import_gerber_layer".into(),
+                "document.create_empty_layer".into(),
+                "document.remove_layer".into(),
+                "document.visible_bounds".into(),
+                "layer.summary".into(),
+                "layers.reorder".into(),
+                "layers.set_active".into(),
+                "layers.set_solo".into(),
+                "layers.update_many".into(),
+                "layers.reset_colors".into(),
             ],
-            unsupported_operations: vec![],
+            // Reserved boundaries (S4-B1 architecture placeholders): named here so a
+            // caller can tell "not yet" from "unknown". None of these is dispatchable.
+            unsupported_operations: vec![
+                "project.open (.rcam)".into(),
+                "project.save (.rcam)".into(),
+                "drill.import".into(),
+                "blocks.define".into(),
+                "components.search".into(),
+                "snap.resolve".into(),
+                "layers.merge".into(),
+            ],
             supported_gerber_subset: vec![
                 "FS absolute coordinates".into(),
                 "FS incremental coordinates (I/G91)".into(),
@@ -744,7 +958,6 @@ impl ApplicationService {
                 "unsupported AM primitives and expressions".into(),
                 "Excellon and RS-274D external apertures".into(),
                 "RectangularSweep rotation except exact multiples of 90 degrees; diagonal mirror axes".into(),
-                "production export".into(),
             ],
             resource_limits: ResourceLimits {
                     max_hit_test_work: editor_core::hit_test::MAX_HIT_TEST_WORK,
@@ -823,69 +1036,6 @@ impl ApplicationService {
         Ok(result)
     }
 
-    /// Open a real local Gerber through the host-authorized path boundary.
-    pub fn open(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
-        let access = self
-            .file_access
-            .as_ref()
-            .ok_or_else(|| ServiceError::permission(Path::new(path), "read"))?;
-        let (canonical, bytes) = access.read_path(path)?;
-        let source_sha256 = sha256_hex(&bytes);
-        let document_id = format!("doc-{}", self.next_document_id);
-        self.next_document_id = self
-            .next_document_id
-            .checked_add(1)
-            .ok_or_else(|| ServiceError::resource("document_ids", u64::MAX as usize, usize::MAX))?;
-        let scene: S1Scene = parse_s1(&bytes, &document_id).map_err(map_s1_error)?;
-        let metadata = serde_json::to_value(&scene.metadata).map_err(serialize_error)?;
-        let workspace = scene
-            .document
-            .layers
-            .iter()
-            .map(|layer| {
-                (
-                    layer.id.clone(),
-                    LayerWorkspaceState {
-                        display_name: scene
-                            .metadata
-                            .layer_name
-                            .clone()
-                            .or_else(|| scene.metadata.image_name.clone())
-                            .unwrap_or_else(|| {
-                                canonical
-                                    .file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy()
-                                    .into_owned()
-                            }),
-                        visible: true,
-                        locked: false,
-                    },
-                )
-            })
-            .collect();
-        let record = S1DocumentRecord {
-            manufacturing_precision: ManufacturingPrecision::default(),
-            saved_precision: ManufacturingPrecision::default(),
-            metrics: metrics::MetricsCache::default(),
-            workspace,
-            workspace_revision: 0,
-            saved_content_hash: content_hash(&scene.document),
-            last_saved_path: None,
-            document: scene.document,
-            source_path: canonical,
-            source_sha256,
-            metadata,
-            diagnostics: scene.diagnostics,
-            revision: 0,
-            history: EditHistory::with_limits(self.history_max_entries, self.history_max_bytes)
-                .map_err(map_edit_error)?,
-        };
-        let info = document_info(&document_id, &record);
-        self.documents.insert(document_id, record);
-        Ok(info)
-    }
-
     pub fn document_get(&self, document_id: &str) -> Result<DocumentInfo, ServiceError> {
         self.documents
             .get(document_id)
@@ -898,12 +1048,7 @@ impl ApplicationService {
             .documents
             .get(document_id)
             .ok_or_else(|| ServiceError::not_found("document", document_id))?;
-        Ok(RenderSnapshot {
-            document_id: document_id.into(),
-            revision: record.revision.to_string(),
-            layers: record.document.layers.clone(),
-            apertures: record.document.apertures.clone(),
-        })
+        Ok(workspace::render_snapshot_of(document_id, record))
     }
 
     /// Trusted host only; not exposed through request DTOs. The GUI calls this
@@ -931,77 +1076,32 @@ impl ApplicationService {
         Ok(())
     }
 
+    /// Layers in Layer Panel order (top of the panel first).
     pub fn layers_list(&self, document_id: &str) -> Result<Vec<LayerInfo>, ServiceError> {
         let record = self
             .documents
             .get(document_id)
             .ok_or_else(|| ServiceError::not_found("document", document_id))?;
-        Ok(record
-            .document
-            .layers
-            .iter()
-            .map(|layer| LayerInfo {
-                layer_id: layer.id.clone(),
-                display_name: record.workspace[&layer.id].display_name.clone(),
-                visible: record.workspace[&layer.id].visible,
-                object_count: layer.objects.len(),
-                locked: record.workspace[&layer.id].locked,
-            })
-            .collect())
+        Ok(workspace::layer_rows(record))
     }
 
+    /// Workspace-only change of one layer (name, colours, visibility, lock,
+    /// selectability, display mode, category styles). Never a manufacturing edit.
     pub fn layer_update(
         &mut self,
         document_id: &str,
         expected_revision: &str,
         params: LayerUpdateParams,
     ) -> Result<DocumentInfo, ServiceError> {
-        let record = self
-            .documents
-            .get_mut(document_id)
-            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
-        check_revision(record.revision, expected_revision)?;
-        check_revision(
-            record.workspace_revision,
-            &params.expected_workspace_revision,
+        let expected_workspace_revision = params.expected_workspace_revision.clone();
+        self.layers_update_many(
+            document_id,
+            expected_revision,
+            UpdateLayersParams {
+                expected_workspace_revision,
+                updates: vec![params.into()],
+            },
         )
-        .map_err(|mut error| {
-            error.details["field"] = serde_json::json!("params.expected_workspace_revision");
-            error
-        })?;
-        if params.layer_id.trim().is_empty() {
-            return Err(ServiceError::invalid_field(
-                "params.layer_id",
-                "layer_id is required",
-            ));
-        }
-        let state = record
-            .workspace
-            .get_mut(&params.layer_id)
-            .ok_or_else(|| ServiceError::not_found("layer", &params.layer_id))?;
-        if let Some(name) = &params.display_name
-            && (name.trim().is_empty() || name.len() > 1024)
-        {
-            return Err(ServiceError::invalid_field(
-                "params.display_name",
-                "name must be nonempty and at most 1024 UTF-8 bytes",
-            ));
-        }
-        let next = LayerWorkspaceState {
-            display_name: params
-                .display_name
-                .unwrap_or_else(|| state.display_name.clone()),
-            visible: params.visible.unwrap_or(state.visible),
-            locked: params.locked.unwrap_or(state.locked),
-        };
-        if next != *state {
-            let revision = record.workspace_revision.checked_add(1).ok_or_else(|| {
-                ServiceError::resource("workspace_revision", usize::MAX, usize::MAX)
-            })?;
-            *state = next;
-            record.workspace_revision = revision;
-        }
-        Ok(document_info(document_id, record))
     }
 
     pub fn objects_hit_test(
@@ -1014,7 +1114,15 @@ impl ApplicationService {
             .get(document_id)
             .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         let point = MmPoint::new(params.point.x_mm, params.point.y_mm);
-        let object_ids = record.document.hit_test(&params.layer_id, point, params.tolerance_mm)
+        if params.selectable_only && !workspace::layer_selectable(record, &params.layer_id)? {
+            return Ok(HitTestResult {
+                document_id: document_id.into(),
+                revision: record.revision.to_string(),
+                layer_id: params.layer_id,
+                object_ids: Vec::new(),
+            });
+        }
+        let mut object_ids = record.document.hit_test(&params.layer_id, point, params.tolerance_mm)
             .map_err(|error| {
                 use editor_core::hit_test::HitTestError;
                 match error {
@@ -1025,6 +1133,9 @@ impl ApplicationService {
                     HitTestError::Unsupported(reason) => ServiceError { code: "UNSUPPORTED_FEATURE".into(), message: reason.into(), details: serde_json::json!({"operation":"objects.hit_test","reason":reason}) },
                 }
             })?;
+        if params.selectable_only {
+            workspace::retain_selectable(record, &params.layer_id, &mut object_ids);
+        }
         Ok(HitTestResult {
             document_id: document_id.into(),
             revision: record.revision.to_string(),
@@ -1042,7 +1153,15 @@ impl ApplicationService {
             .documents
             .get(document_id)
             .ok_or_else(|| ServiceError::not_found("document", document_id))?;
-        let object_ids = record.document.select_rect(&params.layer_id, params.rect_mm, params.mode)
+        if params.selectable_only && !workspace::layer_selectable(record, &params.layer_id)? {
+            return Ok(HitTestResult {
+                document_id: document_id.into(),
+                revision: record.revision.to_string(),
+                layer_id: params.layer_id,
+                object_ids: Vec::new(),
+            });
+        }
+        let mut object_ids = record.document.select_rect(&params.layer_id, params.rect_mm, params.mode)
             .map_err(|error| {
                 use editor_core::hit_test::HitTestError;
                 match error {
@@ -1053,6 +1172,9 @@ impl ApplicationService {
                     HitTestError::Unsupported(reason) => ServiceError { code: "UNSUPPORTED_FEATURE".into(), message: reason.into(), details: serde_json::json!({"operation":"objects.select_rect","reason":reason}) },
                 }
             })?;
+        if params.selectable_only {
+            workspace::retain_selectable(record, &params.layer_id, &mut object_ids);
+        }
         Ok(HitTestResult {
             document_id: document_id.into(),
             revision: record.revision.to_string(),
@@ -1203,7 +1325,7 @@ impl ApplicationService {
         params: MoveParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id)?;
+        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
             .history
             .move_objects(
@@ -1225,7 +1347,7 @@ impl ApplicationService {
         params: RotateParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id)?;
+        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
             .history
             .rotate_objects(
@@ -1247,7 +1369,7 @@ impl ApplicationService {
         params: MirrorParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id)?;
+        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
             .history
             .mirror_objects(
@@ -1268,7 +1390,7 @@ impl ApplicationService {
         params: DuplicateParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id)?;
+        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let source_set: std::collections::HashSet<_> = params.object_ids.iter().collect();
         let sources: Vec<_> = record
             .document
@@ -1301,7 +1423,7 @@ impl ApplicationService {
         params: DeleteParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id)?;
+        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
             .history
             .delete_objects(&mut record.document, &params.layer_id, &params.object_ids)
@@ -1318,7 +1440,7 @@ impl ApplicationService {
         params: SetPropertiesParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id)?;
+        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
             .history
             .set_flash_size(
@@ -1341,7 +1463,17 @@ impl ApplicationService {
         params: BatchParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id)?;
+        let batch_ids: Vec<String> = params
+            .steps
+            .iter()
+            .flat_map(|step| match step {
+                BatchStepParams::Move { object_ids, .. }
+                | BatchStepParams::Rotate { object_ids, .. }
+                | BatchStepParams::Mirror { object_ids, .. }
+                | BatchStepParams::SetProperties { object_ids, .. } => object_ids.iter().cloned(),
+            })
+            .collect();
+        check_workspace_edit(record, &params.layer_id, &batch_ids)?;
         let shape_changed = params
             .steps
             .iter()
@@ -1400,17 +1532,42 @@ impl ApplicationService {
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         let shape_changed = record.history.next_undo_changes_shape();
+        let layer_effect = record.history.peek_undo_layer_effect();
+        let workspace_revision = workspace::next_workspace_revision(record)?;
         let ids = record
             .history
             .undo(&mut record.document)
             .map_err(map_edit_error)?;
-        if shape_changed {
-            record.metrics.invalidate_shapes(&ids);
-        } else {
-            record.metrics.reconcile(&record.document, &ids);
-        }
+        let layer_ids = match layer_effect {
+            Some(effect) => {
+                let changed = match &effect {
+                    editor_core::edit::LayerEffect::Added(ids)
+                    | editor_core::edit::LayerEffect::Removed(ids) => ids.clone(),
+                };
+                let undoing_add = matches!(effect, editor_core::edit::LayerEffect::Removed(_));
+                workspace::sync_layer_effect(record, effect, undoing_add);
+                record.metrics = metrics::MetricsCache::default();
+                record.workspace_revision = workspace_revision;
+                changed
+            }
+            None => {
+                if shape_changed {
+                    record.metrics.invalidate_shapes(&ids);
+                } else {
+                    record.metrics.reconcile(&record.document, &ids);
+                }
+                Vec::new()
+            }
+        };
         record.revision += 1;
-        Ok(edit_result(document_id, record, ids, 0))
+        let object_ids = if layer_ids.is_empty() {
+            ids
+        } else {
+            Vec::new()
+        };
+        let mut result = edit_result(document_id, record, object_ids, 0);
+        result.changed_layer_ids = layer_ids;
+        Ok(result)
     }
 
     pub fn history_redo(
@@ -1420,17 +1577,41 @@ impl ApplicationService {
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         let shape_changed = record.history.next_redo_changes_shape();
+        let layer_effect = record.history.peek_redo_layer_effect();
+        let workspace_revision = workspace::next_workspace_revision(record)?;
         let ids = record
             .history
             .redo(&mut record.document)
             .map_err(map_edit_error)?;
-        if shape_changed {
-            record.metrics.invalidate_shapes(&ids);
-        } else {
-            record.metrics.reconcile(&record.document, &ids);
-        }
+        let layer_ids = match layer_effect {
+            Some(effect) => {
+                let changed = match &effect {
+                    editor_core::edit::LayerEffect::Added(ids)
+                    | editor_core::edit::LayerEffect::Removed(ids) => ids.clone(),
+                };
+                workspace::sync_layer_effect(record, effect, false);
+                record.metrics = metrics::MetricsCache::default();
+                record.workspace_revision = workspace_revision;
+                changed
+            }
+            None => {
+                if shape_changed {
+                    record.metrics.invalidate_shapes(&ids);
+                } else {
+                    record.metrics.reconcile(&record.document, &ids);
+                }
+                Vec::new()
+            }
+        };
         record.revision += 1;
-        Ok(edit_result(document_id, record, ids, 0))
+        let object_ids = if layer_ids.is_empty() {
+            ids
+        } else {
+            Vec::new()
+        };
+        let mut result = edit_result(document_id, record, object_ids, 0);
+        result.changed_layer_ids = layer_ids;
+        Ok(result)
     }
 
     fn edit_record(
@@ -1461,8 +1642,7 @@ impl ApplicationService {
             .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         check_revision(record.revision, expected_revision)?;
         if !discard_changes
-            && (content_hash(&record.document) != record.saved_content_hash
-                || record.manufacturing_precision != record.saved_precision)
+            && (record.is_dirty() || record.manufacturing_precision != record.saved_precision)
         {
             return Err(ServiceError {
                 code: "CONFIRMATION_REQUIRED".into(),
@@ -1515,6 +1695,9 @@ impl ApplicationService {
         Ok(document_info(document_id, record))
     }
 
+    /// Export ONE layer as a new Gerber file. Export is an interchange copy,
+    /// not a Save: it never clears the manufacturing dirty state, never links
+    /// the layer to the output path and never changes any layer identity.
     pub fn export_layer(
         &mut self,
         document_id: &str,
@@ -1531,24 +1714,12 @@ impl ApplicationService {
             .as_ref()
             .ok_or_else(|| ServiceError::permission(Path::new(&params.path), "write"))?;
         let target = access.write_path(&params.path)?;
-        if target == record.source_path {
-            return Err(ServiceError::invalid_field(
-                "params.path",
-                "export target must be a new path",
-            ));
-        }
-        validate_export_policy(&params, &target, &record.metadata)?;
-        let mut document = record.document.clone();
-        if !document
-            .layers
-            .iter()
-            .any(|layer| layer.id == params.layer_id)
-        {
-            return Err(ServiceError::not_found("layer", &params.layer_id));
-        }
-        document.layers.retain(|layer| layer.id == params.layer_id);
-        document = gerber_io::normalize_manufacturing(&document, record.manufacturing_precision)
-            .map_err(|e| ServiceError::invalid_field("manufacturing_precision", &e))?;
+        let snapshot = workspace::layer_export_snapshot(record, &params.layer_id)?;
+        let metadata = serde_json::to_value(&snapshot.source).map_err(serialize_error)?;
+        validate_export_policy(&params, &target, &metadata)?;
+        let document =
+            gerber_io::normalize_manufacturing(&snapshot, record.manufacturing_precision)
+                .map_err(|e| ServiceError::invalid_field("manufacturing_precision", &e))?;
         let temp = temporary_output_path(&target)?;
         if temp.exists() {
             return Err(ServiceError {
@@ -1574,7 +1745,6 @@ impl ApplicationService {
                 error,
             ));
         }
-        let saved_content_hash = content_hash(&record.document);
         let result = ExportResult {
             api_version: API_VERSION,
             document_id: document_id.into(),
@@ -1585,10 +1755,10 @@ impl ApplicationService {
             sha256: sha256_hex(&bytes),
             bytes: bytes.len(),
         };
+        // Only the export policy baseline moves: the chosen precision has now
+        // been applied to an output. Project (manufacturing) dirty is untouched.
         let record = self.documents.get_mut(document_id).unwrap();
-        record.saved_content_hash = saved_content_hash;
         record.saved_precision = record.manufacturing_precision;
-        record.last_saved_path = Some(result.path.clone());
         Ok(result)
     }
 
@@ -1675,6 +1845,37 @@ impl ApplicationService {
                 }
                 let params: OpenParams = parse_params(&request.params)?;
                 serde_json::to_value(self.open(&params.path)?).map_err(serialize_error)?
+            }
+            "document.new" if self.file_access.is_some() => {
+                parse_empty_params(&request.params)?;
+                if request.document_id.is_some() || request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid(
+                        "document.new does not accept document_id or expected_revision",
+                    ));
+                }
+                serde_json::to_value(self.document_new()?).map_err(serialize_error)?
+            }
+            "layer.summary" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                let id = required_document_id(request)?;
+                serde_json::to_value(self.layer_summary(id, parse_params(&request.params)?)?)
+                    .map_err(serialize_error)?
+            }
+            "document.visible_bounds" => {
+                parse_empty_params(&request.params)?;
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                serde_json::to_value(self.visible_bounds(required_document_id(request)?)?)
+                    .map_err(serialize_error)?
             }
             "document.get" => {
                 parse_empty_params(&request.params)?;
@@ -1798,7 +1999,16 @@ impl ApplicationService {
                 serde_json::to_value(self.objects_get(document_id, params)?)
                     .map_err(serialize_error)?
             }
-            "objects.move"
+            "document.import_gerber_layers"
+            | "document.import_gerber_layer"
+            | "document.create_empty_layer"
+            | "document.remove_layer"
+            | "layers.reorder"
+            | "layers.set_active"
+            | "layers.set_solo"
+            | "layers.update_many"
+            | "layers.reset_colors"
+            | "objects.move"
             | "objects.rotate"
             | "objects.mirror"
             | "objects.duplicate"
@@ -1820,6 +2030,54 @@ impl ApplicationService {
                     )
                 })?;
                 match request.op.as_str() {
+                    "document.import_gerber_layers" => serde_json::to_value(
+                        self.import_gerber_layers(id, revision, parse_params(&request.params)?)?,
+                    )
+                    .map_err(serialize_error)?,
+                    "document.import_gerber_layer" => serde_json::to_value(
+                        self.import_gerber_layer(id, revision, parse_params(&request.params)?)?,
+                    )
+                    .map_err(serialize_error)?,
+                    "document.create_empty_layer" => serde_json::to_value(
+                        self.create_empty_layer(id, revision, parse_params(&request.params)?)?,
+                    )
+                    .map_err(serialize_error)?,
+                    "document.remove_layer" => serde_json::to_value(self.remove_layer(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "layers.reorder" => serde_json::to_value(self.layers_reorder(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "layers.set_active" => serde_json::to_value(self.layers_set_active(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "layers.set_solo" => serde_json::to_value(self.layers_set_solo(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "layers.update_many" => serde_json::to_value(self.layers_update_many(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "layers.reset_colors" => serde_json::to_value(self.layers_reset_colors(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
                     "objects.move" => serde_json::to_value(self.objects_move(
                         id,
                         revision,
@@ -2060,21 +2318,6 @@ fn required_document_id(request: &RequestEnvelope) -> Result<&str, ServiceError>
         .ok_or_else(|| ServiceError::invalid_field("document_id", "document_id is required"))
 }
 
-fn check_workspace_edit(record: &S1DocumentRecord, layer_id: &str) -> Result<(), ServiceError> {
-    let state = record
-        .workspace
-        .get(layer_id)
-        .ok_or_else(|| ServiceError::not_found("layer", layer_id))?;
-    if state.locked {
-        return Err(ServiceError {
-            code: "LAYER_LOCKED".into(),
-            message: "图层已锁定。".into(),
-            details: serde_json::json!({"entity":"layer", "id":layer_id}),
-        });
-    }
-    Ok(())
-}
-
 fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
     DocumentInfo {
         manufacturing_precision: record.manufacturing_precision,
@@ -2083,10 +2326,17 @@ fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
         api_version: API_VERSION,
         document_id: document_id.into(),
         revision: record.revision.to_string(),
-        source_path: record.source_path.to_string_lossy().into_owned(),
-        source_sha256: record.source_sha256.clone(),
-        last_saved_path: record.last_saved_path.clone(),
-        dirty: content_hash(&record.document) != record.saved_content_hash,
+        source_path: record
+            .opened_from
+            .as_ref()
+            .map(|(path, _)| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        source_sha256: record
+            .opened_from
+            .as_ref()
+            .map(|(_, sha)| sha.clone())
+            .unwrap_or_default(),
+        dirty: record.is_dirty(),
         undo_entries: record.history.undo_len(),
         redo_entries: record.history.redo_len(),
         history_bytes: record.history.bytes(),
@@ -2098,6 +2348,9 @@ fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
             .iter()
             .map(|layer| layer.id.clone())
             .collect(),
+        display_order: record.display_order.clone(),
+        active_layer_id: record.active_layer_id.clone(),
+        solo_layer_id: record.solo_layer_id.clone(),
         diagnostics: record.diagnostics.clone(),
     }
 }
@@ -2107,13 +2360,14 @@ fn edit_result(id: &str, record: &S1DocumentRecord, ids: Vec<String>, added: usi
         document_id: id.into(),
         revision: record.revision.to_string(),
         changed_object_ids: ids,
+        changed_layer_ids: Vec::new(),
         undo_entries_added: added,
         undo_entries: record.history.undo_len(),
         redo_entries: record.history.redo_len(),
         history_bytes: record.history.bytes(),
         history_truncated_entries: record.history.truncated_entries(),
         history_truncated_bytes: record.history.truncated_bytes(),
-        dirty: content_hash(&record.document) != record.saved_content_hash,
+        dirty: record.is_dirty(),
     }
 }
 
@@ -3147,6 +3401,7 @@ mod s1b_guards {
                     display_name: None,
                     visible: None,
                     locked: Some(true),
+                    ..Default::default()
                 },
             )
             .unwrap();

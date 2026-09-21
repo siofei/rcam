@@ -7,6 +7,9 @@ mod display_tests;
 mod drag;
 mod font_catalog;
 mod gpu;
+mod layer_panel;
+#[cfg(test)]
+mod layer_tests;
 mod metrics_panel;
 mod modal;
 use modal::ActiveModal;
@@ -27,7 +30,6 @@ use camera::Camera;
 use eframe::egui::{self, Color32, RichText, Vec2};
 use state::{Action, MirrorDirection, Model, PivotInput, View};
 use std::{
-    path::Path,
     sync::mpsc::{self, Receiver, SyncSender},
     time::Instant,
 };
@@ -77,8 +79,17 @@ struct EditorApp {
     size_width: String,
     size_height: String,
     display_unit: tools::DisplayUnit,
+    /// The active layer (follows the service's `is_active` flag).
     layer: Option<String>,
-    rename: String,
+    layer_dialog: Option<layer_panel::LayerDialog>,
+    layer_dialog_close_on_success: bool,
+    pending_summary: Option<editor_service::LayerSummaryResult>,
+    expanded_layers: std::collections::HashSet<String>,
+    /// Message plus its birth time; drives the "deleted … [Undo]" notice.
+    toast: Option<(String, Instant)>,
+    last_structure_serial: u64,
+    /// The unexported-changes prompt is for "new workspace", not for quitting.
+    new_after_prompt: bool,
     close_prompt: bool,
     quit_after_close: bool,
     allow_quit: bool,
@@ -143,7 +154,7 @@ impl EditorApp {
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
         eprintln!("RCam S4-A2 native GPU: {adapter}");
-        Self {
+        let mut app = Self {
             tx,
             rx,
             view: View::default(),
@@ -174,7 +185,13 @@ impl EditorApp {
             size_height: String::new(),
             display_unit: Default::default(),
             layer: None,
-            rename: String::new(),
+            layer_dialog: None,
+            layer_dialog_close_on_success: false,
+            pending_summary: None,
+            expanded_layers: Default::default(),
+            toast: None,
+            last_structure_serial: 0,
+            new_after_prompt: false,
             close_prompt: false,
             quit_after_close: false,
             allow_quit: false,
@@ -193,7 +210,10 @@ impl EditorApp {
             text_input_at_event: false,
             ime_active: false,
             reported_ppp: 0.,
-        }
+        };
+        // The Workspace always exists; layers are imported into it or created empty.
+        app.send(Action::NewWorkspace);
+        app
     }
     fn send(&mut self, a: Action) {
         let a = match self.length_action(a) {
@@ -241,34 +261,64 @@ impl EditorApp {
             && self.display_error.is_none()
             && !self.display_pending
     }
-    fn open(&mut self) {
-        match platform::choose_path(false, "") {
-            Ok(Some(path)) => self.send(Action::Open(path)),
+    /// Export one layer as a new Gerber. The Workspace is not saved, not linked
+    /// to the file, and stays dirty: Gerber is an interchange format here.
+    fn export_layer(&mut self, layer: String) {
+        let name = self
+            .view
+            .layers
+            .iter()
+            .find(|l| l.layer_id == layer)
+            .map(|l| {
+                let stem: String = l
+                    .display_name
+                    .chars()
+                    .map(|c| {
+                        if c.is_control() || "/\\:*?\"<>|".contains(c) {
+                            '_'
+                        } else {
+                            c
+                        }
+                    })
+                    .collect();
+                format!("{}.gbr", stem.trim())
+            })
+            .unwrap_or_else(|| "layer.gbr".into());
+        match platform::choose_path(true, &name) {
+            Ok(Some(path)) => self.send(Action::Save(path, layer, None)),
             Ok(None) => {}
             Err(e) => self.ui_error = Some(e),
         }
     }
     fn save(&mut self) {
         if let Some(l) = self.layer.clone() {
-            let name = self
-                .view
-                .info
-                .as_ref()
-                .map(|d| {
-                    format!(
-                        "{}_edited.gbr",
-                        Path::new(&d.source_path)
-                            .file_stem()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                    )
-                })
-                .unwrap_or("edited.gbr".into());
-            match platform::choose_path(true, &name) {
-                Ok(Some(path)) => self.send(Action::Save(path, l, None)),
-                Ok(None) => {}
-                Err(e) => self.ui_error = Some(e),
-            }
+            self.export_layer(l);
+        } else {
+            self.ui_error = Some("请先选择要导出的图层".into());
+        }
+    }
+    /// "Save / Save As" belong to the future `.rcam` project format (S4-B2).
+    fn explain_save_unavailable(&mut self) {
+        self.ui_error = Some(
+            "保存 / 另存为工作区将在 .rcam 阶段（S4-B2）提供。Gerber 请使用“导出图层为 Gerber…”，导出不会保存工作区。"
+                .into(),
+        );
+    }
+    fn new_workspace(&mut self) {
+        self.modal = None;
+        self.text.cancel();
+        self.tool = tools::ActiveTool::Select;
+        self.quit_after_close = false;
+        if self
+            .view
+            .info
+            .as_ref()
+            .is_some_and(|d| d.dirty || d.export_policy_dirty)
+        {
+            self.new_after_prompt = true;
+            self.close_prompt = true;
+        } else {
+            self.send(Action::NewWorkspace);
         }
     }
     fn close(&mut self, quit: bool) {
@@ -314,7 +364,7 @@ impl EditorApp {
             self.send(Action::History(false));
         }
         if ui
-            .add_enabled(redo, egui::Button::new("重做  ⇧⌘Z"))
+            .add_enabled(redo, egui::Button::new("重做  Shift+⌘Z"))
             .clicked()
         {
             self.send(Action::History(true));
@@ -657,12 +707,9 @@ impl eframe::App for EditorApp {
                 self.measure.clear();
                 self.drag = None;
                 self.fit = self.view.info.is_some();
-                self.layer = self.view.layers.first().map(|l| l.layer_id.clone());
-                self.rename = self
-                    .view
-                    .layers
-                    .first()
-                    .map_or(String::new(), |l| l.display_name.clone());
+                self.layer_dialog = None;
+                self.expanded_layers.clear();
+                self.toast = None;
                 self.dx = "0".into();
                 self.dy = "0".into();
                 self.angle = "90".into();
@@ -676,6 +723,22 @@ impl eframe::App for EditorApp {
             if self.quit_after_close && self.view.info.is_none() {
                 self.allow_quit = true;
             }
+            self.accept_layer_replies(now);
+            if self.view.import.is_some() {
+                // A new import shows everything that is now visible.
+                self.fit = true;
+            }
+            if let Some(bounds) = self.view.focus_bounds {
+                self.camera.fit(Some(bounds), self.canvas_rect);
+            }
+            self.last_structure_serial = self.view.structure_serial;
+        }
+        if self
+            .toast
+            .as_ref()
+            .is_some_and(|(_, born)| now.duration_since(*born).as_secs() >= 10)
+        {
+            self.toast = None;
         }
         if ctx.current_pass_index() == 0
             && let Some(mut bench) = self.bench.take()
@@ -694,11 +757,8 @@ impl eframe::App for EditorApp {
         }
         let title = self.view.info.as_ref().map_or("RCam".into(), |d| {
             format!(
-                "RCam — {}{}",
-                Path::new(&d.source_path)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
+                "RCam — 工作区（{} 个图层）{}",
+                d.layer_ids.len(),
                 if d.dirty || d.export_policy_dirty {
                     " *"
                 } else {
@@ -712,12 +772,10 @@ impl eframe::App for EditorApp {
         }
         if !self.busy && self.modal.is_none() {
             let dropped = ctx.input(|i| i.raw.dropped_files.clone());
-            if dropped.len() == 1 {
-                if let Some(p) = &dropped[0].path {
-                    self.send(Action::Open(p.clone()));
-                }
-            } else if dropped.len() > 1 {
-                self.ui_error = Some("本阶段每次打开一个文件，请拖入单个 Gerber。".into());
+            let paths: Vec<_> = dropped.iter().filter_map(|f| f.path.clone()).collect();
+            if !paths.is_empty() && self.layer_dialog.is_none() {
+                // Every dropped file becomes its own layer; all succeed or none is added.
+                self.send(Action::ImportGerbers(paths));
             }
         }
         // Validate the current view before enabling manufacturing actions.
@@ -740,6 +798,7 @@ impl eframe::App for EditorApp {
         });
         let validation_ms = validation_start.elapsed().as_secs_f64() * 1000.;
         let modal_open = self.modal.is_some()
+            || self.layer_dialog.is_some()
             || self.close_prompt
             || self.view.error.as_ref().is_some_and(|e| {
                 e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
@@ -778,15 +837,25 @@ impl eframe::App for EditorApp {
             modal_open || self.text.floating.is_some(),
         ) {
             ctx.input_mut(|i| {
-                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) {
-                    self.open();
+                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) && !self.busy {
+                    self.import_gerbers();
+                }
+                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::N) && !self.busy {
+                    self.new_workspace();
+                }
+                if i.consume_key(
+                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                    egui::Key::E,
+                ) && self.usable()
+                {
+                    self.save();
                 }
                 if i.consume_key(
                     egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
                     egui::Key::S,
-                ) && self.usable()
+                ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)
                 {
-                    self.save();
+                    self.explain_save_unavailable();
                 }
                 if i.consume_key(
                     egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
@@ -825,29 +894,44 @@ impl eframe::App for EditorApp {
                 ui.separator();
                 ui.menu_button("文件", |ui| {
                     if ui
-                        .add_enabled(!self.busy, egui::Button::new("打开…  ⌘O"))
+                        .add_enabled(!self.busy, egui::Button::new("新建工作区  ⌘N"))
                         .clicked()
                     {
-                        self.open();
+                        self.new_workspace();
                         ui.close();
                     }
                     if ui
-                        .add_enabled(self.usable(), egui::Button::new("另存为当前图层…  ⇧⌘S"))
+                        .add_enabled(!self.busy, egui::Button::new("导入 Gerber…（可多选）  ⌘O"))
+                        .clicked()
+                    {
+                        self.import_gerbers();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(!self.busy, egui::Button::new("新建空图层"))
+                        .clicked()
+                    {
+                        self.create_empty_layer();
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui
+                        .add_enabled(
+                            self.usable() && self.layer.is_some(),
+                            egui::Button::new("导出当前图层为 Gerber…  Shift+⌘E"),
+                        )
                         .clicked()
                     {
                         self.save();
                         ui.close();
                     }
-                    if ui
-                        .add_enabled(
-                            !self.busy && self.view.info.is_some(),
-                            egui::Button::new("关闭文件…"),
-                        )
-                        .clicked()
-                    {
-                        self.close(false);
-                        ui.close();
-                    }
+                    // Save / Save As are reserved for the .rcam project format (S4-B2).
+                    ui.add_enabled(false, egui::Button::new("保存工作区（S4-B2 .rcam 提供）"))
+                        .on_disabled_hover_text("Gerber 只导入 / 导出；工程保存将在 .rcam 阶段提供");
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new("工作区另存为…（S4-B2 .rcam 提供）"),
+                    );
                 });
                 ui.menu_button("编辑", |ui| {
                     self.history_buttons(ui);
@@ -894,56 +978,85 @@ impl eframe::App for EditorApp {
                 });
                 ui.menu_button("图层", |ui| {
                     if ui
+                        .add_enabled(!self.busy, egui::Button::new("新建空图层"))
+                        .clicked()
+                    {
+                        self.create_empty_layer();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(!self.busy, egui::Button::new("导入 Gerber…"))
+                        .clicked()
+                    {
+                        self.import_gerbers();
+                        ui.close();
+                    }
+                    ui.separator();
+                    let active = self.layer.clone().filter(|_| !self.busy);
+                    for (label, dialog) in [
+                        ("重命名当前图层…", 0),
+                        ("当前图层设置…", 1),
+                        ("当前图层分类设置…", 2),
+                    ] {
+                        if ui
+                            .add_enabled(active.is_some(), egui::Button::new(label))
+                            .clicked()
+                            && let Some(layer) = active.clone()
+                        {
+                            let name = self
+                                .view
+                                .layers
+                                .iter()
+                                .find(|l| l.layer_id == layer)
+                                .map(|l| l.display_name.clone())
+                                .unwrap_or_default();
+                            self.open_layer_dialog(match dialog {
+                                0 => layer_panel::LayerDialog::Rename { layer, text: name },
+                                1 => layer_panel::LayerDialog::Settings { layer, name },
+                                _ => layer_panel::LayerDialog::Categories { layer },
+                            });
+                            ui.close();
+                        }
+                    }
+                    if ui
+                        .add_enabled(active.is_some(), egui::Button::new("删除当前图层…"))
+                        .clicked()
+                        && let Some(layer) = active
+                    {
+                        self.layer_dialog =
+                            Some(layer_panel::LayerDialog::DeletePending { layer: layer.clone() });
+                        self.send(Action::LayerSummary(layer));
+                        ui.close();
+                    }
+                    ui.separator();
+                    for (label, visible) in [("显示全部图层", true), ("隐藏全部图层", false)] {
+                        if ui
+                            .add_enabled(
+                                !self.busy && !self.view.layers.is_empty(),
+                                egui::Button::new(label),
+                            )
+                            .clicked()
+                        {
+                            self.send(Action::SetAllLayersVisible(visible));
+                            ui.close();
+                        }
+                    }
+                    if ui
+                        .add_enabled(!self.busy, egui::Button::new("重置全部图层颜色"))
+                        .clicked()
+                    {
+                        self.send(Action::ResetLayerColors);
+                        ui.close();
+                    }
+                    if ui
                         .add_enabled(
-                            self.layer.is_some() && !self.busy,
-                            egui::Button::new("重命名…"),
+                            !self.busy && self.view.layers.iter().any(|l| l.is_solo),
+                            egui::Button::new("取消独奏"),
                         )
                         .clicked()
                     {
-                        self.open_modal(ActiveModal::Rename);
+                        self.send(Action::SetSoloLayer(None));
                         ui.close();
-                    }
-                    if let Some(layer) = self
-                        .view
-                        .layers
-                        .iter()
-                        .find(|l| Some(&l.layer_id) == self.layer.as_ref())
-                        .cloned()
-                    {
-                        for (label, visibility) in [
-                            (
-                                if layer.visible {
-                                    "隐藏当前层"
-                                } else {
-                                    "显示当前层"
-                                },
-                                true,
-                            ),
-                            (
-                                if layer.locked {
-                                    "解锁当前层"
-                                } else {
-                                    "锁定当前层"
-                                },
-                                false,
-                            ),
-                        ] {
-                            if ui
-                                .add_enabled(!self.busy, egui::Button::new(label))
-                                .clicked()
-                            {
-                                if let Some(d) = &self.view.info {
-                                    self.send(Action::Layer(editor_service::LayerUpdateParams {
-                                        layer_id: layer.layer_id.clone(),
-                                        expected_workspace_revision: d.workspace_revision.clone(),
-                                        display_name: None,
-                                        visible: visibility.then_some(!layer.visible),
-                                        locked: (!visibility).then_some(!layer.locked),
-                                    }));
-                                }
-                                ui.close();
-                            }
-                        }
                     }
                 });
                 ui.menu_button("视图", |ui| {
@@ -959,25 +1072,32 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("帮助", |ui| {
-                    ui.label("S4-A2.2 · 文本与参数交互");
+                    ui.label("S4-B1 · 多 Gerber 图层工作区");
                     ui.label(
                         "几何选择包括 Clear；Ctrl 点击加选，Shift 点击减选，双向框选，整组编辑。",
                     );
                     ui.label("中键拖动 / 双指滚动平移；捏合 / Cmd+滚动缩放。");
-                    ui.label("另存为必须选择新文件名。Windows 延后验收。");
+                    ui.label("Gerber 只导入 / 导出：导出必须选择新文件名，不会保存工作区。Windows 延后验收。");
                     ui.separator();
                     ui.label(&self.adapter);
                 });
             });
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(!self.busy, egui::Button::new("打开…"))
+                    .add_enabled(!self.busy, egui::Button::new("导入…"))
                     .clicked()
                 {
-                    self.open();
+                    self.import_gerbers();
                 }
                 if ui.button("适合窗口").clicked() {
                     self.fit = true;
+                }
+                if ui
+                    .add_enabled(self.layer.is_some() && !self.busy, egui::Button::new("适合当前图层"))
+                    .clicked()
+                    && let Some(layer) = self.layer.clone()
+                {
+                    self.send(Action::FitLayer(layer));
                 }
                 ui.separator();
                 self.history_buttons(ui);
@@ -985,7 +1105,10 @@ impl eframe::App for EditorApp {
                 ui.label(RichText::new("几何多选").color(Color32::from_rgb(100, 206, 183)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .add_enabled(self.usable(), egui::Button::new("另存为…"))
+                        .add_enabled(
+                            self.usable() && self.layer.is_some(),
+                            egui::Button::new("导出图层…"),
+                        )
                         .clicked()
                     {
                         self.save();
@@ -1017,6 +1140,25 @@ impl eframe::App for EditorApp {
                 }
                 ui.label(&self.view.message);
             });
+            if let Some((text, _)) = self.toast.clone() {
+                ui.horizontal(|ui| {
+                    ui.label(text);
+                    if ui
+                        .add_enabled(
+                            !self.busy
+                                && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0),
+                            egui::Button::new("撤销"),
+                        )
+                        .clicked()
+                    {
+                        self.toast = None;
+                        self.send(Action::History(false));
+                    }
+                    if ui.small_button("×").clicked() {
+                        self.toast = None;
+                    }
+                });
+            }
             if let Some(error) = &self.view.error {
                 ui.colored_label(
                     Color32::LIGHT_RED,
@@ -1036,62 +1178,16 @@ impl eframe::App for EditorApp {
             }
         });
         egui::SidePanel::left("layers")
-            .default_width(210.)
-            .width_range(170.0..=320.)
+            .resizable(true)
+            .default_width(250.)
+            // Below ~240 px the six fixed controls leave no room for the name and the
+            // truncated label would draw over them (found in the native §107 check).
+            .width_range(240.0..=480.)
             .show(ctx, |ui| {
-                ui.add_space(8.);
                 if modal_open {
                     ui.disable();
                 }
-                ui.heading("图层");
-                ui.add_space(8.);
-                let layers = self.view.layers.clone();
-                for l in layers {
-                    ui.group(|ui| {
-                        if ui
-                            .selectable_label(
-                                self.layer.as_ref() == Some(&l.layer_id),
-                                &l.display_name,
-                            )
-                            .clicked()
-                        {
-                            self.layer = Some(l.layer_id.clone());
-                            self.rename = l.display_name.clone();
-                        }
-                        ui.label(format!("{} 个对象", l.object_count));
-                        let mut visible = l.visible;
-                        let mut locked = l.locked;
-                        ui.add_enabled_ui(!self.busy, |ui| {
-                            ui.horizontal(|ui| {
-                                let v = ui.checkbox(&mut visible, "显示").changed();
-                                let k = ui.checkbox(&mut locked, "锁定").changed();
-                                if (v || k)
-                                    && let Some(d) = &self.view.info
-                                {
-                                    self.send(Action::Layer(editor_service::LayerUpdateParams {
-                                        layer_id: l.layer_id.clone(),
-                                        expected_workspace_revision: d.workspace_revision.clone(),
-                                        display_name: None,
-                                        visible: Some(visible),
-                                        locked: Some(locked),
-                                    }));
-                                }
-                            });
-                        });
-                    });
-                    ui.add_space(4.);
-                }
-                if self.layer.is_some() {
-                    ui.separator();
-                    if ui.button("图层名称…").clicked() {
-                        self.open_modal(ActiveModal::Rename);
-                    }
-                    ui.label(
-                        RichText::new("显隐、锁定和名称仅在本次会话保留。")
-                            .small()
-                            .weak(),
-                    );
-                }
+                self.layer_panel(ui);
             });
         egui::SidePanel::right("properties")
             .default_width(260.)
@@ -1176,17 +1272,17 @@ impl eframe::App for EditorApp {
                             ui.label("导出制造精度策略有未保存更改");
                         }
                         ui.strong(if d.dirty {
-                            "存在未保存的制造修改"
+                            "工作区含有尚未导出的制造修改"
                         } else {
-                            "制造内容未修改"
+                            "制造内容与导入时相同"
                         });
-                        ui.label("打开来源");
-                        ui.label(&d.source_path);
-                        if let Some(p) = &d.last_saved_path {
-                            ui.add_space(6.);
-                            ui.label("最后另存为");
-                            ui.label(p);
-                        }
+                        ui.label(
+                            RichText::new(
+                                "工作区暂无工程文件（.rcam 将在 S4-B2 提供）。Gerber 导出只写出所选图层，不会保存工作区，也不会清除此标记。",
+                            )
+                            .small()
+                            .weak(),
+                        );
                     }
                 });
             });
@@ -1577,8 +1673,10 @@ impl eframe::App for EditorApp {
                     } else if needs_lod && self.last_good.is_none() {
                         "正在准备画布…".into()
                     } else if self.view.info.is_none() {
-                        "打开 Gerber 开始编辑\n使用“打开…”或从 Finder 拖入单个文件".into()
-                    } else if self.view.layers.iter().all(|l| !l.visible) {
+                        "正在准备工作区…".into()
+                    } else if self.view.layers.is_empty() {
+                        "工作区为空\n使用左侧 ＋ 导入 Gerber（可多选），或新建空图层\n也可从 Finder 拖入多个文件".into()
+                    } else if self.view.layers.iter().all(|l| !l.effective_visible) {
                         "所有图层已隐藏".into()
                     } else {
                         String::new()
@@ -1606,29 +1704,40 @@ impl eframe::App for EditorApp {
         }
         if self.close_prompt {
             self.modal = None;
+            self.layer_dialog = None;
             self.text.cancel();
             egui::Modal::new(egui::Id::new("close-confirmation")).show(ctx, |ui| {
-                ui.heading("保留未保存修改？");
-                ui.label("当前制造修改尚未保存。放弃后无法恢复。");
+                ui.heading("放弃尚未导出的修改？");
+                ui.label(
+                    "工作区含有尚未导出的制造修改。Gerber 导出只保存所选图层，不保存工作区；放弃后无法恢复。",
+                );
                 ui.horizontal(|ui| {
                     if ui.button("取消").clicked() {
                         self.close_prompt = false;
                         self.quit_after_close = false;
+                        self.new_after_prompt = false;
                     }
-                    if ui.button("先另存为…").clicked() {
+                    if ui.button("先导出当前图层…").clicked() {
                         self.close_prompt = false;
                         self.quit_after_close = false;
+                        self.new_after_prompt = false;
                         self.save();
                     }
-                    if ui.button("放弃修改并关闭").clicked() {
+                    if ui.button("放弃修改并继续").clicked() {
                         self.close_prompt = false;
-                        self.send(Action::Close(true));
+                        if self.new_after_prompt {
+                            self.new_after_prompt = false;
+                            self.send(Action::DiscardNewWorkspace);
+                        } else {
+                            self.send(Action::Close(true));
+                        }
                     }
                 });
             });
         }
         if !self.close_prompt {
             self.parameter_modal(ctx);
+            self.layer_dialogs(ctx);
         }
         if self.modal.is_none()
             && !self.close_prompt
