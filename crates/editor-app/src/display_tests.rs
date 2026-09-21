@@ -349,9 +349,13 @@ fn public_gui_sample_has_real_standard_and_macro_geometry() {
     assert!(Scene::build(&s, &l, MmPoint::new(30., 30.), 1000., 1).is_ok());
 }
 
-#[test]
-#[ignore = "requires native Metal; exact RGBA parity including AA and selection"]
-fn native_metal_reference_production_pixel_parity() {
+struct ParityRig {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pipelines: Vec<wgpu::ComputePipeline>,
+}
+
+fn parity_rig() -> ParityRig {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::METAL,
         ..Default::default()
@@ -390,6 +394,213 @@ fn native_metal_reference_production_pixel_parity() {
             })
         })
         .collect();
+    ParityRig {
+        device,
+        queue,
+        pipelines,
+    }
+}
+
+/// Reference vs production shader on one scene: selection {0, 1, all} x drag
+/// {none, moved} x three cameras, all compared as exact RGBA.
+fn assert_parity(rig: &ParityRig, scene: &Scene, name: &str) {
+    assert_parity_cameras(rig, scene, name, None);
+}
+
+/// With `Some(render_ppm)` the three cameras stay inside the range the application
+/// guarantees for a scene built at that ppm (`render_ppm / LOD_MAX_ZOOM_OUT ..= render_ppm`);
+/// the coarsest one is the worst case for hairline bounds.
+fn assert_parity_cameras(rig: &ParityRig, scene: &Scene, name: &str, render_ppm: Option<f64>) {
+    let ParityRig {
+        device,
+        queue,
+        pipelines,
+    } = rig;
+    let _render = crate::gpu::Resources::new(device, wgpu::TextureFormat::Rgba8Unorm, scene);
+    let b = scene.objects.iter().fold(
+        [
+            f32::INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+        ],
+        |mut b, o| {
+            for i in 0..2 {
+                b[i] = b[i].min(o.bounds[i]);
+                b[i + 2] = b[i + 2].max(o.bounds[i + 2]);
+            }
+            b
+        },
+    );
+    for selection in [0, 1, scene.ids.len()] {
+        for delta in [MmPoint::new(0., 0.), MmPoint::new(3., -2.)] {
+            for view_mode in 0..3 {
+                let mut camera = crate::camera::Camera {
+                    center: MmPoint::new(
+                        f64::from((b[0] + b[2]) / 2.),
+                        f64::from((b[1] + b[3]) / 2.),
+                    ),
+                    scale: 90. / f64::from((b[2] - b[0]).max(b[3] - b[1]).max(1.)),
+                };
+                if let Some(ppm) = render_ppm {
+                    camera.scale = match view_mode {
+                        0 => ppm / crate::display::LOD_MAX_ZOOM_OUT,
+                        1 => ppm / 2.,
+                        _ => ppm,
+                    };
+                    if view_mode == 2 {
+                        camera.center.x_mm += f64::from(b[2] - b[0]) * 0.45 / 8.;
+                    }
+                } else {
+                    if view_mode == 1 {
+                        camera.scale *= 5.;
+                        camera.center = MmPoint::new(5., 5.);
+                    }
+                    if view_mode == 2 {
+                        if name.contains("SPARSE_DENSE") {
+                            camera.scale = 8.;
+                            camera.center = MmPoint::new(1000., 1000.);
+                        } else {
+                            camera.center.x_mm += f64::from(b[2] - b[0]) * 0.45;
+                            camera.scale *= 2.;
+                        }
+                    }
+                }
+                let ids: Vec<_> = scene
+                    .ids
+                    .iter()
+                    .take(selection)
+                    .map(String::as_str)
+                    .collect();
+                let (uniform, index) = crate::gpu::prepare(
+                    scene,
+                    camera,
+                    eframe::egui::Rect::from_min_size(
+                        eframe::egui::Pos2::ZERO,
+                        eframe::egui::vec2(128., 128.),
+                    ),
+                    1.,
+                    &crate::gpu::selection_flags(scene, &ids),
+                    delta,
+                )
+                .unwrap();
+                let flags = crate::gpu::selection_flags(scene, &ids);
+                let buf = |data: &[u8], usage| {
+                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: None,
+                        contents: if data.is_empty() { &[0; 16] } else { data },
+                        usage,
+                    })
+                };
+                let buffers = [
+                    buf(bytemuck::bytes_of(&uniform), wgpu::BufferUsages::UNIFORM),
+                    buf(
+                        bytemuck::cast_slice(&scene.objects),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                    buf(
+                        bytemuck::cast_slice(&scene.primitives),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                    buf(
+                        bytemuck::cast_slice(&scene.points),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                    buf(bytemuck::cast_slice(&flags), wgpu::BufferUsages::STORAGE),
+                    buf(
+                        bytemuck::cast_slice(&index.data),
+                        wgpu::BufferUsages::STORAGE,
+                    ),
+                ];
+                let mut images = Vec::new();
+                for (mode, pipeline) in pipelines.iter().enumerate() {
+                    let output = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: None,
+                        size: 128 * 128 * 16,
+                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                        mapped_at_creation: false,
+                    });
+                    let read = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: None,
+                        size: output.size(),
+                        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    let mut entries: Vec<_> = buffers
+                        .iter()
+                        .take(if mode == 0 { 5 } else { 6 })
+                        .enumerate()
+                        .map(|(i, b)| wgpu::BindGroupEntry {
+                            binding: i as u32,
+                            resource: b.as_entire_binding(),
+                        })
+                        .collect();
+                    entries.push(wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: output.as_entire_binding(),
+                    });
+                    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: None,
+                        layout: &pipeline.get_bind_group_layout(0),
+                        entries: &entries,
+                    });
+                    let mut encoder = device.create_command_encoder(&Default::default());
+                    {
+                        let mut pass = encoder.begin_compute_pass(&Default::default());
+                        pass.set_pipeline(pipeline);
+                        pass.set_bind_group(0, &group, &[]);
+                        pass.dispatch_workgroups(16, 16, 1);
+                    }
+                    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, output.size());
+                    queue.submit([encoder.finish()]);
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    read.slice(..)
+                        .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
+                    device
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: None,
+                            timeout: Some(Duration::from_secs(30)),
+                        })
+                        .unwrap();
+                    rx.recv().unwrap().unwrap();
+                    images.push(read.slice(..).get_mapped_range().to_vec());
+                }
+                let differences = images[0]
+                    .chunks_exact(16)
+                    .zip(images[1].chunks_exact(16))
+                    .filter(|(a, b)| a != b)
+                    .count();
+                if differences > 0 {
+                    for (i, (a, b)) in images[0]
+                        .chunks_exact(16)
+                        .zip(images[1].chunks_exact(16))
+                        .enumerate()
+                        .filter(|(_, (a, b))| a != b)
+                        .take(8)
+                    {
+                        println!(
+                            "DIFF {i} {:?} {:?}",
+                            bytemuck::cast_slice::<u8, f32>(a),
+                            bytemuck::cast_slice::<u8, f32>(b)
+                        );
+                    }
+                }
+                assert_eq!(
+                    differences, 0,
+                    "{name} selection={selection} delta={delta:?}"
+                );
+                println!(
+                    "PASS exact RGBA parity {name} selection={selection} delta={delta:?} view={view_mode} pixels=16384"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires native Metal; exact RGBA parity including AA and selection"]
+fn native_metal_reference_production_pixel_parity() {
+    let rig = parity_rig();
     for name in [
         "s2b3_2/SPARSE_DENSE.gbr",
         "s2b3_1/P1K_CIRCLES.gbr",
@@ -463,175 +674,234 @@ fn native_metal_reference_production_pixel_parity() {
             1,
         )
         .unwrap();
-        let _render = crate::gpu::Resources::new(&device, wgpu::TextureFormat::Rgba8Unorm, &scene);
-        let b = scene.objects.iter().fold(
-            [
-                f32::INFINITY,
-                f32::INFINITY,
-                f32::NEG_INFINITY,
-                f32::NEG_INFINITY,
-            ],
-            |mut b, o| {
-                for i in 0..2 {
-                    b[i] = b[i].min(o.bounds[i]);
-                    b[i + 2] = b[i + 2].max(o.bounds[i + 2]);
+        assert_parity(&rig, &scene, name);
+    }
+}
+
+/// Builds the display scene of a real multi-layer workspace after `setup` applied
+/// workspace/view changes through the service (the path the GUI takes).
+fn workspace_scene(files: &[&str], setup: impl Fn(&mut Model, &[String]), ppm: f64) -> Scene {
+    use crate::state::Action;
+    let mut m = Model::default();
+    m.run(Action::NewWorkspace);
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/synthetic");
+    m.run(Action::ImportGerbers(
+        files.iter().map(|f| root.join(f)).collect(),
+    ));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    let ids: Vec<String> = m
+        .view
+        .import
+        .as_ref()
+        .expect("import result")
+        .layers
+        .iter()
+        .map(|l| l.layer_id.clone())
+        .collect();
+    setup(&mut m, &ids);
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    let snapshot = m
+        .service
+        .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
+        .unwrap();
+    Scene::build(&snapshot, &m.view.layers, MmPoint::new(0., 0.), ppm, 1).unwrap()
+}
+
+fn layer_patch(m: &Model, id: &str) -> editor_service::LayerUpdateParams {
+    editor_service::LayerUpdateParams {
+        layer_id: id.into(),
+        expected_workspace_revision: m.view.info.as_ref().unwrap().workspace_revision.clone(),
+        ..Default::default()
+    }
+}
+
+type Setup = Box<dyn Fn(&mut Model, &[String])>;
+
+/// Fixed, representative S4-B1 view-style workspaces (not a Cartesian product).
+fn view_style_cases() -> Vec<(&'static str, &'static [&'static str], Setup)> {
+    use crate::state::Action;
+    use editor_core::workspace::{ColorMode, DisplayClass, LayerDisplayMode as Mode};
+    use editor_service::ClassStyleUpdate;
+    fn mode(m: &mut Model, id: &str, display: Mode, color: ColorMode) {
+        let mut p = layer_patch(m, id);
+        p.display_mode = Some(display);
+        p.color_mode = Some(color);
+        m.run(Action::Layer(p));
+    }
+    fn class(m: &mut Model, id: &str, update: ClassStyleUpdate) {
+        let mut p = layer_patch(m, id);
+        p.classes = vec![update];
+        m.run(Action::Layer(p));
+    }
+    const TWO: [&str; 2] = ["s2a3/gui_primitives.gbr", "s1a/region_cutin.gbr"];
+    const THREE: [&str; 3] = [
+        "s2a3/gui_primitives.gbr",
+        "s1a/region_cutin.gbr",
+        "s1a/ordered_local_hole.gbr",
+    ];
+    vec![
+        ("layer-color-filled", &TWO, Box::new(|_, _| {})),
+        (
+            "layer-color-outline",
+            &TWO,
+            Box::new(|m, ids| mode(m, &ids[0], Mode::Outline, ColorMode::LayerColor)),
+        ),
+        (
+            "layer-color-zerowidth",
+            &TWO,
+            Box::new(|m, ids| mode(m, &ids[0], Mode::ZeroWidth, ColorMode::LayerColor)),
+        ),
+        (
+            "category-color-filled",
+            &TWO,
+            Box::new(|m, ids| {
+                for id in ids {
+                    mode(m, id, Mode::Filled, ColorMode::CategoryColor);
                 }
-                b
-            },
+            }),
+        ),
+        (
+            "category-color-outline-and-zerowidth",
+            &TWO,
+            Box::new(|m, ids| {
+                mode(m, &ids[0], Mode::Outline, ColorMode::CategoryColor);
+                mode(m, &ids[1], Mode::ZeroWidth, ColorMode::CategoryColor);
+            }),
+        ),
+        (
+            "category-color-override",
+            &TWO,
+            Box::new(|m, ids| {
+                mode(m, &ids[0], Mode::Filled, ColorMode::CategoryColor);
+                for (c, hex) in [
+                    (DisplayClass::Stroke, "#ff8800"),
+                    (DisplayClass::RegionFreeform, "#00ffaa"),
+                    (DisplayClass::FlashCircle, "#3366ff"),
+                ] {
+                    class(
+                        m,
+                        &ids[0],
+                        ClassStyleUpdate {
+                            class: Some(c),
+                            color_override: Some(hex.into()),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }),
+        ),
+        (
+            "layer-visible-off",
+            &TWO,
+            Box::new(|m, ids| {
+                let mut p = layer_patch(m, &ids[1]);
+                p.visible = Some(false);
+                m.run(Action::Layer(p));
+            }),
+        ),
+        (
+            "class-visible-off-outline",
+            &TWO,
+            Box::new(|m, ids| {
+                mode(m, &ids[0], Mode::Outline, ColorMode::CategoryColor);
+                for c in [DisplayClass::Stroke, DisplayClass::FlashCircle] {
+                    class(
+                        m,
+                        &ids[0],
+                        ClassStyleUpdate {
+                            class: Some(c),
+                            visible: Some(false),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }),
+        ),
+        (
+            "z-order-three-layers-mixed-modes",
+            &THREE,
+            Box::new(|m, ids| {
+                mode(m, &ids[0], Mode::Filled, ColorMode::LayerColor);
+                mode(m, &ids[1], Mode::Outline, ColorMode::CategoryColor);
+                mode(m, &ids[2], Mode::ZeroWidth, ColorMode::LayerColor);
+                let mut order = ids.to_vec();
+                order.reverse();
+                m.run(Action::ReorderLayers(order));
+            }),
+        ),
+        (
+            "solo-hides-the-others",
+            &THREE,
+            Box::new(|m, ids| m.run(Action::SetSoloLayer(Some(ids[1].clone())))),
+        ),
+    ]
+}
+
+/// S4-B1 view styles: Production and Reference must agree bit-for-bit on every
+/// pixel of every representative workspace.
+#[test]
+#[ignore = "requires native Metal; exact RGBA parity of S4-B1 view styles"]
+fn native_metal_s4b1_view_style_parity_matrix() {
+    let cases = view_style_cases();
+    let rig = parity_rig();
+    for (label, files, setup) in &cases {
+        // Two passes: the first only measures the extent, the second is built at the
+        // ppm whose supported zoom range [ppm/4, ppm] contains all three cameras.
+        let extent = workspace_scene(files, setup, 1000.)
+            .objects
+            .iter()
+            .fold(0_f32, |m, o| {
+                m.max(o.bounds[2] - o.bounds[0])
+                    .max(o.bounds[3] - o.bounds[1])
+            });
+        let render_ppm = 4. * 90. / f64::from(extent.max(1.));
+        let scene = workspace_scene(files, setup, render_ppm);
+        assert!(!scene.objects.is_empty(), "{label}");
+        assert_parity_cameras(&rig, &scene, &format!("s4b1/{label}"), Some(render_ppm));
+        println!(
+            "S4B1_VIEW_STYLE_CASE_OK {label} objects={}",
+            scene.objects.len()
         );
-        for selection in [0, 1, scene.ids.len()] {
-            for delta in [MmPoint::new(0., 0.), MmPoint::new(3., -2.)] {
-                for view_mode in 0..3 {
-                    let mut camera = crate::camera::Camera {
-                        center: MmPoint::new(
-                            f64::from((b[0] + b[2]) / 2.),
-                            f64::from((b[1] + b[3]) / 2.),
-                        ),
-                        scale: 90. / f64::from((b[2] - b[0]).max(b[3] - b[1]).max(1.)),
-                    };
-                    if view_mode == 1 {
-                        camera.scale *= 5.;
-                        camera.center = MmPoint::new(5., 5.);
-                    }
-                    if view_mode == 2 {
-                        if name.contains("SPARSE_DENSE") {
-                            camera.scale = 8.;
-                            camera.center = MmPoint::new(1000., 1000.);
-                        } else {
-                            camera.center.x_mm += f64::from(b[2] - b[0]) * 0.45;
-                            camera.scale *= 2.;
-                        }
-                    }
-                    let ids: Vec<_> = scene
-                        .ids
-                        .iter()
-                        .take(selection)
-                        .map(String::as_str)
-                        .collect();
-                    let (uniform, index) = crate::gpu::prepare(
-                        &scene,
-                        camera,
-                        eframe::egui::Rect::from_min_size(
-                            eframe::egui::Pos2::ZERO,
-                            eframe::egui::vec2(128., 128.),
-                        ),
-                        1.,
-                        &crate::gpu::selection_flags(&scene, &ids),
-                        delta,
-                    )
-                    .unwrap();
-                    let flags = crate::gpu::selection_flags(&scene, &ids);
-                    let buf = |data: &[u8], usage| {
-                        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: None,
-                            contents: if data.is_empty() { &[0; 16] } else { data },
-                            usage,
-                        })
-                    };
-                    let buffers = [
-                        buf(bytemuck::bytes_of(&uniform), wgpu::BufferUsages::UNIFORM),
-                        buf(
-                            bytemuck::cast_slice(&scene.objects),
-                            wgpu::BufferUsages::STORAGE,
-                        ),
-                        buf(
-                            bytemuck::cast_slice(&scene.primitives),
-                            wgpu::BufferUsages::STORAGE,
-                        ),
-                        buf(
-                            bytemuck::cast_slice(&scene.points),
-                            wgpu::BufferUsages::STORAGE,
-                        ),
-                        buf(bytemuck::cast_slice(&flags), wgpu::BufferUsages::STORAGE),
-                        buf(
-                            bytemuck::cast_slice(&index.data),
-                            wgpu::BufferUsages::STORAGE,
-                        ),
-                    ];
-                    let mut images = Vec::new();
-                    for (mode, pipeline) in pipelines.iter().enumerate() {
-                        let output = device.create_buffer(&wgpu::BufferDescriptor {
-                            label: None,
-                            size: 128 * 128 * 16,
-                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                            mapped_at_creation: false,
-                        });
-                        let read = device.create_buffer(&wgpu::BufferDescriptor {
-                            label: None,
-                            size: output.size(),
-                            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                            mapped_at_creation: false,
-                        });
-                        let mut entries: Vec<_> = buffers
-                            .iter()
-                            .take(if mode == 0 { 5 } else { 6 })
-                            .enumerate()
-                            .map(|(i, b)| wgpu::BindGroupEntry {
-                                binding: i as u32,
-                                resource: b.as_entire_binding(),
-                            })
-                            .collect();
-                        entries.push(wgpu::BindGroupEntry {
-                            binding: 6,
-                            resource: output.as_entire_binding(),
-                        });
-                        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                            label: None,
-                            layout: &pipeline.get_bind_group_layout(0),
-                            entries: &entries,
-                        });
-                        let mut encoder = device.create_command_encoder(&Default::default());
-                        {
-                            let mut pass = encoder.begin_compute_pass(&Default::default());
-                            pass.set_pipeline(pipeline);
-                            pass.set_bind_group(0, &group, &[]);
-                            pass.dispatch_workgroups(16, 16, 1);
-                        }
-                        encoder.copy_buffer_to_buffer(&output, 0, &read, 0, output.size());
-                        queue.submit([encoder.finish()]);
-                        let (tx, rx) = std::sync::mpsc::channel();
-                        read.slice(..)
-                            .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-                        device
-                            .poll(wgpu::PollType::Wait {
-                                submission_index: None,
-                                timeout: Some(Duration::from_secs(30)),
-                            })
-                            .unwrap();
-                        rx.recv().unwrap().unwrap();
-                        images.push(read.slice(..).get_mapped_range().to_vec());
-                    }
-                    let differences = images[0]
-                        .chunks_exact(16)
-                        .zip(images[1].chunks_exact(16))
-                        .filter(|(a, b)| a != b)
-                        .count();
-                    if differences > 0 {
-                        for (i, (a, b)) in images[0]
-                            .chunks_exact(16)
-                            .zip(images[1].chunks_exact(16))
-                            .enumerate()
-                            .filter(|(_, (a, b))| a != b)
-                            .take(8)
-                        {
-                            println!(
-                                "DIFF {i} {:?} {:?}",
-                                bytemuck::cast_slice::<u8, f32>(a),
-                                bytemuck::cast_slice::<u8, f32>(b)
-                            );
-                        }
-                    }
-                    assert_eq!(
-                        differences, 0,
-                        "{name} selection={selection} delta={delta:?}"
-                    );
-                    println!(
-                        "PASS exact RGBA parity {name} selection={selection} delta={delta:?} view={view_mode} pixels=16384"
-                    );
-                }
-            }
+    }
+    println!(
+        "S4B1_VIEW_STYLE_MATRIX cases={} all exact RGBA",
+        cases.len()
+    );
+}
+
+/// Guards the matrix against silently testing nothing: every style and the
+/// hidden / z-order variations must really reach the display scene.
+#[test]
+fn s4b1_view_style_matrix_scenes_exercise_every_style() {
+    use crate::display::{MODE_CENTERLINE, MODE_EDGE, MODE_FILLED};
+    let mut modes = std::collections::HashSet::new();
+    let mut hidden = 0;
+    for (label, files, setup) in view_style_cases() {
+        let scene = workspace_scene(files, setup, 1000.);
+        assert!(!scene.objects.is_empty(), "{label}");
+        let colors: std::collections::HashSet<_> =
+            scene.objects.iter().map(|o| o.style[0]).collect();
+        if label.starts_with("category-color") {
+            assert!(colors.len() > 1, "{label}: category colours must differ");
+        }
+        if label == "layer-color-outline" {
+            assert!(
+                scene.objects.iter().any(|o| o.style[1] == MODE_EDGE),
+                "{label}"
+            );
+        }
+        for o in &scene.objects {
+            modes.insert(o.style[1]);
+            hidden += usize::from(o.meta[3] == 0);
         }
     }
+    assert!(modes.contains(&MODE_FILLED));
+    assert!(modes.contains(&MODE_EDGE));
+    assert!(modes.contains(&MODE_CENTERLINE));
+    assert!(
+        hidden > 0,
+        "hidden layer/class/solo objects are in the matrix"
+    );
 }
 
 #[test]

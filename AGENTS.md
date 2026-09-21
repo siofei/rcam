@@ -128,10 +128,12 @@ Windows deferred / not executed，最终双平台 V1 门槛保持不变。
 LayerPanel 单列 compact list、可拖拽调宽、有最小宽度：
 
 ```text
-▶  ≡  ■  Layer Name      👁  🔒  ▣  ⋯
+●  ≡  ■  Layer Name      👁  🔒  ▣/□/─  ⋯
 ```
 
-右键与 `⋯` 使用同一个 context menu。颜色同时支持确定性 auto palette、presets、recent colors、full picker；分类色继承图层色或覆盖。
+`●/○` 是 Active 指示，`▣ □ ─` 分别是 Filled / Outline / ZeroWidth 的快捷菜单；不再有 inline 展开行，详情放 tooltip / Settings / Categories。
+
+右键与 `⋯` 使用同一个 context menu。颜色同时支持确定性 auto palette、presets、recent colors（session-only，8 个）、full picker；分类色继承图层色或覆盖。
 手动列表顺序 = display Z-order。必须支持：Active Layer、Solo（双击图层名切换，再次双击取消）、Show/Hide All Layers、Fit Layer、Visible、Selectable、Locked、Filled/Outline/ZeroWidth、
 Category color/filter/lock、New Empty Layer、Import Gerber、Delete + Undo。Selectable 放 Layer Settings，不长期占 Layer row。
 

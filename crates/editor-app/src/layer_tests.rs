@@ -558,3 +558,51 @@ fn show_all_and_hide_all_are_one_workspace_revision_and_show_all_ends_solo() {
     assert!(f.m.view.layers.iter().all(|l| !l.is_solo));
     assert_eq!(f.m.view.info.as_ref().unwrap().revision, manufacturing);
 }
+
+#[test]
+fn recent_colors_are_bounded_deduplicated_newest_first_and_ui_only() {
+    use crate::layer_panel::{RECENT_COLOR_LIMIT, push_recent_color};
+    let mut list = Vec::new();
+    for i in 0..12u8 {
+        push_recent_color(&mut list, &format!("#0000{i:02x}"));
+    }
+    assert_eq!(list.len(), RECENT_COLOR_LIMIT);
+    assert_eq!(list[0], "#00000b", "newest first");
+    push_recent_color(&mut list, "#000008");
+    assert_eq!(list[0], "#000008", "re-picking moves to the front");
+    assert_eq!(list.iter().filter(|c| *c == "#000008").count(), 1);
+    push_recent_color(&mut list, "inherit");
+    push_recent_color(&mut list, "not-a-colour");
+    assert_eq!(
+        list.len(),
+        RECENT_COLOR_LIMIT,
+        "non-colours are not remembered"
+    );
+    push_recent_color(&mut list, " #FF00AA ");
+    assert_eq!(list[0], "#ff00aa", "normalised to lower case");
+
+    // Committing a colour is workspace state only: the manufacturing revision
+    // and the exported bytes do not move.
+    let mut f = Fixture::new();
+    let ids = f.import(&["A.gbr"]);
+    let manufacturing = f.m.view.info.as_ref().unwrap().revision.clone();
+    let mut patch = f.patch(&ids[0]);
+    patch.base_color = Some("#ff00aa".into());
+    f.m.run(Action::Layer(patch));
+    assert!(f.m.view.error.is_none(), "{:?}", f.m.view.error);
+    assert_eq!(f.m.view.info.as_ref().unwrap().revision, manufacturing);
+}
+
+#[test]
+fn delete_dialog_numbers_are_grouped_and_display_glyphs_are_distinct() {
+    use crate::layer_panel::{display_mode_glyph, group_digits};
+    assert_eq!(group_digits(12438usize), "12,438");
+    assert_eq!(group_digits(125usize), "125");
+    assert_eq!(group_digits(0usize), "0");
+    assert_eq!(group_digits(1000usize), "1,000");
+    let glyphs: std::collections::HashSet<_> = LayerDisplayMode::ALL
+        .iter()
+        .map(|m| display_mode_glyph(*m))
+        .collect();
+    assert_eq!(glyphs.len(), 3);
+}

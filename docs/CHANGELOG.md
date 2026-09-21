@@ -1,5 +1,12 @@
 # 文档变更记录
 
+## 2026-09-22 · S4-B1 Final Closeout
+
+Delete 对话框只讨论 RCam 工程风险；Layer 行回到 compact 设计（Active 指示、显示模式小菜单、无 inline 展开）；
+新增 session-only Recent Colors；Canvas 错误文案不再建议“缩小视图”；新增 view-style Metal parity 矩阵、
+10×1K release 性能采集、原生 GUI 探针与验证脚本、`run_s4b1_final_gates.py`。修复发丝线包围盒随缩放被剔除的显示缺陷
+（`LOD_MAX_ZOOM_OUT`）。是否 PASS 只看同一 clean commit 生成的 evidence 包。
+
 ## 2026-09-21 · S4-B1 Multi-Gerber Workspace + 长期架构指导合并
 
 新增 ADR 0029（Workspace / Gerber Import-Export / View State）、ADR 0030（Block/Snap/Command/Board 长期预留）、

@@ -12,8 +12,11 @@ mod layer_panel;
 mod layer_tests;
 mod metrics_panel;
 mod modal;
+#[cfg(test)]
+mod perf_tests;
 use modal::ActiveModal;
 mod native_bench;
+mod native_probe;
 mod platform;
 mod render_index;
 mod selection;
@@ -84,7 +87,8 @@ struct EditorApp {
     layer_dialog: Option<layer_panel::LayerDialog>,
     layer_dialog_close_on_success: bool,
     pending_summary: Option<editor_service::LayerSummaryResult>,
-    expanded_layers: std::collections::HashSet<String>,
+    /// Recently committed layer/category colours (session-only UI preference).
+    recent_colors: Vec<String>,
     /// Message plus its birth time; drives the "deleted … [Undo]" notice.
     toast: Option<(String, Instant)>,
     last_structure_serial: u64,
@@ -102,6 +106,10 @@ struct EditorApp {
     display_pending: bool,
     drag: Option<drag::Gesture>,
     bench: Option<native_bench::NativeBench>,
+    /// Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR`); observation only.
+    probe: Option<native_probe::Probe>,
+    row_probes: std::cell::RefCell<Vec<serde_json::Value>>,
+    layer_panel_rect: egui::Rect,
     timing: bool,
     selected_flags: std::sync::Arc<Vec<u32>>,
     last_frame: Instant,
@@ -188,7 +196,7 @@ impl EditorApp {
             layer_dialog: None,
             layer_dialog_close_on_success: false,
             pending_summary: None,
-            expanded_layers: Default::default(),
+            recent_colors: Vec::new(),
             toast: None,
             last_structure_serial: 0,
             new_after_prompt: false,
@@ -204,6 +212,9 @@ impl EditorApp {
             display_pending: false,
             drag: None,
             bench: native_bench::NativeBench::from_env(gpu.device.clone()),
+            probe: native_probe::Probe::from_env(),
+            row_probes: Default::default(),
+            layer_panel_rect: egui::Rect::NOTHING,
             selected_flags: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
             last_frame: Instant::now(),
@@ -243,6 +254,9 @@ impl EditorApp {
             )
         {
             self.modal_pending = Some(self.sequence);
+        }
+        if let Some(probe) = &self.probe {
+            probe.action(&native_probe::action_text(&a));
         }
         match self.tx.try_send((self.sequence, a)) {
             Ok(()) => {
@@ -708,7 +722,6 @@ impl eframe::App for EditorApp {
                 self.drag = None;
                 self.fit = self.view.info.is_some();
                 self.layer_dialog = None;
-                self.expanded_layers.clear();
                 self.toast = None;
                 self.dx = "0".into();
                 self.dy = "0".into();
@@ -773,6 +786,12 @@ impl eframe::App for EditorApp {
         if !self.busy && self.modal.is_none() {
             let dropped = ctx.input(|i| i.raw.dropped_files.clone());
             let paths: Vec<_> = dropped.iter().filter_map(|f| f.path.clone()).collect();
+            if !paths.is_empty()
+                && let Some(probe) = self.probe.as_mut()
+            {
+                probe.drops += 1;
+                probe.action(&format!("DROP_FILES n={}", paths.len()));
+            }
             if !paths.is_empty() && self.layer_dialog.is_none() {
                 // Every dropped file becomes its own layer; all succeed or none is added.
                 self.send(Action::ImportGerbers(paths));
@@ -1139,6 +1158,11 @@ impl eframe::App for EditorApp {
                     ui.label(format!("选中 {}", o.object.object_id));
                 }
                 ui.label(&self.view.message);
+                // Display-transient diagnostics keep the last-good frame on screen and
+                // are reported here instead of covering the canvas.
+                if let (Some(e), Some(_)) = (&self.display_error, &self.last_good) {
+                    ui.label(RichText::new(format!("显示诊断：{e}")).weak());
+                }
             });
             if let Some((text, _)) = self.toast.clone() {
                 ui.horizontal(|ui| {
@@ -1177,7 +1201,7 @@ impl eframe::App for EditorApp {
                 });
             }
         });
-        egui::SidePanel::left("layers")
+        let layer_panel = egui::SidePanel::left("layers")
             .resizable(true)
             .default_width(250.)
             // Below ~240 px the six fixed controls leave no room for the name and the
@@ -1189,6 +1213,7 @@ impl eframe::App for EditorApp {
                 }
                 self.layer_panel(ui);
             });
+        self.layer_panel_rect = layer_panel.response.rect;
         egui::SidePanel::right("properties")
             .default_width(260.)
             .width_range(230.0..=380.)
@@ -1503,7 +1528,9 @@ impl eframe::App for EditorApp {
                         || hi.y_mm > b.max_y_mm
                 });
                 let needs_lod = self.view.info.is_some()
-                    && (outside || ppm > self.view.render_ppm || ppm < self.view.render_ppm / 4.);
+                    && (outside
+                        || ppm > self.view.render_ppm
+                        || ppm < self.view.render_ppm / display::LOD_MAX_ZOOM_OUT);
                 if needs_lod && !self.busy {
                     let margin_x = (hi.x_mm - lo.x_mm) * 0.5 + 4. / ppm;
                     let margin_y = (hi.y_mm - lo.y_mm) * 0.5 + 4. / ppm;
@@ -1668,8 +1695,16 @@ impl eframe::App for EditorApp {
                     }
                 }
                 let message =
-                    if let Some(e) = self.view.blocked.as_ref().or(self.display_error.as_ref()) {
-                        format!("无法安全显示 / 编辑\n{e}\n可撤销、缩小视图或关闭文件")
+                    if let Some(e) = self.view.blocked.as_ref() {
+                        // Semantic / manufacturing blocked: real error, no "zoom out" advice.
+                        format!("无法安全编辑\n{e}\n可撤销最近修改或关闭/修复输入文件")
+                    } else if let (Some(e), None) = (self.display_error.as_ref(), &self.last_good) {
+                        // Display-only problem and nothing to show yet.
+                        if e.starts_with("正在准备") {
+                            format!("{e}…")
+                        } else {
+                            format!("暂时无法显示\n{e}")
+                        }
                     } else if needs_lod && self.last_good.is_none() {
                         "正在准备画布…".into()
                     } else if self.view.info.is_none() {
@@ -1739,6 +1774,7 @@ impl eframe::App for EditorApp {
             self.parameter_modal(ctx);
             self.layer_dialogs(ctx);
         }
+        self.probe_frame(ctx);
         if self.modal.is_none()
             && !self.close_prompt
             && let Some(e) = self.view.error.clone()

@@ -55,7 +55,6 @@ enum MoveTo {
 #[derive(Clone, Debug)]
 enum RowEvent {
     Activate(String),
-    ToggleExpanded(String),
     Update(String, RowUpdate),
     Rename(String),
     Settings(String),
@@ -76,6 +75,43 @@ pub(crate) fn display_mode_label(mode: LayerDisplayMode) -> &'static str {
     }
 }
 
+/// Most recent colours kept in the picker.
+pub(crate) const RECENT_COLOR_LIMIT: usize = 8;
+
+/// Newest first, de-duplicated, bounded. Values that are not a colour (for
+/// example the `inherit` marker) are ignored.
+pub(crate) fn push_recent_color(list: &mut Vec<String>, hex: &str) {
+    let Some(color) = Color::from_hex(hex.trim()) else {
+        return;
+    };
+    let hex = color.to_hex();
+    list.retain(|c| *c != hex);
+    list.insert(0, hex);
+    list.truncate(RECENT_COLOR_LIMIT);
+}
+
+/// `12438` → `12,438` (object counts in confirmation dialogs).
+pub(crate) fn group_digits(n: impl std::fmt::Display) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Row quick-control glyph: filled / outline / zero-width are clearly distinct.
+pub(crate) fn display_mode_glyph(mode: LayerDisplayMode) -> &'static str {
+    match mode {
+        LayerDisplayMode::Filled => "▣",
+        LayerDisplayMode::Outline => "□",
+        LayerDisplayMode::ZeroWidth => "─",
+    }
+}
+
 pub(crate) fn color_mode_label(mode: ColorMode) -> &'static str {
     match mode {
         ColorMode::LayerColor => "图层颜色",
@@ -89,8 +125,29 @@ fn color32(color: Color) -> Color32 {
 
 /// The auto palette as a compact 4x4 grid, a full colour picker (colour wheel /
 /// HSV square) and a `#rrggbb` field. Returns a picked colour.
-fn color_palette(ui: &mut egui::Ui, current: Color) -> Option<String> {
+fn color_palette(ui: &mut egui::Ui, current: Color, recent: &[String]) -> Option<String> {
     let mut picked = None;
+    if !recent.is_empty() {
+        // Recent colours (newest first): session-only UI preference.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 3.;
+            ui.label("最近");
+            for hex in recent {
+                let Some(color) = Color::from_hex(hex) else {
+                    continue;
+                };
+                let mut button = egui::Button::new("")
+                    .fill(color32(color))
+                    .min_size(egui::vec2(20., 20.));
+                if color == current {
+                    button = button.stroke(egui::Stroke::new(2., Color32::WHITE));
+                }
+                if ui.add(button).on_hover_text(hex.as_str()).clicked() {
+                    picked = Some(hex.clone());
+                }
+            }
+        });
+    }
     // `Grid` widens every column to `interact_size.x` (40 px) unless told otherwise,
     // which spread the 20 px swatches far apart.
     egui::Grid::new(ui.id().with("palette"))
@@ -209,6 +266,22 @@ fn layer_menu(
         chosen = Some(RowEvent::Solo(id.clone(), !l.is_solo));
     }
     if ui
+        .add_enabled(
+            !busy,
+            egui::Button::new(if l.selectable {
+                "设为不可选择"
+            } else {
+                "设为可选择"
+            }),
+        )
+        .clicked()
+    {
+        chosen = Some(RowEvent::Update(
+            id.clone(),
+            RowUpdate::Selectable(!l.selectable),
+        ));
+    }
+    if ui
         .add_enabled(!busy, egui::Button::new("缩放到此图层"))
         .clicked()
     {
@@ -248,6 +321,13 @@ fn layer_menu(
 }
 
 impl EditorApp {
+    /// Bounded, de-duplicated, newest-first list of colours the user actually
+    /// committed. Session-only UI preference: never part of the manufacturing
+    /// model or the Gerber writer output.
+    pub(crate) fn remember_color(&mut self, hex: &str) {
+        push_recent_color(&mut self.recent_colors, hex);
+    }
+
     fn layer_patch(&self, layer: &str) -> Option<LayerUpdateParams> {
         self.view.info.as_ref().map(|d| LayerUpdateParams {
             layer_id: layer.into(),
@@ -264,7 +344,10 @@ impl EditorApp {
             RowUpdate::Visible(v) => patch.visible = Some(v),
             RowUpdate::Selectable(v) => patch.selectable = Some(v),
             RowUpdate::Locked(v) => patch.locked = Some(v),
-            RowUpdate::Color(hex) => patch.base_color = Some(hex),
+            RowUpdate::Color(hex) => {
+                self.remember_color(&hex);
+                patch.base_color = Some(hex);
+            }
             RowUpdate::ColorMode(mode) => patch.color_mode = Some(mode),
             RowUpdate::DisplayMode(mode) => patch.display_mode = Some(mode),
         }
@@ -273,6 +356,9 @@ impl EditorApp {
 
     fn send_class_update(&mut self, layer: &str, update: ClassStyleUpdate) {
         if let Some(mut patch) = self.layer_patch(layer) {
+            if let Some(hex) = update.color_override.as_deref() {
+                self.remember_color(hex);
+            }
             patch.classes = vec![update];
             self.send(Action::Layer(patch));
         }
@@ -301,11 +387,6 @@ impl EditorApp {
     fn apply_row_event(&mut self, event: RowEvent) {
         match event {
             RowEvent::Activate(id) => self.send(Action::SetActiveLayer(Some(id))),
-            RowEvent::ToggleExpanded(id) => {
-                if !self.expanded_layers.remove(&id) {
-                    self.expanded_layers.insert(id);
-                }
-            }
             RowEvent::Update(id, update) => self.send_update(&id, update),
             RowEvent::Rename(id) => self.open_layer_dialog(LayerDialog::Rename {
                 text: self
@@ -477,13 +558,22 @@ impl EditorApp {
         busy: bool,
         events: &RefCell<Vec<RowEvent>>,
     ) {
-        let expanded = self.expanded_layers.contains(&l.layer_id);
         let fill = if l.is_active {
             Color32::from_rgba_unmultiplied(80, 130, 200, 46)
         } else {
             Color32::TRANSPARENT
         };
         let dim = !l.effective_visible;
+        // Native-evidence probe (opt-in through an environment variable): the exact
+        // screen rectangle of every row control, used to prove nothing overlaps.
+        let probing = self.probe.is_some();
+        let rects: RefCell<Vec<(&'static str, egui::Rect)>> = RefCell::new(Vec::new());
+        let note = |key: &'static str, rect: egui::Rect| {
+            if probing {
+                rects.borrow_mut().push((key, rect));
+            }
+        };
+        let tooltip_shown = std::cell::Cell::new(false);
         let row = egui::Frame::new()
             .fill(fill)
             .inner_margin(egui::Margin::symmetric(3, 2))
@@ -492,34 +582,43 @@ impl EditorApp {
                 egui::Sides::new().shrink_left().truncate().show(
                     ui,
                     |ui| {
-                        if ui
-                            .add(egui::Button::new(if expanded { "▼" } else { "▶" }).frame(false))
-                            .clicked()
-                        {
+                        // Explicit Active Layer indicator (not only a tint / bold name).
+                        let (glyph, tip) = if l.is_active {
+                            (
+                                RichText::new("●").color(Color32::from_rgb(100, 180, 255)),
+                                "当前图层",
+                            )
+                        } else {
+                            (RichText::new("○").weak(), "点击设为当前图层")
+                        };
+                        let indicator = ui
+                            .add_enabled(!busy, egui::Button::new(glyph).frame(false))
+                            .on_hover_text(tip);
+                        note("indicator", indicator.rect);
+                        if indicator.clicked() && !l.is_active {
                             events
                                 .borrow_mut()
-                                .push(RowEvent::ToggleExpanded(l.layer_id.clone()));
+                                .push(RowEvent::Activate(l.layer_id.clone()));
                         }
-                        ui.dnd_drag_source(
+                        let drag = ui.dnd_drag_source(
                             egui::Id::new(("layer-drag", &l.layer_id)),
                             l.layer_id.clone(),
                             |ui| {
                                 ui.label("≡");
                             },
-                        )
-                        .response
-                        .on_hover_text("拖动调整图层顺序（上方图层压在下方图层之上）");
+                        );
+                        note("drag", drag.response.rect);
+                        drag.response
+                            .on_hover_text("拖动调整图层顺序（上方图层压在下方图层之上）");
                         let swatch = egui::Button::new("")
                             .fill(color32(l.base_color))
                             .min_size(egui::vec2(14., 14.));
-                        if ui
-                            .add_enabled(!busy, swatch)
-                            .on_hover_text(format!(
-                                "颜色 {}（点击打开图层设置）",
-                                l.base_color.to_hex()
-                            ))
-                            .clicked()
-                        {
+                        let swatch = ui.add_enabled(!busy, swatch).on_hover_text(format!(
+                            "颜色 {}（点击打开图层设置）",
+                            l.base_color.to_hex()
+                        ));
+                        note("color", swatch.rect);
+                        if swatch.clicked() {
                             events
                                 .borrow_mut()
                                 .push(RowEvent::Settings(l.layer_id.clone()));
@@ -537,6 +636,18 @@ impl EditorApp {
                         let height = ui.spacing().interact_size.y;
                         let (name_rect, _) =
                             ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+                        note("name", name_rect);
+                        if probing {
+                            let galley = ui.painter().layout_no_wrap(
+                                l.display_name.clone(),
+                                egui::TextStyle::Body.resolve(ui.style()),
+                                Color32::WHITE,
+                            );
+                            note(
+                                "name_text",
+                                egui::Rect::from_min_size(name_rect.min, galley.size()),
+                            );
+                        }
                         ui.scope_builder(
                             egui::UiBuilder::new()
                                 .max_rect(name_rect)
@@ -552,10 +663,27 @@ impl EditorApp {
                                 egui::Sense::click(),
                             )
                             .on_hover_ui(|ui| {
+                                tooltip_shown.set(true);
                                 ui.strong(&l.display_name);
                                 ui.label(format!("{} 个对象", l.object_count));
                                 if let Some(p) = &l.provenance {
                                     ui.label(format!("来源文件：{}", p.original_file_name));
+                                } else {
+                                    ui.label("来源：新建图层");
+                                }
+                                ui.label(format!(
+                                    "{} · {}",
+                                    color_mode_label(l.color_mode),
+                                    display_mode_label(l.display_mode)
+                                ));
+                                if !l.selectable {
+                                    ui.label("不可选择");
+                                }
+                                if !l.import_diagnostics.is_empty() {
+                                    ui.label(format!(
+                                        "解析提示 {} 条（见图层设置）",
+                                        l.import_diagnostics.len()
+                                    ));
                                 }
                                 if l.is_solo {
                                     ui.label("独奏中：其他图层被临时隐藏");
@@ -578,37 +706,61 @@ impl EditorApp {
                     },
                     |ui| {
                         ui.add_enabled_ui(!busy, |ui| {
-                            ui.menu_button("⋯", |ui| {
+                            let more = ui.menu_button("⋯", |ui| {
                                 layer_menu(ui, l, index, count, busy, events)
                             });
+                            note("more", more.response.rect);
                         });
-                        let toggle = |ui: &mut egui::Ui, on: bool, glyph: &str, tip: &str| {
-                            ui.add_enabled(
-                                !busy,
-                                egui::Button::new(glyph)
-                                    .selected(on)
-                                    .min_size(egui::vec2(22., 0.)),
-                            )
-                            .on_hover_text(tip)
-                            .clicked()
+                        // Display mode quick control: a small menu (avoids accidental cycling).
+                        ui.add_enabled_ui(!busy, |ui| {
+                            let mode = ui.menu_button(display_mode_glyph(l.display_mode), |ui| {
+                                for candidate in LayerDisplayMode::ALL {
+                                    if ui
+                                        .selectable_label(
+                                            l.display_mode == candidate,
+                                            format!(
+                                                "{}  {}",
+                                                display_mode_glyph(candidate),
+                                                display_mode_label(candidate)
+                                            ),
+                                        )
+                                        .clicked()
+                                    {
+                                        if l.display_mode != candidate {
+                                            events.borrow_mut().push(RowEvent::Update(
+                                                l.layer_id.clone(),
+                                                RowUpdate::DisplayMode(candidate),
+                                            ));
+                                        }
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            note("mode", mode.response.rect);
+                            mode.response.on_hover_text(format!(
+                                "显示模式：{}（点击切换）",
+                                display_mode_label(l.display_mode)
+                            ));
+                        });
+                        let toggle = |ui: &mut egui::Ui,
+                                      key: &'static str,
+                                      on: bool,
+                                      glyph: &str,
+                                      tip: &str| {
+                            let r = ui
+                                .add_enabled(
+                                    !busy,
+                                    egui::Button::new(glyph)
+                                        .selected(on)
+                                        .min_size(egui::vec2(22., 0.)),
+                                )
+                                .on_hover_text(tip);
+                            note(key, r.rect);
+                            r.clicked()
                         };
                         if toggle(
                             ui,
-                            !l.selectable,
-                            "▣",
-                            if l.selectable {
-                                "可选择（点击设为不可选择）"
-                            } else {
-                                "不可选择（点击恢复）"
-                            },
-                        ) {
-                            events.borrow_mut().push(RowEvent::Update(
-                                l.layer_id.clone(),
-                                RowUpdate::Selectable(!l.selectable),
-                            ));
-                        }
-                        if toggle(
-                            ui,
+                            "locked",
                             l.locked,
                             "🔒",
                             if l.locked {
@@ -624,6 +776,7 @@ impl EditorApp {
                         }
                         if toggle(
                             ui,
+                            "visible",
                             !l.visible,
                             "👁",
                             if l.visible {
@@ -638,17 +791,19 @@ impl EditorApp {
                             ));
                         }
                         if l.is_solo {
-                            ui.label(RichText::new("S").strong().color(Color32::YELLOW))
+                            let solo = ui
+                                .label(RichText::new("S").strong().color(Color32::YELLOW))
                                 .on_hover_text("独奏中");
+                            note("solo", solo.rect);
                         }
                     },
                 );
-                if expanded {
-                    self.layer_details(ui, l, busy, events);
-                }
             });
         // Drop target: the dragged layer takes this row's position.
         let response = row.response;
+        if probing {
+            self.record_row_probe(l, response.rect, &rects.borrow(), tooltip_shown.get());
+        }
         if response.dnd_hover_payload::<String>().is_some() {
             ui.painter().hline(
                 response.rect.x_range(),
@@ -662,93 +817,6 @@ impl EditorApp {
                 target: l.layer_id.clone(),
             });
         }
-    }
-
-    fn layer_details(
-        &self,
-        ui: &mut egui::Ui,
-        l: &LayerInfo,
-        busy: bool,
-        events: &RefCell<Vec<RowEvent>>,
-    ) {
-        ui.indent(("layer-details", &l.layer_id), |ui| {
-            ui.label(RichText::new(format!("{} 个对象", l.object_count)).small());
-            if let Some(p) = &l.provenance {
-                ui.label(
-                    RichText::new(format!("来源：{}", p.original_file_name))
-                        .small()
-                        .weak(),
-                );
-            } else {
-                ui.label(RichText::new("来源：新建").small().weak());
-            }
-            if !l.import_diagnostics.is_empty() {
-                ui.label(
-                    RichText::new(format!(
-                        "解析提示 {} 条（见图层设置）",
-                        l.import_diagnostics.len()
-                    ))
-                    .small()
-                    .color(Color32::YELLOW),
-                );
-            }
-            ui.add_enabled_ui(!busy, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("颜色");
-                    let mut mode = l.color_mode;
-                    egui::ComboBox::from_id_salt(("color-mode", &l.layer_id))
-                        .selected_text(color_mode_label(mode))
-                        .show_ui(ui, |ui| {
-                            for candidate in [ColorMode::LayerColor, ColorMode::CategoryColor] {
-                                ui.selectable_value(
-                                    &mut mode,
-                                    candidate,
-                                    color_mode_label(candidate),
-                                );
-                            }
-                        });
-                    if mode != l.color_mode {
-                        events.borrow_mut().push(RowEvent::Update(
-                            l.layer_id.clone(),
-                            RowUpdate::ColorMode(mode),
-                        ));
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("显示");
-                    let mut mode = l.display_mode;
-                    egui::ComboBox::from_id_salt(("display-mode", &l.layer_id))
-                        .selected_text(display_mode_label(mode))
-                        .show_ui(ui, |ui| {
-                            for candidate in LayerDisplayMode::ALL {
-                                ui.selectable_value(
-                                    &mut mode,
-                                    candidate,
-                                    display_mode_label(candidate),
-                                );
-                            }
-                        });
-                    if mode != l.display_mode {
-                        events.borrow_mut().push(RowEvent::Update(
-                            l.layer_id.clone(),
-                            RowUpdate::DisplayMode(mode),
-                        ));
-                    }
-                });
-                if l.display_mode != LayerDisplayMode::Filled {
-                    ui.label(
-                        RichText::new("线框/零线径为诊断显示，不代表最终制造填充")
-                            .small()
-                            .weak(),
-                    );
-                }
-                if ui.small_button("分类设置…").clicked() {
-                    events
-                        .borrow_mut()
-                        .push(RowEvent::Categories(l.layer_id.clone()));
-                }
-            });
-        });
     }
 
     /// Called every frame: drives the layer dialogs and the delete flow.
@@ -825,6 +893,7 @@ impl EditorApp {
             }
             LayerDialog::Settings { name, .. } => {
                 let mut name = name;
+                let recent = self.recent_colors.clone();
                 let mut close = false;
                 let mut apply_name = false;
                 let mut events: Vec<RowEvent> = Vec::new();
@@ -847,8 +916,28 @@ impl EditorApp {
                                 });
                                 ui.separator();
                                 ui.label(format!("图层颜色 {}", l.base_color.to_hex()));
-                                if let Some(hex) = color_palette(ui, l.base_color) {
+                                if let Some(hex) = color_palette(ui, l.base_color, &recent) {
                                     events.push(RowEvent::Update(layer_id.clone(), RowUpdate::Color(hex)));
+                                }
+                                ui.separator();
+                                let (mut selectable, mut locked) = (l.selectable, l.locked);
+                                if ui
+                                    .checkbox(&mut selectable, "可选择（关闭后画布点选/框选忽略此图层）")
+                                    .changed()
+                                {
+                                    events.push(RowEvent::Update(
+                                        layer_id.clone(),
+                                        RowUpdate::Selectable(selectable),
+                                    ));
+                                }
+                                if ui
+                                    .checkbox(&mut locked, "锁定（仅禁止编辑，不影响显示与选择）")
+                                    .changed()
+                                {
+                                    events.push(RowEvent::Update(
+                                        layer_id.clone(),
+                                        RowUpdate::Locked(locked),
+                                    ));
                                 }
                                 ui.separator();
                                 let mut color_mode = l.color_mode;
@@ -934,6 +1023,7 @@ impl EditorApp {
                 }
             }
             LayerDialog::Categories { .. } => {
+                let recent = self.recent_colors.clone();
                 let mut close = false;
                 let mut events: Vec<(ClassStyleUpdate, bool)> = Vec::new();
                 let mut color_mode = l.color_mode;
@@ -991,7 +1081,7 @@ impl EditorApp {
                                         let swatch = RichText::new("■").color(color32(style.effective_color));
                                         ui.menu_button(swatch, |ui| {
                                             ui.label(format!("{} 颜色", class.label()));
-                                            if let Some(hex) = color_palette(ui, style.effective_color) {
+                                            if let Some(hex) = color_palette(ui, style.effective_color, &recent) {
                                                 update.color_override = Some(hex);
                                                 changed = true;
                                                 ui.close();
@@ -1058,23 +1148,38 @@ impl EditorApp {
                 let dirty = summary.risk == DeleteRisk::NonEmptyDirty;
                 egui::Modal::new(egui::Id::new("layer-delete")).show(ctx, |ui| {
                     ui.set_width(420_f32.min(ctx.content_rect().width() - 48.).max(220.));
-                    ui.heading(format!("删除图层“{}”？", summary.display_name));
-                    ui.label(format!("该图层包含 {} 个对象。", summary.summary.object_count));
-                    if let Some(file) = &summary.original_file_name {
-                        ui.label(format!("来源文件：{file}（不会被修改或删除）"));
-                    }
+                    // Only RCam workspace risk is discussed: a Gerber import is decoupled
+                    // from the file on disk, so the disk `.gbr` is never mentioned here.
                     if dirty {
-                        ui.colored_label(
-                            Color32::from_rgb(255, 170, 90),
-                            format!(
-                                "含未导出的制造修改：已修改/删除的导入对象 {}，生成对象（如文字）{}。",
-                                summary.summary.modified_object_count,
-                                summary.summary.generated_object_count
-                            ),
-                        );
-                        ui.checkbox(&mut acknowledged, "我理解这些修改尚未导出，删除后只能靠撤销找回");
+                        ui.heading(format!(
+                            "删除包含未保存工程修改的图层“{}”？",
+                            summary.display_name
+                        ));
+                        ui.label(format!(
+                            "对象：{}",
+                            group_digits(summary.summary.object_count)
+                        ));
+                        ui.label(format!(
+                            "修改/删除的导入对象：{}",
+                            group_digits(summary.summary.modified_object_count)
+                        ));
+                        ui.label(format!(
+                            "生成对象：{}",
+                            group_digits(summary.summary.generated_object_count)
+                        ));
+                        ui.add_space(4.);
+                        ui.label("这些修改将从当前 RCam 工程中移除。");
+                        ui.label("可通过“撤销”恢复。");
+                        ui.checkbox(&mut acknowledged, "我了解这些工程修改将被移除");
                     } else {
-                        ui.label("删除后可用“撤销”恢复到原来的位置、颜色和样式。");
+                        ui.heading(format!("删除图层“{}”？", summary.display_name));
+                        ui.label(format!(
+                            "对象：{}",
+                            group_digits(summary.summary.object_count)
+                        ));
+                        ui.add_space(4.);
+                        ui.label("删除会从当前 RCam 工程中移除此图层。");
+                        ui.label("可通过“撤销”恢复。");
                     }
                     ui.horizontal(|ui| {
                         if ui.button("取消").clicked() {
@@ -1084,7 +1189,10 @@ impl EditorApp {
                         if ui
                             .add_enabled(
                                 enabled,
-                                egui::Button::new(RichText::new("删除图层").color(Color32::from_rgb(255, 120, 110))),
+                                egui::Button::new(
+                                    RichText::new("删除图层")
+                                        .color(Color32::from_rgb(255, 120, 110)),
+                                ),
                             )
                             .clicked()
                         {
@@ -1092,7 +1200,10 @@ impl EditorApp {
                         }
                     });
                     if let Some(error) = &self.view.error {
-                        ui.colored_label(Color32::YELLOW, format!("{}: {}", error.code, error.message));
+                        ui.colored_label(
+                            Color32::YELLOW,
+                            format!("{}: {}", error.code, error.message),
+                        );
                     }
                 });
                 self.layer_dialog = Some(LayerDialog::Delete {

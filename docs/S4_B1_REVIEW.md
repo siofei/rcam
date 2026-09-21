@@ -5,10 +5,12 @@
 
 ## 结论（必须先读）
 
-**状态：实现完成；Mac 原生 fmt / check / clippy / 全量 test / release / Metal parity 全部通过；原生 GUI 已做冒烟核查
-（发现并修复 3 个 GUI 缺陷）；固定 ZIP 交付与 fresh-extract 尚未生成。**
-按 AGENTS.md 规则，没有完整的原生证据链（尤其固定 ZIP、干净提交、§107 十四项逐项截图）前，**本报告不宣布 “S4-B1 PASS”**，
-由评审者判断。S4-B2 `.rcam` 未开始，格式未冻结。
+本文件随源码提交，描述**实现内容、验证方法与已发现的缺陷**；最终门禁结果不写进源码（避免“测试通过的提交”与“记录结果的提交”
+不是同一个提交），而由**同一 clean commit** 生成的 public evidence ZIP 给出：`gates.json`（全部门禁 exit code、
+clean-before / clean-after、完整 40 位 commit）、`tested-source-hashes.txt`、`native_observations.json`、
+`layer_panel_width_validation.json`、`s4b1_release_performance.json`、`S4_B1_FINAL_RESULTS.md`。
+只有 `S4_B1_FINAL_RESULTS.md` 声明全部 Exit Gate 满足时才可称 “S4-B1 = PASS（Mac-first）”。
+Windows deferred / not executed。S4-B2 `.rcam` 未开始，格式未冻结。
 
 ## 已实现
 
@@ -98,6 +100,34 @@ r5 Mac 验证（`evidence/s4b1-native-dev-20260922-r5`）：fmt / check / clippy
 Settings 不再出现 SHA-256，仅保留来源文件名；双击层名进入 Solo，再次双击取消；点击短名称“region”右侧空白即可激活该层；
 色板 4×4 紧凑排列。截图未存为证据文件。已知边界：默认面板宽度下长名称/带 S 标记的行会被截断为“…”，可拖宽面板（240–480 px）。
 
+## Final Closeout（2026-09-22，`RCam_S4B1_FINAL_CLOSEOUT_NEXT_TASK`）
+
+本轮不增加新功能，只修正冻结 UI 偏差并补齐 native / performance / parity 证据。
+
+| Gate | 内容 | 实现 / 验证 |
+|---|---|---|
+| A | Delete 对话框不再提及磁盘 `.gbr` | 只显示 RCam 工程风险（对象数千分位、dirty/generated 计数、“可通过撤销恢复”）；dirty 必须勾选“我了解这些工程修改将被移除”。来源文件只在 Layer Settings 与 tooltip |
+| B | Compact Layer Row | `● ≡ ■ 名称 👁 🔒 ▣/□/─ ⋯`；Selectable 快捷按钮移除，放进 Layer Settings 与右键菜单；显示模式是小菜单（不循环，避免误切） |
+| C | 删除 inline details | `expanded_layers` / `layer_details` 已删除；对象数、来源、解析提示、颜色/显示模式放 tooltip、Settings、Categories、菜单；Active 用 `●/○` 指示，不再只靠底色/粗体 |
+| D | Recent Colors | 8 个、去重、最新在前；只记录实际提交的颜色（`inherit` 不记录）；session-only 的 UI 偏好，不进入制造 revision / Gerber 输出（测试 `recent_colors_are_bounded_deduplicated_newest_first_and_ui_only`） |
+| E | Canvas 错误文案 | `blocked`：“无法安全编辑 / 真实错误 / 可撤销最近修改或关闭/修复输入文件”；显示层瞬时问题保留 last-good 帧并在状态栏给“显示诊断”，不再要求“缩小视图” |
+| F/G | 原生 GUI 16 项 + §107 十四项 | app 内置只读探针（`RCAM_NATIVE_PROBE_DIR`，`native_probe.rs`）逐帧记录图层状态、revision、对话框、各控件的屏幕矩形、ppp、面板宽度，以及每个发给服务的 Action（`native_actions.log`）；`scripts/s4b1_native_verify.py` 对这些机器记录判定 PASS / FAIL / NOT_OBSERVED，并把 PPM 截图转 PNG |
+| H | View-style parity | `native_metal_s4b1_view_style_parity_matrix`：10 个固定代表性工作区（层色/类别色 × Filled/Outline/ZeroWidth、层可见、类别可见、选中/未选中 × 拖动、三层混合 z-order、Solo），逐像素精确 RGBA；288 例 Filled parity 继续通过 |
+| I | 10 层 × 1000 对象 release 性能 | `s4b1_release_performance`（`--release --ignored`）输出 `s4b1_release_performance.json`：批量导入、snapshot、display scene + render index、Fit visible、hit test、可见性切换、单层导出、内存估计、RSS；场景 A（10 层可见 Filled）、B（1 可见 / 9 隐藏）、C（隐藏占 70 % 的 `RegionFreeform` 类别）、D（ZeroWidth）。结构性断言：B 的 render index 引用数 < A 的 1/5，C 的可见候选 < A 的 1/2，D 不增加 primitive/point 副本且内存 ≤ 1.2×，四个场景的 writer 字节完全相同，全程制造 revision 不变 |
+
+Gate H 抓到的真实缺陷：Outline / ZeroWidth 的对象包围盒 padding 用构建时 ppm 计算（`2 px / render_ppm`），
+但显示允许缩小到 `render_ppm / 4` 才重建，所以缩小视图时发丝线外侧被 render index 剔除（Reference 有像素、Production 是背景色）。
+修复：padding 改为 `2 px × LOD_MAX_ZOOM_OUT / render_ppm`，`LOD_MAX_ZOOM_OUT = 4` 同时是重建阈值的唯一来源
+（`display.rs`）。矩阵在最粗的支持缩放（`ppm/4`）、`ppm/2`、`ppm` 三个相机下验证，未放宽任何像素比较。
+
+Forward reservations 回归：`LayerKind::Drill`、Board Coordinate、`ComponentPlacement`、`BlockDefinition/BlockInstance`、Snap、Command/Shortcut
+架构仍在；`system.capabilities` 仍把 `drill.import`、`blocks.define`、`components.search`、`snap.resolve`、`project.open/save`
+列为 unsupported（`multi_layer_workflow` 中的测试核对）。
+
+固定交付与验证脚本：`scripts/run_s4b1_final_gates.py`（clean commit、Gate K 全部命令、full-payload `tested-source-hashes.txt`、二进制 SHA）、
+`scripts/package_release.py`（固定 `RCam_S4B1_<shortsha>_{source,public_evidence}.zip` + `SHA256SUMS.txt`）、
+`scripts/verify_source_package.py --tested-source-hashes`（fresh extract 后 N/N 逐文件核对，再跑 `source_manifest.py --check` 与 `test_package_source.py`）。
+
 ## §90 Exit Gate 逐项状态
 
 | 项 | 状态 |
@@ -109,12 +139,12 @@ Settings 不再出现 SHA-256，仅保留来源文件名；双击层名进入 So
 | 命名空间隔离、Layer exposure 隔离 | 通过 |
 | visible/selectable/locked/reorder/active/solo | 服务通过；原生仅抽查 selectable 与选择；lock/solo/拖拽排序未原生核对 |
 | 每层颜色 + 自动配色、按类别着色、分类 V/S/L | core/service/GUI 状态通过；原生已核对自动配色与层颜色；**类别颜色/类别设置对话框未原生核对** |
-| Filled/Outline/ZeroWidth；View style 不改 writer bytes | 状态 + bytes 断言通过；原生 Outline/ZeroWidth 已渲染；Metal parity 尚未含 Outline/ZeroWidth/类别色专项用例 |
+| Filled/Outline/ZeroWidth；View style 不改 writer bytes | 状态 + bytes 断言通过；Metal view-style parity 矩阵 10 例精确一致 |
 | hidden layer/class 从 render index 与 hit 候选过滤 | 自动测试通过；原生隐藏图层已复核（最小面板宽度下点击 👁 生效） |
 | Text active-layer target | 服务 + GUI 状态测试通过 |
 | Reference/Production parity | Metal 288 例精确一致（见上） |
 | 每层导出、precision roundtrip、headless workflow | 通过 |
-| 性能（10 层 × 1000 对象） | 仅 debug 下自动测试；release/native 数据**未采集** |
+| 性能（10 层 × 1000 对象） | `s4b1_release_performance.json`（release / Apple M1，见 evidence） |
 | 面板宽度/窄屏（§100–107） | 实现为 `SidePanel` 240–480 px + `truncate()` + tooltip；原生做了最小宽度检查、修复与复核，**§107 十四项未逐项执行** |
 | native Mac evidence、package sidecar、fresh extract | 构建/测试/Metal/GUI 冒烟已有；固定 ZIP、SHA256SUMS、fresh extract **未执行**（需要干净提交，未提交） |
 
@@ -136,12 +166,9 @@ Settings 不再出现 SHA-256，仅保留来源文件名；双击层名进入 So
 - 选择光晕的探针距离比 1.5 px 大 1.23 %（见上），属显示细节，不影响命中、测距或导出。
 - 占位类型没有产品入口，不属于 “已支持” 能力。
 
-## 仍需完成（未做）
+## 仍需完成
 
-1. 复核 Settings 中修复后的哈希行显示（r4 构建后只复核了最小宽度、隐藏点击与快捷键提示）。
-2. 原生 GUI 其余项：类别设置对话框、lock/solo/拖拽排序、dirty/generated 更强确认、删最后一层、Finder 拖放、§107 逐项截图并存证。
-3. Parity 新增 Outline/ZeroWidth/类别色/层色专项用例；10 层 × 1000 对象 release 性能数据。
-4. 干净提交后：`test_audit_core10.py`、`test_package_source.py`、固定 ZIP 与 `SHA256SUMS.txt`、fresh extract。
+以 evidence 包中的 `S4_B1_FINAL_RESULTS.md` 为准；任何 `FAIL` / `NOT_OBSERVED` 项都必须在那里逐条列出，不得写成 PASS。
 
 ## 下一阶段
 

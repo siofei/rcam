@@ -24,6 +24,10 @@ pub const MODE_CENTERLINE: u32 = 2;
 pub const HAIRLINE: u32 = 1;
 /// Screen-stable hairline used for boundary and centre-line display, in physical pixels.
 pub const HAIRLINE_PX: f64 = 1.0;
+/// A scene stays valid while the view zoom is within `[render_ppm / LOD_MAX_ZOOM_OUT,
+/// render_ppm]`; outside that range the display is rebuilt. Hairline bounds must cover
+/// the coarsest supported zoom, otherwise zooming out clips the outer half of the line.
+pub const LOD_MAX_ZOOM_OUT: f64 = 4.;
 
 pub fn pack_color(color: editor_core::workspace::Color) -> u32 {
     (u32::from(color.r) << 16) | (u32::from(color.g) << 8) | u32::from(color.b)
@@ -282,7 +286,7 @@ impl Scene {
                 };
                 if mode != MODE_FILLED {
                     // Hairlines extend about a pixel beyond the exact geometry.
-                    let pad = (2. * HAIRLINE_PX / ppm) as f32;
+                    let pad = (2. * HAIRLINE_PX * LOD_MAX_ZOOM_OUT / ppm) as f32;
                     bounds = [
                         bounds[0] - pad,
                         bounds[1] - pad,
