@@ -25,6 +25,7 @@ mod state;
 mod text_panel;
 mod text_tool;
 mod tools;
+mod ui;
 mod units;
 #[cfg(test)]
 mod viewport_tests;
@@ -475,7 +476,7 @@ impl EditorApp {
             }
         }
         if self.modal == Some(ActiveModal::Mirror) {
-            ui.add_space(6.);
+            ui.add_space(crate::ui::tokens::SPACING_LG);
             ui.label("镜像轴（选择集制造边界中心）");
             if let Some(center) = center {
                 let horizontal = format!("水平镜像 · y = {}", self.length(center.y_mm));
@@ -1219,12 +1220,12 @@ impl eframe::App for EditorApp {
             .default_width(260.)
             .width_range(230.0..=380.)
             .show(ctx, |ui| {
-                ui.add_space(8.);
+                ui.add_space(crate::ui::tokens::SPACING_XL);
                 if modal_open {
                     ui.disable();
                 }
                 ui.heading("对象属性");
-                ui.add_space(8.);
+                ui.add_space(crate::ui::tokens::SPACING_XL);
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(format!(
                         "已选择 {} 个对象",

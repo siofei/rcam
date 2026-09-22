@@ -93,7 +93,7 @@ impl EditorApp {
         };
         let response =
             egui::Modal::new(egui::Id::new("manufacturing-parameters")).show(ctx, |ui| {
-                ui.set_width(440_f32.min(ctx.content_rect().width() - 48.).max(180.));
+                ui.set_width(crate::ui::tokens::modal_width(ctx, 440., 180.));
                 ui.heading(modal.title());
                 egui::ScrollArea::vertical()
                     .max_height((ctx.content_rect().height() - 160.).max(100.))
@@ -158,8 +158,7 @@ impl EditorApp {
                 if self.busy {
                     ui.spinner();
                 }
-                if ui
-                    .add_enabled(self.modal_pending.is_none(), egui::Button::new("取消"))
+                if crate::ui::buttons::secondary_enabled(ui, "取消", self.modal_pending.is_none())
                     .clicked()
                 {
                     self.cancel_modal();
