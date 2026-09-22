@@ -15,6 +15,7 @@ pub struct View {
     pub info: Option<DocumentInfo>,
     pub layers: Vec<LayerInfo>,
     pub apertures: Vec<editor_core::ApertureDefinition>,
+    pub block_definitions: Vec<editor_core::block::BlockDefinition>,
     pub snap_points: Vec<crate::tools::SnapPoint>,
     pub selected: crate::selection::SelectionSet,
     pub bounds: Option<BoundsMm>,
@@ -110,6 +111,7 @@ pub struct Model {
     viewport: Option<(MmPoint, BoundsMm)>,
     serial: u64,
     pub ppm: f64,
+    block_display_cache: crate::block_display::BlockDisplayCache,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PivotInput {
@@ -177,6 +179,7 @@ impl Default for Model {
             viewport: None,
             serial: 0,
             ppm: 20.,
+            block_display_cache: Default::default(),
         }
     }
 }
@@ -197,12 +200,13 @@ fn finite(value: &str, name: &str) -> Result<f64, ServiceError> {
 }
 
 pub fn selected_bounds(view: &View) -> Result<BoundsMm, ServiceError> {
-    editor_core::geometries_bounds(
+    editor_core::geometries_bounds_with_blocks(
         view.selected
             .ordered
             .iter()
             .map(|object| &object.object.geometry),
         &view.apertures,
+        &view.block_definitions,
     )
     .map_err(|cause| error("VALIDATION_FAILED", &format!("选择集制造边界无效：{cause}")))?
     .ok_or_else(|| error("INVALID_ARGUMENT", "选择集没有可用的制造边界"))
@@ -396,6 +400,7 @@ impl Model {
         if geometry {
             let snapshot = self.service.render_snapshot(&id)?;
             self.view.apertures = snapshot.apertures.clone();
+            self.view.block_definitions = snapshot.block_definitions.clone();
             self.world_index = crate::world_index::WorldIndex::build(&snapshot)
                 .map_err(|e| error("VALIDATION_FAILED", &e))?;
             self.snapshot = Some(snapshot);
@@ -450,6 +455,7 @@ impl Model {
             self.ppm,
             self.serial,
             self.view.scene.as_deref(),
+            &mut self.block_display_cache,
         ) {
             Ok(scene) => {
                 self.view.scene = Some(Arc::new(scene));

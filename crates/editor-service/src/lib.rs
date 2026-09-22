@@ -450,6 +450,11 @@ pub struct RenderSnapshot {
     /// View style of every entry of `layers`, same order. Never manufacturing data.
     #[serde(default)]
     pub styles: Vec<RenderLayerStyle>,
+    /// Project-level Block definitions a `BlockInstance` in `layers` may
+    /// reference (S4-B2 display path). Same unfiltered-clone treatment as
+    /// `apertures` above.
+    #[serde(default)]
+    pub block_definitions: Vec<editor_core::block::BlockDefinition>,
 }
 
 /// View-only style handed to the renderer next to the manufacturing scene.

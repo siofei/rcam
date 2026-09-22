@@ -1370,6 +1370,7 @@ pub(crate) fn render_snapshot_of(document_id: &str, record: &S1DocumentRecord) -
         layers,
         apertures: record.document.apertures.clone(),
         styles,
+        block_definitions: record.document.block_definitions.clone(),
     }
 }
 

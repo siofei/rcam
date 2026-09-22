@@ -1,6 +1,9 @@
 use crate::{display::Scene, gpu::Uniforms, state::Model};
 use editor_core::*;
-use editor_service::{LayerInfo, RenderSnapshot};
+use editor_service::{
+    BlockTransformParams, CreateBlockDefinitionParams, CreateBlockInstanceParams, LayerInfo,
+    PivotMm, QueryParams, RenderSnapshot,
+};
 use egui_wgpu::wgpu::{self, util::DeviceExt};
 use std::{
     future::Future,
@@ -36,6 +39,157 @@ fn fixture(name: &str) -> (RenderSnapshot, Vec<LayerInfo>) {
         .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
         .unwrap();
     (s, m.view.layers)
+}
+/// A definition (Flash + Line + Arc + Region, via the `MIXED` fixture also
+/// used by `block_core_workflow.rs`) with 2 instances — identity, and
+/// rotated 90° + mirrored — so display coverage exercises every resolved
+/// primitive kind at more than one orientation. Returns the snapshot, the
+/// layer workspace, and the shared `object_id` both instances' resolved
+/// primitives report through `scene.ids`.
+fn block_fixture() -> (RenderSnapshot, Vec<LayerInfo>, Vec<String>) {
+    const MIXED: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\nD10*\nX2000000Y2000000D03*\nX0Y0D02*\nG01X2000000Y0D01*\nG75*\nX1000000Y0D02*\nG03X0Y1000000I-1000000J0D01*\nG36*\nX10000000Y10000000D02*\nG01X12000000Y10000000D01*\nX12000000Y12000000D01*\nX10000000Y12000000D01*\nX10000000Y10000000D01*\nG37*\nM02*\n";
+    let dir = std::env::temp_dir().join(format!("rcam-b2-display-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("mixed.gbr");
+    std::fs::write(&path, MIXED).unwrap();
+    let mut m = Model::default();
+    m.open(&path).unwrap();
+    let doc_id = m.view.info.as_ref().unwrap().document_id.clone();
+    let layer_id = m.view.layers[0].layer_id.clone();
+    // `blocks_*` is called on `m.service` directly (no Block Editor GUI
+    // exists yet), which does not go through `Model`'s own refresh, so the
+    // revision must be re-read from the service itself, not `m.view.info`.
+    let rev = |m: &Model| m.service.document_get(&doc_id).unwrap().revision;
+    let object_ids: Vec<String> = m
+        .service
+        .objects_query(
+            &doc_id,
+            QueryParams {
+                layer_id: layer_id.clone(),
+                geometry_type: None,
+                region_mm: None,
+                relation: None,
+                limit: Some(1000),
+                cursor: None,
+            },
+        )
+        .unwrap()
+        .objects
+        .into_iter()
+        .map(|o| o.object.object_id)
+        .collect();
+    assert_eq!(object_ids.len(), 4, "Flash + Line + Arc + Region");
+    let revision = rev(&m);
+    let create = m
+        .service
+        .blocks_create_definition_from_objects(
+            &doc_id,
+            &revision,
+            CreateBlockDefinitionParams {
+                layer_id: layer_id.clone(),
+                object_ids,
+                local_origin_mm: PivotMm { x_mm: 0., y_mm: 0. },
+                name: "mixed".into(),
+            },
+        )
+        .unwrap();
+    let revision = rev(&m);
+    m.service
+        .blocks_create_instance(
+            &doc_id,
+            &revision,
+            CreateBlockInstanceParams {
+                layer_id: layer_id.clone(),
+                definition_id: create.definition_id.clone(),
+                transform: BlockTransformParams {
+                    translation_mm: PivotMm {
+                        x_mm: 20.,
+                        y_mm: 0.,
+                    },
+                    rotation_deg: 90.,
+                    mirror: true,
+                },
+            },
+        )
+        .unwrap();
+    let object_ids: Vec<String> = m
+        .service
+        .objects_query(
+            &doc_id,
+            QueryParams {
+                layer_id: layer_id.clone(),
+                geometry_type: None,
+                region_mm: None,
+                relation: None,
+                limit: Some(1000),
+                cursor: None,
+            },
+        )
+        .unwrap()
+        .objects
+        .into_iter()
+        .map(|o| o.object.object_id)
+        .collect();
+    assert_eq!(object_ids.len(), 2, "the original instance + the new one");
+    let s = m.service.render_snapshot(&doc_id).unwrap();
+    (s, m.view.layers.clone(), object_ids)
+}
+#[test]
+fn block_instance_resolves_display_across_modes_color_and_selection() {
+    let (snapshot, layers, instance_ids) = block_fixture();
+    assert_eq!(snapshot.block_definitions.len(), 1, "one shared definition");
+
+    for mode in [
+        workspace::LayerDisplayMode::Filled,
+        workspace::LayerDisplayMode::Outline,
+        workspace::LayerDisplayMode::ZeroWidth,
+    ] {
+        let mut layers = layers.clone();
+        layers[0].display_mode = mode;
+        let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1)
+            .unwrap_or_else(|e| panic!("BlockInstance must display under {mode:?}: {e}"));
+        assert!(!scene.primitives.is_empty());
+        // 2 instances x 4 resolved primitives (Flash + Line + Arc + Region) each.
+        assert_eq!(scene.ids.len(), 8);
+        for id in &instance_ids {
+            assert_eq!(
+                scene.ids.iter().filter(|s| *s == id).count(),
+                4,
+                "every resolved primitive of instance {id} must share its object_id \
+                 (so gpu::selection_flags, which matches by id, flags all of them)"
+            );
+        }
+        // A block's own class is never Stroke, so under ZeroWidth its
+        // resolved content keeps its true width (outline, not centerline)
+        // instead of mixing per-primitive-kind hairline treatment within
+        // one shared category (S4-B2 Final Closeout §2.3).
+        let expected_mode = match mode {
+            workspace::LayerDisplayMode::Filled => crate::display::MODE_FILLED,
+            _ => crate::display::MODE_EDGE,
+        };
+        for object in &scene.objects {
+            assert_eq!(object.style[1], expected_mode);
+        }
+    }
+
+    // Rotation + mirror actually move the second instance's geometry.
+    let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1).unwrap();
+    let first = &scene.objects[0..4];
+    let second = &scene.objects[4..8];
+    assert_ne!(
+        first.iter().map(|o| o.bounds).collect::<Vec<_>>(),
+        second.iter().map(|o| o.bounds).collect::<Vec<_>>(),
+        "the translated + rotated + mirrored instance must render at a different place"
+    );
+
+    // Building twice must be idempotent: the per-build BlockDisplayCache
+    // must not leak state or change results across calls.
+    let again = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1).unwrap();
+    assert_eq!(scene.ids, again.ids);
+    assert_eq!(
+        scene.objects.iter().map(|o| o.bounds).collect::<Vec<_>>(),
+        again.objects.iter().map(|o| o.bounds).collect::<Vec<_>>()
+    );
 }
 #[test]
 fn renderer_refuses_partial_unsupported_document() {

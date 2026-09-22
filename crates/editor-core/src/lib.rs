@@ -7,7 +7,7 @@ pub mod hash;
 pub mod hit_test;
 pub mod metrics;
 pub mod units;
-pub use bounds::{BoundsMm, geometries_bounds};
+pub use bounds::{BoundsMm, geometries_bounds, geometries_bounds_with_blocks};
 pub mod block;
 pub mod board;
 pub mod command;

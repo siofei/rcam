@@ -1,5 +1,5 @@
 //! Cached f64 manufacturing envelopes, queried before any GPU conversion.
-use editor_core::{BoundsMm, geometries_bounds};
+use editor_core::{BoundsMm, geometries_bounds_with_blocks};
 use editor_service::{LayerInfo, RenderSnapshot};
 
 #[derive(Default)]
@@ -9,8 +9,12 @@ impl WorldIndex {
         let mut entries = Vec::new();
         for (layer, data) in snapshot.layers.iter().enumerate() {
             for (object, data) in data.objects.iter().enumerate() {
-                if let Some(bounds) = geometries_bounds([&data.geometry], &snapshot.apertures)
-                    .map_err(|e| format!("VALIDATION_FAILED: world envelope: {e}"))?
+                if let Some(bounds) = geometries_bounds_with_blocks(
+                    [&data.geometry],
+                    &snapshot.apertures,
+                    &snapshot.block_definitions,
+                )
+                .map_err(|e| format!("VALIDATION_FAILED: world envelope: {e}"))?
                 {
                     entries.push((bounds, layer, object));
                 }
@@ -48,6 +52,7 @@ impl WorldIndex {
             workspace_revision: snapshot.workspace_revision.clone(),
             styles: Vec::new(),
             apertures: snapshot.apertures.clone(),
+            block_definitions: snapshot.block_definitions.clone(),
             layers: snapshot
                 .layers
                 .iter()

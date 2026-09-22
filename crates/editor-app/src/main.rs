@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod app_tests;
+mod block_display;
 mod camera;
 mod display;
 #[cfg(test)]

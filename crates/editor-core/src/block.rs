@@ -303,6 +303,23 @@ pub fn resolve_instance(
         .collect()
 }
 
+/// Shift already-resolved primitives by a pure translation, reusing the same
+/// translation step `resolve_geometry` applies last. A display caller that
+/// memoizes `resolve_instance(definition, {rotation, mirror, translation: 0})`
+/// per `(definition, rotation, mirror)` — many instances commonly share an
+/// orientation but not a position — can place each instance by translating
+/// the cached result instead of re-resolving rotation/mirror per instance.
+pub fn translate_resolved(
+    objects: &mut [ResolvedBlockObject],
+    dx_mm: f64,
+    dy_mm: f64,
+) -> Result<(), BlockError> {
+    for object in objects {
+        translate(&mut object.geometry, dx_mm, dy_mm).map_err(|_| BlockError::InvalidTransform)?;
+    }
+    Ok(())
+}
+
 /// Local (definition-space) bounds/metrics use the same analytic functions as
 /// any other object list, applied to `definition.objects` directly; a caller
 /// resolving many instances of one shared definition therefore pays for the

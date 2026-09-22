@@ -85,7 +85,15 @@ impl Scene {
         ppm: f64,
         serial: u64,
     ) -> Result<Self, String> {
-        Self::build_cached(snapshot, layers, anchor, ppm, serial, None)
+        Self::build_cached(
+            snapshot,
+            layers,
+            anchor,
+            ppm,
+            serial,
+            None,
+            &mut crate::block_display::BlockDisplayCache::default(),
+        )
     }
     pub fn build_cached(
         snapshot: &RenderSnapshot,
@@ -94,6 +102,7 @@ impl Scene {
         ppm: f64,
         serial: u64,
         previous: Option<&Scene>,
+        block_cache: &mut crate::block_display::BlockDisplayCache,
     ) -> Result<Self, String> {
         if !ppm.is_finite() || ppm <= 0. {
             return Err("VALIDATION_FAILED: invalid display scale".into());
@@ -123,194 +132,17 @@ impl Scene {
             let zero_width = ws.display_mode == LayerDisplayMode::ZeroWidth;
             // Validate hidden layers and hidden categories too: hiding cannot bypass display support checks.
             for object in &layer.objects {
-                let class = classify_object(object, &shape_map);
-                let class_style = ws.classes.iter().find(|c| c.class == class);
-                let visible = layer_visible && class_style.is_none_or(|c| c.visible);
-                let color = class_style.map_or(ws.base_color, |c| c.effective_color);
-                let start = scene.primitives.len();
-                // Stroke-like geometry is drawn as its centre line in ZeroWidth.
-                let hairline = zero_width && class == DisplayClass::Stroke;
-                match &object.geometry {
-                    SemanticGeometry::Flash {
-                        center,
-                        aperture_id,
-                        transform: t,
-                    } => {
-                        let shape = apertures
-                            .get(aperture_id)
-                            .ok_or("NOT_FOUND: display aperture")?;
-                        scene.flash(shape, *center, *t)?;
-                    }
-                    SemanticGeometry::Line {
-                        start,
-                        end,
-                        width_mm,
-                    } => scene.stroke(*start, *end, *width_mm / 2., hairline)?,
-                    SemanticGeometry::RectangularSweep {
-                        start,
-                        end,
-                        width_mm,
-                        height_mm,
-                    } => {
-                        if start.x_mm != end.x_mm && start.y_mm != end.y_mm {
-                            return Err(
-                                "UNSUPPORTED_FEATURE: oblique rectangular display sweep".into()
-                            );
-                        }
-                        if hairline {
-                            scene.stroke(*start, *end, 1e-3, true)?;
-                        } else {
-                            let center = MmPoint::new(
-                                (start.x_mm + end.x_mm) / 2.,
-                                (start.y_mm + end.y_mm) / 2.,
-                            );
-                            scene.polygon(
-                                &rectangle(
-                                    center,
-                                    (end.x_mm - start.x_mm).abs() + width_mm,
-                                    (end.y_mm - start.y_mm).abs() + height_mm,
-                                ),
-                                Exposure::Dark,
-                                true,
-                            )?;
-                        }
-                    }
-                    SemanticGeometry::Arc { path, width_mm } => {
-                        if !path.is_valid() {
-                            return Err("VALIDATION_FAILED: display arc".into());
-                        }
-                        if path.zero_sweep() {
-                            scene.stroke(path.start, path.end, *width_mm / 2., hairline)?;
-                        } else {
-                            let c = path.canonical_circle();
-                            scene.stroke(path.start, c.start, *width_mm / 2., hairline)?;
-                            scene.stroke(c.end, path.end, *width_mm / 2., hairline)?;
-                            let center = scene.point(c.center)?;
-                            let angle =
-                                (c.start.y_mm - c.center.y_mm).atan2(c.start.x_mm - c.center.x_mm);
-                            let sweep = c.sweep_radians().ok_or("VALIDATION_FAILED: arc sweep")?;
-                            scene.primitives.push(Primitive {
-                                meta: [2, 1, 0, if hairline { HAIRLINE } else { 0 }],
-                                a: [
-                                    center[0],
-                                    center[1],
-                                    scene.scalar(c.radius())?,
-                                    scene.scalar(*width_mm / 2.)?,
-                                ],
-                                b: [
-                                    angle as f32,
-                                    sweep as f32,
-                                    if c.direction == ArcDirection::Clockwise {
-                                        -1.
-                                    } else {
-                                        1.
-                                    },
-                                    0.,
-                                ],
-                            });
-                        }
-                    }
-                    SemanticGeometry::Region { contours } => {
-                        for contour in contours {
-                            let contour = canonical_region_contour(contour)
-                                .map_err(|e| format!("VALIDATION_FAILED: {e}"))?;
-                            let mut points = Vec::new();
-                            for edge in &contour.edges {
-                                match edge {
-                                    RegionEdge::Line { start, .. } => points.push(*start),
-                                    RegionEdge::Arc(a) => {
-                                        let sweep = a
-                                            .sweep_radians()
-                                            .ok_or("VALIDATION_FAILED: Region sweep")?;
-                                        // Stable sagitta formula; <= 0.20 physical px, leaving conversion margin.
-                                        let step = 4.
-                                            * (0.20 / ppm / (2. * a.radius()))
-                                                .min(1.)
-                                                .sqrt()
-                                                .asin();
-                                        let count = (sweep / step).ceil().max(1.);
-                                        if !count.is_finite() || count > MAX_ITEMS as f64 {
-                                            return Err(
-                                                "RESOURCE_LIMIT: Region display segments".into()
-                                            );
-                                        }
-                                        let angle = (a.start.y_mm - a.center.y_mm)
-                                            .atan2(a.start.x_mm - a.center.x_mm);
-                                        let sign = if a.direction == ArcDirection::Clockwise {
-                                            -1.
-                                        } else {
-                                            1.
-                                        };
-                                        for i in 0..count as usize {
-                                            let t = angle + sign * sweep * i as f64 / count;
-                                            points.push(MmPoint::new(
-                                                a.center.x_mm + a.radius() * t.cos(),
-                                                a.center.y_mm + a.radius() * t.sin(),
-                                            ));
-                                        }
-                                    }
-                                }
-                                if points.len() > MAX_ITEMS {
-                                    return Err("RESOURCE_LIMIT: Region display points".into());
-                                }
-                            }
-                            scene.polygon(&points, Exposure::Dark, true)?;
-                        }
-                    }
-                    // No Block Editor ships this phase (S4-B2 §27/§67), so no
-                    // live document can contain one yet; kept fail-closed like
-                    // every other not-yet-supported display case above.
-                    SemanticGeometry::BlockInstance { .. } => {
-                        return Err("UNSUPPORTED_FEATURE: block instance display".into());
-                    }
-                }
-                if scene.primitives.len() + scene.points.len() > MAX_ITEMS {
-                    return Err("RESOURCE_LIMIT: display items (200000)".into());
-                }
-                let end = scene.primitives.len();
-                let mut bounds = scene.primitive_bounds(start, end);
-                // Use the actual arc sweeps, not full-circle envelopes: a nearly
-                // straight text edge can have a huge radius. Keep bounds independent
-                // of display LOD and round outward to enclose local f32 vertices.
-                if matches!(object.geometry, SemanticGeometry::Region { .. }) {
-                    let exact = geometries_bounds([&object.geometry], &[])
-                        .map_err(|e| format!("VALIDATION_FAILED: {e}"))?
-                        .ok_or("VALIDATION_FAILED: empty Region bounds")?;
-                    let lo = scene.point(MmPoint::new(exact.min_x_mm, exact.min_y_mm))?;
-                    let hi = scene.point(MmPoint::new(exact.max_x_mm, exact.max_y_mm))?;
-                    bounds = [
-                        lo[0].next_down(),
-                        lo[1].next_down(),
-                        hi[0].next_up(),
-                        hi[1].next_up(),
-                    ];
-                }
-                let mode = match (ws.display_mode, hairline) {
-                    (LayerDisplayMode::Filled, _) => MODE_FILLED,
-                    (LayerDisplayMode::ZeroWidth, true) => MODE_CENTERLINE,
-                    _ => MODE_EDGE,
-                };
-                if mode != MODE_FILLED {
-                    // Hairlines extend about a pixel beyond the exact geometry.
-                    let pad = (2. * HAIRLINE_PX * LOD_MAX_ZOOM_OUT / ppm) as f32;
-                    bounds = [
-                        bounds[0] - pad,
-                        bounds[1] - pad,
-                        bounds[2] + pad,
-                        bounds[3] + pad,
-                    ];
-                }
-                scene.objects.push(Object {
-                    meta: [
-                        start as u32,
-                        end as u32,
-                        u32::from(object.exposure == Exposure::Dark),
-                        if visible { layer_index as u32 + 1 } else { 0 },
-                    ],
-                    bounds,
-                    style: [pack_color(color), mode, 0, 0],
-                });
-                scene.ids.push(object.object_id.clone());
+                scene.push_object(
+                    object,
+                    layer_index,
+                    ws,
+                    layer_visible,
+                    zero_width,
+                    &apertures,
+                    &shape_map,
+                    &snapshot.block_definitions,
+                    block_cache,
+                )?;
             }
         }
         scene.index = if let Some(old) = previous.filter(|old| {
@@ -332,6 +164,267 @@ impl Scene {
             )?)
         };
         Ok(scene)
+    }
+    /// Push one manufacturing object. A category's Visible/Color and
+    /// ZeroWidth hairline eligibility are decided once, from `object`
+    /// itself — never per constituent primitive — so a `BlockInstance`
+    /// (its own `DisplayClass::BlockInstance` category, S4-B2 Final
+    /// Closeout §2/§3) is toggled/coloured as one atomic unit, not
+    /// decomposed into the Stroke/Flash*/Region categories its resolved
+    /// content would otherwise fall into.
+    #[allow(clippy::too_many_arguments)]
+    fn push_object(
+        &mut self,
+        object: &SemanticObject,
+        layer_index: usize,
+        ws: &LayerInfo,
+        layer_visible: bool,
+        zero_width: bool,
+        apertures: &HashMap<&String, &ApertureShape>,
+        shape_map: &HashMap<&str, &ApertureShape>,
+        block_definitions: &[editor_core::block::BlockDefinition],
+        block_cache: &mut crate::block_display::BlockDisplayCache,
+    ) -> Result<(), String> {
+        let class = classify_object(object, shape_map);
+        let class_style = ws.classes.iter().find(|c| c.class == class);
+        let visible = layer_visible && class_style.is_none_or(|c| c.visible);
+        let color = class_style.map_or(ws.base_color, |c| c.effective_color);
+        // Stroke-like geometry is drawn as its centre line in ZeroWidth. A
+        // Block's own class is never Stroke, so its resolved content always
+        // keeps its true (non-hairline) width under ZeroWidth — shown as an
+        // outline of the block's real footprint rather than degrading any
+        // internal trace to a screen-thin line losing the pattern's shape.
+        let hairline = zero_width && class == DisplayClass::Stroke;
+        if let SemanticGeometry::BlockInstance {
+            definition_id,
+            transform,
+        } = &object.geometry
+        {
+            let definition = block_definitions
+                .iter()
+                .find(|d| &d.id == definition_id)
+                .ok_or("NOT_FOUND: block definition")?;
+            let resolved = block_cache.resolve(definition, transform)?;
+            for primitive in &resolved {
+                self.push_primitive_object(
+                    &primitive.geometry,
+                    primitive.exposure,
+                    &object.object_id,
+                    layer_index,
+                    visible,
+                    color,
+                    hairline,
+                    ws.display_mode,
+                    apertures,
+                )?;
+            }
+            return Ok(());
+        }
+        self.push_primitive_object(
+            &object.geometry,
+            object.exposure,
+            &object.object_id,
+            layer_index,
+            visible,
+            color,
+            hairline,
+            ws.display_mode,
+            apertures,
+        )
+    }
+    /// Push the primitives of one Flash/Line/RectangularSweep/Arc/Region and
+    /// its one `Object` entry. Called once per ordinary manufacturing object,
+    /// and once per resolved primitive of a `BlockInstance` (sharing that
+    /// instance's `object_id`, so its selection halo covers every resolved
+    /// primitive and `gpu::selection_flags` — which matches by id, not by
+    /// index — flags every one of them without any special-casing).
+    #[allow(clippy::too_many_arguments)]
+    fn push_primitive_object(
+        &mut self,
+        geometry: &SemanticGeometry,
+        exposure: Exposure,
+        object_id: &str,
+        layer_index: usize,
+        visible: bool,
+        color: editor_core::workspace::Color,
+        hairline: bool,
+        display_mode: LayerDisplayMode,
+        apertures: &HashMap<&String, &ApertureShape>,
+    ) -> Result<(), String> {
+        let start = self.primitives.len();
+        match geometry {
+            SemanticGeometry::Flash {
+                center,
+                aperture_id,
+                transform: t,
+            } => {
+                let shape = apertures
+                    .get(aperture_id)
+                    .ok_or("NOT_FOUND: display aperture")?;
+                self.flash(shape, *center, *t)?;
+            }
+            SemanticGeometry::Line {
+                start,
+                end,
+                width_mm,
+            } => self.stroke(*start, *end, *width_mm / 2., hairline)?,
+            SemanticGeometry::RectangularSweep {
+                start,
+                end,
+                width_mm,
+                height_mm,
+            } => {
+                if start.x_mm != end.x_mm && start.y_mm != end.y_mm {
+                    return Err("UNSUPPORTED_FEATURE: oblique rectangular display sweep".into());
+                }
+                if hairline {
+                    self.stroke(*start, *end, 1e-3, true)?;
+                } else {
+                    let center =
+                        MmPoint::new((start.x_mm + end.x_mm) / 2., (start.y_mm + end.y_mm) / 2.);
+                    self.polygon(
+                        &rectangle(
+                            center,
+                            (end.x_mm - start.x_mm).abs() + width_mm,
+                            (end.y_mm - start.y_mm).abs() + height_mm,
+                        ),
+                        Exposure::Dark,
+                        true,
+                    )?;
+                }
+            }
+            SemanticGeometry::Arc { path, width_mm } => {
+                if !path.is_valid() {
+                    return Err("VALIDATION_FAILED: display arc".into());
+                }
+                if path.zero_sweep() {
+                    self.stroke(path.start, path.end, *width_mm / 2., hairline)?;
+                } else {
+                    let c = path.canonical_circle();
+                    self.stroke(path.start, c.start, *width_mm / 2., hairline)?;
+                    self.stroke(c.end, path.end, *width_mm / 2., hairline)?;
+                    let center = self.point(c.center)?;
+                    let angle = (c.start.y_mm - c.center.y_mm).atan2(c.start.x_mm - c.center.x_mm);
+                    let sweep = c.sweep_radians().ok_or("VALIDATION_FAILED: arc sweep")?;
+                    self.primitives.push(Primitive {
+                        meta: [2, 1, 0, if hairline { HAIRLINE } else { 0 }],
+                        a: [
+                            center[0],
+                            center[1],
+                            self.scalar(c.radius())?,
+                            self.scalar(*width_mm / 2.)?,
+                        ],
+                        b: [
+                            angle as f32,
+                            sweep as f32,
+                            if c.direction == ArcDirection::Clockwise {
+                                -1.
+                            } else {
+                                1.
+                            },
+                            0.,
+                        ],
+                    });
+                }
+            }
+            SemanticGeometry::Region { contours } => {
+                for contour in contours {
+                    let contour = canonical_region_contour(contour)
+                        .map_err(|e| format!("VALIDATION_FAILED: {e}"))?;
+                    let mut points = Vec::new();
+                    for edge in &contour.edges {
+                        match edge {
+                            RegionEdge::Line { start, .. } => points.push(*start),
+                            RegionEdge::Arc(a) => {
+                                let sweep =
+                                    a.sweep_radians().ok_or("VALIDATION_FAILED: Region sweep")?;
+                                // Stable sagitta formula; <= 0.20 physical px, leaving conversion margin.
+                                let step = 4.
+                                    * (0.20 / self.ppm / (2. * a.radius())).min(1.).sqrt().asin();
+                                let count = (sweep / step).ceil().max(1.);
+                                if !count.is_finite() || count > MAX_ITEMS as f64 {
+                                    return Err("RESOURCE_LIMIT: Region display segments".into());
+                                }
+                                let angle = (a.start.y_mm - a.center.y_mm)
+                                    .atan2(a.start.x_mm - a.center.x_mm);
+                                let sign = if a.direction == ArcDirection::Clockwise {
+                                    -1.
+                                } else {
+                                    1.
+                                };
+                                for i in 0..count as usize {
+                                    let t = angle + sign * sweep * i as f64 / count;
+                                    points.push(MmPoint::new(
+                                        a.center.x_mm + a.radius() * t.cos(),
+                                        a.center.y_mm + a.radius() * t.sin(),
+                                    ));
+                                }
+                            }
+                        }
+                        if points.len() > MAX_ITEMS {
+                            return Err("RESOURCE_LIMIT: Region display points".into());
+                        }
+                    }
+                    self.polygon(&points, Exposure::Dark, true)?;
+                }
+            }
+            // `resolve_instance` converts from `BlockObjectGeometry`, a
+            // strictly smaller enum with no `BlockInstance` case (nesting is
+            // rejected at the type level) — a resolved primitive can never
+            // be a `BlockInstance`, and `push_object` never calls this
+            // function directly with one either.
+            SemanticGeometry::BlockInstance { .. } => {
+                return Err("BUG: nested BlockInstance reached push_primitive_object".into());
+            }
+        }
+        if self.primitives.len() + self.points.len() > MAX_ITEMS {
+            return Err("RESOURCE_LIMIT: display items (200000)".into());
+        }
+        let end = self.primitives.len();
+        let mut bounds = self.primitive_bounds(start, end);
+        // Use the actual arc sweeps, not full-circle envelopes: a nearly
+        // straight text edge can have a huge radius. Keep bounds independent
+        // of display LOD and round outward to enclose local f32 vertices.
+        if matches!(geometry, SemanticGeometry::Region { .. }) {
+            let exact = geometries_bounds([geometry], &[])
+                .map_err(|e| format!("VALIDATION_FAILED: {e}"))?
+                .ok_or("VALIDATION_FAILED: empty Region bounds")?;
+            let lo = self.point(MmPoint::new(exact.min_x_mm, exact.min_y_mm))?;
+            let hi = self.point(MmPoint::new(exact.max_x_mm, exact.max_y_mm))?;
+            bounds = [
+                lo[0].next_down(),
+                lo[1].next_down(),
+                hi[0].next_up(),
+                hi[1].next_up(),
+            ];
+        }
+        let mode = match (display_mode, hairline) {
+            (LayerDisplayMode::Filled, _) => MODE_FILLED,
+            (LayerDisplayMode::ZeroWidth, true) => MODE_CENTERLINE,
+            _ => MODE_EDGE,
+        };
+        if mode != MODE_FILLED {
+            // Hairlines extend about a pixel beyond the exact geometry.
+            let pad = (2. * HAIRLINE_PX * LOD_MAX_ZOOM_OUT / self.ppm) as f32;
+            bounds = [
+                bounds[0] - pad,
+                bounds[1] - pad,
+                bounds[2] + pad,
+                bounds[3] + pad,
+            ];
+        }
+        self.objects.push(Object {
+            meta: [
+                start as u32,
+                end as u32,
+                u32::from(exposure == Exposure::Dark),
+                if visible { layer_index as u32 + 1 } else { 0 },
+            ],
+            bounds,
+            style: [pack_color(color), mode, 0, 0],
+        });
+        self.ids.push(object_id.into());
+        Ok(())
     }
     pub fn scalar(&self, n: f64) -> Result<f32, String> {
         let f = n as f32;
