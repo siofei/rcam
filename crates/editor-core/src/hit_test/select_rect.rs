@@ -215,8 +215,79 @@ fn geometry_edges(
             edges
         }
         SemanticGeometry::Flash { .. } => unreachable!("aperture lookup"),
+        SemanticGeometry::BlockInstance { .. } => {
+            unreachable!("resolved into primitives by the caller")
+        }
     })
 }
+/// Edges of one Flash-or-simpler geometry. `BlockInstance` is never passed in
+/// here: the caller resolves it into primitives first (see `select_rect`),
+/// since only the caller has the document's `block_definitions` table.
+fn edges_for(
+    g: &SemanticGeometry,
+    apertures: &HashMap<&str, &ApertureShape>,
+    macros: &mut HashMap<String, Material>,
+    budget: &mut Budget,
+) -> Result<Vec<RegionEdge>, HitTestError> {
+    if let SemanticGeometry::Flash {
+        center,
+        aperture_id,
+        transform,
+    } = g
+    {
+        let shape = *apertures
+            .get(aperture_id.as_str())
+            .ok_or_else(|| SemanticError::MissingAperture(aperture_id.clone()))?;
+        let local = if let ApertureShape::Macro { primitives } = shape {
+            if !macros.contains_key(aperture_id.as_str()) {
+                macros.insert(aperture_id.clone(), Material::prepare(primitives, budget)?);
+            }
+            budget.charge(macros[aperture_id.as_str()].boundary.len())?;
+            macros[aperture_id.as_str()].boundary.clone()
+        } else {
+            aperture_edges(shape)
+        };
+        Ok(local
+            .into_iter()
+            .map(|e| transform_edge(e, *center, *transform))
+            .collect())
+    } else {
+        geometry_edges(g, budget)
+    }
+}
+
+/// Distance from `p` to one Flash-or-simpler geometry (see [`edges_for`]).
+fn distance_for(
+    g: &SemanticGeometry,
+    p: MmPoint,
+    apertures: &HashMap<&str, &ApertureShape>,
+    macros: &mut HashMap<String, Material>,
+    budget: &mut Budget,
+) -> Result<f64, HitTestError> {
+    if let SemanticGeometry::Flash {
+        center,
+        aperture_id,
+        transform,
+    } = g
+    {
+        let local = apply_inverse_transform(p, *center, *transform);
+        let shape = *apertures
+            .get(aperture_id.as_str())
+            .ok_or_else(|| SemanticError::MissingAperture(aperture_id.clone()))?;
+        let distance = if let ApertureShape::Macro { primitives } = shape {
+            if !macros.contains_key(aperture_id.as_str()) {
+                macros.insert(aperture_id.clone(), Material::prepare(primitives, budget)?);
+            }
+            macros[aperture_id.as_str()].distance(local, budget)?.0
+        } else {
+            aperture_distance(shape, local, budget)?
+        };
+        Ok(distance * transform.scale)
+    } else {
+        geometry_distance(g, p, budget)
+    }
+}
+
 fn contains(r: BoundsMm, p: MmPoint, e: f64) -> bool {
     p.x_mm >= r.min_x_mm - e
         && p.x_mm <= r.max_x_mm + e
@@ -285,39 +356,35 @@ impl SemanticDocument {
             .iter()
             .map(|a| (a.id.as_str(), &a.shape))
             .collect();
-        let mut macros = HashMap::new();
+        let mut macros: HashMap<String, Material> = HashMap::new();
         let mut budget = Budget(MAX_HIT_TEST_WORK);
         let mut result = Vec::new();
         for object in &layer.objects {
             budget.charge(1)?;
             let g = &object.geometry;
-            let edges = if let SemanticGeometry::Flash {
-                center,
-                aperture_id,
+            let edges = if let SemanticGeometry::BlockInstance {
+                definition_id,
                 transform,
             } = g
             {
-                let shape = apertures
-                    .get(aperture_id.as_str())
-                    .ok_or_else(|| SemanticError::MissingAperture(aperture_id.clone()))?;
-                let local = if let ApertureShape::Macro { primitives } = shape {
-                    if !macros.contains_key(aperture_id.as_str()) {
-                        macros.insert(
-                            aperture_id.as_str(),
-                            Material::prepare(primitives, &mut budget)?,
-                        );
-                    }
-                    budget.charge(macros[aperture_id.as_str()].boundary.len())?;
-                    macros[aperture_id.as_str()].boundary.clone()
-                } else {
-                    aperture_edges(shape)
-                };
-                local
-                    .into_iter()
-                    .map(|e| transform_edge(e, *center, *transform))
-                    .collect()
+                let definition = self.block_definition(definition_id).ok_or_else(|| {
+                    SemanticError::Invalid(format!("unknown block definition {}", definition_id.0))
+                })?;
+                let resolved = block::resolve_instance(definition, transform)
+                    .map_err(|_| HitTestError::Unsupported("block instance transform"))?;
+                let mut all = Vec::new();
+                for r in &resolved {
+                    budget.charge(1)?;
+                    all.extend(edges_for(
+                        &r.geometry,
+                        &apertures,
+                        &mut macros,
+                        &mut budget,
+                    )?);
+                }
+                all
             } else {
-                geometry_edges(g, &mut budget)?
+                edges_for(g, &apertures, &mut macros, &mut budget)?
             };
             budget.charge(edges.len().saturating_mul(8))?;
             if edges.is_empty() {
@@ -357,22 +424,36 @@ impl SemanticDocument {
                     }
                     if !hit {
                         let p = MmPoint::new(rect.min_x_mm, rect.min_y_mm);
-                        let distance = if let SemanticGeometry::Flash {
-                            center,
-                            aperture_id,
+                        let distance = if let SemanticGeometry::BlockInstance {
+                            definition_id,
                             transform,
                         } = g
                         {
-                            let local = apply_inverse_transform(p, *center, *transform);
-                            let shape = apertures[aperture_id.as_str()];
-                            if matches!(shape, ApertureShape::Macro { .. }) {
-                                macros[aperture_id.as_str()].distance(local, &mut budget)?.0
-                                    * transform.scale
-                            } else {
-                                aperture_distance(shape, local, &mut budget)? * transform.scale
+                            let definition =
+                                self.block_definition(definition_id).ok_or_else(|| {
+                                    SemanticError::Invalid(format!(
+                                        "unknown block definition {}",
+                                        definition_id.0
+                                    ))
+                                })?;
+                            let resolved =
+                                block::resolve_instance(definition, transform).map_err(|_| {
+                                    HitTestError::Unsupported("block instance transform")
+                                })?;
+                            let mut nearest = f64::INFINITY;
+                            for r in &resolved {
+                                budget.charge(1)?;
+                                nearest = nearest.min(distance_for(
+                                    &r.geometry,
+                                    p,
+                                    &apertures,
+                                    &mut macros,
+                                    &mut budget,
+                                )?);
                             }
+                            nearest
                         } else {
-                            geometry_distance(g, p, &mut budget)?
+                            distance_for(g, p, &apertures, &mut macros, &mut budget)?
                         };
                         hit = distance <= precision;
                     }

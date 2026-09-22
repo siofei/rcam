@@ -1873,6 +1873,19 @@ fn geometry_properties(
                 contours.iter().map(|c| c.edges.len()).sum::<usize>()
             ));
         }
+        // No Block Editor ships this phase; a live document cannot contain
+        // one yet (S4-B2 §27/§67).
+        BlockInstance {
+            definition_id,
+            transform,
+        } => {
+            ui.strong("Block Instance · 块实例");
+            ui.label(format!("定义 {}", definition_id.0));
+            ui.label(format!(
+                "角度 {:.4}° / 镜像 {}",
+                transform.rotation_deg, transform.mirror
+            ));
+        }
     }
 }
 fn main() -> eframe::Result {

@@ -6,6 +6,7 @@ members = [
     "crates/gerber-io",
     "crates/editor-service",
     "crates/editor-app",
+    "crates/rcam-project",
 ]
 
 [workspace.package]
@@ -18,6 +19,7 @@ editor-text = { path = "crates/editor-text" }
 editor-core = { path = "crates/editor-core" }
 gerber-io = { path = "crates/gerber-io" }
 editor-service = { path = "crates/editor-service" }
+rcam-project = { path = "crates/rcam-project" }
 gerber_parser = "0.5.0"
 gerber-types = "0.7.0"
 serde = { version = "1.0.219", features = ["derive"] }

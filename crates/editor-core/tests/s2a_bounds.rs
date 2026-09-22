@@ -14,6 +14,7 @@ fn doc(geometry: SemanticGeometry, shape: Option<ApertureShape>) -> SemanticDocu
             absolute: true,
         },
         source: SourceMetadata::default(),
+        block_definitions: vec![],
         apertures: shape
             .into_iter()
             .map(|shape| ApertureDefinition {

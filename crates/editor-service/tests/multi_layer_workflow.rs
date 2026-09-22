@@ -784,6 +784,7 @@ fn clear_exposure_is_isolated_per_layer() {
         layers: snapshot.layers.clone(),
         apertures: snapshot.apertures.clone(),
         source: Default::default(),
+        block_definitions: Vec::new(),
     };
     doc.validate().unwrap();
     let centre = editor_core::MmPoint::new(10., 10.);
@@ -1953,7 +1954,7 @@ fn capabilities_are_consistent_with_the_supported_operations() {
     ));
     let caps = service.capabilities();
     assert!(!caps.stage.contains("S4-A2"), "{}", caps.stage);
-    assert!(caps.stage.contains("S4-B1"));
+    assert!(caps.stage.contains("S4-B2"));
     for op in [
         "document.new",
         "document.import_gerber_layers",

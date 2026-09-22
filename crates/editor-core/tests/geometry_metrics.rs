@@ -24,6 +24,7 @@ fn document(shape: Option<ApertureShape>) -> SemanticDocument {
             })
             .collect(),
         source: SourceMetadata::default(),
+        block_definitions: vec![],
     }
 }
 fn flash(shape: ApertureShape, t: LocalTransform) -> Result<GeometryMetrics, MetricsError> {

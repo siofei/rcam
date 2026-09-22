@@ -3,6 +3,7 @@
 
 mod bounds;
 pub mod grid;
+pub mod hash;
 pub mod hit_test;
 pub mod metrics;
 pub mod units;
@@ -526,6 +527,15 @@ pub enum SemanticGeometry {
     Region {
         contours: Vec<RegionContour>,
     },
+    /// A placed reference to a project-level `SemanticDocument::block_definitions`
+    /// entry (S4-B2). Resolution (bounds/hit-test/metrics/export) happens via
+    /// `block::resolve_instance`, not by matching this variant's fields directly:
+    /// most existing per-geometry-kind code treats it as an opaque leaf that a
+    /// document-level caller must have already resolved before reaching here.
+    BlockInstance {
+        definition_id: block::BlockDefinitionId,
+        transform: block::BlockTransform,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -621,6 +631,20 @@ pub struct SemanticDocument {
     pub layers: Vec<SemanticLayer>,
     pub apertures: Vec<ApertureDefinition>,
     pub source: SourceMetadata,
+    /// Project-level reusable geometry (S4-B2). Never produced by Gerber
+    /// import; `#[serde(default)]` keeps every pre-existing document/fixture
+    /// (and the JSON automation contract) unaffected.
+    #[serde(default)]
+    pub block_definitions: Vec<block::BlockDefinition>,
+}
+
+impl SemanticDocument {
+    pub fn block_definition(
+        &self,
+        id: &block::BlockDefinitionId,
+    ) -> Option<&block::BlockDefinition> {
+        self.block_definitions.iter().find(|d| &d.id == id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -711,6 +735,19 @@ impl SemanticDocument {
             }
             validate_aperture_shape(&aperture.shape)?;
         }
+        let mut block_definition_ids = std::collections::HashSet::new();
+        for definition in &self.block_definitions {
+            if !block_definition_ids.insert(definition.id.0.clone()) {
+                return Err(SemanticError::DuplicateId(definition.id.0.clone()));
+            }
+            definition.validate().map_err(|_| {
+                SemanticError::Invalid(format!("invalid block definition {}", definition.id.0))
+            })?;
+            for object in &definition.objects {
+                let geometry: SemanticGeometry = object.geometry.clone().into();
+                validate_geometry(&geometry, &aperture_ids, &block_definition_ids)?;
+            }
+        }
         let mut layer_ids = std::collections::HashSet::new();
         let mut object_ids = std::collections::HashSet::new();
         let mut objects = 0;
@@ -723,7 +760,22 @@ impl SemanticDocument {
                 if !valid_id(&object.object_id) || !object_ids.insert(object.object_id.clone()) {
                     return Err(SemanticError::DuplicateId(object.object_id.clone()));
                 }
-                validate_geometry(&object.geometry, &aperture_ids)?;
+                validate_geometry(&object.geometry, &aperture_ids, &block_definition_ids)?;
+                if let SemanticGeometry::BlockInstance {
+                    definition_id,
+                    transform,
+                } = &object.geometry
+                {
+                    let definition = self.block_definition(definition_id).ok_or_else(|| {
+                        SemanticError::Invalid("block instance definition vanished".into())
+                    })?;
+                    block::resolve_instance(definition, transform).map_err(|_| {
+                        SemanticError::Invalid(format!(
+                            "block instance {} cannot be resolved under its transform",
+                            object.object_id
+                        ))
+                    })?;
+                }
                 if let Some(operation_id) = object.origin.operation_id()
                     && !valid_id(operation_id)
                 {
@@ -898,9 +950,10 @@ fn validate_macro_primitive(primitive: &MacroPrimitive) -> Result<(), SemanticEr
     }
 }
 
-fn validate_geometry(
+pub(crate) fn validate_geometry(
     geometry: &SemanticGeometry,
     aperture_ids: &std::collections::HashSet<String>,
+    block_definition_ids: &std::collections::HashSet<String>,
 ) -> Result<(), SemanticError> {
     let finite_point = |point: MmPoint| {
         if point.is_valid_geometry() {
@@ -976,6 +1029,22 @@ fn validate_geometry(
             }
             for contour in contours {
                 validate_contour(contour)?;
+            }
+        }
+        SemanticGeometry::BlockInstance {
+            definition_id,
+            transform,
+        } => {
+            if !transform.is_valid() {
+                return Err(SemanticError::Invalid(
+                    "invalid block instance transform".into(),
+                ));
+            }
+            if !block_definition_ids.contains(&definition_id.0) {
+                return Err(SemanticError::Invalid(format!(
+                    "block instance references unknown definition {}",
+                    definition_id.0
+                )));
             }
         }
     }
@@ -1869,6 +1938,9 @@ fn geometry_covers(
         SemanticGeometry::Region { contours } => contours
             .iter()
             .any(|contour| contour_covers(contour, point)),
+        // Resolved by the document-level caller (`block::resolve_instance`)
+        // before it reaches a per-geometry function; not reachable in practice.
+        SemanticGeometry::BlockInstance { .. } => false,
     }
 }
 

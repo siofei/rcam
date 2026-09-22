@@ -259,6 +259,7 @@ pub(crate) fn empty_semantic_document(id: &str) -> SemanticDocument {
         layers: Vec::new(),
         apertures: Vec::new(),
         source: SourceMetadata::default(),
+        block_definitions: Vec::new(),
     }
 }
 
@@ -1384,14 +1385,37 @@ pub(crate) fn layer_export_snapshot(
         .iter()
         .find(|l| l.id == layer_id)
         .ok_or_else(|| ServiceError::not_found("layer", layer_id))?;
-    let used: HashSet<&str> = layer
-        .objects
+    let mut used: HashSet<&str> = HashSet::new();
+    let mut used_definitions: HashSet<&editor_core::block::BlockDefinitionId> = HashSet::new();
+    for object in &layer.objects {
+        match &object.geometry {
+            SemanticGeometry::Flash { aperture_id, .. } => {
+                used.insert(aperture_id.as_str());
+            }
+            SemanticGeometry::BlockInstance { definition_id, .. } => {
+                used_definitions.insert(definition_id);
+            }
+            _ => {}
+        }
+    }
+    let block_definitions: Vec<_> = record
+        .document
+        .block_definitions
         .iter()
-        .filter_map(|o| match &o.geometry {
-            SemanticGeometry::Flash { aperture_id, .. } => Some(aperture_id.as_str()),
-            _ => None,
-        })
+        .filter(|definition| used_definitions.contains(&definition.id))
+        .cloned()
         .collect();
+    // A block-local Flash also needs its aperture in the single-layer export
+    // document, since the writer flattens instances through this same table.
+    for definition in &block_definitions {
+        for object in &definition.objects {
+            if let editor_core::block::BlockObjectGeometry::Flash { aperture_id, .. } =
+                &object.geometry
+            {
+                used.insert(aperture_id.as_str());
+            }
+        }
+    }
     Ok(SemanticDocument {
         id: record.document.id.clone(),
         unit: record.document.unit.clone(),
@@ -1409,6 +1433,7 @@ pub(crate) fn layer_export_snapshot(
             .get(layer_id)
             .map(|s| s.metadata.clone())
             .unwrap_or_default(),
+        block_definitions,
     })
 }
 

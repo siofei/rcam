@@ -5,12 +5,19 @@
 
 ## 结论（必须先读）
 
-本文件随源码提交，描述**实现内容、验证方法与已发现的缺陷**；最终门禁结果不写进源码（避免“测试通过的提交”与“记录结果的提交”
-不是同一个提交），而由**同一 clean commit** 生成的 public evidence ZIP 给出：`gates.json`（全部门禁 exit code、
-clean-before / clean-after、完整 40 位 commit）、`tested-source-hashes.txt`、`native_observations.json`、
-`layer_panel_width_validation.json`、`s4b1_release_performance.json`、`S4_B1_FINAL_RESULTS.md`。
-只有 `S4_B1_FINAL_RESULTS.md` 声明全部 Exit Gate 满足时才可称 “S4-B1 = PASS（Mac-first）”。
-Windows deferred / not executed。S4-B2 `.rcam` 未开始，格式未冻结。
+**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**，由最终 clean commit `f6eed93` 的 `S4_B1_FINAL_RESULTS.md`
+声明（全部 Exit Gate M/A–L 满足，495 passed / 0 failed / 13 ignored，Metal parity 180+288 例精确 RGBA，
+§107 十四项原生核对 14/14，固定 `RCam_S4B1_f6eed93_{source,public_evidence}.zip` + `SHA256SUMS.txt` 已生成并
+fresh-extract 核对 318/318）。Sidecar 哈希：
+
+```text
+60f281cdd2554323e7a74325b3cf9c1e2141b72f4557ebf85a8d6e0610265b95  RCam_S4B1_f6eed93_public_evidence.zip
+6a814f1d39b0bc88c3f4a46248cf5ead3fd410d34fd4d646bfe96fb8cfe1db84  RCam_S4B1_f6eed93_source.zip
+```
+
+本文件的其余部分保留实现过程与中间轮次的原始记录（早于最终 closeout 的部分描述“待执行”，按其写作时间理解）。
+Windows deferred / not executed；Full V1、P100K、完整 CORE10 均未宣称。
+S4-B2（Block Core + `.rcam` schema v1）现已启动，见 [S4_B2_PLAN](S4_B2_PLAN.md) / [S4_B2_REVIEW](S4_B2_REVIEW.md)。
 
 ## 已实现
 
@@ -168,8 +175,9 @@ Forward reservations 回归：`LayerKind::Drill`、Board Coordinate、`Component
 
 ## 仍需完成
 
-以 evidence 包中的 `S4_B1_FINAL_RESULTS.md` 为准；任何 `FAIL` / `NOT_OBSERVED` 项都必须在那里逐条列出，不得写成 PASS。
+`S4_B1_FINAL_RESULTS.md`（结论见文件顶部）已声明全部 Exit Gate 满足；如实说明的 9 项已知事项（Finder 拖放由用户手动
+完成、原生实例为 ad-hoc 重签名拷贝、display-transient/blocked 文案未在原生运行中触发等）保留在该文件中，不在此重复。
 
 ## 下一阶段
 
-S4-B2（`.rcam` Native Project Format + Block Core）待本阶段审查通过后另行启动；本阶段没有冻结任何 `.rcam` 字段。
+S4-B2（`.rcam` Native Project Format + Block Core）已启动，见 [S4_B2_PLAN](S4_B2_PLAN.md) / [S4_B2_REVIEW](S4_B2_REVIEW.md)。

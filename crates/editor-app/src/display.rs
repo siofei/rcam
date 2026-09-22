@@ -257,6 +257,12 @@ impl Scene {
                             scene.polygon(&points, Exposure::Dark, true)?;
                         }
                     }
+                    // No Block Editor ships this phase (S4-B2 §27/§67), so no
+                    // live document can contain one yet; kept fail-closed like
+                    // every other not-yet-supported display case above.
+                    SemanticGeometry::BlockInstance { .. } => {
+                        return Err("UNSUPPORTED_FEATURE: block instance display".into());
+                    }
                 }
                 if scene.primitives.len() + scene.points.len() > MAX_ITEMS {
                     return Err("RESOURCE_LIMIT: display items (200000)".into());

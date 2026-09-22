@@ -240,14 +240,18 @@ pub enum DisplayClass {
     FlashPolygon,
     ApertureMacro,
     /// Reserved: the parser rejects `%AB` today, so nothing produces this yet.
+    /// This is a *Gerber* aperture block, never RCam's own reusable Block
+    /// (S4-B2 places those under [`Self::BlockInstance`] instead).
     ApertureBlock,
     RegionFreeform,
     GeneratedText,
+    /// A placed RCam [`crate::block::BlockInstance`] (S4-B2).
+    BlockInstance,
     Other,
 }
 
 impl DisplayClass {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Stroke,
         Self::FlashCircle,
         Self::FlashRectangle,
@@ -257,11 +261,12 @@ impl DisplayClass {
         Self::ApertureBlock,
         Self::RegionFreeform,
         Self::GeneratedText,
+        Self::BlockInstance,
         Self::Other,
     ];
 
     pub fn index(self) -> usize {
-        Self::ALL.iter().position(|c| *c == self).unwrap_or(9)
+        Self::ALL.iter().position(|c| *c == self).unwrap_or(10)
     }
 
     pub fn from_index(index: usize) -> Self {
@@ -279,6 +284,7 @@ impl DisplayClass {
             Self::ApertureBlock => "aperture_block",
             Self::RegionFreeform => "region_freeform",
             Self::GeneratedText => "generated_text",
+            Self::BlockInstance => "block_instance",
             Self::Other => "other",
         }
     }
@@ -294,6 +300,7 @@ impl DisplayClass {
             Self::ApertureBlock => "Block",
             Self::RegionFreeform => "散图 / Region",
             Self::GeneratedText => "文字 / Text",
+            Self::BlockInstance => "块 / Block",
             Self::Other => "其他 / Other",
         }
     }
@@ -310,6 +317,7 @@ impl DisplayClass {
             Self::ApertureBlock => (-90., 0.10),
             Self::RegionFreeform => (90., -0.10),
             Self::GeneratedText => (140., 0.10),
+            Self::BlockInstance => (-140., 0.05),
             Self::Other => (0., -0.20),
         }
     }
@@ -352,6 +360,7 @@ pub fn classify_object(
             Some(ApertureShape::Macro { .. }) => DisplayClass::ApertureMacro,
             None => DisplayClass::Other,
         },
+        SemanticGeometry::BlockInstance { .. } => DisplayClass::BlockInstance,
     }
 }
 
@@ -589,6 +598,16 @@ pub fn geometry_fingerprint(geometry: &SemanticGeometry) -> u64 {
                     }
                 }
             }
+        }
+        SemanticGeometry::BlockInstance {
+            definition_id,
+            transform,
+        } => {
+            h.write_u8(6);
+            h.write(definition_id.0.as_bytes());
+            hash_point(&mut h, transform.translation);
+            h.write_u64(transform.rotation_deg.to_bits());
+            h.write_u8(transform.mirror as u8);
         }
     }
     h.finish()

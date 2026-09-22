@@ -638,3 +638,31 @@ class.selectable`; `effective_locked = layer.locked || class.locked`. A locked l
 independent of any GUI state. Text creation targets an explicit layer (the GUI passes the active layer) and obeys the same rules.
 Dirty is the Workspace content hash against its baseline (not a file) and is cached per manufacturing revision.
 
+
+## Block Core extension (S4-B2, API v1)
+
+`system.capabilities` lists all 8 `blocks.*` operations as supported; `project.open (.rcam)` / `project.save (.rcam)`
+and `drill.import` remain unsupported this phase (no `File → Open/Save` and no persisted Drill layer yet). A
+`BlockInstance` is a manufacturing object like any other: `objects.move`, `objects.rotate`, `objects.mirror` and
+`objects.duplicate` already work on it (its shared `BlockDefinition` is never copied, only its transform changes,
+duplicate copies `definition_id` + `transform` and assigns a new object id). There is no `blocks.*` equivalent of
+those four ops.
+
+| operation | notes |
+|---|---|
+| `blocks.list_definitions` | read-only, no `expected_revision`; `{document_id}` → `[{id, name, object_count, revision}]`. |
+| `blocks.get_definition` | read-only; `{definition_id}` → `{id, name, local_origin_mm, revision, objects: [...]}` (definition-local geometry, `BlockObjectGeometry`). |
+| `blocks.create_definition_from_objects` | `{layer_id, object_ids, local_origin_mm, name}`; captures the selected ordinary objects (rejects if any is already a `BlockInstance`) into a new project-level `BlockDefinition`, translates their geometry to be local to `local_origin_mm`, and replaces the selection with one `BlockInstance` whose transform reproduces the exact same world appearance. One transaction, one Undo. Returns `{definition_id, instance_object_id, ...EditResult}`. |
+| `blocks.create_instance` | `{layer_id, definition_id, transform: {translation_mm, rotation_deg, mirror}}`; places a new instance of an *existing* definition (no source instance, unlike Duplicate). Rejects a transform the definition cannot resolve under (e.g. a `RectangularSweep` member at a non-90-degree rotation). Returns `{object_id, ...EditResult}`. |
+| `blocks.update_instance_transform` | `{layer_id, object_id, transform}`; sets the instance's placement outright (as opposed to the delta semantics of `objects.move/rotate/mirror`). |
+| `blocks.rename_definition` | `{definition_id, name}`; metadata only, no layer scope, does not touch any instance. |
+| `blocks.explode_instance` | `{layer_id, object_id}`; resolves one instance through its transform into world-space primitives, removes the instance, inserts the primitives in its place. The definition itself is untouched (other instances may still reference it). One transaction, one Undo. |
+| `blocks.delete_definition` | `{definition_id}`; rejects with `BLOCK_DEFINITION_REFERENCED` if any instance still references it — explode or delete the referencing instances first. |
+
+A locked layer rejects `blocks.create_definition_from_objects`, `blocks.create_instance`, `blocks.explode_instance`
+and `blocks.update_instance_transform` the same way it rejects `objects.*` edits. Gerber export (`gerber.export_layer`)
+flattens every `BlockInstance` on the exported layer into plain primitives through its resolved transform — RCam
+blocks are not Gerber `%AB`; the working project is never modified by export. `.rcam` (schema v1, crate
+`rcam-project`) encode/decode is not yet wired to any `ApplicationService` operation — no `project.open`/`project.save`
+this phase, see [S4_B2_REVIEW](S4_B2_REVIEW.md).
+

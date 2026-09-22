@@ -676,6 +676,101 @@ pub struct DeleteParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct CreateBlockDefinitionParams {
+    pub layer_id: String,
+    pub object_ids: Vec<String>,
+    pub local_origin_mm: PivotMm,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockTransformParams {
+    pub translation_mm: PivotMm,
+    pub rotation_deg: f64,
+    pub mirror: bool,
+}
+
+fn block_transform_from_params(
+    params: &BlockTransformParams,
+) -> editor_core::block::BlockTransform {
+    editor_core::block::BlockTransform {
+        translation: MmPoint::new(params.translation_mm.x_mm, params.translation_mm.y_mm),
+        rotation_deg: params.rotation_deg,
+        mirror: params.mirror,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateBlockInstanceParams {
+    pub layer_id: String,
+    pub definition_id: String,
+    pub transform: BlockTransformParams,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateBlockInstanceTransformParams {
+    pub layer_id: String,
+    pub object_id: String,
+    pub transform: BlockTransformParams,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RenameBlockDefinitionParams {
+    pub definition_id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockDefinitionIdParams {
+    pub definition_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExplodeBlockInstanceParams {
+    pub layer_id: String,
+    pub object_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlockDefinitionSummary {
+    pub id: String,
+    pub name: String,
+    pub object_count: usize,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlockDefinitionDetail {
+    pub id: String,
+    pub name: String,
+    pub local_origin_mm: PivotMm,
+    pub revision: u64,
+    pub objects: Vec<editor_core::block::BlockObject>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateBlockDefinitionResult {
+    pub definition_id: String,
+    pub instance_object_id: String,
+    #[serde(flatten)]
+    pub edit: EditResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlockInstanceResult {
+    pub object_id: String,
+    #[serde(flatten)]
+    pub edit: EditResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetPropertiesParams {
     pub layer_id: String,
     pub object_ids: Vec<String>,
@@ -876,7 +971,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-B1 Multi-Gerber Workspace (Mac-first bounded)".into(),
+            stage: "S4-B2 Block Core + .rcam schema v1 (Mac-first bounded)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -922,14 +1017,21 @@ impl ApplicationService {
                 "layers.set_solo".into(),
                 "layers.update_many".into(),
                 "layers.reset_colors".into(),
+                "blocks.list_definitions".into(),
+                "blocks.get_definition".into(),
+                "blocks.create_definition_from_objects".into(),
+                "blocks.create_instance".into(),
+                "blocks.update_instance_transform".into(),
+                "blocks.rename_definition".into(),
+                "blocks.explode_instance".into(),
+                "blocks.delete_definition".into(),
             ],
-            // Reserved boundaries (S4-B1 architecture placeholders): named here so a
+            // Reserved boundaries (S4-B2 architecture placeholders): named here so a
             // caller can tell "not yet" from "unknown". None of these is dispatchable.
             unsupported_operations: vec![
                 "project.open (.rcam)".into(),
                 "project.save (.rcam)".into(),
                 "drill.import".into(),
-                "blocks.define".into(),
                 "components.search".into(),
                 "snap.resolve".into(),
                 "layers.merge".into(),
@@ -1456,6 +1558,204 @@ impl ApplicationService {
         Ok(edit_result(document_id, record, ids, 1))
     }
 
+    /// `blocks.list_definitions`: read-only, no `expected_revision`.
+    pub fn blocks_list_definitions(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<BlockDefinitionSummary>, ServiceError> {
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        Ok(record
+            .document
+            .block_definitions
+            .iter()
+            .map(|definition| BlockDefinitionSummary {
+                id: definition.id.0.clone(),
+                name: definition.name.clone(),
+                object_count: definition.objects.len(),
+                revision: definition.revision,
+            })
+            .collect())
+    }
+
+    /// `blocks.get_definition`: read-only, no `expected_revision`.
+    pub fn blocks_get_definition(
+        &self,
+        document_id: &str,
+        params: BlockDefinitionIdParams,
+    ) -> Result<BlockDefinitionDetail, ServiceError> {
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        let definition = record
+            .document
+            .block_definitions
+            .iter()
+            .find(|d| d.id.0 == params.definition_id)
+            .ok_or_else(|| ServiceError::not_found("block_definition", &params.definition_id))?;
+        Ok(BlockDefinitionDetail {
+            id: definition.id.0.clone(),
+            name: definition.name.clone(),
+            local_origin_mm: PivotMm {
+                x_mm: definition.local_origin.x_mm,
+                y_mm: definition.local_origin.y_mm,
+            },
+            revision: definition.revision,
+            objects: definition.objects.clone(),
+        })
+    }
+
+    /// `blocks.create_definition_from_objects`.
+    pub fn blocks_create_definition_from_objects(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: CreateBlockDefinitionParams,
+    ) -> Result<CreateBlockDefinitionResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
+        let (definition_id, instance_id) = record
+            .history
+            .create_block_definition(
+                &mut record.document,
+                &params.layer_id,
+                &params.object_ids,
+                MmPoint::new(params.local_origin_mm.x_mm, params.local_origin_mm.y_mm),
+                params.name,
+            )
+            .map_err(map_edit_error)?;
+        record
+            .metrics
+            .reconcile(&record.document, &params.object_ids);
+        record.revision += 1;
+        let edit = edit_result(document_id, record, vec![instance_id.clone()], 1);
+        Ok(CreateBlockDefinitionResult {
+            definition_id: definition_id.0,
+            instance_object_id: instance_id,
+            edit,
+        })
+    }
+
+    /// `blocks.create_instance`: place a new instance of an existing
+    /// definition; distinct from `objects.duplicate` (no source instance).
+    pub fn blocks_create_instance(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: CreateBlockInstanceParams,
+    ) -> Result<BlockInstanceResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(record, &params.layer_id, &[])?;
+        let object_id = record
+            .history
+            .create_block_instance(
+                &mut record.document,
+                &params.layer_id,
+                &editor_core::block::BlockDefinitionId(params.definition_id),
+                block_transform_from_params(&params.transform),
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        let edit = edit_result(document_id, record, vec![object_id.clone()], 1);
+        Ok(BlockInstanceResult { object_id, edit })
+    }
+
+    /// `blocks.update_instance_transform`: set the instance's placement
+    /// outright (Move/Rotate/Mirror already work as deltas via the existing
+    /// `objects.*` ops, since a rigid instance transform composes exactly
+    /// like any other manufacturing geometry — see ADR 0032).
+    pub fn blocks_update_instance_transform(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: UpdateBlockInstanceTransformParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(
+            record,
+            &params.layer_id,
+            std::slice::from_ref(&params.object_id),
+        )?;
+        let ids = record
+            .history
+            .set_block_instance_transform(
+                &mut record.document,
+                &params.layer_id,
+                &params.object_id,
+                block_transform_from_params(&params.transform),
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
+    /// `blocks.rename_definition`: metadata-only, no layer scope.
+    pub fn blocks_rename_definition(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: RenameBlockDefinitionParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        record
+            .history
+            .rename_block_definition(
+                &mut record.document,
+                &editor_core::block::BlockDefinitionId(params.definition_id),
+                params.name,
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, Vec::new(), 1))
+    }
+
+    /// `blocks.explode_instance`: resolve one instance into world-space
+    /// primitives and remove it; the definition itself is untouched.
+    pub fn blocks_explode_instance(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: ExplodeBlockInstanceParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        check_workspace_edit(
+            record,
+            &params.layer_id,
+            std::slice::from_ref(&params.object_id),
+        )?;
+        let ids = record
+            .history
+            .explode_block_instance(&mut record.document, &params.layer_id, &params.object_id)
+            .map_err(map_edit_error)?;
+        record.metrics.reconcile(&record.document, &ids);
+        record.revision += 1;
+        Ok(edit_result(document_id, record, ids, 1))
+    }
+
+    /// `blocks.delete_definition`: rejects a definition still referenced by
+    /// an instance (`BLOCK_DEFINITION_REFERENCED`; explode/delete the
+    /// instances first).
+    pub fn blocks_delete_definition(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: BlockDefinitionIdParams,
+    ) -> Result<EditResult, ServiceError> {
+        let record = self.edit_record(document_id, expected_revision)?;
+        record
+            .history
+            .delete_block_definition(
+                &mut record.document,
+                &editor_core::block::BlockDefinitionId(params.definition_id),
+            )
+            .map_err(map_edit_error)?;
+        record.revision += 1;
+        Ok(edit_result(document_id, record, Vec::new(), 1))
+    }
+
     pub fn edit_batch(
         &mut self,
         document_id: &str,
@@ -1922,6 +2222,31 @@ impl ApplicationService {
                 serde_json::to_value(self.objects_metrics(id, parse_params(&request.params)?)?)
                     .map_err(serialize_error)?
             }
+            "blocks.list_definitions" => {
+                parse_empty_params(&request.params)?;
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                let document_id = required_document_id(request)?;
+                serde_json::to_value(self.blocks_list_definitions(document_id)?)
+                    .map_err(serialize_error)?
+            }
+            "blocks.get_definition" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                let document_id = required_document_id(request)?;
+                serde_json::to_value(
+                    self.blocks_get_definition(document_id, parse_params(&request.params)?)?,
+                )
+                .map_err(serialize_error)?
+            }
             "objects.select_rect" => {
                 if request.expected_revision.is_some() {
                     return Err(ServiceError::invalid_field(
@@ -2014,6 +2339,12 @@ impl ApplicationService {
             | "objects.duplicate"
             | "objects.delete"
             | "objects.set_properties"
+            | "blocks.create_definition_from_objects"
+            | "blocks.create_instance"
+            | "blocks.update_instance_transform"
+            | "blocks.rename_definition"
+            | "blocks.explode_instance"
+            | "blocks.delete_definition"
             | "edit.batch"
             | "text.create"
             | "text.preview"
@@ -2114,6 +2445,48 @@ impl ApplicationService {
                         parse_params(&request.params)?,
                     )?)
                     .map_err(serialize_error)?,
+                    "blocks.create_definition_from_objects" => {
+                        serde_json::to_value(self.blocks_create_definition_from_objects(
+                            id,
+                            revision,
+                            parse_params(&request.params)?,
+                        )?)
+                        .map_err(serialize_error)?
+                    }
+                    "blocks.create_instance" => serde_json::to_value(self.blocks_create_instance(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "blocks.update_instance_transform" => {
+                        serde_json::to_value(self.blocks_update_instance_transform(
+                            id,
+                            revision,
+                            parse_params(&request.params)?,
+                        )?)
+                        .map_err(serialize_error)?
+                    }
+                    "blocks.rename_definition" => {
+                        serde_json::to_value(self.blocks_rename_definition(
+                            id,
+                            revision,
+                            parse_params(&request.params)?,
+                        )?)
+                        .map_err(serialize_error)?
+                    }
+                    "blocks.explode_instance" => serde_json::to_value(
+                        self.blocks_explode_instance(id, revision, parse_params(&request.params)?)?,
+                    )
+                    .map_err(serialize_error)?,
+                    "blocks.delete_definition" => {
+                        serde_json::to_value(self.blocks_delete_definition(
+                            id,
+                            revision,
+                            parse_params(&request.params)?,
+                        )?)
+                        .map_err(serialize_error)?
+                    }
                     "text.preview" => serde_json::to_value(self.text_preview(
                         id,
                         revision,
@@ -2389,6 +2762,11 @@ fn map_edit_error(error: EditError) -> ServiceError {
         },
         EditError::EmptyHistory => ServiceError::invalid_field("op", "没有可撤销或重做的事务。"),
         EditError::InvalidGeometry(error) => map_semantic_error(error),
+        EditError::BlockDefinitionReferenced => ServiceError {
+            code: "BLOCK_DEFINITION_REFERENCED".into(),
+            message: "该 Block Definition 仍被实例引用，需先删除/Explode 引用它的实例。".into(),
+            details: serde_json::json!({}),
+        },
     }
 }
 
@@ -2572,6 +2950,7 @@ fn geometry_kind(geometry: &SemanticGeometry) -> &'static str {
         SemanticGeometry::RectangularSweep { .. } => "rectangular_sweep",
         SemanticGeometry::Arc { .. } => "arc",
         SemanticGeometry::Region { .. } => "region",
+        SemanticGeometry::BlockInstance { .. } => "block_instance",
     }
 }
 
@@ -2659,6 +3038,9 @@ fn matches_region(
         }
         SemanticGeometry::Arc { .. } | SemanticGeometry::Region { .. } => {
             Err(unsupported_region_query("arc/region exact relation"))
+        }
+        SemanticGeometry::BlockInstance { .. } => {
+            Err(unsupported_region_query("block instance exact relation"))
         }
     }
 }
@@ -2960,136 +3342,7 @@ fn sha256_file(path: &Path) -> Result<String, ServiceError> {
     Ok(sha256_hex(&bytes))
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hash = Sha256::new();
-    hash.update(bytes);
-    hash.finish()
-}
-
-struct Sha256 {
-    state: [u32; 8],
-    buffer: Vec<u8>,
-    length: u64,
-}
-
-impl Sha256 {
-    fn new() -> Self {
-        Self {
-            state: [
-                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-                0x5be0cd19,
-            ],
-            buffer: Vec::with_capacity(64),
-            length: 0,
-        }
-    }
-
-    fn update(&mut self, bytes: &[u8]) {
-        self.length = self.length.saturating_add(bytes.len() as u64);
-        let mut input = bytes;
-        if !self.buffer.is_empty() {
-            let needed = 64 - self.buffer.len();
-            let take = needed.min(input.len());
-            self.buffer.extend_from_slice(&input[..take]);
-            input = &input[take..];
-            if self.buffer.len() == 64 {
-                let block = self.buffer.clone();
-                self.buffer.clear();
-                self.compress(&block);
-            }
-        }
-        let full_len = input.len() / 64 * 64;
-        for block in input[..full_len].chunks_exact(64) {
-            self.compress(block);
-        }
-        self.buffer.extend_from_slice(&input[full_len..]);
-    }
-
-    fn finish(mut self) -> String {
-        let bit_len = self.length * 8;
-        self.buffer.push(0x80);
-        while self.buffer.len() % 64 != 56 {
-            self.buffer.push(0);
-        }
-        self.buffer.extend_from_slice(&bit_len.to_be_bytes());
-        while !self.buffer.is_empty() {
-            let block = self.buffer[..64].to_vec();
-            self.buffer.drain(..64);
-            self.compress(&block);
-        }
-        self.state
-            .iter()
-            .map(|word| format!("{word:08x}"))
-            .collect()
-    }
-
-    fn compress(&mut self, block: &[u8]) {
-        const K: [u32; 64] = [
-            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-            0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-            0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-            0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-            0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-            0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-            0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-            0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-            0xc67178f2,
-        ];
-        let mut w = [0u32; 64];
-        for (index, word) in w[..16].iter_mut().enumerate() {
-            *word = u32::from_be_bytes([
-                block[index * 4],
-                block[index * 4 + 1],
-                block[index * 4 + 2],
-                block[index * 4 + 3],
-            ]);
-        }
-        for index in 16..64 {
-            let s0 = w[index - 15].rotate_right(7)
-                ^ w[index - 15].rotate_right(18)
-                ^ (w[index - 15] >> 3);
-            let s1 = w[index - 2].rotate_right(17)
-                ^ w[index - 2].rotate_right(19)
-                ^ (w[index - 2] >> 10);
-            w[index] = w[index - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[index - 7])
-                .wrapping_add(s1);
-        }
-        let mut a = self.state[0];
-        let mut b = self.state[1];
-        let mut c = self.state[2];
-        let mut d = self.state[3];
-        let mut e = self.state[4];
-        let mut f = self.state[5];
-        let mut g = self.state[6];
-        let mut h = self.state[7];
-        for index in 0..64 {
-            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-            let ch = (e & f) ^ ((!e) & g);
-            let t1 = h
-                .wrapping_add(s1)
-                .wrapping_add(ch)
-                .wrapping_add(K[index])
-                .wrapping_add(w[index]);
-            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-            let maj = (a & b) ^ (a & c) ^ (b & c);
-            let t2 = s0.wrapping_add(maj);
-            h = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
-        }
-        for (slot, value) in self.state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
-            *slot = slot.wrapping_add(value);
-        }
-    }
-}
+use editor_core::hash::{Sha256, sha256_hex};
 
 fn map_parse_error(error: S0Error) -> ServiceError {
     let code = match &error {

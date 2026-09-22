@@ -199,6 +199,15 @@ pub fn normalize_manufacturing(
                         }
                     }
                 }
+                // The instance's own placement quantizes like a Flash center.
+                // `block_definitions` geometry is not re-quantized here: it is
+                // captured from already-quantized world objects when a
+                // definition is created (`blocks.create_definition_from_objects`),
+                // so it only drifts if the project's resolution changes after
+                // the fact — a known S4-B2 scope note (`docs/S4_B2_REVIEW.md`).
+                SemanticGeometry::BlockInstance { transform, .. } => {
+                    point(&mut transform.translation)?;
+                }
             }
         }
     }

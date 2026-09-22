@@ -977,6 +977,7 @@ fn interpret_s1(
         }],
         apertures,
         source: metadata.clone(),
+        block_definitions: Vec::new(),
     };
     metadata.image_name = doc.image_name.clone();
     document.source = metadata.clone();
@@ -1093,6 +1094,7 @@ fn validate_macro_shape(primitives: Vec<MacroPrimitive>, name: &str) -> Result<(
             shape: ApertureShape::Macro { primitives },
         }],
         source: SourceMetadata::default(),
+        block_definitions: Vec::new(),
     };
     document.validate().map_err(|error| match error {
         SemanticError::ResourceLimit {
@@ -3018,6 +3020,48 @@ pub fn write_s1(document: &SemanticDocument) -> Result<Vec<u8>, S1Error> {
     write_s1_with_budget(document, S1Budget::default())
 }
 
+/// Resolve every `BlockInstance` on `layer` into its constituent primitives
+/// (§34/§35 of the S4-B2 brief): a synthetic per-primitive id derived from the
+/// instance's own id, the definition's exposure, and `object.origin` carried
+/// through unchanged. Ordinary objects pass through untouched. RectangularSweep
+/// objects that cannot keep an exact canonical representation under the
+/// instance's rotation fail closed (`block::resolve_instance` rejects them)
+/// rather than silently emitting a wrong rectangle.
+fn flatten_block_instances(
+    document: &SemanticDocument,
+    layer: &SemanticLayer,
+) -> Result<Vec<SemanticObject>, S1Error> {
+    let mut out = Vec::with_capacity(layer.objects.len());
+    for object in &layer.objects {
+        if let SemanticGeometry::BlockInstance {
+            definition_id,
+            transform,
+        } = &object.geometry
+        {
+            let definition =
+                document
+                    .block_definition(definition_id)
+                    .ok_or_else(|| S1Error::Semantic {
+                        line: 0,
+                        message: format!("missing block definition {}", definition_id.0),
+                    })?;
+            let resolved = editor_core::block::resolve_instance(definition, transform)
+                .map_err(|_| unsupported(0, "block instance cannot be flattened for export"))?;
+            for (index, primitive) in resolved.into_iter().enumerate() {
+                out.push(SemanticObject {
+                    object_id: format!("{}-block-{index}", object.object_id),
+                    geometry: primitive.geometry,
+                    exposure: primitive.exposure,
+                    origin: object.origin.clone(),
+                });
+            }
+        } else {
+            out.push(object.clone());
+        }
+    }
+    Ok(out)
+}
+
 pub fn write_s1_with_budget(
     document: &SemanticDocument,
     budget: S1Budget,
@@ -3062,6 +3106,10 @@ pub fn write_s1_with_budget(
     if document.layers.len() != 1 {
         return Err(unsupported(0, "S1 writer exports one layer at a time"));
     }
+    // RCam blocks are not Gerber `%AB` blocks: every instance is resolved
+    // through its transform into plain primitives before anything is written
+    // (see `docs/adr/0032-block-core.md`); the working project is untouched.
+    let flattened_objects = flatten_block_instances(document, &document.layers[0])?;
     let mut out = String::from("G04 RCam normalized S1 output*\n%FSLAX66Y66*%\n%MOMM*%\n");
     check_writer_output(&out, budget)?;
     let mut next_dcode = 10_i32;
@@ -3078,7 +3126,7 @@ pub fn write_s1_with_budget(
     // avoids a late AD command changing the source-order contract.
     let mut dynamic_codes = HashMap::new();
     let mut dynamic_shapes: Vec<(i32, ApertureShape)> = Vec::new();
-    for (object_index, object) in document.layers[0].objects.iter().enumerate() {
+    for (object_index, object) in flattened_objects.iter().enumerate() {
         let shape = match object.geometry {
             SemanticGeometry::Line { width_mm, .. } | SemanticGeometry::Arc { width_mm, .. } => {
                 Some(ApertureShape::Circle {
@@ -3096,6 +3144,9 @@ pub fn write_s1_with_budget(
                 hole_diameter_mm: None,
             }),
             SemanticGeometry::Flash { .. } | SemanticGeometry::Region { .. } => None,
+            SemanticGeometry::BlockInstance { .. } => {
+                unreachable!("flattened before this loop")
+            }
         };
         if let Some(shape) = shape {
             let code = dynamic_shapes
@@ -3115,8 +3166,8 @@ pub fn write_s1_with_budget(
         check_writer_output(&out, budget)?;
     }
     let mut polarity = Exposure::Dark;
-    for layer in &document.layers {
-        for (object_index, object) in layer.objects.iter().enumerate() {
+    {
+        for (object_index, object) in flattened_objects.iter().enumerate() {
             set_polarity(&mut out, &mut polarity, object.exposure);
             match &object.geometry {
                 SemanticGeometry::Flash {
@@ -3203,6 +3254,9 @@ pub fn write_s1_with_budget(
                     }
                     out.push_str("G37*\n");
                 }
+                SemanticGeometry::BlockInstance { .. } => {
+                    unreachable!("flattened before this loop")
+                }
             }
             check_writer_output(&out, budget)?;
         }
@@ -3267,8 +3321,14 @@ fn documents_semantically_equal(
         .iter()
         .zip(&actual_document.layers)
         .all(|(a, b)| {
-            a.objects.len() == b.objects.len()
-                && a.objects.iter().zip(&b.objects).all(|(expected, actual)| {
+            // `expected` may still hold `BlockInstance` objects (blocks are
+            // never Gerber `%AB`); flatten it through the exact same
+            // resolution the writer used before comparing object-for-object.
+            let Ok(flattened) = flatten_block_instances(expected_document, a) else {
+                return false;
+            };
+            flattened.len() == b.objects.len()
+                && flattened.iter().zip(&b.objects).all(|(expected, actual)| {
                     expected.exposure == actual.exposure
                         && geometry_semantically_equal(
                             expected_document,

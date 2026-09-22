@@ -1,4 +1,4 @@
-# RCam Gerber editor — Mac-first S4-B1 Multi-Gerber Workspace
+# RCam Gerber editor — Mac-first S4-B2 Block Core + `.rcam` schema v1
 
 S3-FINAL 正式收口基础编辑：GUI 制造修改统一走 `ApplicationService`；补齐标准 C/R/O/P
 Flash 尺寸写时复制、单事务 `edit.batch`、完整事务边界的 Undo 预算淘汰、对象端点/中心优先
@@ -130,8 +130,9 @@ Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；�
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
 S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded，见 GLOBAL_UNITS_PRECISION_REVIEW）。
-S4-B1 Multi-Gerber Workspace 已实现；Mac 原生 fmt/check/clippy/全量测试/release/Metal parity 已通过、原生 GUI 已冒烟核查，固定 ZIP 与 §107 逐项检查待执行，**尚未标记 PASS**（见 S4_B1_REVIEW）；DXF/SVG/PLT、Final Layer Boolean Area、Windows、`.rcam`（S4-B2）仍未启动。
-阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
+**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 S4_B1_REVIEW，固定 ZIP + fresh extract 已完成）。
+S4-B2（Block Core + `.rcam` schema v1）见下；DXF/SVG/PLT、Final Layer Boolean Area、Windows 仍未启动。
+阶段实现不等于全部原生验收；实际状态以各阶段 REVIEW 为准。
 
 ### S4-A2.2 — 多行文本和菜单交互
 
@@ -167,7 +168,29 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 - 删除图层：空层直接删除，非空强确认，含修改/生成内容更强确认；一步 Undo 恢复同一 LayerId、层序与样式；允许删除最后一层。
 - 面板可调宽，名称超长时省略号，完整名称见 tooltip / 设置 / 重命名。
 - 长期架构约束（Block、Object Snap、Command/Shortcut、Board Coordinate、Drill）已合并进 AGENTS.md 与 DESIGN_V1，
-  S4-B1 只保留占位类型；下一阶段 S4-B2（`.rcam` + Block Core）**不会**自动开始。
+  S4-B1 只保留占位类型。
 
-状态：Global Units & Manufacturing Precision = PASS（Mac-first bounded）。S4-B1 云端自动测试通过；Metal parity、
-固定 ZIP 交付、fresh extract 与 §107 逐项原生检查尚未执行，因此**不声称 S4-B1 PASS**。Windows、完整 V1、P100K、完整 CORE10 均未宣称。
+状态：**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**。Metal parity（180+288 例精确 RGBA）、固定 ZIP 交付、
+fresh extract（318/318）与 §107 逐项原生检查（14/14）均已完成，见 [S4_B1_REVIEW](docs/S4_B1_REVIEW.md)。
+Windows、完整 V1、P100K、完整 CORE10 均未宣称。
+
+### S4-B2 — Block Core + `.rcam` Native Project Model / schema v1（当前）
+
+范围与边界见 [S4_B2_PLAN](docs/S4_B2_PLAN.md)，实现证据与未执行项见 [S4_B2_REVIEW](docs/S4_B2_REVIEW.md)，
+决策见 [ADR 0031](docs/adr/0031-rcam-native-project-format-v1.md) / [ADR 0032](docs/adr/0032-block-core.md)。
+
+- **Reusable Block**：`BlockDefinition`（项目级几何，存在 `SemanticDocument.block_definitions`）+ `BlockInstance`
+  （层内 `SemanticGeometry::BlockInstance`，只允许 translation/rotation/mirror）。Move/Rotate/Mirror/Duplicate
+  复用既有 `objects.*` 服务；新增 `blocks.create_definition_from_objects`、`blocks.create_instance`、
+  `blocks.update_instance_transform`、`blocks.rename_definition`、`blocks.explode_instance`、
+  `blocks.delete_definition`（被引用时拒绝）、`blocks.list_definitions`/`blocks.get_definition`。
+  第一版无 nested block（`BlockObjectGeometry` 在类型层面无法表示实例）；Gerber Export 展平实例，
+  RectangularSweep 在非 90° 旋转下 fail-closed。
+- **`.rcam` schema v1**：新 crate `crates/rcam-project`（无 egui/eframe/wgpu/winit 依赖，`dependency_boundary`
+  测试核对），`.rcam` = ZIP 容器（`manifest.json` + `project.json` + `layers/*.json` + `blocks/*.json`），
+  store-only、hand-rolled、确定性编码，读取全链路 fail-closed（路径穿越/重复路径/超预算/哈希不符/未知
+  `format_version`/未知 mandatory 类型均拒绝）。encode/decode 只是内存/测试路径，本阶段没有
+  `File → Open/Save`；`system.capabilities` 继续把 `project.open/save (.rcam)` 列为 unsupported。
+- 状态：源码级实现 + 自动化测试（`cargo test --workspace` 全量通过，49 个测试二进制，含新增
+  `block_core`/`block_core_workflow`/`rcam_project_codec_workflow`/`performance_workflow`）；原生 Mac GUI
+  冒烟、Metal parity 与固定 ZIP 交付**本阶段未执行**，因此**不声称 “S4-B2 PASS”**，见 S4_B2_REVIEW。

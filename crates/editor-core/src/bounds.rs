@@ -76,39 +76,71 @@ impl SemanticDocument {
         if layer_id.is_some_and(|id| !self.layers.iter().any(|layer| layer.id == id)) {
             return Err(SemanticError::Invalid("unknown bounds layer".into()));
         }
-        geometries_bounds(
+        geometries_bounds_with_blocks(
             self.layers
                 .iter()
                 .filter(|layer| layer_id.is_none_or(|id| layer.id == id))
                 .flat_map(|layer| layer.objects.iter().map(|object| &object.geometry)),
             &self.apertures,
+            &self.block_definitions,
         )
     }
 }
 
-/// Union bounds for an explicit manufacturing-geometry selection.
+/// Union bounds for an explicit manufacturing-geometry selection. No block
+/// instance can appear in `geometries` here: callers with document context
+/// (block-aware) use [`geometries_bounds_with_blocks`] instead.
 ///
 /// This is intentionally independent of renderer meshes and screen pixels.
 pub fn geometries_bounds<'a>(
     geometries: impl IntoIterator<Item = &'a SemanticGeometry>,
     apertures: &[ApertureDefinition],
 ) -> Result<Option<BoundsMm>, SemanticError> {
+    geometries_bounds_with_blocks(geometries, apertures, &[])
+}
+
+/// Same as [`geometries_bounds`], additionally resolving
+/// [`SemanticGeometry::BlockInstance`] leaves against `blocks`. Definition
+/// local bounds are computed once per call and reused for every instance
+/// sharing that definition (see `docs/adr/0032-block-core.md`); a caller that
+/// queries bounds repeatedly (the service layer) should cache across calls
+/// too, keyed by `(definition_id, revision)`.
+pub fn geometries_bounds_with_blocks<'a>(
+    geometries: impl IntoIterator<Item = &'a SemanticGeometry>,
+    apertures: &[ApertureDefinition],
+    blocks: &[crate::block::BlockDefinition],
+) -> Result<Option<BoundsMm>, SemanticError> {
     let apertures: HashMap<_, _> = apertures
         .iter()
         .map(|aperture| (aperture.id.as_str(), &aperture.shape))
         .collect();
+    let blocks: HashMap<_, _> = blocks.iter().map(|def| (def.id.0.as_str(), def)).collect();
+    let mut local_cache: HashMap<(&str, u64), Option<BoundsMm>> = HashMap::new();
     let mut result = None;
     for geometry in geometries {
-        if let Some(bounds) = geometry_bounds(geometry, &apertures)? {
+        if let Some(bounds) = geometry_bounds(geometry, &apertures, &blocks, &mut local_cache)? {
             result = Some(result.map_or(bounds, |previous: BoundsMm| previous.union(bounds)));
         }
     }
     Ok(result)
 }
 
-fn geometry_bounds(
+fn transform_bounds(bounds: BoundsMm, transform: &board::CoordinateTransform2D) -> BoundsMm {
+    let corners = [
+        MmPoint::new(bounds.min_x_mm, bounds.min_y_mm),
+        MmPoint::new(bounds.max_x_mm, bounds.min_y_mm),
+        MmPoint::new(bounds.max_x_mm, bounds.max_y_mm),
+        MmPoint::new(bounds.min_x_mm, bounds.max_y_mm),
+    ]
+    .map(|p| transform.apply(p));
+    combine(corners.into_iter().map(|p| BoundsMm::points(p, p))).expect("four corners")
+}
+
+fn geometry_bounds<'a>(
     geometry: &SemanticGeometry,
     apertures: &HashMap<&str, &ApertureShape>,
+    blocks: &HashMap<&str, &'a crate::block::BlockDefinition>,
+    local_cache: &mut HashMap<(&'a str, u64), Option<BoundsMm>>,
 ) -> Result<Option<BoundsMm>, SemanticError> {
     let bounds = match geometry {
         SemanticGeometry::Flash {
@@ -176,6 +208,27 @@ fn geometry_bounds(
                 }
             }
             result
+        }
+        SemanticGeometry::BlockInstance {
+            definition_id,
+            transform,
+        } => {
+            let definition = *blocks.get(definition_id.0.as_str()).ok_or_else(|| {
+                SemanticError::Invalid(format!("unknown block definition {}", definition_id.0))
+            })?;
+            let key = (definition.id.0.as_str(), definition.revision);
+            if !local_cache.contains_key(&key) {
+                let mut local_result = None;
+                for local in crate::block::local_geometries(definition) {
+                    if let Some(bounds) = geometry_bounds(&local, apertures, blocks, local_cache)? {
+                        local_result =
+                            Some(local_result.map_or(bounds, |p: BoundsMm| p.union(bounds)));
+                    }
+                }
+                local_cache.insert(key, local_result);
+            }
+            local_cache[&key]
+                .map(|bounds| transform_bounds(bounds, &transform.to_coordinate_transform()))
         }
     };
     bounds.map(BoundsMm::checked).transpose()

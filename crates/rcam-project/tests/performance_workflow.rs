@@ -1,0 +1,125 @@
+//! §57 of the S4-B2 brief: a definition with 400 openings placed as 100
+//! instances must not make `.rcam` logical size (or project memory) scale
+//! like 40,000 independent flattened primitives.
+use editor_core::block::{BlockDefinitionId, BlockObject, BlockObjectGeometry, BlockTransform};
+use editor_core::snap::SnapKind;
+use editor_core::units::ManufacturingPrecision;
+use editor_core::workspace::{Color, LayerKind, LayerWorkspaceState};
+use editor_core::{
+    ApertureDefinition, ApertureShape, Exposure, LocalTransform, Mirror, MmPoint, ObjectOrigin,
+    SemanticGeometry, SemanticLayer, SemanticObject,
+};
+use rcam_project::*;
+use std::time::Instant;
+
+fn big_project(openings: usize, instances: usize) -> RCamProject {
+    let aperture = ApertureDefinition {
+        id: "shared::opening".into(),
+        source_dcode: 10,
+        shape: ApertureShape::Circle {
+            diameter_mm: 0.1,
+            hole_diameter_mm: None,
+        },
+    };
+    let objects = (0..openings)
+        .map(|i| BlockObject {
+            geometry: BlockObjectGeometry::Flash {
+                center: MmPoint::new((i % 20) as f64 * 0.2, (i / 20) as f64 * 0.2),
+                aperture_id: aperture.id.clone(),
+                transform: LocalTransform {
+                    mirror: Mirror::None,
+                    rotation_deg: 0.,
+                    scale: 1.,
+                },
+            },
+            exposure: Exposure::Dark,
+        })
+        .collect();
+    let definition = editor_core::block::BlockDefinition {
+        id: BlockDefinitionId("perf-def".into()),
+        name: "perf".into(),
+        local_origin: MmPoint::new(0., 0.),
+        objects,
+        revision: 0,
+    };
+    let layer_objects = (0..instances)
+        .map(|i| SemanticObject {
+            object_id: format!("inst-{i}"),
+            geometry: SemanticGeometry::BlockInstance {
+                definition_id: definition.id.clone(),
+                transform: BlockTransform {
+                    translation: MmPoint::new(i as f64 * 5.0, 0.0),
+                    rotation_deg: 0.,
+                    mirror: false,
+                },
+            },
+            exposure: Exposure::Dark,
+            origin: ObjectOrigin::Generated {
+                operation_id: "perf".into(),
+            },
+        })
+        .collect();
+    RCamProject {
+        format_version: FORMAT_VERSION,
+        project_id: ProjectId("perf-project".into()),
+        manufacturing: ManufacturingProjectSettings {
+            precision: ManufacturingPrecision::default(),
+        },
+        workspace: WorkspaceProjectState {
+            display_unit: DisplayUnit::Millimeters,
+            grid: GridSettings {
+                spacing_mm: 0.5,
+                visible: true,
+                snap: true,
+            },
+            snap: SnapSettingsState {
+                enabled: true,
+                enabled_kinds: vec![SnapKind::Endpoint],
+                radius_px: 8.0,
+            },
+            active_layer_id: None,
+            camera: None,
+        },
+        layer_order: vec!["l1".into()],
+        layers: vec![LayerProjectState {
+            layer: SemanticLayer {
+                id: "l1".into(),
+                objects: layer_objects,
+            },
+            workspace: LayerWorkspaceState::new(LayerKind::Gerber, "l1", Color::rgb(0, 0, 0)),
+            provenance: None,
+        }],
+        apertures: vec![aperture],
+        block_definitions: vec![definition],
+        board: None,
+    }
+}
+
+#[test]
+fn project_400_openings_times_100_instances_does_not_scale_like_flattened_primitives() {
+    let project = big_project(400, 100);
+    let start = Instant::now();
+    let bytes = encode_v1(&project).unwrap();
+    let encode_elapsed = start.elapsed();
+
+    let start = Instant::now();
+    let decoded = decode(&bytes).unwrap();
+    let decode_elapsed = start.elapsed();
+    decoded.validate().unwrap();
+
+    // A flattened project (40,000 independent Flash objects instead of 100
+    // instances of a 400-object definition) would be roughly two orders of
+    // magnitude larger; a generous 2 MB ceiling proves the definition is
+    // stored once, not duplicated per instance.
+    assert!(
+        bytes.len() < 2 * 1024 * 1024,
+        "unexpectedly large encode ({} bytes) for a shared-definition project",
+        bytes.len()
+    );
+    assert_eq!(decoded.block_definitions[0].objects.len(), 400);
+    assert_eq!(decoded.layers[0].layer.objects.len(), 100);
+    assert!(
+        encode_elapsed.as_secs() < 5 && decode_elapsed.as_secs() < 5,
+        "encode {encode_elapsed:?} / decode {decode_elapsed:?} exceeded a generous bound"
+    );
+}

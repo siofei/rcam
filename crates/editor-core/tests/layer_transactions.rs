@@ -24,6 +24,7 @@ fn empty_doc() -> SemanticDocument {
         layers: vec![],
         apertures: vec![],
         source: SourceMetadata::default(),
+        block_definitions: vec![],
     }
 }
 

@@ -978,11 +978,15 @@ Layer 增删：`+` 提供 New Empty Layer / Import Gerber / 未来 Import Drill�
 - Component Placement/RefDes 是独立模型（ComponentId、refdes、BoardPoint、rotation、side、footprint、value），不塞进普通 Gerber
   SemanticObject；未来 `R123 → ComponentPlacement → Board→World → Camera Focus/Highlight`。
 
-### 22.5 Reusable Block
+### 22.5 Reusable Block（S4-B2 已实现 Block Core，见 ADR 0032；本节继续作为长期方向记录）
 
 钢网核心对象为 `BlockDefinition` + `BlockInstance`。Definition 是项目级可复用制造几何；Instance 属于某个 Layer，含
 definition_id + translation/rotation/mirror，**不支持 non-uniform scale/shear，第一版禁止 nested block**。修改 Definition 更新所有
 Instance；修改 Instance 只改 transform。Gerber Export 时 flatten；不要把 RCam Block 等同于 Gerber `%AB`。`.rcam v1` 冻结前必须已有 Block core。
+S4-B2 起 `BlockDefinition` 存在 `SemanticDocument.block_definitions`，`BlockInstance` 是
+`SemanticGeometry::BlockInstance` 变体；Move/Rotate/Mirror/Duplicate 复用既有 `objects.*` 服务，
+`blocks.create_definition_from_objects`/`create_instance`/`update_instance_transform`/`rename_definition`/
+`explode_instance`/`delete_definition` 是新增的 Service API。完整 GUI Block Editor 仍属 S4-C。
 
 ### 22.6 Object Snap 与 Grip
 

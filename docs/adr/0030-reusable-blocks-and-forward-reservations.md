@@ -1,7 +1,10 @@
 # ADR 0030 — Reusable Block、Object Snap、Command/Shortcut 与 Board Coordinate 长期预留
 
-状态：Accepted（长期方向，S4-B1 只做类型占位）。来源：RCam 长期架构指导（钢网设计方向）与 AGENTS Addendum，
+状态：Accepted（长期方向）。来源：RCam 长期架构指导（钢网设计方向）与 AGENTS Addendum，
 已合并到 `AGENTS.md` “Forward Architecture Reservations” 与 `DESIGN_V1.md` “长期架构方向”。
+**Reusable Block 部分（决定 1）已在 S4-B2 正式实现，具体实现决策见 [ADR 0032](0032-block-core.md)**；
+Object Snap/Command/Shortcut/Board Coordinate/Component Placement/Drill 仍是本 ADR 描述的占位类型，
+无产品入口。
 
 ## 产品定位
 
@@ -37,7 +40,7 @@ RCam 的主要用途是 PCB 钢网/Stencil 制造图形设计、编辑、检查�
 | 阶段 | 内容 |
 |---|---|
 | S4-B1 | Multi-Layer Workspace、Layer UI/style/filter、add/delete/order、Gerber Import 语义；Drill/Board/Block/Snap/Command 仅占位类型 |
-| S4-B2 | Block Core、`.rcam` schema v1、Workspace state 与 Snap settings 持久化 |
+| S4-B2 | Block Core、`.rcam` schema v1、Workspace state 与 Snap settings 持久化 —— 已实现（见 ADR 0031/0032），原生验收未执行 |
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects |
 | S4-C | 完整 Object Snap、Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette |
 

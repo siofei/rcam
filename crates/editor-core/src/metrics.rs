@@ -175,6 +175,24 @@ pub fn calculate(
             )
         }
         SemanticGeometry::Region { contours } => region(contours, work),
+        // Rigid/mirror transforms preserve area and perimeter (ADR 0032), so an
+        // instance's metrics equal its definition's local metrics regardless of
+        // placement; a caller resolving many instances of one definition should
+        // cache by `(definition_id, revision)` rather than call this per instance.
+        SemanticGeometry::BlockInstance { definition_id, .. } => {
+            let definition = document
+                .block_definition(definition_id)
+                .ok_or(Unsupported("unknown block definition"))?;
+            let mut area = 0.;
+            let mut perimeter = 0.;
+            for local in block::local_geometries(definition) {
+                charge(work, 1)?;
+                let metrics = calculate(document, &local, work)?;
+                area += metrics.area_mm2;
+                perimeter += metrics.perimeter_mm;
+            }
+            checked(area, perimeter)
+        }
     }
 }
 fn charge(work: &mut usize, amount: usize) -> Result<(), MetricsError> {

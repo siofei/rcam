@@ -373,6 +373,7 @@ mod certification_tests {
             layers: vec![],
             apertures: vec![],
             source: Default::default(),
+            block_definitions: vec![],
         };
         let m = editor_core::metrics::calculate(
             &doc,

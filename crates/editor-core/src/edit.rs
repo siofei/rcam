@@ -21,10 +21,15 @@ pub const MAX_EDIT_REGION_EDGES: usize = 2_000_000;
 pub enum EditError {
     InvalidArgument,
     UnsupportedTransform,
-    NotFound { entity: &'static str, id: String },
+    NotFound {
+        entity: &'static str,
+        id: String,
+    },
     ResourceLimit,
     EmptyHistory,
     InvalidGeometry(SemanticError),
+    /// `blocks.delete_definition` rejected: still referenced by an instance.
+    BlockDefinitionReferenced,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +91,32 @@ enum Operation {
     Batch(BatchChange),
     /// Whole-layer structure change (import batch, new empty layer, remove).
     Layers(LayerMove),
+    /// Replace one set of layer objects with another (`blocks.
+    /// create_definition_from_objects` removes N ordinary objects and inserts
+    /// one `BlockInstance`; `blocks.explode_instance` removes one instance and
+    /// inserts its flattened primitives), optionally inserting one new
+    /// `BlockDefinition` into the document at the same time.
+    ReplaceObjects(ReplaceObjectsOp),
+    RenameBlockDefinition {
+        index: usize,
+        before_name: String,
+        after_name: String,
+    },
+    /// Remove one unreferenced `BlockDefinition` (`blocks.delete_definition`).
+    RemoveBlockDefinition {
+        index: usize,
+        definition: crate::block::BlockDefinition,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct ReplaceObjectsOp {
+    /// Sorted ascending by `index`, positions in the layer before this op.
+    removed: Vec<IndexedObject>,
+    /// Sorted ascending by `index`, positions in the layer after `removed`
+    /// objects are taken out.
+    inserted: Vec<IndexedObject>,
+    definition_insert: Option<(usize, crate::block::BlockDefinition)>,
 }
 
 /// A self-contained layer handed to `EditHistory::add_layers`: the layer and
@@ -245,6 +276,7 @@ pub struct EditHistory {
     // Consumed only at successful insert commit, never rewound by Undo/Delete.
     next_generated_id: u64,
     next_generated_aperture_id: u64,
+    next_generated_block_id: u64,
     max_entries: usize,
     max_bytes: usize,
     truncated_entries: usize,
@@ -269,6 +301,7 @@ impl EditHistory {
             redo: vec![],
             next_generated_id: 0,
             next_generated_aperture_id: 0,
+            next_generated_block_id: 0,
             max_entries,
             max_bytes,
             truncated_entries: 0,
@@ -456,12 +489,14 @@ impl EditHistory {
                 .sum::<usize>();
         self.budget(bytes)?;
         let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
+        let block_definition_ids = block_definition_ids(document);
         let mut changes = Vec::with_capacity(selected.len());
         for index in selected {
             let object = &layer.objects[index];
             let mut after = object.geometry.clone();
             modify(&mut after)?;
-            validate_geometry(&after, &aperture_ids).map_err(EditError::InvalidGeometry)?;
+            validate_geometry(&after, &aperture_ids, &block_definition_ids)
+                .map_err(EditError::InvalidGeometry)?;
             changes.push(Change {
                 object_id: object.object_id.clone(),
                 index,
@@ -612,6 +647,464 @@ impl EditHistory {
         Ok(ids)
     }
 
+    /// `blocks.create_definition_from_objects`: capture `object_ids` on
+    /// `layer_id` into a new project-level `BlockDefinition` (geometry stored
+    /// relative to `local_origin`) and replace them with one `BlockInstance`
+    /// object whose transform reproduces the exact same world appearance
+    /// (translation = `local_origin`, no rotation/mirror). One transaction,
+    /// one Undo entry (ADR 0032).
+    pub fn create_block_definition(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        local_origin: MmPoint,
+        name: String,
+    ) -> Result<(crate::block::BlockDefinitionId, String), EditError> {
+        if !local_origin.is_valid_geometry() || name.trim().is_empty() {
+            return Err(EditError::InvalidArgument);
+        }
+        let (layer_index, selected) = self.targets(document, layer_id, object_ids)?;
+        let layer = &document.layers[layer_index];
+        let mut block_objects = Vec::with_capacity(selected.len());
+        for &index in &selected {
+            let source = &layer.objects[index];
+            let mut geometry = source.geometry.clone();
+            translate(&mut geometry, -local_origin.x_mm, -local_origin.y_mm)?;
+            let geometry: crate::block::BlockObjectGeometry = geometry
+                .try_into()
+                .map_err(|_| EditError::UnsupportedTransform)?;
+            block_objects.push(crate::block::BlockObject {
+                geometry,
+                exposure: source.exposure,
+            });
+        }
+        let definition_id = crate::block::BlockDefinitionId(format!(
+            "{}-block-{}",
+            document.id, self.next_generated_block_id
+        ));
+        let definition = crate::block::BlockDefinition {
+            id: definition_id.clone(),
+            name,
+            local_origin,
+            objects: block_objects,
+            revision: 0,
+        };
+        definition
+            .validate()
+            .map_err(|_| EditError::InvalidArgument)?;
+        let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
+        let existing_block_ids = block_definition_ids(document);
+        for object in &definition.objects {
+            let geometry: SemanticGeometry = object.geometry.clone().into();
+            validate_geometry(&geometry, &aperture_ids, &existing_block_ids)
+                .map_err(EditError::InvalidGeometry)?;
+        }
+        let instance_id = format!(
+            "{}-generated-object-{}",
+            document.id, self.next_generated_id
+        );
+        let operation_id = format!("{}-generated-op-{}", document.id, self.next_generated_id);
+        let instance_object = SemanticObject {
+            object_id: instance_id.clone(),
+            geometry: SemanticGeometry::BlockInstance {
+                definition_id: definition_id.clone(),
+                transform: crate::block::BlockTransform {
+                    translation: local_origin,
+                    rotation_deg: 0.,
+                    mirror: false,
+                },
+            },
+            exposure: Exposure::Dark,
+            origin: ObjectOrigin::Generated { operation_id },
+        };
+        let removed: Vec<IndexedObject> = selected
+            .iter()
+            .map(|&index| IndexedObject {
+                index,
+                object: layer.objects[index].clone(),
+            })
+            .collect();
+        let inserted_index = removed[0].index;
+        let inserted = vec![IndexedObject {
+            index: inserted_index,
+            object: instance_object,
+        }];
+        let bytes = size_of::<Transaction>()
+            + 1024
+            + layer_id.len()
+            + removed
+                .iter()
+                .map(|e| {
+                    size_of::<IndexedObject>()
+                        + geometry_heap_bytes(&e.object.geometry)
+                        + e.object.object_id.len()
+                        + 128
+                })
+                .sum::<usize>()
+            + geometry_heap_bytes(&inserted[0].object.geometry)
+            + inserted[0].object.object_id.len()
+            + 256
+            + definition.name.len()
+            + definition.objects.len() * 256;
+        self.budget(bytes)?;
+        let before_order: Vec<_> = layer.objects.iter().map(|o| o.object_id.clone()).collect();
+        let removed_indices: HashSet<usize> = removed.iter().map(|e| e.index).collect();
+        let mut after_order = Vec::with_capacity(before_order.len() - removed.len() + 1);
+        for (i, id) in before_order.iter().enumerate() {
+            if !removed_indices.contains(&i) {
+                after_order.push(id.clone());
+            }
+        }
+        after_order.insert(inserted_index, instance_id.clone());
+        let definition_index = document.block_definitions.len();
+        self.commit(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::ReplaceObjects(ReplaceObjectsOp {
+                    removed,
+                    inserted,
+                    definition_insert: Some((definition_index, definition)),
+                }),
+                before_order,
+                after_order,
+                bytes,
+            },
+        );
+        self.next_generated_id += 1;
+        self.next_generated_block_id += 1;
+        Ok((definition_id, instance_id))
+    }
+
+    /// `blocks.explode_instance`: resolve one `BlockInstance` through its
+    /// transform into world-space primitives, remove the instance, and insert
+    /// the primitives in its place. The definition itself is untouched (other
+    /// instances may still reference it). One transaction, one Undo entry.
+    pub fn explode_block_instance(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_id: &str,
+    ) -> Result<Vec<String>, EditError> {
+        let ids = [object_id.to_string()];
+        let (layer_index, selected) = self.targets(document, layer_id, &ids)?;
+        let layer = &document.layers[layer_index];
+        let index = selected[0];
+        let object = &layer.objects[index];
+        let SemanticGeometry::BlockInstance {
+            definition_id,
+            transform,
+        } = &object.geometry
+        else {
+            return Err(EditError::UnsupportedTransform);
+        };
+        let definition = document
+            .block_definition(definition_id)
+            .ok_or(EditError::InvalidArgument)?
+            .clone();
+        let resolved = crate::block::resolve_instance(&definition, transform)
+            .map_err(|_| EditError::UnsupportedTransform)?;
+        if resolved.is_empty() {
+            return Err(EditError::InvalidArgument);
+        }
+        let total: usize = document.layers.iter().map(|l| l.objects.len()).sum();
+        if total.saturating_add(resolved.len()).saturating_sub(1) > MAX_EDIT_DOCUMENT_OBJECTS {
+            return Err(EditError::ResourceLimit);
+        }
+        let operation_id = format!("{}-generated-op-{}", document.id, self.next_generated_id);
+        let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
+        let existing_block_ids = block_definition_ids(document);
+        let mut inserted = Vec::with_capacity(resolved.len());
+        for (n, primitive) in resolved.into_iter().enumerate() {
+            validate_geometry(&primitive.geometry, &aperture_ids, &existing_block_ids)
+                .map_err(EditError::InvalidGeometry)?;
+            inserted.push(IndexedObject {
+                index: index + n,
+                object: SemanticObject {
+                    object_id: format!(
+                        "{}-generated-object-{}",
+                        document.id,
+                        self.next_generated_id + n as u64
+                    ),
+                    geometry: primitive.geometry,
+                    exposure: primitive.exposure,
+                    origin: ObjectOrigin::Generated {
+                        operation_id: operation_id.clone(),
+                    },
+                },
+            });
+        }
+        let removed = vec![IndexedObject {
+            index,
+            object: object.clone(),
+        }];
+        let bytes = size_of::<Transaction>()
+            + 1024
+            + layer_id.len()
+            + geometry_heap_bytes(&removed[0].object.geometry)
+            + removed[0].object.object_id.len()
+            + inserted
+                .iter()
+                .map(|e| {
+                    size_of::<IndexedObject>()
+                        + geometry_heap_bytes(&e.object.geometry)
+                        + e.object.object_id.len()
+                        + 128
+                })
+                .sum::<usize>();
+        self.budget(bytes)?;
+        let next = self
+            .next_generated_id
+            .checked_add(inserted.len() as u64)
+            .ok_or(EditError::ResourceLimit)?;
+        let before_order: Vec<_> = layer.objects.iter().map(|o| o.object_id.clone()).collect();
+        let mut after_order = Vec::with_capacity(before_order.len() - 1 + inserted.len());
+        for (i, id) in before_order.iter().enumerate() {
+            if i != index {
+                after_order.push(id.clone());
+            } else {
+                for entry in &inserted {
+                    after_order.push(entry.object.object_id.clone());
+                }
+            }
+        }
+        let ids = self.commit(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::ReplaceObjects(ReplaceObjectsOp {
+                    removed,
+                    inserted,
+                    definition_insert: None,
+                }),
+                before_order,
+                after_order,
+                bytes,
+            },
+        );
+        self.next_generated_id = next;
+        Ok(ids)
+    }
+
+    /// `blocks.rename_definition`: metadata-only, touches no layer.
+    pub fn rename_block_definition(
+        &mut self,
+        document: &mut SemanticDocument,
+        definition_id: &crate::block::BlockDefinitionId,
+        new_name: String,
+    ) -> Result<(), EditError> {
+        if new_name.trim().is_empty() {
+            return Err(EditError::InvalidArgument);
+        }
+        let index = document
+            .block_definitions
+            .iter()
+            .position(|d| &d.id == definition_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "block_definition",
+                id: definition_id.0.clone(),
+            })?;
+        let before_name = document.block_definitions[index].name.clone();
+        if before_name == new_name {
+            return Err(EditError::InvalidArgument);
+        }
+        let bytes = size_of::<Transaction>() + before_name.len() + new_name.len() + 128;
+        self.budget(bytes)?;
+        let layer_id = document
+            .layers
+            .first()
+            .map_or_else(String::new, |l| l.id.clone());
+        self.commit(
+            document,
+            Transaction {
+                layer_id,
+                layer: 0,
+                operation: Operation::RenameBlockDefinition {
+                    index,
+                    before_name,
+                    after_name: new_name,
+                },
+                before_order: vec![],
+                after_order: vec![],
+                bytes,
+            },
+        );
+        Ok(())
+    }
+
+    /// `blocks.delete_definition`: rejects a definition still referenced by
+    /// any `BlockInstance` (ADR 0032 §25 — explode/delete the instances
+    /// first).
+    pub fn delete_block_definition(
+        &mut self,
+        document: &mut SemanticDocument,
+        definition_id: &crate::block::BlockDefinitionId,
+    ) -> Result<(), EditError> {
+        let index = document
+            .block_definitions
+            .iter()
+            .position(|d| &d.id == definition_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "block_definition",
+                id: definition_id.0.clone(),
+            })?;
+        let referenced = document.layers.iter().flat_map(|l| &l.objects).any(|o| {
+            matches!(&o.geometry, SemanticGeometry::BlockInstance { definition_id: d, .. } if d == definition_id)
+        });
+        if referenced {
+            return Err(EditError::BlockDefinitionReferenced);
+        }
+        let definition = document.block_definitions[index].clone();
+        let bytes = size_of::<Transaction>() + 256 + definition.objects.len() * 256;
+        self.budget(bytes)?;
+        let layer_id = document
+            .layers
+            .first()
+            .map_or_else(String::new, |l| l.id.clone());
+        self.commit(
+            document,
+            Transaction {
+                layer_id,
+                layer: 0,
+                operation: Operation::RemoveBlockDefinition { index, definition },
+                before_order: vec![],
+                after_order: vec![],
+                bytes,
+            },
+        );
+        Ok(())
+    }
+
+    /// `blocks.create_instance`: place a new instance of an *existing*
+    /// definition on `layer_id` at `transform`, appended at the end of the
+    /// layer. Distinct from Duplicate: there is no source instance, so no
+    /// `IndexedObject` needs recording on the removal side.
+    pub fn create_block_instance(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        definition_id: &crate::block::BlockDefinitionId,
+        transform: crate::block::BlockTransform,
+    ) -> Result<String, EditError> {
+        if self
+            .document_id
+            .as_deref()
+            .is_some_and(|id| id != document.id)
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        let layer_index = document
+            .layers
+            .iter()
+            .position(|l| l.id == layer_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "layer",
+                id: layer_id.into(),
+            })?;
+        let definition =
+            document
+                .block_definition(definition_id)
+                .ok_or_else(|| EditError::NotFound {
+                    entity: "block_definition",
+                    id: definition_id.0.clone(),
+                })?;
+        crate::block::resolve_instance(definition, &transform)
+            .map_err(|_| EditError::UnsupportedTransform)?;
+        let object_id = format!(
+            "{}-generated-object-{}",
+            document.id, self.next_generated_id
+        );
+        let object = SemanticObject {
+            object_id: object_id.clone(),
+            geometry: SemanticGeometry::BlockInstance {
+                definition_id: definition_id.clone(),
+                transform,
+            },
+            exposure: Exposure::Dark,
+            origin: ObjectOrigin::Generated {
+                operation_id: format!("{}-generated-op-{}", document.id, self.next_generated_id),
+            },
+        };
+        let layer = &document.layers[layer_index];
+        let bytes = size_of::<Transaction>()
+            + 512
+            + layer_id.len()
+            + geometry_heap_bytes(&object.geometry)
+            + object.object_id.len();
+        self.budget(bytes)?;
+        let entries = vec![IndexedObject {
+            index: layer.objects.len(),
+            object,
+        }];
+        let next = self
+            .next_generated_id
+            .checked_add(1)
+            .ok_or(EditError::ResourceLimit)?;
+        self.commit(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::Insert(entries),
+                before_order: vec![],
+                after_order: vec![],
+                bytes,
+            },
+        );
+        self.next_generated_id = next;
+        Ok(object_id)
+    }
+
+    /// `blocks.update_instance_transform`: set the instance's transform
+    /// outright (as opposed to Move/Rotate/Mirror, which apply a delta on top
+    /// of whatever it already was).
+    pub fn set_block_instance_transform(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_id: &str,
+        transform: crate::block::BlockTransform,
+    ) -> Result<Vec<String>, EditError> {
+        if !transform.is_valid() {
+            return Err(EditError::InvalidArgument);
+        }
+        let layer = document
+            .layers
+            .iter()
+            .find(|l| l.id == layer_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "layer",
+                id: layer_id.into(),
+            })?;
+        let object = layer
+            .objects
+            .iter()
+            .find(|o| o.object_id == object_id)
+            .ok_or_else(|| EditError::NotFound {
+                entity: "object",
+                id: object_id.into(),
+            })?;
+        let SemanticGeometry::BlockInstance { definition_id, .. } = &object.geometry else {
+            return Err(EditError::UnsupportedTransform);
+        };
+        let definition = document
+            .block_definition(definition_id)
+            .ok_or(EditError::InvalidArgument)?;
+        crate::block::resolve_instance(definition, &transform)
+            .map_err(|_| EditError::UnsupportedTransform)?;
+        let ids = [object_id.to_string()];
+        self.modify_objects(document, layer_id, &ids, |geometry| {
+            let SemanticGeometry::BlockInstance { transform: t, .. } = geometry else {
+                return Err(EditError::UnsupportedTransform);
+            };
+            *t = transform;
+            Ok(())
+        })
+    }
+
     pub fn edit_batch(
         &mut self,
         document: &mut SemanticDocument,
@@ -742,9 +1235,11 @@ impl EditHistory {
             .iter()
             .map(|aperture| aperture.id.clone())
             .collect();
+        let block_definition_ids = block_definition_ids(document);
         let mut changes = Vec::with_capacity(working.len());
         for (index, after) in working {
-            validate_geometry(&after, &aperture_ids).map_err(EditError::InvalidGeometry)?;
+            validate_geometry(&after, &aperture_ids, &block_definition_ids)
+                .map_err(EditError::InvalidGeometry)?;
             let object = &document.layers[layer_index].objects[index];
             if object.geometry != after {
                 changes.push(Change {
@@ -858,6 +1353,7 @@ impl EditHistory {
                 .sum::<usize>();
         self.budget(bytes)?;
         let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
+        let block_definition_ids = block_definition_ids(document);
         let existing: HashSet<_> = document
             .layers
             .iter()
@@ -865,7 +1361,8 @@ impl EditHistory {
             .map(|o| o.object_id.as_str())
             .collect();
         for (i, geometry) in geometries.iter().enumerate() {
-            validate_geometry(geometry, &aperture_ids).map_err(EditError::InvalidGeometry)?;
+            validate_geometry(geometry, &aperture_ids, &block_definition_ids)
+                .map_err(EditError::InvalidGeometry)?;
             let id = format!(
                 "{}-generated-object-{}",
                 document.id,
@@ -1021,6 +1518,7 @@ impl EditHistory {
                 .sum::<usize>();
         self.budget(bytes)?;
         let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
+        let block_definition_ids = block_definition_ids(document);
         let mut entries = Vec::with_capacity(selected.len());
         let operation_id = format!("{}-generated-op-{}", document.id, self.next_generated_id);
         for (n, &index) in selected.iter().enumerate() {
@@ -1042,7 +1540,7 @@ impl EditHistory {
                     }
                 };
                 translate(&mut object.geometry, dx, dy)?;
-                validate_geometry(&object.geometry, &aperture_ids)
+                validate_geometry(&object.geometry, &aperture_ids, &block_definition_ids)
                     .map_err(EditError::InvalidGeometry)?;
                 index + n + 1
             } else {
@@ -1202,6 +1700,7 @@ impl EditHistory {
             layers,
             apertures,
             source: SourceMetadata::default(),
+            block_definitions: document.block_definitions.clone(),
         };
         candidate.validate().map_err(EditError::InvalidGeometry)?;
         let existing_layers: HashSet<&str> =
@@ -1436,6 +1935,35 @@ fn check_transaction(
         // Verified by `LayerMove::{insert_into, extract_from}` before mutation.
         return Ok(());
     }
+    // Definition-only operations do not reference a layer at all.
+    if let Operation::RenameBlockDefinition {
+        index,
+        before_name,
+        after_name,
+    } = &tx.operation
+    {
+        let definition = document
+            .block_definitions
+            .get(*index)
+            .ok_or(EditError::InvalidArgument)?;
+        let expected = if forward { before_name } else { after_name };
+        return if &definition.name == expected {
+            Ok(())
+        } else {
+            Err(EditError::InvalidArgument)
+        };
+    }
+    if let Operation::RemoveBlockDefinition { index, definition } = &tx.operation {
+        return if forward {
+            (document.block_definitions.get(*index) == Some(definition))
+                .then_some(())
+                .ok_or(EditError::InvalidArgument)
+        } else if *index <= document.block_definitions.len() {
+            Ok(())
+        } else {
+            Err(EditError::InvalidArgument)
+        };
+    }
     let layer = document
         .layers
         .get(tx.layer)
@@ -1443,6 +1971,9 @@ fn check_transaction(
         .ok_or(EditError::InvalidArgument)?;
     match &tx.operation {
         Operation::Layers(_) => {}
+        Operation::RenameBlockDefinition { .. } | Operation::RemoveBlockDefinition { .. } => {
+            unreachable!("handled above, before the layer lookup")
+        }
         Operation::Modify(changes) => {
             for c in changes {
                 let o = layer
@@ -1546,6 +2077,56 @@ fn check_transaction(
                 }
             }
         }
+        Operation::ReplaceObjects(op) => {
+            let order = if forward {
+                &tx.before_order
+            } else {
+                &tx.after_order
+            };
+            if !layer.objects.iter().map(|o| &o.object_id).eq(order.iter()) {
+                return Err(EditError::InvalidArgument);
+            }
+            if forward {
+                for entry in &op.removed {
+                    if layer.objects.get(entry.index) != Some(&entry.object) {
+                        return Err(EditError::InvalidArgument);
+                    }
+                }
+                let ids: HashSet<_> = op
+                    .inserted
+                    .iter()
+                    .map(|e| e.object.object_id.as_str())
+                    .collect();
+                if document
+                    .layers
+                    .iter()
+                    .flat_map(|l| &l.objects)
+                    .any(|o| ids.contains(o.object_id.as_str()))
+                {
+                    return Err(EditError::InvalidArgument);
+                }
+                if let Some((index, definition)) = &op.definition_insert
+                    && (*index > document.block_definitions.len()
+                        || document
+                            .block_definitions
+                            .iter()
+                            .any(|d| d.id == definition.id))
+                {
+                    return Err(EditError::InvalidArgument);
+                }
+            } else {
+                for entry in &op.inserted {
+                    if layer.objects.get(entry.index) != Some(&entry.object) {
+                        return Err(EditError::InvalidArgument);
+                    }
+                }
+                if let Some((index, definition)) = &op.definition_insert
+                    && document.block_definitions.get(*index) != Some(definition)
+                {
+                    return Err(EditError::InvalidArgument);
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -1568,29 +2149,57 @@ fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Ve
             let objects = &mut document.layers[tx.layer].objects;
             let inserting = matches!(tx.operation, Operation::Insert(_)) == forward;
             if inserting {
-                let mut merged = Vec::with_capacity(objects.len() + entries.len());
-                let mut source = std::mem::take(objects).into_iter();
-                for entry in entries {
-                    while merged.len() < entry.index {
-                        merged.push(source.next().unwrap());
-                    }
-                    merged.push(entry.object.clone());
-                }
-                merged.extend(source);
-                *objects = merged;
+                insert_entries(objects, entries);
             } else {
-                let mut entries = entries.iter().peekable();
-                let mut index = 0;
-                objects.retain(|_| {
-                    let remove = entries.peek().is_some_and(|e| e.index == index);
-                    if remove {
-                        entries.next();
-                    }
-                    index += 1;
-                    !remove
-                });
+                remove_entries(objects, entries);
             }
             entries.iter().map(|e| e.object.object_id.clone()).collect()
+        }
+        Operation::ReplaceObjects(op) => {
+            if let Some((index, definition)) = &op.definition_insert
+                && forward
+            {
+                document
+                    .block_definitions
+                    .insert(*index, definition.clone());
+            }
+            let objects = &mut document.layers[tx.layer].objects;
+            if forward {
+                remove_entries(objects, &op.removed);
+                insert_entries(objects, &op.inserted);
+            } else {
+                remove_entries(objects, &op.inserted);
+                insert_entries(objects, &op.removed);
+            }
+            if let Some((index, _)) = &op.definition_insert
+                && !forward
+            {
+                document.block_definitions.remove(*index);
+            }
+            op.removed
+                .iter()
+                .chain(&op.inserted)
+                .map(|e| e.object.object_id.clone())
+                .collect()
+        }
+        Operation::RenameBlockDefinition {
+            index,
+            before_name,
+            after_name,
+        } => {
+            document.block_definitions[*index].name =
+                if forward { after_name } else { before_name }.clone();
+            Vec::new()
+        }
+        Operation::RemoveBlockDefinition { index, definition } => {
+            if forward {
+                document.block_definitions.remove(*index);
+            } else {
+                document
+                    .block_definitions
+                    .insert(*index, definition.clone());
+            }
+            Vec::new()
         }
         Operation::ApertureResize(resize) => {
             if forward {
@@ -1649,11 +2258,46 @@ fn operation_changes_shape(operation: &Operation) -> bool {
     match operation {
         Operation::ApertureResize(_) => true,
         Operation::Batch(batch) => !batch.inserted_apertures.is_empty(),
+        Operation::ReplaceObjects(op) => op.definition_insert.is_some(),
+        Operation::RemoveBlockDefinition { .. } => true,
         Operation::Modify(_)
         | Operation::Insert(_)
         | Operation::Delete(_)
-        | Operation::Layers(_) => false,
+        | Operation::Layers(_)
+        | Operation::RenameBlockDefinition { .. } => false,
     }
+}
+
+/// Insert `entries` (indices are positions in the *resulting* vector) into
+/// `objects`, shared by `Operation::Insert` and the insert half of
+/// `Operation::ReplaceObjects`. `entries` must be sorted ascending by index.
+fn insert_entries(objects: &mut Vec<SemanticObject>, entries: &[IndexedObject]) {
+    let mut merged = Vec::with_capacity(objects.len() + entries.len());
+    let mut source = std::mem::take(objects).into_iter();
+    for entry in entries {
+        while merged.len() < entry.index {
+            merged.push(source.next().unwrap());
+        }
+        merged.push(entry.object.clone());
+    }
+    merged.extend(source);
+    *objects = merged;
+}
+
+/// Remove `entries` (indices are positions in the *current* vector) from
+/// `objects`, shared by `Operation::Delete` and the remove half of
+/// `Operation::ReplaceObjects`. `entries` must be sorted ascending by index.
+fn remove_entries(objects: &mut Vec<SemanticObject>, entries: &[IndexedObject]) {
+    let mut entries = entries.iter().peekable();
+    let mut index = 0;
+    objects.retain(|_| {
+        let remove = entries.peek().is_some_and(|e| e.index == index);
+        if remove {
+            entries.next();
+        }
+        index += 1;
+        !remove
+    });
 }
 
 fn resized_shape(
@@ -1782,7 +2426,11 @@ fn translate_arc(path: &mut ArcGeometry, dx: f64, dy: f64) -> Result<(), EditErr
     Ok(())
 }
 
-fn translate(geometry: &mut SemanticGeometry, dx: f64, dy: f64) -> Result<(), EditError> {
+pub(crate) fn translate(
+    geometry: &mut SemanticGeometry,
+    dx: f64,
+    dy: f64,
+) -> Result<(), EditError> {
     match geometry {
         SemanticGeometry::Flash { center, .. } => translate_point(center, dx, dy)?,
         SemanticGeometry::Line { start, end, .. }
@@ -1802,6 +2450,19 @@ fn translate(geometry: &mut SemanticGeometry, dx: f64, dy: f64) -> Result<(), Ed
                 }
             }
         }
+        // Move only ever changes the instance's own transform; the definition
+        // it references is untouched (see `docs/adr/0032-block-core.md`).
+        SemanticGeometry::BlockInstance { transform, .. } => {
+            translate_point(&mut transform.translation, dx, dy)?;
+        }
     }
     Ok(())
+}
+
+fn block_definition_ids(document: &SemanticDocument) -> HashSet<String> {
+    document
+        .block_definitions
+        .iter()
+        .map(|d| d.id.0.clone())
+        .collect()
 }

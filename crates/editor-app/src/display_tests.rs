@@ -179,6 +179,7 @@ fn metal_probes(selected_count: usize) {
             layers: s.layers,
             apertures: s.apertures,
             source: Default::default(),
+            block_definitions: Vec::new(),
         };
         if preview {
             let layer = doc.layers[0].id.clone();

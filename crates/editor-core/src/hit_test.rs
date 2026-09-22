@@ -71,54 +71,44 @@ impl SemanticDocument {
             .iter()
             .map(|a| (a.id.as_str(), &a.shape))
             .collect();
-        let mut macros = HashMap::new();
+        let mut macros: HashMap<String, material::Material> = HashMap::new();
         let mut budget = Budget(MAX_HIT_TEST_WORK);
         let mut result = Vec::new();
         for object in &layer.objects {
             budget.charge(1)?;
-            let (distance, uncertainty) = match &object.geometry {
-                SemanticGeometry::Flash {
-                    center,
-                    aperture_id,
-                    transform,
-                } => {
-                    let shape = apertures
-                        .get(aperture_id.as_str())
-                        .ok_or_else(|| SemanticError::MissingAperture(aperture_id.clone()))?;
-                    let local = apply_inverse_transform(point, *center, *transform);
-                    if !local.is_finite() || !transform.scale.is_finite() || transform.scale <= 0. {
-                        return Err(HitTestError::Unsupported(
-                            "unrepresentable inverse transform",
-                        ));
+            let (distance, uncertainty) = if let SemanticGeometry::BlockInstance {
+                definition_id,
+                transform,
+            } = &object.geometry
+            {
+                let definition = self.block_definition(definition_id).ok_or_else(|| {
+                    SemanticError::Invalid(format!("unknown block definition {}", definition_id.0))
+                })?;
+                let resolved = block::resolve_instance(definition, transform)
+                    .map_err(|_| HitTestError::Unsupported("block instance transform"))?;
+                let mut nearest: Option<(f64, f64)> = None;
+                for r in &resolved {
+                    budget.charge(1)?;
+                    let candidate = geometry_distance_with_uncertainty(
+                        &r.geometry,
+                        point,
+                        &apertures,
+                        &mut macros,
+                        &mut budget,
+                    )?;
+                    if nearest.is_none_or(|(d, _)| candidate.0 < d) {
+                        nearest = Some(candidate);
                     }
-                    let (d, local_error) = if let ApertureShape::Macro { primitives } = shape {
-                        if !macros.contains_key(aperture_id.as_str()) {
-                            macros.insert(
-                                aperture_id.as_str(),
-                                material::Material::prepare(primitives, &mut budget)?,
-                            );
-                        }
-                        macros[aperture_id.as_str()].distance(local, &mut budget)?
-                    } else {
-                        (
-                            aperture_distance(shape, local, &mut budget)?,
-                            roundoff(&[local.x_mm, local.y_mm]),
-                        )
-                    };
-                    (
-                        d * transform.scale,
-                        local_error * transform.scale
-                            + if point == *center {
-                                0.
-                            } else {
-                                roundoff(&[point.x_mm, point.y_mm, center.x_mm, center.y_mm])
-                            },
-                    )
                 }
-                geometry => (
-                    geometry_distance(geometry, point, &mut budget)?,
-                    geometry_roundoff(geometry, point),
-                ),
+                nearest.unwrap_or((f64::INFINITY, 0.))
+            } else {
+                geometry_distance_with_uncertainty(
+                    &object.geometry,
+                    point,
+                    &apertures,
+                    &mut macros,
+                    &mut budget,
+                )?
             };
             if !uncertainty.is_finite() || uncertainty > EPSILON_MM || distance.is_nan() {
                 return Err(HitTestError::Unsupported(
@@ -131,6 +121,63 @@ impl SemanticDocument {
         }
         Ok(result)
     }
+}
+
+/// Distance and roundoff uncertainty of a Flash-or-simpler geometry.
+/// `BlockInstance` is never passed here: `SemanticDocument::hit_test` resolves
+/// it into primitives first, since only it has the document's
+/// `block_definitions` table.
+fn geometry_distance_with_uncertainty(
+    geometry: &SemanticGeometry,
+    point: MmPoint,
+    apertures: &HashMap<&str, &ApertureShape>,
+    macros: &mut HashMap<String, material::Material>,
+    budget: &mut Budget,
+) -> Result<(f64, f64), HitTestError> {
+    Ok(match geometry {
+        SemanticGeometry::Flash {
+            center,
+            aperture_id,
+            transform,
+        } => {
+            let shape = *apertures
+                .get(aperture_id.as_str())
+                .ok_or_else(|| SemanticError::MissingAperture(aperture_id.clone()))?;
+            let local = apply_inverse_transform(point, *center, *transform);
+            if !local.is_finite() || !transform.scale.is_finite() || transform.scale <= 0. {
+                return Err(HitTestError::Unsupported(
+                    "unrepresentable inverse transform",
+                ));
+            }
+            let (d, local_error) = if let ApertureShape::Macro { primitives } = shape {
+                if !macros.contains_key(aperture_id.as_str()) {
+                    macros.insert(
+                        aperture_id.clone(),
+                        material::Material::prepare(primitives, budget)?,
+                    );
+                }
+                macros[aperture_id.as_str()].distance(local, budget)?
+            } else {
+                (
+                    aperture_distance(shape, local, budget)?,
+                    roundoff(&[local.x_mm, local.y_mm]),
+                )
+            };
+            (
+                d * transform.scale,
+                local_error * transform.scale
+                    + if point == *center {
+                        0.
+                    } else {
+                        roundoff(&[point.x_mm, point.y_mm, center.x_mm, center.y_mm])
+                    },
+            )
+        }
+        geometry => (
+            geometry_distance(geometry, point, budget)?,
+            geometry_roundoff(geometry, point),
+        ),
+    })
 }
 
 fn roundoff(values: &[f64]) -> f64 {
@@ -162,6 +209,9 @@ fn geometry_roundoff(g: &SemanticGeometry, p: MmPoint) -> f64 {
             }
         }
         SemanticGeometry::Flash { center, .. } => add(*center),
+        SemanticGeometry::BlockInstance { .. } => {
+            unreachable!("resolved into primitives by the caller")
+        }
     }
     roundoff(&[scale])
 }
@@ -369,6 +419,9 @@ fn geometry_distance(
             distance
         }
         SemanticGeometry::Flash { .. } => unreachable!("handled with aperture lookup"),
+        SemanticGeometry::BlockInstance { .. } => {
+            unreachable!("resolved into primitives by the caller")
+        }
     })
 }
 

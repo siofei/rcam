@@ -94,11 +94,12 @@ cargo build --release --locked -p editor-app
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
 
-当前活动开发阶段为 Mac-first S4-B1 Multi-Gerber Workspace（见 docs/S4_B1_PLAN.md、
-docs/S4_B1_REVIEW.md、ADR 0029 / 0030）。Global Units & Manufacturing Precision Foundation
-按 Mac-first 范围收口（见 GLOBAL_UNITS_PRECISION_REVIEW）；不声称 Windows、完整 V1、P100K 或完整 CORE10。
-S4-B1 完成后停止并提交审查：**不自动开始 S4-B2**，不冻结 `.rcam` 格式。
-没有 Mac 原生证据（Metal parity、原生 GUI、ZIP 打包）时，不得声称“S4-B1 PASS”。
+**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）。当前活动开发阶段为
+Mac-first S4-B2 Block Core + `.rcam` schema v1（见 docs/S4_B2_PLAN.md、docs/S4_B2_REVIEW.md、ADR 0031 / 0032）。
+Global Units & Manufacturing Precision Foundation 按 Mac-first 范围收口（见 GLOBAL_UNITS_PRECISION_REVIEW）；
+不声称 Windows、完整 V1、P100K 或完整 CORE10。
+S4-B2 完成后停止并提交审查：**不自动开始 S4-B3**，不实现 `File → Open/Save .rcam`。
+没有 Mac 原生证据（Metal parity、原生 GUI、ZIP 打包）时，不得声称“S4-B2 PASS”。
 Windows deferred / not executed，最终双平台 V1 门槛保持不变。
 
 ## Forward Architecture Reservations（长期约束，S4-B1 合并）
@@ -111,8 +112,11 @@ Windows deferred / not executed，最终双平台 V1 门槛保持不变。
 2. **LayerKind 可扩展**：不能写死 `Layer == Gerber`；必须允许未来 Drill/Excellon（DrillHit/DrillSlot/Route，独立 Tool namespace）。
 3. **Board Coordinates**：Manufacturing World 继续 f64 mm；预留 Source→Board→World，`CoordinateTransform2D` 仅 translation/rotation/reflection，禁止默认 scale/shear。
 4. **Component Placement**：ComponentPlacement/RefDes/PnP 独立于普通 Gerber SemanticObject。
-5. **Reusable Blocks**：BlockDefinition + BlockInstance；实例只允许 translation/rotation/reflection；第一版禁止 nested block；
-   Definition 修改更新全部 instances；Gerber Export flatten；RCam Block ≠ Gerber `%AB`；`.rcam v1` 冻结前必须已有 Block core。
+5. **Reusable Blocks**（S4-B2 已实现，见 ADR 0032）：`BlockDefinition`（`SemanticDocument.block_definitions`，
+   项目级）+ `BlockInstance`（`SemanticGeometry::BlockInstance`，属于某 Layer）；实例只允许
+   translation/rotation/mirror（`BlockTransform`），第一版禁止 nested block（`BlockObjectGeometry` 类型层面
+   不可表示实例，不是运行时检查）；Definition 修改（含 revision）更新全部 instance，Instance 编辑只改自己的
+   transform；Gerber Export flatten；RCam Block ≠ Gerber `%AB`。完整 GUI Block Editor 仍属 S4-C。
 6. **Object Snap**：统一 SnapFeatureProvider / SnapQuery / SnapCandidate / SnapFeatureId / SnapResolver；以 Manufacturing Boundary 为真值，
    不得从 GPU/tessellation/像素反推；Grip 不等于 Object Snap，现阶段只预留稳定 feature identity。
 7. **Shortcut Architecture**：CommandId/Registry + Keymap + ShortcutContext（IME/TextInput > Modal > Tool > Canvas > Global）；
@@ -120,7 +124,7 @@ Windows deferred / not executed，最终双平台 V1 门槛保持不变。
 8. **Layer View State**：颜色、Visible、Selectable、Locked、Z-order、Filled/Outline/ZeroWidth、category styles、面板宽度均不得改变 Gerber Writer 输出，也不产生制造 revision。
 9. **Layer Delete**：空层可低风险直接删除；非空强确认；dirty/generated 更强确认；必须 one transaction + Undo（恢复同一 LayerId、z-order、样式）；允许删除最后一层；headless `remove_layer` 非空需 `allow_non_empty`。
 10. **No global snap-point database**：Snap 使用屏幕半径 → 空间索引 → 附近对象 lazy features。
-11. **No nested block in first block version**：避免循环引用和迁移复杂度。
+11. **No nested block in first block version**：避免循环引用和迁移复杂度（S4-B2 起由 `BlockObjectGeometry` 的类型形状强制，而不是留给运行时检查）。
 12. **ApplicationService remains mutation boundary**：GUI、Command、Shortcut、Automation 不得绕过。
 
 ### Accepted Layer UI
@@ -143,8 +147,8 @@ Category color/filter/lock、New Empty Layer、Import Gerber、Delete + Undo。S
 ### 阶段顺序
 
 ```text
-S4-B1 Multi-Layer Workspace + reservations
-→ S4-B2 Block Core + .rcam schema v1
+S4-B1 Multi-Layer Workspace + reservations — PASS（Mac-first）
+→ S4-B2 Block Core + .rcam schema v1 — 当前（源码/自动化测试完成，原生验收未执行）
 → S4-B3 Project lifecycle
 → S4-C Full stencil editing (Snap/Grip/Block/PnP/RefDes)
 ```

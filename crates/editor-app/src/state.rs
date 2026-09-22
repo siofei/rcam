@@ -1212,6 +1212,9 @@ fn snap_points(snapshot: &RenderSnapshot, layers: &[LayerInfo]) -> Vec<crate::to
                         }
                     }
                 }
+                // No Block Editor ships this phase; a live document cannot
+                // contain one yet (S4-B2 §27/§67).
+                editor_core::SemanticGeometry::BlockInstance { .. } => {}
             }
         }
     }

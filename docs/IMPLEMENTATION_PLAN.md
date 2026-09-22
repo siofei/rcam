@@ -161,8 +161,9 @@ Mouse 文字先生成再浮动，仅平移预览，左键提交一个事务；�
 GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终布尔周长。
 
 S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded，见 GLOBAL_UNITS_PRECISION_REVIEW）。
-S4-B1 Multi-Gerber Workspace 已实现并通过云端自动测试，原生 Mac 验收待执行，**尚未标记 PASS**（见 S4_B1_REVIEW）；DXF/SVG/PLT、Final Layer Boolean Area、Windows、`.rcam`（S4-B2）仍未启动。
-阶段实现不等于全部原生验收；实际状态以 S4_A2_1_REVIEW 为准。
+**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 S4_B1_REVIEW）。S4-B2（Block Core + `.rcam` schema v1）
+源码/自动化测试完成，原生验收未执行，**尚未标记 PASS**（见 S4_B2_REVIEW）；DXF/SVG/PLT、Final Layer Boolean Area、Windows 仍未启动。
+阶段实现不等于全部原生验收；实际状态以各阶段 REVIEW 为准。
 
 
 ### Global Units / Manufacturing Precision (current)
@@ -172,12 +173,17 @@ S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manuf
 Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
 Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 release。
 
-## 2026-09-21 S4-B1 Multi-Gerber Workspace（当前；实现完成，原生验收待执行）
+## 2026-09-21 S4-B1 Multi-Gerber Workspace（PASS，Mac-first）
 
 Global Units & Manufacturing Precision 已收口为 PASS（Mac-first bounded）。本阶段范围、允许模块、不做清单见
-[S4_B1_PLAN](S4_B1_PLAN.md)，实际证据和未执行项见 [S4_B1_REVIEW](S4_B1_REVIEW.md)。
-Gate 0（capabilities 一致性、`SHA256SUMS.txt` 只含本阶段两个 ZIP）先于功能完成。
-完成后**停止并提交审查，不自动开始 S4-B2**；没有 Mac 原生证据不得标记 “S4-B1 PASS”。
+[S4_B1_PLAN](S4_B1_PLAN.md)，实际证据见 [S4_B1_REVIEW](S4_B1_REVIEW.md)：全部 Exit Gate 满足，
+`RCam_S4B1_f6eed93_{source,public_evidence}.zip` + `SHA256SUMS.txt` 已生成，fresh extract 318/318。
+
+## 2026-09-22 S4-B2 Block Core + `.rcam` schema v1（当前；源码/自动化测试完成，原生验收未执行）
+
+本阶段范围、允许模块、不做清单见 [S4_B2_PLAN](S4_B2_PLAN.md)，实现证据与未执行项见 [S4_B2_REVIEW](S4_B2_REVIEW.md)，
+决策见 [ADR 0031](adr/0031-rcam-native-project-format-v1.md) / [ADR 0032](adr/0032-block-core.md)。
+完成后**停止并提交审查，不自动开始 S4-B3**；没有 Mac 原生证据不得标记 “S4-B2 PASS”。
 
 ## 长期路线（S4-B1 之后，冻结顺序）
 
@@ -190,7 +196,7 @@ S4-B1 Multi-Layer Workspace + reservations
 
 | 阶段 | 内容 | 前置/约束 |
 |---|---|---|
-| S4-B2 | BlockDefinition/BlockInstance core（无 nested，仅 translation/rotation/reflection，Export flatten）；`.rcam` Native Project Model / schema v1；Workspace state 与 Snap settings 持久化 | S4-B1 审查通过；`.rcam v1` 冻结前必须已有 Block core |
+| S4-B2 | BlockDefinition/BlockInstance core（无 nested，仅 translation/rotation/reflection，Export flatten）；`.rcam` Native Project Model / schema v1；Workspace state 与 Snap settings 持久化——**源码/自动化测试完成，原生验收未执行** | S4-B1 审查通过；`.rcam v1` 冻结前必须已有 Block core（已满足：Block core 与 schema v1 同批完成） |
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects；此后 Save 才可启用，Gerber 仍只 Export | S4-B2 |
 | S4-C | 完整 Object Snap、Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | S4-B3；Drill/Board Coordinate 按需要在此前后拆分立项 |
 
