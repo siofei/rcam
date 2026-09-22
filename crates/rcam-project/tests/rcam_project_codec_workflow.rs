@@ -225,6 +225,62 @@ fn oversized_entry_and_too_many_entries_are_rejected() {
 }
 
 #[test]
+fn oversized_string_field_is_rejected_but_the_same_archive_is_fine_under_the_default_budget() {
+    let project = sample_project();
+    let bytes = encode_v1(&project).unwrap();
+    let oversized = format!("\"{}\"", "x".repeat(2_000));
+    let corrupted = rcam_project_test_support::replace_json_text(
+        &bytes,
+        "blocks/blk-1.json",
+        "\"opening\"",
+        &oversized,
+    );
+    let tiny_string_budget = Budget {
+        max_string_len: 100,
+        ..Budget::default()
+    };
+    assert!(matches!(
+        rcam_project::codec::decode_with_budget(&corrupted, &tiny_string_budget),
+        Err(rcam_project::ProjectError::ResourceLimit {
+            resource: "string_len",
+            ..
+        })
+    ));
+    assert!(
+        decode(&corrupted).is_ok(),
+        "the same archive is under the default budget's much larger max_string_len"
+    );
+}
+
+#[test]
+fn deeply_nested_json_is_rejected() {
+    let project = sample_project();
+    let bytes = encode_v1(&project).unwrap();
+    // Deep enough to clear the tiny test budget below, shallow enough to
+    // stay under serde_json's own ~128-frame implicit recursion limit — the
+    // whole point is that *our* bounded check, not that implicit backstop,
+    // is what actually rejects this archive.
+    let deeply_nested = format!("{}1{}", "[".repeat(40), "]".repeat(40));
+    let corrupted = rcam_project_test_support::replace_json_text(
+        &bytes,
+        "blocks/blk-1.json",
+        "0.1",
+        &deeply_nested,
+    );
+    let tiny_depth_budget = Budget {
+        max_json_depth: 16,
+        ..Budget::default()
+    };
+    assert!(matches!(
+        rcam_project::codec::decode_with_budget(&corrupted, &tiny_depth_budget),
+        Err(rcam_project::ProjectError::ResourceLimit {
+            resource: "json_depth",
+            ..
+        })
+    ));
+}
+
+#[test]
 fn invalid_finite_value_is_rejected() {
     let mut project = sample_project();
     project.manufacturing.precision.resolution_mm = f64::NAN;
