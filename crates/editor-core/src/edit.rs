@@ -1693,6 +1693,15 @@ impl EditHistory {
             layers.push(add.layer);
             apertures.extend(add.apertures);
         }
+        // This candidate only re-validates the NEW layers/apertures being
+        // added, in their own private namespace, before anything is spliced
+        // into `document`. Existing `block_definitions` are untouched by
+        // this operation and were already validated when created; carrying
+        // them into `candidate` here would re-check their (unrelated,
+        // already-valid) internal geometry against only this partial
+        // aperture set and spuriously fail with a "missing aperture" error
+        // for any block-local Flash whose aperture isn't part of this
+        // specific import batch.
         let candidate = SemanticDocument {
             id: document.id.clone(),
             unit: document.unit.clone(),
@@ -1700,7 +1709,7 @@ impl EditHistory {
             layers,
             apertures,
             source: SourceMetadata::default(),
-            block_definitions: document.block_definitions.clone(),
+            block_definitions: Vec::new(),
         };
         candidate.validate().map_err(EditError::InvalidGeometry)?;
         let existing_layers: HashSet<&str> =

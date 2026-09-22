@@ -4,8 +4,8 @@
 //! mirror/move -> metrics/bounds -> export Gerber -> reopen -> geometry
 //! compare -> Undo/Redo, plus a shared-definition fixture proving project
 //! object count does not scale with instance geometry.
-use editor_core::SemanticGeometry;
 use editor_core::block::BlockTransform;
+use editor_core::{RegionEdge, SemanticGeometry};
 use editor_service::*;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -129,9 +129,30 @@ impl W {
             )
             .unwrap()
     }
-    /// Seed a fresh empty layer with 4 Line primitives forming a square by
-    /// importing a tiny synthetic Gerber fixture (the only way to get real
-    /// manufacturing objects into a document without a Block Editor).
+    /// Import a synthetic Gerber fixture into a fresh layer (the only way to
+    /// get real manufacturing objects into a document without a Block Editor).
+    fn seed_source(&mut self, filename: &str, text: &str) -> (String, Vec<String>) {
+        std::fs::write(self.dir.join(filename), text).unwrap();
+        let rev = self.rev();
+        let imported = self
+            .svc
+            .import_gerber_layer(
+                &self.doc,
+                &rev,
+                ImportGerberLayerParams {
+                    path: self.p(filename),
+                },
+            )
+            .unwrap();
+        let layer_id = imported.layers[0].layer_id.clone();
+        let ids = self
+            .objects(&layer_id)
+            .into_iter()
+            .map(|o| o.object_id)
+            .collect();
+        (layer_id, ids)
+    }
+    /// Seed a fresh empty layer with 4 Line primitives forming a square.
     fn seed_square(&mut self) -> (String, Vec<String>) {
         const SQUARE: &str = "%FSLAX26Y26*%
 %MOMM*%
@@ -145,25 +166,7 @@ X0Y1000000D01*
 X0Y0D01*
 M02*
 ";
-        std::fs::write(self.dir.join("square.gbr"), SQUARE).unwrap();
-        let rev = self.rev();
-        let imported = self
-            .svc
-            .import_gerber_layer(
-                &self.doc,
-                &rev,
-                ImportGerberLayerParams {
-                    path: self.p("square.gbr"),
-                },
-            )
-            .unwrap();
-        let layer_id = imported.layers[0].layer_id.clone();
-        let ids = self
-            .objects(&layer_id)
-            .into_iter()
-            .map(|o| o.object_id)
-            .collect();
-        (layer_id, ids)
+        self.seed_source("square.gbr", SQUARE)
     }
 }
 
@@ -508,5 +511,238 @@ fn capabilities_advertise_every_block_op_as_dispatchable() {
             .iter()
             .any(|s| s.contains(".rcam")),
         "project.open/save must still be reserved-unsupported this phase"
+    );
+}
+
+/// Every declared circular-aperture diameter in `gerber_text` (Flash apertures
+/// and the writer's dynamic stroke apertures for Line/Arc widths are both
+/// emitted this way, per `emit_aperture_definition`).
+fn aperture_diameters(gerber_text: &str) -> Vec<f64> {
+    gerber_text
+        .split("%ADD")
+        .skip(1)
+        .filter_map(|chunk| {
+            let comma = chunk.find(',')?;
+            let rest = &chunk[comma + 1..];
+            let end = rest.find(['X', '*'])?;
+            rest[..end].parse::<f64>().ok()
+        })
+        .collect()
+}
+
+fn assert_on_grid(value: f64, resolution_mm: f64, what: &str) {
+    let grid = (value / resolution_mm).round() * resolution_mm;
+    assert!(
+        (value - grid).abs() < 1e-6,
+        "{what} = {value} is not on the {resolution_mm}mm export grid \
+         (block geometry was not requantized to the current precision)"
+    );
+}
+
+/// S4-B2 Final Closeout B0 regression: a `BlockDefinition` captured while one
+/// `ManufacturingPrecision` is active must still have its *exported* geometry
+/// governed by whichever precision is active at export time, not whichever
+/// precision happened to be active when the definition was captured. Every
+/// coordinate below is offset by 0.123450mm so it is deliberately *not*
+/// already aligned to the coarser export grid this test switches to.
+#[test]
+fn block_geometry_follows_current_manufacturing_precision_on_export() {
+    const MIXED_OFFSET: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.23456*%\nD10*\nX2123450Y2123450D03*\nX123450Y123450D02*\nG01X2123450Y123450D01*\nG75*\nX1123450Y123450D02*\nG03X123450Y1123450I-1000000J0D01*\nG36*\nX10123450Y10123450D02*\nG01X12123450Y10123450D01*\nX12123450Y12123450D01*\nX10123450Y12123450D01*\nX10123450Y10123450D01*\nG37*\nM02*\n";
+
+    let mut w = W::new("precision-follow");
+    w.svc
+        .set_manufacturing_precision(
+            &w.doc,
+            &w.rev(),
+            ManufacturingPrecision {
+                resolution_mm: 0.0001,
+            },
+        )
+        .unwrap();
+    let (layer, object_ids) = w.seed_source("mixed.gbr", MIXED_OFFSET);
+    assert_eq!(object_ids.len(), 4, "Flash + Line + Arc + Region");
+    w.create_definition(&layer, object_ids, (0.0, 0.0), "mixed");
+    assert_eq!(
+        w.objects(&layer).len(),
+        1,
+        "4 primitives replaced by 1 instance"
+    );
+
+    // Precision changes *after* the definition already exists.
+    w.svc
+        .set_manufacturing_precision(
+            &w.doc,
+            &w.rev(),
+            ManufacturingPrecision {
+                resolution_mm: 0.001,
+            },
+        )
+        .unwrap();
+
+    let export = w
+        .svc
+        .export_layer(
+            &w.doc,
+            &w.rev(),
+            ExportParams {
+                layer_id: layer.clone(),
+                path: w.p("precision_out.gbr"),
+                overwrite: OverwritePolicy {
+                    mode: "deny".into(),
+                    expected_sha256: None,
+                },
+                metadata_policy: MetadataPolicy {
+                    mode: "require_confirmation".into(),
+                    categories: None,
+                },
+            },
+        )
+        .unwrap();
+    assert!(export.bytes > 0);
+
+    let exported_text = std::fs::read_to_string(w.p("precision_out.gbr")).unwrap();
+    let diameters = aperture_diameters(&exported_text);
+    assert!(
+        !diameters.is_empty(),
+        "expected declared apertures in {exported_text}"
+    );
+    for diameter in diameters {
+        assert_on_grid(diameter, 0.001, "aperture diameter");
+    }
+
+    let rev = w.rev();
+    let reopened = w
+        .svc
+        .import_gerber_layer(
+            &w.doc,
+            &rev,
+            ImportGerberLayerParams {
+                path: w.p("precision_out.gbr"),
+            },
+        )
+        .unwrap();
+    let reopened_layer = reopened.layers[0].layer_id.clone();
+    let objects = w.objects(&reopened_layer);
+    assert_eq!(
+        objects.len(),
+        4,
+        "Flash + Line + Arc + Region flattened from the one instance"
+    );
+    for object in &objects {
+        match &object.geometry {
+            SemanticGeometry::Flash { center, .. } => {
+                assert_on_grid(center.x_mm, 0.001, "flash center x");
+                assert_on_grid(center.y_mm, 0.001, "flash center y");
+            }
+            SemanticGeometry::Line {
+                start,
+                end,
+                width_mm,
+            } => {
+                assert_on_grid(start.x_mm, 0.001, "line start x");
+                assert_on_grid(start.y_mm, 0.001, "line start y");
+                assert_on_grid(end.x_mm, 0.001, "line end x");
+                assert_on_grid(end.y_mm, 0.001, "line end y");
+                assert_on_grid(*width_mm, 0.001, "line width");
+            }
+            SemanticGeometry::Arc { path, width_mm } => {
+                assert_on_grid(path.start.x_mm, 0.001, "arc start x");
+                assert_on_grid(path.start.y_mm, 0.001, "arc start y");
+                assert_on_grid(path.end.x_mm, 0.001, "arc end x");
+                assert_on_grid(path.end.y_mm, 0.001, "arc end y");
+                assert_on_grid(path.center.x_mm, 0.001, "arc center x");
+                assert_on_grid(path.center.y_mm, 0.001, "arc center y");
+                assert_on_grid(*width_mm, 0.001, "arc width");
+            }
+            SemanticGeometry::Region { contours } => {
+                for contour in contours {
+                    for edge in &contour.edges {
+                        match edge {
+                            RegionEdge::Line { start, end } => {
+                                assert_on_grid(start.x_mm, 0.001, "region edge start x");
+                                assert_on_grid(start.y_mm, 0.001, "region edge start y");
+                                assert_on_grid(end.x_mm, 0.001, "region edge end x");
+                                assert_on_grid(end.y_mm, 0.001, "region edge end y");
+                            }
+                            RegionEdge::Arc(a) => {
+                                assert_on_grid(a.start.x_mm, 0.001, "region arc start x");
+                                assert_on_grid(a.start.y_mm, 0.001, "region arc start y");
+                                assert_on_grid(a.end.x_mm, 0.001, "region arc end x");
+                                assert_on_grid(a.end.y_mm, 0.001, "region arc end y");
+                                assert_on_grid(a.center.x_mm, 0.001, "region arc center x");
+                                assert_on_grid(a.center.y_mm, 0.001, "region arc center y");
+                            }
+                        }
+                    }
+                }
+            }
+            other => panic!("unexpected flattened geometry kind: {other:?}"),
+        }
+    }
+}
+
+/// S4-B2 Final Closeout B0: a block definition whose internal geometry
+/// collapses under a coarser export precision must fail closed — no target
+/// file, working project (revision, precision, history) untouched — exactly
+/// like the existing top-level-geometry collapse case
+/// (`gerber_io::precision::tests`), now exercised through a `BlockInstance`.
+#[test]
+fn block_export_fails_closed_when_precision_collapses_definition_geometry() {
+    const TINY_REGION: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\nD10*\nG36*\nX0Y0D02*\nG01X200Y0D01*\nX200Y1000000D01*\nX0Y1000000D01*\nX0Y0D01*\nG37*\nM02*\n";
+
+    let mut w = W::new("precision-collapse");
+    w.svc
+        .set_manufacturing_precision(
+            &w.doc,
+            &w.rev(),
+            ManufacturingPrecision {
+                resolution_mm: 0.0001,
+            },
+        )
+        .unwrap();
+    let (layer, object_ids) = w.seed_source("tiny_region.gbr", TINY_REGION);
+    assert_eq!(object_ids.len(), 1);
+    w.create_definition(&layer, object_ids, (0.0, 0.0), "tiny");
+
+    w.svc
+        .set_manufacturing_precision(
+            &w.doc,
+            &w.rev(),
+            ManufacturingPrecision {
+                resolution_mm: 0.001,
+            },
+        )
+        .unwrap();
+
+    let before_export = w.svc.document_get(&w.doc).unwrap();
+    let target = w.p("should_not_exist.gbr");
+    let result = w.svc.export_layer(
+        &w.doc,
+        &before_export.revision,
+        ExportParams {
+            layer_id: layer.clone(),
+            path: target.clone(),
+            overwrite: OverwritePolicy {
+                mode: "deny".into(),
+                expected_sha256: None,
+            },
+            metadata_policy: MetadataPolicy {
+                mode: "require_confirmation".into(),
+                categories: None,
+            },
+        },
+    );
+    assert!(
+        result.is_err(),
+        "0.001mm precision must collapse the 0.0002mm block edge and fail closed"
+    );
+    assert!(
+        !std::path::Path::new(&target).exists(),
+        "no target file must appear on export failure"
+    );
+    assert_eq!(
+        w.svc.document_get(&w.doc).unwrap(),
+        before_export,
+        "working project must be untouched by a failed export"
     );
 }

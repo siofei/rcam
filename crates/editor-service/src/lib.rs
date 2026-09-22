@@ -2017,8 +2017,15 @@ impl ApplicationService {
         let snapshot = workspace::layer_export_snapshot(record, &params.layer_id)?;
         let metadata = serde_json::to_value(&snapshot.source).map_err(serialize_error)?;
         validate_export_policy(&params, &target, &metadata)?;
+        // Resolve BlockInstance geometry into ordinary primitives before
+        // precision normalization runs, so the current ManufacturingPrecision
+        // governs former block geometry exactly like top-level geometry
+        // (S4-B2 Final Closeout B0) instead of whatever precision was active
+        // when the block definition was captured.
+        let flattened =
+            gerber_io::flatten_block_instances_for_export(&snapshot).map_err(map_s1_error)?;
         let document =
-            gerber_io::normalize_manufacturing(&snapshot, record.manufacturing_precision)
+            gerber_io::normalize_manufacturing(&flattened, record.manufacturing_precision)
                 .map_err(|e| ServiceError::invalid_field("manufacturing_precision", &e))?;
         let temp = temporary_output_path(&target)?;
         if temp.exists() {

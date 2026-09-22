@@ -199,14 +199,19 @@ pub fn normalize_manufacturing(
                         }
                     }
                 }
-                // The instance's own placement quantizes like a Flash center.
-                // `block_definitions` geometry is not re-quantized here: it is
-                // captured from already-quantized world objects when a
-                // definition is created (`blocks.create_definition_from_objects`),
-                // so it only drifts if the project's resolution changes after
-                // the fact — a known S4-B2 scope note (`docs/S4_B2_REVIEW.md`).
-                SemanticGeometry::BlockInstance { transform, .. } => {
-                    point(&mut transform.translation)?;
+                // S4-B2 Final Closeout B0: block geometry must follow the
+                // *current* ManufacturingPrecision on export, not whatever
+                // precision was active when the definition was captured.
+                // The export pipeline (`EditorService::export_layer`) now
+                // runs `flatten_block_instances_for_export` before this
+                // function, so a `BlockInstance` reaching here means a
+                // caller skipped that step — quantizing only the instance's
+                // placement (as this used to do) would silently reproduce
+                // the precision-drift bug, so fail closed instead.
+                SemanticGeometry::BlockInstance { .. } => {
+                    return Err("BUG: BlockInstance reached normalize_manufacturing — \
+                         flatten_block_instances_for_export must run first"
+                        .into());
                 }
             }
         }

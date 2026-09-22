@@ -3062,6 +3062,29 @@ fn flatten_block_instances(
     Ok(out)
 }
 
+/// Resolve every `BlockInstance` across `document`'s layers into ordinary
+/// primitives *before* `normalize_manufacturing` runs, so the project's
+/// current `ManufacturingPrecision` governs the exported coordinates,
+/// widths, and aperture dimensions of former block geometry exactly the
+/// same way it already governs top-level geometry (S4-B2 Final Closeout
+/// B0). Definitions are captured once at `blocks.create_definition_from_objects`
+/// time and are never retroactively requantized in place; flattening ahead
+/// of normalization is what lets the ordinary top-level quantization path
+/// (including its aperture scale COW/dedup) apply to former block geometry
+/// without a second, parallel quantization implementation. The returned
+/// document carries no `BlockInstance` objects and no `block_definitions` —
+/// callers must not treat it as an editable project snapshot.
+pub fn flatten_block_instances_for_export(
+    document: &SemanticDocument,
+) -> Result<SemanticDocument, S1Error> {
+    let mut result = document.clone();
+    for (source_layer, out_layer) in document.layers.iter().zip(result.layers.iter_mut()) {
+        out_layer.objects = flatten_block_instances(document, source_layer)?;
+    }
+    result.block_definitions.clear();
+    Ok(result)
+}
+
 pub fn write_s1_with_budget(
     document: &SemanticDocument,
     budget: S1Budget,
