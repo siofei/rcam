@@ -1,8 +1,8 @@
 # 文档变更记录
 
-## 2026-09-24 · S4-B3 `.rcam` Project Lifecycle（自动化通过，原生终验阻塞）
+## 2026-09-24 · S4-B3 `.rcam` Project Lifecycle（PASS，Mac-first）
 
-新增 ADR 0033/0034 和 S4_B3_PLAN/REVIEW；ApplicationService 正式接入 `.rcam` 项目会话、分阶段打开、原子保存与 JSON project 操作；GUI 增加 File New/Open/Save/Save As、项目 dirty 关闭确认、Recent 本机偏好与 Recovery。Gerber 继续只 Import/Export。Mac 原生和固定包门禁见 S4_B3_REVIEW；Windows deferred。
+新增 ADR 0033/0034 和 S4_B3_PLAN/REVIEW；ApplicationService 正式接入 `.rcam` 项目会话、分阶段打开、原子保存与 JSON project 操作；GUI 增加 File New/Open/Save/Save As、项目 dirty 关闭确认、Recent 本机偏好与 Recovery。Gerber 继续只 Import/Export。Mac 原生 GUI、Recovery、Metal、固定包门禁通过，证据见 S4_B3_REVIEW；Windows deferred。
 
 ## 2026-09-23 · S4-B2 Final Closeout + complex text renderer
 

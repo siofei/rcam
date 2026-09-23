@@ -94,7 +94,7 @@ cargo build --release --locked -p editor-app
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
 
-**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）；**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 docs/S4_B2_REVIEW.md）。**S4-B3 `.rcam` Project Lifecycle 自动化门禁已通过，但最终固定提交的原生 GUI/Recovery 因 macOS 锁屏尚未复跑，状态为部分通过／阻塞**（见 docs/S4_B3_PLAN.md、docs/S4_B3_REVIEW.md、ADR 0033 / 0034）。当前停在 S4-C 前的复审边界。
+**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）；**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 docs/S4_B2_REVIEW.md）；**S4-B3 `.rcam` Project Lifecycle = PASS（Mac-first）**（见 docs/S4_B3_PLAN.md、docs/S4_B3_REVIEW.md、ADR 0033 / 0034）。当前停在 S4-C 前的复审边界。
 Global Units & Manufacturing Precision Foundation 按 Mac-first 范围收口（见 GLOBAL_UNITS_PRECISION_REVIEW）；
 不声称 Windows、完整 V1、P100K 或完整 CORE10。
 S4-B3 完成后停止并提交审查：**不自动开始 S4-C**。没有 Mac 原生证据（Metal parity、原生 Project GUI、Recovery、ZIP 打包）时，不得声称“S4-B3 PASS”。
@@ -147,6 +147,6 @@ Category color/filter/lock、New Empty Layer、Import Gerber、Delete + Undo。S
 ```text
 S4-B1 Multi-Layer Workspace + reservations — PASS（Mac-first）
 → S4-B2 Block Core + .rcam schema v1 — PASS（Mac-first）
-→ S4-B3 Project lifecycle — 部分通过／原生终验阻塞；停在复审边界
+→ S4-B3 Project lifecycle — PASS（Mac-first）；停在复审边界
 → S4-C Full stencil editing (Snap/Grip/Block/PnP/RefDes)
 ```
