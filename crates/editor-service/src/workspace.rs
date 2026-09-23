@@ -36,7 +36,7 @@ pub(crate) struct LayerSource {
 }
 
 impl LayerSource {
-    fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             source_id: None,
             provenance: None,
@@ -622,7 +622,7 @@ fn remap_source(
 }
 
 impl ApplicationService {
-    fn allocate_document_id(&mut self) -> Result<String, ServiceError> {
+    pub(crate) fn allocate_document_id(&mut self) -> Result<String, ServiceError> {
         let id = format!("doc-{}", self.next_document_id);
         self.next_document_id = self
             .next_document_id
@@ -631,8 +631,16 @@ impl ApplicationService {
         Ok(id)
     }
 
-    fn new_record(&self, document: SemanticDocument) -> Result<S1DocumentRecord, ServiceError> {
-        Ok(S1DocumentRecord {
+    pub(crate) fn new_record(
+        &self,
+        document: SemanticDocument,
+    ) -> Result<S1DocumentRecord, ServiceError> {
+        let mut record = S1DocumentRecord {
+            project_id: document.id.clone(),
+            project_path: None,
+            last_saved_project_hash: None,
+            saved_project_state_hash: String::new(),
+            project_settings: project::default_workspace_settings(),
             manufacturing_precision: ManufacturingPrecision::default(),
             saved_precision: ManufacturingPrecision::default(),
             metrics: metrics::MetricsCache::default(),
@@ -655,7 +663,11 @@ impl ApplicationService {
             content_hash_cache: HashCache::default(),
             history: EditHistory::with_limits(self.history_max_entries, self.history_max_bytes)
                 .map_err(map_edit_error)?,
-        })
+        };
+        if record.document.layers.is_empty() {
+            record.saved_project_state_hash = record.project_state_hash()?;
+        }
+        Ok(record)
     }
 
     /// Create an empty Workspace: no layer, no source, nothing dirty.

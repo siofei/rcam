@@ -12,6 +12,8 @@ eframe.workspace = true
 egui-wgpu.workspace = true
 bytemuck.workspace = true
 serde_json.workspace = true
+serde.workspace = true
+rcam-project.workspace = true
 
 [dev-dependencies]
 gerber-io.workspace = true

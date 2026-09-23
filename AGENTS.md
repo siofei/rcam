@@ -94,12 +94,11 @@ cargo build --release --locked -p editor-app
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
 
-**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）。当前活动开发阶段为
-Mac-first S4-B2 Block Core + `.rcam` schema v1（见 docs/S4_B2_PLAN.md、docs/S4_B2_REVIEW.md、ADR 0031 / 0032）。
+**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）；**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 docs/S4_B2_REVIEW.md）。当前活动开发阶段为
+Mac-first S4-B3 `.rcam` Project Lifecycle（见 docs/S4_B3_PLAN.md、docs/S4_B3_REVIEW.md、ADR 0033 / 0034）。
 Global Units & Manufacturing Precision Foundation 按 Mac-first 范围收口（见 GLOBAL_UNITS_PRECISION_REVIEW）；
 不声称 Windows、完整 V1、P100K 或完整 CORE10。
-S4-B2 完成后停止并提交审查：**不自动开始 S4-B3**，不实现 `File → Open/Save .rcam`。
-没有 Mac 原生证据（Metal parity、原生 GUI、ZIP 打包）时，不得声称“S4-B2 PASS”。
+S4-B3 完成后停止并提交审查：**不自动开始 S4-C**。没有 Mac 原生证据（Metal parity、原生 Project GUI、Recovery、ZIP 打包）时，不得声称“S4-B3 PASS”。
 Windows deferred / not executed，最终双平台 V1 门槛保持不变。
 
 ## Forward Architecture Reservations（长期约束，S4-B1 合并）
@@ -148,7 +147,7 @@ Category color/filter/lock、New Empty Layer、Import Gerber、Delete + Undo。S
 
 ```text
 S4-B1 Multi-Layer Workspace + reservations — PASS（Mac-first）
-→ S4-B2 Block Core + .rcam schema v1 — 当前（源码/自动化测试完成，原生验收未执行）
-→ S4-B3 Project lifecycle
+→ S4-B2 Block Core + .rcam schema v1 — PASS（Mac-first）
+→ S4-B3 Project lifecycle — 当前（待最终验收）
 → S4-C Full stencil editing (Snap/Grip/Block/PnP/RefDes)
 ```

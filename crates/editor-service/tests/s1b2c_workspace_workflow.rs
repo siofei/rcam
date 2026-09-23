@@ -247,14 +247,19 @@ fn workspace_state_not_written_to_export() {
     assert_eq!(source, std::fs::read(r.dir.join("source.gbr")).unwrap());
 }
 #[test]
-fn workspace_only_change_does_not_require_close_confirmation() {
+fn persisted_workspace_change_requires_project_close_confirmation() {
     let mut r = Run::new();
     r.update(json!({"locked":true,"visible":false,"display_name":"x"}));
-    r.ok(
-        "document.close",
-        Some("0"),
-        json!({"discard_changes":false}),
+    assert_eq!(r.info()["project_dirty"], true);
+    assert_eq!(
+        r.call(
+            "document.close",
+            Some("0"),
+            json!({"discard_changes":false})
+        )["status"],
+        "confirmation_required"
     );
+    r.ok("document.close", Some("0"), json!({"discard_changes":true}));
 }
 #[test]
 fn manufacturing_edit_still_changes_dirty() {

@@ -1924,24 +1924,19 @@ fn export_uses_document_level_precision_for_every_layer() {
 }
 
 #[test]
-fn no_save_operation_exists_for_a_workspace() {
+fn gerber_has_no_direct_save_operation() {
     let mut w = W::new("nosave");
     w.import_ok(&["in/A.gbr"]);
     let caps = w.svc.capabilities();
-    for op in [
-        "document.save",
-        "document.save_as",
-        "project.save",
-        "project.open",
-    ] {
+    for op in ["document.save", "document.save_as"] {
         assert!(!caps.supported_operations.iter().any(|s| s == op), "{op}");
         let reply = json_call(&mut w.svc, op, Some(&w.doc.clone()), Some("1"), json!({}));
         assert_eq!(reply["error"]["code"], "UNSUPPORTED_OPERATION", "{op}");
     }
     assert!(
-        caps.unsupported_operations
+        caps.supported_operations
             .iter()
-            .any(|s| s.contains(".rcam"))
+            .any(|s| s == "project.save")
     );
 }
 
@@ -1954,7 +1949,7 @@ fn capabilities_are_consistent_with_the_supported_operations() {
     ));
     let caps = service.capabilities();
     assert!(!caps.stage.contains("S4-A2"), "{}", caps.stage);
-    assert!(caps.stage.contains("S4-B2"));
+    assert!(caps.stage.contains("S4-B3"));
     for op in [
         "document.new",
         "document.import_gerber_layers",

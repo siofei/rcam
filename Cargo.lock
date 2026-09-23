@@ -506,6 +506,8 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-text",
  "objc2-foundation 0.3.2",
+ "rcam-project",
+ "serde",
  "serde_json",
 ]
 
@@ -523,6 +525,7 @@ dependencies = [
  "editor-core",
  "editor-text",
  "gerber-io",
+ "rcam-project",
  "serde",
  "serde_json",
 ]

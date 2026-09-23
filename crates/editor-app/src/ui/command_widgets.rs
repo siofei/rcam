@@ -31,7 +31,12 @@ impl CommandState {
 
 pub fn descriptor(id: CommandId) -> CommandUi {
     let (label, icon, shortcut_hint, checked_label) = match id {
-        ids::FILE_IMPORT_GERBER => ("导入 Gerber…（可多选）", RcamIcon::Import, "⌘O", None),
+        ids::FILE_NEW_PROJECT => ("新建工程", RcamIcon::Add, "⌘N", None),
+        ids::FILE_OPEN_PROJECT => ("打开工程…", RcamIcon::Import, "⌘O", None),
+        ids::FILE_SAVE_PROJECT => ("保存工程", RcamIcon::Export, "⌘S", None),
+        ids::FILE_SAVE_PROJECT_AS => ("工程另存为…", RcamIcon::Export, "Shift+⌘S", None),
+        ids::FILE_CLOSE_PROJECT => ("关闭工程", RcamIcon::Delete, "⌘W", None),
+        ids::FILE_IMPORT_GERBER => ("导入 Gerber…（可多选）", RcamIcon::Import, "⌘I", None),
         ids::FILE_EXPORT_GERBER => ("导出当前图层为 Gerber…", RcamIcon::Export, "Shift+⌘E", None),
         ids::EDIT_UNDO => ("撤销", RcamIcon::Undo, "⌘Z", None),
         ids::EDIT_REDO => ("重做", RcamIcon::Redo, "Shift+⌘Z", None),

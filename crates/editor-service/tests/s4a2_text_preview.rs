@@ -210,8 +210,15 @@ fn json_preview_requires_revision_and_strict_params() {
         "INVALID_ARGUMENT"
     );
     assert_eq!(before, state(&service, &info.document_id));
+    assert_eq!(
+        service
+            .close(&info.document_id, &info.revision, false)
+            .unwrap_err()
+            .code,
+        "CONFIRMATION_REQUIRED"
+    );
     service
-        .close(&info.document_id, &info.revision, false)
+        .close(&info.document_id, &info.revision, true)
         .unwrap();
     assert_eq!(
         service

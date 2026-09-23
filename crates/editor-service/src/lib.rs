@@ -4,6 +4,7 @@
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
 mod metrics;
+mod project;
 mod text;
 mod workspace;
 pub use editor_core::edit::MirrorAxis;
@@ -222,6 +223,14 @@ fn is_under_any(path: &Path, roots: &[PathBuf]) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DocumentInfo {
+    #[serde(default)]
+    pub project_id: String,
+    #[serde(default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    pub project_dirty: bool,
+    #[serde(default)]
+    pub last_saved_project_hash: Option<String>,
     #[serde(default)]
     pub manufacturing_precision: ManufacturingPrecision,
     #[serde(default)]
@@ -520,6 +529,11 @@ pub struct ExportResult {
 
 #[derive(Debug, Clone)]
 struct S1DocumentRecord {
+    project_id: String,
+    project_path: Option<PathBuf>,
+    last_saved_project_hash: Option<String>,
+    saved_project_state_hash: String,
+    project_settings: rcam_project::WorkspaceProjectState,
     manufacturing_precision: ManufacturingPrecision,
     saved_precision: ManufacturingPrecision,
     metrics: metrics::MetricsCache,
@@ -616,6 +630,14 @@ struct OpenS0Params {
 #[serde(deny_unknown_fields)]
 struct OpenParams {
     path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectSaveAsParams {
+    path: String,
+    #[serde(default)]
+    allow_replace: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -976,7 +998,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-B2 Block Core + .rcam schema v1 (Mac-first bounded)".into(),
+            stage: "S4-B3 .rcam Project Lifecycle (Mac-first bounded)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -1011,6 +1033,11 @@ impl ApplicationService {
                 "gerber.export_layer".into(),
                 "document.set_manufacturing_precision".into(),
                 "document.new".into(),
+                "project.new".into(),
+                "project.open".into(),
+                "project.save".into(),
+                "project.save_as".into(),
+                "project.info".into(),
                 "document.import_gerber_layers".into(),
                 "document.import_gerber_layer".into(),
                 "document.create_empty_layer".into(),
@@ -1034,8 +1061,6 @@ impl ApplicationService {
             // Reserved boundaries (S4-B2 architecture placeholders): named here so a
             // caller can tell "not yet" from "unknown". None of these is dispatchable.
             unsupported_operations: vec![
-                "project.open (.rcam)".into(),
-                "project.save (.rcam)".into(),
                 "drill.import".into(),
                 "components.search".into(),
                 "snap.resolve".into(),
@@ -1946,9 +1971,7 @@ impl ApplicationService {
             .get(document_id)
             .ok_or_else(|| ServiceError::not_found("document", document_id))?;
         check_revision(record.revision, expected_revision)?;
-        if !discard_changes
-            && (record.is_dirty() || record.manufacturing_precision != record.saved_precision)
-        {
+        if !discard_changes && (record.is_dirty() || record.is_project_dirty()) {
             return Err(ServiceError {
                 code: "CONFIRMATION_REQUIRED".into(),
                 message: "文档有未保存修改，需要明确放弃。".into(),
@@ -2166,6 +2189,52 @@ impl ApplicationService {
                     ));
                 }
                 serde_json::to_value(self.document_new()?).map_err(serialize_error)?
+            }
+            "project.new" if self.file_access.is_some() => {
+                parse_empty_params(&request.params)?;
+                if request.document_id.is_some() || request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid(
+                        "project.new does not accept document_id or expected_revision",
+                    ));
+                }
+                serde_json::to_value(self.document_new()?).map_err(serialize_error)?
+            }
+            "project.open" if self.file_access.is_some() => {
+                if request.document_id.is_some() || request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid(
+                        "project.open does not accept document_id or expected_revision",
+                    ));
+                }
+                let params: OpenParams = parse_params(&request.params)?;
+                serde_json::to_value(self.project_open(&params.path)?).map_err(serialize_error)?
+            }
+            "project.info" if self.file_access.is_some() => {
+                parse_empty_params(&request.params)?;
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                serde_json::to_value(self.document_get(required_document_id(request)?)?)
+                    .map_err(serialize_error)?
+            }
+            "project.save" | "project.save_as" if self.file_access.is_some() => {
+                let id = required_document_id(request)?;
+                let revision = request.expected_revision.as_deref().ok_or_else(|| {
+                    ServiceError::invalid_field(
+                        "expected_revision",
+                        "expected_revision is required",
+                    )
+                })?;
+                let info = if request.op == "project.save" {
+                    parse_empty_params(&request.params)?;
+                    self.project_save(id, revision, None, false)?
+                } else {
+                    let params: ProjectSaveAsParams = parse_params(&request.params)?;
+                    self.project_save(id, revision, Some(&params.path), params.allow_replace)?
+                };
+                serde_json::to_value(info).map_err(serialize_error)?
             }
             "layer.summary" => {
                 if request.expected_revision.is_some() {
@@ -2705,6 +2774,13 @@ fn required_document_id(request: &RequestEnvelope) -> Result<&str, ServiceError>
 
 fn document_info(document_id: &str, record: &S1DocumentRecord) -> DocumentInfo {
     DocumentInfo {
+        project_id: record.project_id.clone(),
+        project_path: record
+            .project_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
+        project_dirty: record.is_project_dirty(),
+        last_saved_project_hash: record.last_saved_project_hash.clone(),
         manufacturing_precision: record.manufacturing_precision,
         export_policy_dirty: record.manufacturing_precision != record.saved_precision,
         workspace_revision: record.workspace_revision.to_string(),

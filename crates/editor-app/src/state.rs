@@ -9,6 +9,7 @@ use std::{
 
 #[derive(Clone, Default)]
 pub struct View {
+    pub project_workspace: Option<rcam_project::WorkspaceProjectState>,
     pub text_reply: Option<Arc<crate::text_tool::Reply>>,
     pub metrics: Vec<MetricsItem>,
     pub metrics_error: Option<String>,
@@ -127,6 +128,11 @@ pub enum MirrorDirection {
 pub enum Action {
     Precision(ManufacturingPrecision),
     Open(PathBuf),
+    OpenProject(PathBuf, bool),
+    SaveProject(Option<PathBuf>, bool, Option<rcam_project::CameraState>),
+    ProjectWorkspace(rcam_project::WorkspaceProjectState),
+    RestoreProject(Vec<u8>),
+    RecoveryWrite(PathBuf),
     /// Start an empty Workspace (refuses while there are unexported edits).
     NewWorkspace,
     /// Same, after the user explicitly agreed to lose unexported edits.
@@ -356,23 +362,96 @@ impl Model {
         }
         Ok(())
     }
+    pub fn open_project(&mut self, path: &Path, discard: bool) -> Result<(), ServiceError> {
+        if !discard && self.view.info.as_ref().is_some_and(|d| d.project_dirty) {
+            return Err(error("CONFIRMATION_REQUIRED", "当前工程有未保存修改"));
+        }
+        self.service.grant_file_access(path, false)?;
+        let candidate = self.service.project_open(
+            path.to_str()
+                .ok_or_else(|| error("INVALID_ARGUMENT", "路径编码无效"))?,
+        )?;
+        self.install_project(candidate, discard)
+    }
+    fn install_project(
+        &mut self,
+        candidate: DocumentInfo,
+        discard: bool,
+    ) -> Result<(), ServiceError> {
+        let old_view = self.view.clone();
+        let old_snapshot = self.snapshot.take();
+        let old_ppm = self.ppm;
+        let old_viewport = self.viewport.take();
+        let old_index = std::mem::take(&mut self.world_index);
+        self.ppm = 20.;
+        self.view = View {
+            info: Some(candidate),
+            message: "工程已打开".into(),
+            ..Default::default()
+        };
+        let prepared = self.refresh(true).and_then(|()| match &self.view.blocked {
+            Some(reason) => Err(error("UNSUPPORTED_FEATURE", reason)),
+            None => Ok(()),
+        });
+        if let Err(e) = prepared {
+            if let Some(candidate) = &self.view.info {
+                self.service
+                    .close(&candidate.document_id, &candidate.revision, true)?;
+            }
+            self.view = old_view;
+            self.snapshot = old_snapshot;
+            self.ppm = old_ppm;
+            self.viewport = old_viewport;
+            self.world_index = old_index;
+            return Err(e);
+        }
+        if let Some(old) = old_view.info {
+            self.service
+                .close(&old.document_id, &old.revision, discard)?;
+        }
+        Ok(())
+    }
+    pub fn restore_project(&mut self, bytes: &[u8]) -> Result<(), ServiceError> {
+        let candidate = self.service.project_restore(bytes)?;
+        self.install_project(candidate, true)
+    }
+    pub fn save_project(
+        &mut self,
+        path: Option<&Path>,
+        replace: bool,
+        camera: Option<rcam_project::CameraState>,
+    ) -> Result<(), ServiceError> {
+        let d = self.info()?;
+        let grant = path
+            .map(Path::to_path_buf)
+            .or_else(|| d.project_path.as_ref().map(PathBuf::from));
+        if let Some(path) = grant.as_deref() {
+            self.service.grant_file_access(
+                path.parent()
+                    .ok_or_else(|| error("INVALID_ARGUMENT", "缺少输出目录"))?,
+                true,
+            )?;
+        }
+        self.service.project_save_with_camera(
+            &d.document_id,
+            &d.revision,
+            path.map(|p| p.to_string_lossy().into_owned()).as_deref(),
+            replace,
+            camera,
+        )?;
+        self.view.message = "工程已保存".into();
+        self.refresh(false)
+    }
     fn workspace_revision(&self) -> Result<(String, String, String), ServiceError> {
         let d = self.info()?;
         Ok((d.document_id, d.revision, d.workspace_revision))
     }
-    /// Replace the Workspace with an empty one. Refuses while the Workspace holds
-    /// manufacturing edits or unexported policy changes; the caller confirms first.
+    /// Replace the Project with an empty one after the caller handles dirty state.
     pub fn new_workspace(&mut self, discard: bool) -> Result<(), ServiceError> {
-        if !discard
-            && self
-                .view
-                .info
-                .as_ref()
-                .is_some_and(|d| d.dirty || d.export_policy_dirty)
-        {
+        if !discard && self.view.info.as_ref().is_some_and(|d| d.project_dirty) {
             return Err(error(
                 "CONFIRMATION_REQUIRED",
-                "当前工作区有尚未导出的修改。请先导出需要的图层，或明确放弃修改。",
+                "当前工程有未保存修改。请先保存 .rcam，或明确放弃修改。",
             ));
         }
         let fresh = self.service.document_new()?;
@@ -477,6 +556,7 @@ impl Model {
     fn refresh(&mut self, geometry: bool) -> Result<(), ServiceError> {
         let id = self.info()?.document_id;
         self.view.info = Some(self.service.document_get(&id)?);
+        self.view.project_workspace = Some(self.service.project_workspace(&id)?);
         self.view.layers = self.service.layers_list(&id)?;
         self.view.bounds = self.service.visible_bounds(&id)?.bounds;
         if geometry {
@@ -921,6 +1001,25 @@ impl Model {
         self.view.focus_bounds = None;
         let result = (|| match action {
             Action::Open(path) => self.open(&path),
+            Action::OpenProject(path, discard) => self.open_project(&path, discard),
+            Action::SaveProject(path, replace, camera) => {
+                self.save_project(path.as_deref(), replace, camera)
+            }
+            Action::ProjectWorkspace(settings) => {
+                let id = self.info()?.document_id;
+                self.service.project_set_workspace(&id, settings)?;
+                self.refresh(false)
+            }
+            Action::RestoreProject(bytes) => self.restore_project(&bytes),
+            Action::RecoveryWrite(dir) => {
+                let d = self.info()?;
+                if d.project_dirty {
+                    let bytes = self.service.project_recovery_bytes(&d.document_id)?;
+                    crate::recovery::write(&dir, &d, &bytes)
+                        .map_err(|e| error("IO_ERROR", &e.to_string()))?;
+                }
+                Ok(())
+            }
             Action::NewWorkspace => self.new_workspace(false),
             Action::DiscardNewWorkspace => self.new_workspace(true),
             Action::ImportGerbers(paths) => self.import_gerbers(&paths),

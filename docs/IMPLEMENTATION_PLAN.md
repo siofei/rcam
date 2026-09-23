@@ -162,7 +162,7 @@ GeometryMetrics 周长排除 cut-in 接缝，但对象合计不是图层最终�
 
 S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manufacturing Precision = PASS（Mac-first bounded，见 GLOBAL_UNITS_PRECISION_REVIEW）。
 **S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 S4_B1_REVIEW）。
-**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 S4_B2_REVIEW）；本轮停止，S4-B3 未启动。
+**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 S4_B2_REVIEW）。S4-B3 已按用户指示启动，状态见 S4_B3_REVIEW。
 DXF/SVG/PLT、Final Layer Boolean Area、Windows 仍未启动。
 阶段实现不等于全部原生验收；实际状态以各阶段 REVIEW 为准。
 
@@ -184,7 +184,11 @@ Global Units & Manufacturing Precision 已收口为 PASS（Mac-first bounded）�
 
 本阶段范围、允许模块、不做清单见 [S4_B2_PLAN](S4_B2_PLAN.md)，实现证据与未执行项见 [S4_B2_REVIEW](S4_B2_REVIEW.md)，
 决策见 [ADR 0031](adr/0031-rcam-native-project-format-v1.md) / [ADR 0032](adr/0032-block-core.md)。
-最终 closeout 已完成；**停止并提交审查，不自动开始 S4-B3**。Windows deferred / not executed。
+最终 closeout 已完成；S4-B3 按后续明确请求启动。Windows deferred / not executed。
+
+## 2026-09-23 S4-B3 `.rcam` Project Lifecycle（实施中）
+
+范围、Exit Gate 及证据路径见 [S4_B3_PLAN](S4_B3_PLAN.md) / [S4_B3_REVIEW](S4_B3_REVIEW.md)，决策见 ADR 0033/0034。此阶段仅完成 `.rcam` 工程生命周期，不启动 S4-C。
 
 ## 长期路线（S4-B1 之后，冻结顺序）
 

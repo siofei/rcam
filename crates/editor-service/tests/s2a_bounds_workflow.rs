@@ -261,11 +261,15 @@ fn bounds_capabilities_match_handlers_and_close_invalidates_document() {
             .supported_operations
             .contains(&"document.bounds".into())
     );
-    r.ok(
-        "document.close",
-        Some("0"),
-        json!({"discard_changes":false}),
+    assert_eq!(
+        r.call(
+            "document.close",
+            Some("0"),
+            json!({"discard_changes":false})
+        )["status"],
+        "confirmation_required"
     );
+    r.ok("document.close", Some("0"), json!({"discard_changes":true}));
     assert_eq!(
         r.call("document.bounds", None, json!({}))["error"]["code"],
         "NOT_FOUND"

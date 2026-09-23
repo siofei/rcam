@@ -19,6 +19,11 @@ pub mod ids {
     pub const FILE_IMPORT_GERBER: CommandId = CommandId("file.import_gerber");
     pub const FILE_EXPORT_GERBER: CommandId = CommandId("file.export_gerber");
     pub const FILE_NEW: CommandId = CommandId("file.new");
+    pub const FILE_NEW_PROJECT: CommandId = CommandId("file.new_project");
+    pub const FILE_OPEN_PROJECT: CommandId = CommandId("file.open_project");
+    pub const FILE_SAVE_PROJECT: CommandId = CommandId("file.save_project");
+    pub const FILE_SAVE_PROJECT_AS: CommandId = CommandId("file.save_project_as");
+    pub const FILE_CLOSE_PROJECT: CommandId = CommandId("file.close_project");
     pub const EDIT_UNDO: CommandId = CommandId("edit.undo");
     pub const EDIT_REDO: CommandId = CommandId("edit.redo");
     pub const EDIT_DELETE: CommandId = CommandId("edit.delete");
@@ -198,12 +203,41 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
     };
     vec![
         d(
-            ids::FILE_NEW,
-            "新建工作区",
+            ids::FILE_NEW_PROJECT,
+            "新建工程",
             C::File,
             Some(Shortcut::new(Modifiers::PRIMARY, ch('n'))),
             X::Global,
         ),
+        d(
+            ids::FILE_OPEN_PROJECT,
+            "打开工程…",
+            C::File,
+            Some(Shortcut::new(Modifiers::PRIMARY, ch('o'))),
+            X::Global,
+        ),
+        d(
+            ids::FILE_SAVE_PROJECT,
+            "保存工程",
+            C::File,
+            Some(Shortcut::new(Modifiers::PRIMARY, ch('s'))),
+            X::Global,
+        ),
+        d(
+            ids::FILE_SAVE_PROJECT_AS,
+            "工程另存为…",
+            C::File,
+            Some(Shortcut::new(Modifiers::PRIMARY_SHIFT, ch('s'))),
+            X::Global,
+        ),
+        d(
+            ids::FILE_CLOSE_PROJECT,
+            "关闭工程",
+            C::File,
+            Some(Shortcut::new(Modifiers::PRIMARY, ch('w'))),
+            X::Global,
+        ),
+        d(ids::FILE_NEW, "新建工作区", C::File, None, X::Global),
         d(
             ids::FILE_IMPORT_GERBER,
             "导入 Gerber…",

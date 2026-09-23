@@ -944,6 +944,7 @@ RCam 的主要用途是 **PCB 钢网/Stencil 制造图形设计、编辑、检�
   imported SHA-256、导入时间）。
 - **Native Project = `.rcam`**（S4-B2 定格式，S4-B3 做 New/Open/Save/Save As、Migration、Recovery、Recent Projects）。
   Export Gerber 不能清 project dirty，也不能成为 project save target。S4-B1 不冻结 `.rcam` 任何字段。
+- **S4-B3 生命周期决策**：项目路径、Gerber 导入 provenance、Gerber 导出目标三者独立；Project Open 完整解码及语义验证后才替换当前会话；Save 采用同目录临时文件、完整复核与原子发布，成功后才清 project dirty。Layer View Style/Grid/Snap/制造精度参与 dirty；Active/Camera 保存时捕获但日常切换不触发 dirty；Solo/Selection 不持久化。Recent 属本机 AppPreferences，Recovery 属本机 cache，均不写入 `.rcam`。详见 ADR 0033/0034。
 - Gerber 兼容：Extended Gerber/RS-274X 从 FS/MO/AD 自动确定；Legacy/Hybrid 在无歧义时规范化；纯 RS-274-D 或有歧义时**永不猜测**，
   进入 Legacy Import Modal，由用户提供格式/单位/零压缩/光圈表。
 
@@ -1067,7 +1068,7 @@ S2 hit-test/bounds 仅冻结精确 f64 边界，本轮不开放；其余 V1 门�
 RectangularSweep 斜向仅作为独立查询算法验证，不改变轴向制造/导入/导出支持范围。
 本轮停止在 S2-A.2 无 GUI 服务，S2-A.3 GUI 与双平台完整 V1 门槛保留。
 
-当前活动开发阶段为 Mac-first S2-B3，Windows deferred / not executed；最终双平台 V1 要求保持不变。
+当前活动开发阶段为 Mac-first S4-B3，Windows deferred / not executed；最终双平台 V1 要求保持不变。
 
 ### S2-B2 精确框选与多选
 

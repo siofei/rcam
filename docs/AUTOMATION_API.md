@@ -663,6 +663,8 @@ A locked layer rejects `blocks.create_definition_from_objects`, `blocks.create_i
 and `blocks.update_instance_transform` the same way it rejects `objects.*` edits. Gerber export (`gerber.export_layer`)
 flattens every `BlockInstance` on the exported layer into plain primitives through its resolved transform — RCam
 blocks are not Gerber `%AB`; the working project is never modified by export. `.rcam` (schema v1, crate
-`rcam-project`) encode/decode is not yet wired to any `ApplicationService` operation — no `project.open`/`project.save`
-this phase, see [S4_B2_REVIEW](S4_B2_REVIEW.md).
+`rcam-project`) encode/decode is now wired to `ApplicationService` in S4-B3; see [S4_B3_REVIEW](S4_B3_REVIEW.md). The S4-B2-only boundary described above remains historical.
 
+### S4-B3 project operations
+
+Host-authorized `project.new` takes `{}` and returns `DocumentInfo` for a clean untitled project. `project.open` takes `{path}` and requires no `document_id` or `expected_revision`; decode/validation failure leaves existing service records intact. `project.info` takes `document_id` and `{}` without a revision. `project.save` takes `document_id`, `expected_revision` and `{}`; it rejects an untitled project because headless calls never invoke a picker. `project.save_as` takes the same identity/revision plus `{path, allow_replace}`; the file policy still applies, `.rcam` is required, and replacing an existing different target requires `allow_replace: true`. Results include `project_id`, `project_path`, `project_dirty` and `last_saved_project_hash`. Gerber export remains independent and never changes the project path.

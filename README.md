@@ -1,4 +1,6 @@
-# RCam Gerber editor — Mac-first S4-B2 Block Core + `.rcam` schema v1
+# RCam Gerber editor — Mac-first S4-B3 `.rcam` Project Lifecycle
+
+S4-B3 将已有 `.rcam` v1 格式接入 File → New/Open/Save/Save As；Gerber 仍只 Import/Export。工程保存使用受控路径、同目录临时文件、完整解码校验和原子发布；项目 dirty、关闭确认、最近工程和本机恢复副本见 [S4-B3 plan](docs/S4_B3_PLAN.md) 与 [review](docs/S4_B3_REVIEW.md)。当前阶段验收以 review 中的实测门禁为准，Windows 与完整 V1 尚未完成。
 
 S3-FINAL 正式收口基础编辑：GUI 制造修改统一走 `ApplicationService`；补齐标准 C/R/O/P
 Flash 尺寸写时复制、单事务 `edit.batch`、完整事务边界的 Undo 预算淘汰、对象端点/中心优先
@@ -30,8 +32,8 @@ Mac 启动：`cargo run --release --locked -p editor-app`。
 
 单文件，Ctrl-click 加选，Shift-click 减选；空白拖框左→右 Window、右→左 Crossing。Clear 和锁定对象可查看，制造编辑仅同层且无锁定成员。中键拖动或双指滚动平移，捏合或 Cmd+滚动缩放，F 适合窗口。
 移动只使用 ΔX/ΔY 毫米；Cmd+Z 撤销，Shift+Cmd+Z / Cmd+Y 重做。文本字段保留文本撤销。
-另存为必须使用新路径；源文件不会被覆盖。元数据丢弃必须按提示确认。
-显隐、锁定和显示名只在本次会话保留，不产生制造 dirty 或历史。
+Gerber 导出必须使用新路径；导入源文件不会被覆盖。元数据丢弃必须按提示确认。
+显隐、锁定和显示名保存在 `.rcam` 工程中，改变它们会标记 project dirty，但不改变制造 revision 或 Gerber writer。
 显示采用 camera-relative local f32、safe zoom clamp 和 last-good-frame；资源预算失败保留诊断，不降低制造精度。
 
 macOS 界面从系统字体加载中文，不打包用户字体；S4-A1 已支持中英文制造矢量文字核心；S4-A2 已接入 Text GUI、系统字体搜索列表（保留文件选择）、异步 Preview 和显式定位；最终验收状态见 S4_A2_REVIEW。
@@ -160,7 +162,7 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 决策见 [ADR 0029](docs/adr/0029-multi-gerber-workspace.md) 与 [ADR 0030](docs/adr/0030-reusable-blocks-and-forward-reservations.md)。
 
 - **Gerber 只 Import / Export。** 导入后与磁盘文件解耦（仅保留文件名、SHA-256、导入时间作 provenance）。
-  菜单为 **Export Gerber…**（单层，不清 dirty、不建立 source link）；Save / Save As 为未来 `.rcam` 保留，当前不可用。
+  菜单为 **Export Gerber…**（单层，不清 dirty、不建立 source link）；S4-B3 的 Save / Save As 只写 `.rcam`。
 - 新建空图层、多选/拖放批量导入（全部成功或全部不加入，一次 Undo）、同一文件可导入两次成为两个独立图层。
 - 每层独立颜色（确定性自动配色 + 预设/最近/拾色器）、Visible / Selectable / Locked / Active / Solo / Z 序、
   Filled / Outline / ZeroWidth；按对象类别（Stroke/Circle/Rectangle/Obround/Polygon/AM/Region/文字…）着色与过滤/锁定。
@@ -174,7 +176,7 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 fresh extract（318/318）与 §107 逐项原生检查（14/14）均已完成，见 [S4_B1_REVIEW](docs/S4_B1_REVIEW.md)。
 Windows、完整 V1、P100K、完整 CORE10 均未宣称。
 
-### S4-B2 — Block Core + `.rcam` Native Project Model / schema v1（当前）
+### S4-B2 — Block Core + `.rcam` Native Project Model / schema v1（已验收）
 
 范围与边界见 [S4_B2_PLAN](docs/S4_B2_PLAN.md)，最终证据与剩余边界见 [S4_B2_REVIEW](docs/S4_B2_REVIEW.md)，
 决策见 [ADR 0031](docs/adr/0031-rcam-native-project-format-v1.md) / [ADR 0032](docs/adr/0032-block-core.md)。
@@ -195,4 +197,4 @@ Windows、完整 V1、P100K、完整 CORE10 均未宣称。
 - **S4-B2 = PASS（Mac-first）**：同一 clean commit 的 workspace/codec/Block gates、Metal parity、原生 GUI
   synthetic Block 冒烟、400×100 release 性能、固定 source/public-evidence ZIP、sidecar 与 fresh extract 全部通过。
   同轮修复 Lisong/Songti Light `sdf 点`（3 mm、补偿 0）可见时的 GPU 轮廓扫描卡顿；详见 S4_B2_REVIEW。
-  Windows、完整 V1、P100K 与完整 CORE10 release 仍不宣称；本轮停止，不自动开始 S4-B3。
+  Windows、完整 V1、P100K 与完整 CORE10 release 仍不宣称；S4-B3 的正式文件生命周期见本文开头及阶段 review。

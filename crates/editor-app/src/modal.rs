@@ -134,6 +134,7 @@ impl EditorApp {
                                             {
                                                 self.grid.spacing_mm = v;
                                                 self.grid.snap_enabled = self.draft_snap;
+                                                self.persist_project_view();
                                                 self.modal = None;
                                             }
                                             _ => {
@@ -215,10 +216,21 @@ mod tests {
             layer_dialog_close_on_success: false,
             pending_summary: None,
             recent_colors: Vec::new(),
+            prefs: crate::preferences::AppPreferences::default(),
+            recovery_candidate: None,
+            recovery_ignore_confirm: false,
+            last_dirty_identity: String::new(),
+            dirty_since: std::time::Instant::now(),
+            last_recovery_at: std::time::Instant::now(),
+            last_recovered_identity: String::new(),
             toast: None,
             last_structure_serial: 0,
-            new_after_prompt: false,
+            transition: None,
             close_prompt: false,
+            waiting_save: false,
+            replace_project_path: None,
+            pending_project_error_title: None,
+            project_error: None,
             quit_after_close: false,
             allow_quit: false,
             format: egui_wgpu::wgpu::TextureFormat::Bgra8Unorm,

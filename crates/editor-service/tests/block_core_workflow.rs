@@ -523,10 +523,14 @@ fn capabilities_advertise_every_block_op_as_dispatchable() {
         assert!(!caps.unsupported_operations.iter().any(|s| s == op), "{op}");
     }
     assert!(
-        caps.unsupported_operations
+        caps.supported_operations
             .iter()
-            .any(|s| s.contains(".rcam")),
-        "project.open/save must still be reserved-unsupported this phase"
+            .any(|s| s == "project.open")
+    );
+    assert!(
+        caps.supported_operations
+            .iter()
+            .any(|s| s == "project.save")
     );
 }
 

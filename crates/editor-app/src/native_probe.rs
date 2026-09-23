@@ -109,8 +109,21 @@ impl Probe {
 
 /// Short, stable description of the action sent to the service.
 pub fn action_text(a: &Action) -> String {
+    let basename = |path: &std::path::Path| {
+        path.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned()
+    };
     match a {
-        Action::Open(p) => format!("Open {}", p.display()),
+        Action::Open(p) => format!("Open {}", basename(p)),
+        Action::OpenProject(p, _) => format!("OpenProject {}", basename(p)),
+        Action::SaveProject(path, replace, _) => format!(
+            "SaveProject {} replace={replace}",
+            path.as_deref().map_or("current".into(), basename)
+        ),
+        Action::RestoreProject(_) => "RestoreProject".into(),
+        Action::RecoveryWrite(_) => "RecoveryWrite".into(),
         Action::NewWorkspace => "NewWorkspace".into(),
         Action::DiscardNewWorkspace => "DiscardNewWorkspace".into(),
         Action::ImportGerbers(paths) => format!(
@@ -145,7 +158,7 @@ pub fn action_text(a: &Action) -> String {
         Action::Duplicate => "Duplicate".into(),
         Action::Delete => "DeleteObjects".into(),
         Action::History(redo) => format!("History {}", if *redo { "redo" } else { "undo" }),
-        Action::Save(path, layer, _) => format!("ExportLayer {layer} -> {}", path.display()),
+        Action::Save(path, layer, _) => format!("ExportLayer {layer} -> {}", basename(path)),
         Action::Close(discard) => format!("Close discard={discard}"),
         Action::TextCreate(_) => "TextCreate".into(),
         _ => "Other".into(),
@@ -303,6 +316,12 @@ impl EditorApp {
             "manufacturing_revision": info.map(|i| i.revision.clone()),
             "workspace_revision": info.map(|i| i.workspace_revision.clone()),
             "dirty": info.map(|i| i.dirty),
+            "project_dirty": info.map(|i| i.project_dirty),
+            "project_filename": info.and_then(|i| i.project_path.as_ref()).and_then(|p| {
+                std::path::Path::new(p).file_name().map(|name| name.to_string_lossy().into_owned())
+            }),
+            "close_prompt": self.close_prompt,
+            "recovery_prompt": self.recovery_candidate.is_some(),
             "undo_entries": info.map(|i| i.undo_entries),
             "redo_entries": info.map(|i| i.redo_entries),
             "active_layer": info.and_then(|i| i.active_layer_id.clone()),

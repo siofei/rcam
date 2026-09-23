@@ -9,6 +9,6 @@ license.workspace = true
 editor-text.workspace = true
 editor-core.workspace = true
 gerber-io.workspace = true
+rcam-project.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-

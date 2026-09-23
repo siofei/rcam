@@ -49,6 +49,7 @@ impl EditorApp {
                     match self.text.change_unit(unit) {
                         Ok(()) => {
                             self.display_unit = unit;
+                            self.persist_project_view();
                             self.size_aperture_id = None;
                         }
                         Err(e) => {

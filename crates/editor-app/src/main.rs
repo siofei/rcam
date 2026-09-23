@@ -19,6 +19,9 @@ use modal::ActiveModal;
 mod native_bench;
 mod native_probe;
 mod platform;
+mod preferences;
+mod project_ui;
+mod recovery;
 mod render_index;
 mod selection;
 mod state;
@@ -92,12 +95,23 @@ struct EditorApp {
     pending_summary: Option<editor_service::LayerSummaryResult>,
     /// Recently committed layer/category colours (session-only UI preference).
     recent_colors: Vec<String>,
+    prefs: preferences::AppPreferences,
+    recovery_candidate: Option<recovery::RecoveryMetadata>,
+    recovery_ignore_confirm: bool,
+    last_dirty_identity: String,
+    dirty_since: Instant,
+    last_recovery_at: Instant,
+    last_recovered_identity: String,
     /// Message plus its birth time; drives the "deleted … [Undo]" notice.
     toast: Option<(String, Instant)>,
     last_structure_serial: u64,
     /// The unexported-changes prompt is for "new workspace", not for quitting.
-    new_after_prompt: bool,
+    transition: Option<project_ui::Transition>,
     close_prompt: bool,
+    waiting_save: bool,
+    replace_project_path: Option<std::path::PathBuf>,
+    pending_project_error_title: Option<&'static str>,
+    project_error: Option<(String, String)>,
     quit_after_close: bool,
     allow_quit: bool,
     format: egui_wgpu::wgpu::TextureFormat,
@@ -180,6 +194,12 @@ impl EditorApp {
             .expect("eframe wgpu renderer required");
         let adapter = format!("{:?}", gpu.adapter.get_info());
         eprintln!("RCam S4-A2 native GPU: {adapter}");
+        let prefs = preferences::AppPreferences::path()
+            .map_or_else(preferences::AppPreferences::default, |path| {
+                preferences::AppPreferences::load(&path)
+            });
+        let recovery_candidate =
+            recovery::directory().and_then(|dir| recovery::discover(&dir).into_iter().next());
         let mut app = Self {
             tx,
             rx,
@@ -214,11 +234,22 @@ impl EditorApp {
             layer_dialog: None,
             layer_dialog_close_on_success: false,
             pending_summary: None,
-            recent_colors: Vec::new(),
+            recent_colors: prefs.recent_colors.clone(),
+            prefs,
+            recovery_candidate,
+            recovery_ignore_confirm: false,
+            last_dirty_identity: String::new(),
+            dirty_since: Instant::now(),
+            last_recovery_at: Instant::now() - std::time::Duration::from_secs(60),
+            last_recovered_identity: String::new(),
             toast: None,
             last_structure_serial: 0,
-            new_after_prompt: false,
+            transition: None,
             close_prompt: false,
+            waiting_save: false,
+            replace_project_path: None,
+            pending_project_error_title: None,
+            project_error: None,
             quit_after_close: false,
             allow_quit: false,
             format: gpu.target_format,
@@ -255,6 +286,11 @@ impl EditorApp {
         if self.busy {
             return;
         }
+        self.pending_project_error_title = match &a {
+            Action::OpenProject(..) | Action::RestoreProject(..) => Some("无法打开工程"),
+            Action::SaveProject(..) => Some("无法保存工程"),
+            _ => None,
+        };
         if !matches!(a, Action::ProbeDrag(..)) {
             self.drag = None;
         }
@@ -329,47 +365,15 @@ impl EditorApp {
             self.ui_error = Some("请先选择要导出的图层".into());
         }
     }
-    /// "Save / Save As" belong to the future `.rcam` project format (S4-B2).
-    fn explain_save_unavailable(&mut self) {
-        self.ui_error = Some(
-            "保存 / 另存为工作区将在 .rcam 阶段（S4-B2）提供。Gerber 请使用“导出图层为 Gerber…”，导出不会保存工作区。"
-                .into(),
-        );
-    }
     fn new_workspace(&mut self) {
-        self.modal = None;
-        self.text.cancel();
-        self.tool = tools::ActiveTool::Select;
-        self.quit_after_close = false;
-        if self
-            .view
-            .info
-            .as_ref()
-            .is_some_and(|d| d.dirty || d.export_policy_dirty)
-        {
-            self.new_after_prompt = true;
-            self.close_prompt = true;
-        } else {
-            self.send(Action::NewWorkspace);
-        }
+        self.begin_transition(project_ui::Transition::New);
     }
     fn close(&mut self, quit: bool) {
-        self.modal = None;
-        self.text.cancel();
-        self.tool = tools::ActiveTool::Select;
-        self.quit_after_close = quit;
-        if self
-            .view
-            .info
-            .as_ref()
-            .is_some_and(|d| d.dirty || d.export_policy_dirty)
-        {
-            self.close_prompt = true;
-        } else if self.view.info.is_some() {
-            self.send(Action::Close(false));
-        } else if quit {
-            self.allow_quit = true;
-        }
+        self.begin_transition(if quit {
+            project_ui::Transition::Quit
+        } else {
+            project_ui::Transition::Close
+        });
     }
     fn object_buttons(&mut self, ui: &mut egui::Ui) {
         let enabled = self.usable() && drag::editable_selection(&self.view);
@@ -689,6 +693,34 @@ impl eframe::App for EditorApp {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
+            if let (Some(title), Some(error)) = (
+                self.pending_project_error_title.take(),
+                self.view.error.as_ref(),
+            ) {
+                self.project_error =
+                    Some((title.into(), format!("{}: {}", error.code, error.message)));
+            }
+            if self.view.error.is_none()
+                && matches!(self.view.message.as_str(), "工程已打开" | "工程已保存")
+            {
+                if let Some(path) = self
+                    .view
+                    .info
+                    .as_ref()
+                    .and_then(|d| d.project_path.as_ref())
+                {
+                    self.prefs.remember(std::path::PathBuf::from(path));
+                    if let Some(store) = preferences::AppPreferences::path() {
+                        let _ = self.prefs.save(&store);
+                    }
+                }
+                if self.view.message == "工程已保存"
+                    && let (Some(dir), Some(info)) =
+                        (recovery::directory(), self.view.info.as_ref())
+                {
+                    recovery::remove(&dir, &info.project_id);
+                }
+            }
             self.selected_flags =
                 std::sync::Arc::new(self.view.scene.as_ref().map_or_else(Vec::new, |scene| {
                     gpu::selection_flags(scene, &self.view.selected.ids())
@@ -762,7 +794,9 @@ impl eframe::App for EditorApp {
                 self.size_aperture_id = None;
                 self.size_width.clear();
                 self.size_height.clear();
+                self.restore_project_view();
             }
+            self.saved_for_transition();
             if self.quit_after_close && self.view.info.is_none() {
                 self.allow_quit = true;
             }
@@ -775,6 +809,15 @@ impl eframe::App for EditorApp {
                 self.camera.fit(Some(bounds), self.canvas_rect);
             }
             self.last_structure_serial = self.view.structure_serial;
+        }
+        self.tick_recovery(now);
+        if self
+            .view
+            .info
+            .as_ref()
+            .is_some_and(|info| info.project_dirty)
+        {
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
         if self
             .toast
@@ -799,15 +842,15 @@ impl eframe::App for EditorApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         let title = self.view.info.as_ref().map_or("RCam".into(), |d| {
-            format!(
-                "RCam — 工作区（{} 个图层）{}",
-                d.layer_ids.len(),
-                if d.dirty || d.export_policy_dirty {
-                    " *"
-                } else {
-                    ""
-                }
-            )
+            let name = d
+                .project_path
+                .as_ref()
+                .and_then(|path| std::path::Path::new(path).file_name())
+                .map_or_else(
+                    || "Untitled".into(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+            format!("RCam — {name}{}", if d.project_dirty { " *" } else { "" })
         });
         if self.last_title != title {
             self.last_title = title.clone();
@@ -849,6 +892,9 @@ impl eframe::App for EditorApp {
         let modal_open = self.modal.is_some()
             || self.layer_dialog.is_some()
             || self.close_prompt
+            || self.replace_project_path.is_some()
+            || self.project_error.is_some()
+            || self.recovery_candidate.is_some()
             || self.view.error.as_ref().is_some_and(|e| {
                 e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
             });
@@ -887,24 +933,31 @@ impl eframe::App for EditorApp {
         ) {
             ctx.input_mut(|i| {
                 if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) && !self.busy {
-                    self.import_gerbers();
+                    self.file_shortcut('o', false);
                 }
                 if i.consume_key(egui::Modifiers::COMMAND, egui::Key::N) && !self.busy {
-                    self.new_workspace();
+                    self.file_shortcut('n', false);
+                }
+                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::I) && !self.busy {
+                    self.file_shortcut('i', false);
+                }
+                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::W) && !self.busy {
+                    self.file_shortcut('w', false);
                 }
                 if i.consume_key(
                     egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
                     egui::Key::E,
                 ) && self.usable()
                 {
-                    self.save();
+                    self.file_shortcut('e', true);
                 }
                 if i.consume_key(
                     egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
                     egui::Key::S,
-                ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)
-                {
-                    self.explain_save_unavailable();
+                ) {
+                    self.file_shortcut('s', true);
+                } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::S) {
+                    self.file_shortcut('s', false);
                 }
                 if i.consume_key(
                     egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
@@ -942,13 +995,44 @@ impl eframe::App for EditorApp {
                 ui.strong("RCam");
                 ui.separator();
                 ui.menu_button("文件", |ui| {
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("新建工作区  ⌘N"))
-                        .clicked()
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_NEW_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy)).clicked()
                     {
-                        self.new_workspace();
+                        self.dispatch_file_command(command_ids::FILE_NEW_PROJECT);
                         ui.close();
                     }
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_OPEN_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy)).clicked() {
+                        self.dispatch_file_command(command_ids::FILE_OPEN_PROJECT);
+                        ui.close();
+                    }
+                    ui.menu_button("打开最近使用的工程", |ui| {
+                        for path in self.prefs.recent_projects.clone() {
+                            let label = path.file_name().unwrap_or_default().to_string_lossy();
+                            if ui.button(label).clicked() {
+                                if path.is_file() { self.begin_transition(project_ui::Transition::Open(path)); }
+                                else { self.ui_error = Some("最近使用的工程文件不存在；可从列表移除".into()); }
+                                ui.close();
+                            }
+                        }
+                        ui.separator();
+                        if ui.button("移除失效路径").clicked() {
+                            self.prefs.recent_projects.retain(|path| path.is_file());
+                            if let Some(store) = preferences::AppPreferences::path() { let _ = self.prefs.save(&store); }
+                            ui.close();
+                        }
+                    });
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_SAVE_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy && self.view.info.is_some())).clicked() {
+                        self.dispatch_file_command(command_ids::FILE_SAVE_PROJECT);
+                        ui.close();
+                    }
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_SAVE_PROJECT_AS, crate::ui::command_widgets::CommandState::enabled(!self.busy && self.view.info.is_some())).clicked() {
+                        self.dispatch_file_command(command_ids::FILE_SAVE_PROJECT_AS);
+                        ui.close();
+                    }
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_CLOSE_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy && self.view.info.is_some())).clicked() {
+                        self.dispatch_file_command(command_ids::FILE_CLOSE_PROJECT);
+                        ui.close();
+                    }
+                    ui.separator();
                     if crate::ui::command_widgets::button(
                         ui,
                         command_ids::FILE_IMPORT_GERBER,
@@ -956,7 +1040,7 @@ impl eframe::App for EditorApp {
                     )
                     .clicked()
                     {
-                        self.import_gerbers();
+                        self.dispatch_file_command(command_ids::FILE_IMPORT_GERBER);
                         ui.close();
                     }
                     if crate::ui::command_widgets::button(
@@ -979,16 +1063,9 @@ impl eframe::App for EditorApp {
                     )
                     .clicked()
                     {
-                        self.save();
+                        self.dispatch_file_command(command_ids::FILE_EXPORT_GERBER);
                         ui.close();
                     }
-                    // Save / Save As are reserved for the .rcam project format (S4-B2).
-                    ui.add_enabled(false, egui::Button::new("保存工作区（S4-B2 .rcam 提供）"))
-                        .on_disabled_hover_text("Gerber 只导入 / 导出；工程保存将在 .rcam 阶段提供");
-                    ui.add_enabled(
-                        false,
-                        egui::Button::new("工作区另存为…（S4-B2 .rcam 提供）"),
-                    );
                 });
                 ui.menu_button("编辑", |ui| {
                     self.history_buttons(ui);
@@ -1130,12 +1207,12 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("视图", |ui| {
-                    crate::ui::command_widgets::checkbox(
+                    if crate::ui::command_widgets::checkbox(
                         ui,
                         command_ids::VIEW_GRID_TOGGLE,
                         &mut self.grid.visible,
                         true,
-                    );
+                    ).changed() { self.persist_project_view(); }
                     if ui.button("网格 / 吸附设置…").clicked() {
                         self.open_modal(ActiveModal::Grid);
                         ui.close();
@@ -1256,7 +1333,7 @@ impl eframe::App for EditorApp {
         });
         let layer_panel = egui::SidePanel::left("layers")
             .resizable(true)
-            .default_width(250.)
+            .default_width(self.prefs.panel_width.unwrap_or(250.))
             // Below ~240 px the six fixed controls leave no room for the name and the
             // truncated label would draw over them (found in the native §107 check).
             .width_range(240.0..=480.)
@@ -1267,6 +1344,14 @@ impl eframe::App for EditorApp {
                 self.layer_panel(ui);
             });
         self.layer_panel_rect = layer_panel.response.rect;
+        if ctx.input(|i| i.pointer.any_released())
+            && (self.prefs.panel_width.unwrap_or(250.) - self.layer_panel_rect.width()).abs() > 1.
+        {
+            self.prefs.panel_width = Some(self.layer_panel_rect.width().clamp(240., 480.));
+            if let Some(path) = preferences::AppPreferences::path() {
+                let _ = self.prefs.save(&path);
+            }
+        }
         egui::SidePanel::right("properties")
             .default_width(260.)
             .width_range(230.0..=380.)
@@ -1346,17 +1431,10 @@ impl eframe::App for EditorApp {
                     }
                     ui.separator();
                     if let Some(d) = &self.view.info {
-                        if d.export_policy_dirty {
-                            ui.label("导出制造精度策略有未保存更改");
-                        }
-                        ui.strong(if d.dirty {
-                            "工作区含有尚未导出的制造修改"
-                        } else {
-                            "制造内容与导入时相同"
-                        });
+                        ui.strong(if d.project_dirty { "工程有未保存更改" } else { "工程已保存" });
                         ui.label(
                             RichText::new(
-                                "工作区暂无工程文件（.rcam 将在 S4-B2 提供）。Gerber 导出只写出所选图层，不会保存工作区，也不会清除此标记。",
+                                "Gerber 导出只写所选图层，不保存 .rcam 工程，也不清除工程未保存标记。",
                             )
                             .small()
                             .weak(),
@@ -1369,7 +1447,9 @@ impl eframe::App for EditorApp {
                 ui.disable();
             }
             ui.horizontal_wrapped(|ui| {
-                ui.checkbox(&mut self.grid.visible, "网格");
+                if ui.checkbox(&mut self.grid.visible, "网格").changed() {
+                    self.persist_project_view();
+                }
                 if ui.button("网格 / 吸附设置…").clicked() {
                     self.open_modal(ActiveModal::Grid);
                 }
@@ -1790,39 +1870,8 @@ impl eframe::App for EditorApp {
             bench.ensure_record(self, ctx.pixels_per_point(), now);
             self.bench = Some(bench);
         }
-        if self.close_prompt {
-            self.modal = None;
-            self.layer_dialog = None;
-            self.text.cancel();
-            egui::Modal::new(egui::Id::new("close-confirmation")).show(ctx, |ui| {
-                ui.heading("放弃尚未导出的修改？");
-                ui.label(
-                    "工作区含有尚未导出的制造修改。Gerber 导出只保存所选图层，不保存工作区；放弃后无法恢复。",
-                );
-                ui.horizontal(|ui| {
-                    if ui.button("取消").clicked() {
-                        self.close_prompt = false;
-                        self.quit_after_close = false;
-                        self.new_after_prompt = false;
-                    }
-                    if ui.button("先导出当前图层…").clicked() {
-                        self.close_prompt = false;
-                        self.quit_after_close = false;
-                        self.new_after_prompt = false;
-                        self.save();
-                    }
-                    if ui.button("放弃修改并继续").clicked() {
-                        self.close_prompt = false;
-                        if self.new_after_prompt {
-                            self.new_after_prompt = false;
-                            self.send(Action::DiscardNewWorkspace);
-                        } else {
-                            self.send(Action::Close(true));
-                        }
-                    }
-                });
-            });
-        }
+        self.project_prompts(ctx);
+        self.recovery_prompt(ctx);
         if !self.close_prompt {
             self.parameter_modal(ctx);
             self.layer_dialogs(ctx);

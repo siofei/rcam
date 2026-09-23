@@ -333,6 +333,10 @@ impl EditorApp {
     /// model or the Gerber writer output.
     pub(crate) fn remember_color(&mut self, hex: &str) {
         push_recent_color(&mut self.recent_colors, hex);
+        self.prefs.recent_colors = self.recent_colors.clone();
+        if let Some(path) = crate::preferences::AppPreferences::path() {
+            let _ = self.prefs.save(&path);
+        }
     }
 
     fn layer_patch(&self, layer: &str) -> Option<LayerUpdateParams> {

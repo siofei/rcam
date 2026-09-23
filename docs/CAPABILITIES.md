@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发切片为 Mac-first S4-B1 Multi-Gerber Workspace（Global Units 已 PASS Mac-first bounded），尚不是 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+当前开发切片为 Mac-first S4-B3 `.rcam` Project Lifecycle（Global Units、S4-B1、S4-B2 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -199,12 +199,12 @@ S4-A2.1 PASS（Mac-first）；S4-A2.2 PASS（Mac-first）；Global Units & Manuf
 Display uses camera-relative local f32, safe zoom clamp and last-good-frame.
 Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 release。
 
-### S4-B1 Multi-Gerber Workspace（实现完成，原生验收待执行）
+### S4-B1 Multi-Gerber Workspace（阶段历史状态；最终 PASS，Mac-first）
 
 | 能力 | 边界 |
 |---|---|
 | 多 Gerber Workspace | 每个导入文件是独立 Layer（`layer-{n}`，来源 `src-{n}`，计数器不复用）；对象/光圈带命名空间；批量导入原子 |
-| Gerber 文件生命周期 | 只 Import / Export；无 source link / mtime reload / 写回原文件；Save/Save As 保留给 `.rcam`（S4-B2/B3），当前 disabled |
+| Gerber 文件生命周期 | 只 Import / Export；无 source link / mtime reload / 写回原文件；当时 `.rcam` Save/Save As 尚未启用 |
 | 单层导出 | `gerber.export_layer`；沿用安全写出流水线与 `overwrite` 策略；不清 dirty；使用文档级精度 |
 | New Empty Layer / 删除 | 空层直删 + Undo；非空需 `allow_non_empty`（GUI 强确认）；dirty/generated 更强确认；允许删除最后一层；Undo 恢复同 LayerId/z-order/样式 |
 | Layer View State | 颜色 + 自动配色、Visible/Selectable/Locked、Active、Solo、Z 序、Filled/Outline/ZeroWidth、DisplayClass 分类样式；不改变 writer bytes |
@@ -236,3 +236,7 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 Metal parity、原生 GUI Block fixture、400×100 性能、固定 ZIP/sidecar/fresh extract 全部通过，因此
 **S4-B2 = PASS（Mac-first）**。Windows deferred；不声称完整 V1、P100K 或完整 CORE10 release。见
 [S4_B2_REVIEW](S4_B2_REVIEW.md)。
+
+## S4-B3 `.rcam` Project Lifecycle（实施中）
+
+`ApplicationService` 新增受 `FileAccessPolicy` 限定的 `project.new/open/info/save/save_as`，并将对应 JSON 操作列为 supported。`.rcam` Open 先完整解码再装载候选工程；Save 使用临时文件、完整复核与原子发布，成功后才更新 project path/hash/dirty。GUI File 菜单正式区分 `.rcam` New/Open/Save/Save As 与 Gerber Import/Export，新增关闭确认、Recent 和本机 Recovery；Solo/Selection/Undo 与 AppPreferences 不进入 `.rcam`。Mac 原生和交付门禁见 [S4_B3_REVIEW](S4_B3_REVIEW.md)；未达到门禁前不标记 PASS。
