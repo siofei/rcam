@@ -1068,7 +1068,7 @@ S2 hit-test/bounds 仅冻结精确 f64 边界，本轮不开放；其余 V1 门�
 RectangularSweep 斜向仅作为独立查询算法验证，不改变轴向制造/导入/导出支持范围。
 本轮停止在 S2-A.2 无 GUI 服务，S2-A.3 GUI 与双平台完整 V1 门槛保留。
 
-当前活动开发阶段为 Mac-first S4-B3，Windows deferred / not executed；最终双平台 V1 要求保持不变。
+Mac-first S4-B3 已按限定范围验收；当前停在 S4-C 前。Windows deferred / not executed；最终双平台 V1 要求保持不变。
 
 ### S2-B2 精确框选与多选
 

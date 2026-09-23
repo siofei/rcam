@@ -11,7 +11,6 @@ pub fn choose_project(save: bool) -> Result<Option<PathBuf>, String> {
         let panel: objc2::rc::Retained<NSSavePanel> = if save {
             let panel = NSSavePanel::savePanel(mtm);
             panel.setTitle(Some(&NSString::from_str("保存 RCam 工程（.rcam）")));
-            panel.setNameFieldStringValue(&NSString::from_str("Untitled.rcam"));
             panel
         } else {
             let panel = NSOpenPanel::openPanel(mtm);
@@ -24,6 +23,11 @@ pub fn choose_project(save: bool) -> Result<Option<PathBuf>, String> {
         let types = NSArray::from_retained_slice(&[NSString::from_str("rcam")]);
         #[allow(deprecated)]
         panel.setAllowedFileTypes(Some(&types));
+        if save {
+            // NSSavePanel appends its allowed extension. Supplying it here as
+            // well can produce "Untitled.rcam.rcam" when the panel is reused.
+            panel.setNameFieldStringValue(&NSString::from_str("Untitled"));
+        }
         match panel.runModal() {
             response if response == NSModalResponseOK => panel
                 .URL()
