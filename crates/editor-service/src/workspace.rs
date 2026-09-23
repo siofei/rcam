@@ -1295,8 +1295,12 @@ impl ApplicationService {
                 }
             }
         }
-        let bounds = editor_core::geometries_bounds(geometries, &record.document.apertures)
-            .map_err(map_semantic_error)?;
+        let bounds = editor_core::geometries_bounds_with_blocks(
+            geometries,
+            &record.document.apertures,
+            &record.document.block_definitions,
+        )
+        .map_err(map_semantic_error)?;
         Ok(VisibleBoundsResult {
             document_id: document_id.into(),
             revision: record.revision.to_string(),

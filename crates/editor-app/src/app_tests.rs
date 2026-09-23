@@ -1711,6 +1711,88 @@ fn committed_text_fits_retina_viewport_sample_budget() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn lisong_light_sdf_point_committed_text_zoom_stays_bounded() {
+    use eframe::egui;
+    let mut m = Model::default();
+    m.open(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/s2a3/gui_primitives.gbr"),
+    )
+    .unwrap();
+    let path = std::path::PathBuf::from("/System/Library/Fonts/Supplemental/Songti.ttc");
+    m.run(Action::SystemFont(1, path, "STSongti-SC-Light".into()));
+    let crate::text_tool::Reply::Font { result, .. } = m.view.text_reply.as_ref().unwrap().as_ref()
+    else {
+        panic!()
+    };
+    let mut draft = crate::text_tool::Draft {
+        text: "sdf 点".into(),
+        height: "3".into(),
+        offset: "0".into(),
+        x: "0".into(),
+        y: "0".into(),
+        ..Default::default()
+    };
+    draft.accept_font(result.as_ref().unwrap().clone());
+    m.run(Action::TextCreate(text_request(&m, &draft)));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800., 450.));
+    let ppp = 2.;
+    // 800 logical points / 69.565 pt/mm = 11.5 mm across the visible canvas.
+    let initial = m.view.scene.as_ref().unwrap();
+    let selected = m.view.selected.ids();
+    let object = initial
+        .objects
+        .iter()
+        .zip(&initial.ids)
+        .find(|(_, id)| selected.iter().any(|selected| selected == id))
+        .map(|(object, _)| object)
+        .unwrap();
+    let center = MmPoint::new(
+        initial.anchor.x_mm + f64::from((object.bounds[0] + object.bounds[2]) * 0.5),
+        initial.anchor.y_mm + f64::from((object.bounds[1] + object.bounds[3]) * 0.5),
+    );
+    let mut at_11_5_mm = None;
+    for visible_width_mm in [11.5, 2., 0.5, 0.1] {
+        let camera = crate::camera::Camera {
+            center,
+            scale: 800. / visible_width_mm,
+        };
+        let ppm = camera.scale * f64::from(ppp);
+        let lo = camera.world(rect.left_bottom(), rect);
+        let hi = camera.world(rect.right_top(), rect);
+        m.run(Action::Viewport(
+            camera.center,
+            editor_core::BoundsMm {
+                min_x_mm: lo.x_mm,
+                min_y_mm: lo.y_mm,
+                max_x_mm: hi.x_mm,
+                max_y_mm: hi.y_mm,
+            },
+            ppm,
+        ));
+        let scene = m.view.scene.as_ref().unwrap();
+        let flags = crate::gpu::selection_flags(scene, &m.view.selected.ids());
+        let prepared =
+            crate::gpu::prepare_measured(scene, camera, rect, ppp, &flags, MmPoint::new(0., 0.))
+                .unwrap();
+        assert!(prepared.stats.estimated_work < 1_000_000_000.);
+        if visible_width_mm == 11.5 {
+            at_11_5_mm = Some((
+                scene.points.len(),
+                prepared.stats.candidate_count,
+                prepared.stats.estimated_work,
+            ));
+        }
+    }
+    let (points, candidates, work) = at_11_5_mm.unwrap();
+    eprintln!("lisong_sdf_point points={points} candidates={candidates} work_at_11_5mm={work}");
+    assert!(work < 500_000_000.);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn system_font_catalog_resolves_named_ttc_faces_without_document_mutation() {
     let (mut m, _) = setup();
     let before = m.view.info.clone();

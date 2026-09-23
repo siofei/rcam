@@ -293,6 +293,10 @@ impl EditorApp {
             "recent_colors": self.recent_colors,
             "toast": self.toast.as_ref().map(|t| t.0.clone()),
             "selected_objects": self.view.selected.ordered.len(),
+            "selected_object_ids": self.view.selected.ids(),
+            "selected_block_instances": self.view.selected.ordered.iter().filter(|item| {
+                matches!(item.object.geometry, editor_core::SemanticGeometry::BlockInstance { .. })
+            }).count(),
             "blocked": self.view.blocked,
             "display_error": self.display_error,
             "has_last_good_frame": self.last_good.is_some(),

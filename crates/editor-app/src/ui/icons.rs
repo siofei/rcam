@@ -3,10 +3,6 @@
 //! swapping the underlying representation (SVG/vector icons, say) later
 //! never touches a call site. Every mapping below is the exact glyph the
 //! call site it replaces already used — this is a rename, not a redesign.
-//! Scoped to the glyphs the layer row actually renders today; a variant for
-//! a concept with no current glyph (Import/Export/Snap/Measure/Text/Block
-//! icons, a distinct Hidden/Unlocked glyph) is left for whoever adds that
-//! glyph, rather than added speculatively and immediately dead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RcamIcon {
     /// Also the glyph for the hidden state — the row highlights which one
@@ -22,6 +18,16 @@ pub enum RcamIcon {
     InactiveLayer,
     DragHandle,
     Solo,
+    Add,
+    Delete,
+    Import,
+    Export,
+    Grid,
+    Measure,
+    Text,
+    Undo,
+    Redo,
+    Duplicate,
 }
 
 impl RcamIcon {
@@ -37,6 +43,16 @@ impl RcamIcon {
             Self::InactiveLayer => "○",
             Self::DragHandle => "≡",
             Self::Solo => "S",
+            Self::Add => "+",
+            Self::Delete => "−",
+            Self::Import => "⇥",
+            Self::Export => "⇤",
+            Self::Grid => "#",
+            Self::Measure => "↔",
+            Self::Text => "T",
+            Self::Undo => "↶",
+            Self::Redo => "↷",
+            Self::Duplicate => "⧉",
         }
     }
 }

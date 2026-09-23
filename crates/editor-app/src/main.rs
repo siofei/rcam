@@ -32,6 +32,7 @@ mod viewport_tests;
 mod world_index;
 
 use camera::Camera;
+use editor_core::command::ids as command_ids;
 use eframe::egui::{self, Color32, RichText, Vec2};
 use state::{Action, MirrorDirection, Model, PivotInput, View};
 use std::{
@@ -148,6 +149,21 @@ impl EditorApp {
         let ctx = cc.egui_ctx.clone();
         std::thread::spawn(move || {
             let mut model = Model::default();
+            // Dev-only native GUI smoke path (S4-B2 Final Closeout, task
+            // §17): no Block Editor GUI ships this phase, so a synthetic
+            // Block fixture is loaded this way instead of through the UI.
+            if std::env::var_os("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE").is_some() {
+                match model.autoload_block_fixture() {
+                    Ok(()) => {
+                        // The GUI thread's `sequence` starts at 0 and has not
+                        // sent a request yet; push the autoloaded view directly
+                        // so the very first frame already shows it.
+                        let _ = reply.send((0, model.view.clone()));
+                        ctx.request_repaint();
+                    }
+                    Err(e) => eprintln!("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE failed: {e:?}"),
+                }
+            }
             while let Ok((id, action)) = request.recv() {
                 let start = Instant::now();
                 model.run(action);
@@ -357,15 +373,21 @@ impl EditorApp {
     }
     fn object_buttons(&mut self, ui: &mut egui::Ui) {
         let enabled = self.usable() && drag::editable_selection(&self.view);
-        if ui
-            .add_enabled(enabled, egui::Button::new("原位复制  ⌘D"))
-            .clicked()
+        if crate::ui::command_widgets::button(
+            ui,
+            command_ids::EDIT_DUPLICATE,
+            crate::ui::command_widgets::CommandState::enabled(enabled),
+        )
+        .clicked()
         {
             self.send(Action::Duplicate);
         }
-        if ui
-            .add_enabled(enabled && !self.busy, egui::Button::new("删除对象  ⌫"))
-            .clicked()
+        if crate::ui::command_widgets::button(
+            ui,
+            command_ids::EDIT_DELETE,
+            crate::ui::command_widgets::CommandState::enabled(enabled && !self.busy),
+        )
+        .clicked()
         {
             self.send(Action::Delete);
         }
@@ -373,15 +395,21 @@ impl EditorApp {
     fn history_buttons(&mut self, ui: &mut egui::Ui) {
         let undo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0);
         let redo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.redo_entries > 0);
-        if ui
-            .add_enabled(undo, egui::Button::new("撤销  ⌘Z"))
-            .clicked()
+        if crate::ui::command_widgets::button(
+            ui,
+            command_ids::EDIT_UNDO,
+            crate::ui::command_widgets::CommandState::enabled(undo),
+        )
+        .clicked()
         {
             self.send(Action::History(false));
         }
-        if ui
-            .add_enabled(redo, egui::Button::new("重做  Shift+⌘Z"))
-            .clicked()
+        if crate::ui::command_widgets::button(
+            ui,
+            command_ids::EDIT_REDO,
+            crate::ui::command_widgets::CommandState::enabled(redo),
+        )
+        .clicked()
         {
             self.send(Action::History(true));
         }
@@ -921,27 +949,35 @@ impl eframe::App for EditorApp {
                         self.new_workspace();
                         ui.close();
                     }
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("导入 Gerber…（可多选）  ⌘O"))
-                        .clicked()
+                    if crate::ui::command_widgets::button(
+                        ui,
+                        command_ids::FILE_IMPORT_GERBER,
+                        crate::ui::command_widgets::CommandState::enabled(!self.busy),
+                    )
+                    .clicked()
                     {
                         self.import_gerbers();
                         ui.close();
                     }
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("新建空图层"))
-                        .clicked()
+                    if crate::ui::command_widgets::button(
+                        ui,
+                        command_ids::LAYER_CREATE,
+                        crate::ui::command_widgets::CommandState::enabled(!self.busy),
+                    )
+                    .clicked()
                     {
                         self.create_empty_layer();
                         ui.close();
                     }
                     ui.separator();
-                    if ui
-                        .add_enabled(
+                    if crate::ui::command_widgets::button(
+                        ui,
+                        command_ids::FILE_EXPORT_GERBER,
+                        crate::ui::command_widgets::CommandState::enabled(
                             self.usable() && self.layer.is_some(),
-                            egui::Button::new("导出当前图层为 Gerber…  Shift+⌘E"),
-                        )
-                        .clicked()
+                        ),
+                    )
+                    .clicked()
                     {
                         self.save();
                         ui.close();
@@ -976,9 +1012,12 @@ impl eframe::App for EditorApp {
                     );
                 });
                 ui.menu_button("插入", |ui| {
-                    if ui
-                        .add_enabled(self.usable(), egui::Button::new("文本…"))
-                        .clicked()
+                    if crate::ui::command_widgets::button(
+                        ui,
+                        command_ids::TOOL_TEXT,
+                        crate::ui::command_widgets::CommandState::enabled(self.usable()),
+                    )
+                    .clicked()
                     {
                         self.open_modal(ActiveModal::Text);
                         ui.close();
@@ -987,7 +1026,11 @@ impl eframe::App for EditorApp {
                 ui.menu_button("工具", |ui| {
                     for (label, tool) in [
                         ("选择", tools::ActiveTool::Select),
-                        ("测距", tools::ActiveTool::Measure),
+                        (
+                            crate::ui::command_widgets::descriptor(command_ids::TOOL_MEASURE)
+                                .label,
+                            tools::ActiveTool::Measure,
+                        ),
                     ] {
                         if ui.button(label).clicked() {
                             self.text.cancel();
@@ -998,9 +1041,12 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("图层", |ui| {
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("新建空图层"))
-                        .clicked()
+                    if crate::ui::command_widgets::button(
+                        ui,
+                        command_ids::LAYER_CREATE,
+                        crate::ui::command_widgets::CommandState::enabled(!self.busy),
+                    )
+                    .clicked()
                     {
                         self.create_empty_layer();
                         ui.close();
@@ -1039,9 +1085,12 @@ impl eframe::App for EditorApp {
                             ui.close();
                         }
                     }
-                    if ui
-                        .add_enabled(active.is_some(), egui::Button::new("删除当前图层…"))
-                        .clicked()
+                    if crate::ui::command_widgets::button(
+                        ui,
+                        command_ids::LAYER_DELETE,
+                        crate::ui::command_widgets::CommandState::enabled(active.is_some()),
+                    )
+                    .clicked()
                         && let Some(layer) = active
                     {
                         self.layer_dialog =
@@ -1081,7 +1130,12 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("视图", |ui| {
-                    ui.checkbox(&mut self.grid.visible, "显示网格");
+                    crate::ui::command_widgets::checkbox(
+                        ui,
+                        command_ids::VIEW_GRID_TOGGLE,
+                        &mut self.grid.visible,
+                        true,
+                    );
                     if ui.button("网格 / 吸附设置…").clicked() {
                         self.open_modal(ActiveModal::Grid);
                         ui.close();
@@ -1104,10 +1158,7 @@ impl eframe::App for EditorApp {
                 });
             });
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(!self.busy, egui::Button::new("导入…"))
-                    .clicked()
-                {
+                if crate::ui::buttons::toolbar(ui, "导入…", !self.busy).clicked() {
                     self.import_gerbers();
                 }
                 if ui.button("适合窗口").clicked() {
@@ -1125,13 +1176,13 @@ impl eframe::App for EditorApp {
                 ui.separator();
                 ui.label(RichText::new("几何多选").color(Color32::from_rgb(100, 206, 183)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add_enabled(
-                            self.usable() && self.layer.is_some(),
-                            egui::Button::new("导出图层…"),
-                        )
-                        .clicked()
-                    {
+                if crate::ui::buttons::toolbar(
+                    ui,
+                    "导出图层…",
+                    self.usable() && self.layer.is_some(),
+                )
+                .clicked()
+                {
                         self.save();
                     }
                     if self.busy {

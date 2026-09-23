@@ -13,6 +13,9 @@ egui-wgpu.workspace = true
 bytemuck.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+gerber-io.workspace = true
+
 [[example]]
 name = "s0-demo"
 path = "src/s0_demo.rs"

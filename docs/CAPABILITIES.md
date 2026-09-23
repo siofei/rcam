@@ -216,21 +216,23 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 **S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**：Mac 上 fmt/check/clippy/test/release 与 Metal parity（180+288 例）、
 固定 ZIP 交付与 fresh extract（318/318）、§107 逐项原生检查（14/14）均已完成，见 S4_B1_REVIEW。
 
-## 2026-09-22 S4-B2 Block Core + `.rcam` schema v1（当前；源码/自动化测试完成，原生验收未执行）
+## 2026-09-23 S4-B2 Block Core + `.rcam` schema v1（PASS，Mac-first）
 
 | 能力 | 边界 |
 |---|---|
 | Reusable Block | `BlockDefinition`（`SemanticDocument.block_definitions`，项目级）+ `BlockInstance`（`SemanticGeometry::BlockInstance`，层内，只 translation/rotation/mirror）；无 nested（`BlockObjectGeometry` 类型层面不可表示实例） |
 | Block Service API | `blocks.list_definitions`、`blocks.get_definition`（只读）；`blocks.create_definition_from_objects`、`blocks.create_instance`、`blocks.update_instance_transform`、`blocks.rename_definition`、`blocks.explode_instance`、`blocks.delete_definition`（被引用时 `BLOCK_DEFINITION_REFERENCED`）；Move/Rotate/Mirror/Duplicate 复用既有 `objects.*` |
 | Definition 共享 | 修改 Definition（含 revision）对全部引用它的 Instance 生效；Instance 编辑（transform）只影响自己；bounds/hit-test/metrics 均按需 resolve，不物理复制几何 |
+| Display | definition display cache + instance rigid transform；Filled/Outline/ZeroWidth、Layer/Category color、Visible、Selected；整实例 identity/highlight；Metal 对完整参考 renderer 零 RGBA 差异 |
 | Export | Gerber 单层导出展平 `BlockInstance`（RCam Block ≠ Gerber `%AB`）；RectangularSweep 在非 90° 合成旋转下 fail-closed；round-trip 校验按展平后的图形比较 |
-| `.rcam` schema v1 | 新 crate `rcam-project`（无 GUI/GPU 依赖，`dependency_boundary` 测试核对）；ZIP 容器（manifest + project + layers/\* + blocks/\*），store-only 确定性编码；`encode_v1`/`decode` 全链路 fail-closed（路径穿越、重复路径、超预算、哈希不符、未知 format_version、未知 mandatory 类型） |
+| `.rcam` schema v1 | 新 crate `rcam-project`（无 GUI/GPU 依赖）；ZIP 容器（manifest + project + layers/\* + blocks/\*），store-only 确定性编码；entry/bytes/string length/JSON depth/path/hash/version/mandatory type 全链路 fail-closed |
 | `.rcam` 不持久化 | Solo、Selection、Undo 历史、AppPreferences（快捷键/面板宽度/最近颜色/主题）——schema 本身没有对应字段，不是运行时过滤 |
 | 未做 | `File → Open/Save .rcam`（S4-B3）；完整 GUI Block Editor；任意角 scale/shear；Drill 持久化；PnP/RefDes；Windows；P100K |
 
 `system.capabilities` 的 `stage` = "S4-B2 Block Core + .rcam schema v1 (Mac-first bounded)"；`blocks.*` 8 个操作已移入
 `supported_operations`（对应测试全部通过后才移入，见 `block_core_workflow.rs` 的
 `capabilities_advertise_every_block_op_as_dispatchable`）；`project.open (.rcam)`/`project.save (.rcam)` 继续留在
-`unsupported_operations`。Mac 上 `cargo test --workspace --locked --no-fail-fast` 全量通过（49 个测试二进制，0 失败）、
-`fmt --check`/`clippy -D warnings` 均干净；原生 GUI 冒烟、Metal parity 与固定 ZIP 交付**本阶段未执行**，
-不声称 “S4-B2 PASS”，见 [S4_B2_REVIEW](S4_B2_REVIEW.md)。
+`unsupported_operations`。同一 clean commit 的格式/检查/clippy/workspace tests、Block/codec gates、release build、
+Metal parity、原生 GUI Block fixture、400×100 性能、固定 ZIP/sidecar/fresh extract 全部通过，因此
+**S4-B2 = PASS（Mac-first）**。Windows deferred；不声称完整 V1、P100K 或完整 CORE10 release。见
+[S4_B2_REVIEW](S4_B2_REVIEW.md)。

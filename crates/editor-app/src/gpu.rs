@@ -162,6 +162,8 @@ pub fn prepare_measured(
             .map(|p| {
                 if p.meta[0] == 1 {
                     p.meta[3] as usize
+                } else if p.meta[0] == 3 {
+                    p.b[1] as usize
                 } else {
                     1
                 }

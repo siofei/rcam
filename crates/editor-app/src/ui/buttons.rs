@@ -4,6 +4,7 @@
 //! Every helper reproduces the exact `egui::Button` call it replaces —
 //! styling is centralized, layout and enabled/disabled logic at each call
 //! site is untouched.
+use super::icons::RcamIcon;
 use super::tokens;
 use eframe::egui;
 
@@ -29,4 +30,36 @@ pub fn destructive(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Respo
         enabled,
         egui::Button::new(egui::RichText::new(label).color(tokens::destructive())),
     )
+}
+
+pub fn icon(
+    ui: &mut egui::Ui,
+    content: impl Into<egui::WidgetText>,
+    enabled: bool,
+    framed: bool,
+) -> egui::Response {
+    ui.add_enabled(enabled, egui::Button::new(content).frame(framed))
+}
+
+pub fn toggle_icon(
+    ui: &mut egui::Ui,
+    icon: RcamIcon,
+    enabled: bool,
+    selected: bool,
+    min_width: f32,
+) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(icon.glyph())
+            .selected(selected)
+            .min_size(egui::vec2(min_width, 0.)),
+    )
+}
+
+pub fn toolbar(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    ui.add_enabled(enabled, egui::Button::new(label))
+}
+
+pub fn compact_action(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    ui.add_enabled(enabled, egui::Button::new(label).small())
 }

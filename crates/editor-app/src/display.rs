@@ -6,6 +6,12 @@ use std::collections::HashMap;
 use std::f64::consts::TAU;
 
 const MAX_ITEMS: usize = 200_000;
+const POLYGON_BIN_THRESHOLD: usize = 32;
+const POLYGON_BIN_TARGET_EDGES: usize = 1;
+const POLYGON_BIN_MAX_COUNT: usize = 256;
+const POLYGON_BIN_MAX_STORAGE_MULTIPLIER: usize = 16;
+type PolygonEdge = ([f32; 2], [f32; 2]);
+type PolygonBins = (Vec<Vec<PolygonEdge>>, f32, f32, usize);
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Object {
@@ -498,13 +504,44 @@ impl Scene {
         if points.len() < 3 {
             return Err("VALIDATION_FAILED: incomplete display polygon".into());
         }
-        if self.points.len() + points.len() > MAX_ITEMS {
-            return Err("RESOURCE_LIMIT: display points".into());
-        }
+        let local = points
+            .iter()
+            .map(|point| self.point(*point))
+            .collect::<Result<Vec<_>, _>>()?;
         let start = self.points.len();
-        for p in points {
-            self.points.push(self.point(*p)?);
+        if let Some((bins, y_min, inverse_height, max_edges)) = self.polygon_bins(&local) {
+            let edge_references = bins.iter().map(Vec::len).sum::<usize>();
+            let extra = local
+                .len()
+                .saturating_add(bins.len())
+                .saturating_add(edge_references.saturating_mul(2));
+            self.check_budget(extra.saturating_add(1))?;
+            self.points.extend_from_slice(&local);
+            let headers = self.points.len();
+            self.points.resize(headers + bins.len(), [0.; 2]);
+            for (index, bin) in bins.iter().enumerate() {
+                self.points[headers + index] = [self.points.len() as f32, bin.len() as f32];
+                for &(a, b) in bin {
+                    self.points.push(a);
+                    self.points.push(b);
+                }
+            }
+            self.primitives.push(Primitive {
+                // Type 3 retains the original vertices at `tag.z..tag.z+tag.w`
+                // for the independent reference shader. Production uses the
+                // exact same f32 edges through bounded horizontal bins.
+                meta: [
+                    3,
+                    u32::from(e == Exposure::Dark),
+                    start as u32,
+                    local.len() as u32,
+                ],
+                a: [u32::from(winding) as f32, y_min, inverse_height, 0.],
+                b: [bins.len() as f32, max_edges as f32, 0., 0.],
+            });
+            return Ok(());
         }
+        self.points.extend_from_slice(&local);
         self.primitives.push(Primitive {
             meta: [
                 1,
@@ -516,6 +553,71 @@ impl Scene {
             b: [0.; 4],
         });
         Ok(())
+    }
+    /// Exact point-in-polygon acceleration for display only. A horizontal ray
+    /// can only cross edges whose y-range contains the sample, so duplicating
+    /// those edges into bounded y bins preserves winding/even-odd answers while
+    /// avoiding a full glyph-contour scan for every screen sample.
+    fn polygon_bins(&self, points: &[[f32; 2]]) -> Option<PolygonBins> {
+        if points.len() < POLYGON_BIN_THRESHOLD {
+            return None;
+        }
+        let y_min = points
+            .iter()
+            .map(|point| point[1])
+            .fold(f32::INFINITY, f32::min);
+        let y_max = points
+            .iter()
+            .map(|point| point[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let height = y_max - y_min;
+        if !height.is_finite() || height <= 0. {
+            return None;
+        }
+        let mut count = points
+            .len()
+            .div_ceil(POLYGON_BIN_TARGET_EDGES)
+            .clamp(2, POLYGON_BIN_MAX_COUNT);
+        loop {
+            let inverse_height = count as f32 / height;
+            let mut bins = vec![Vec::new(); count];
+            for index in 0..points.len() {
+                let a = points[index];
+                let b = points[(index + 1) % points.len()];
+                if a[1] == b[1] {
+                    continue;
+                }
+                let bin = |y: f32| {
+                    (((y - y_min) * inverse_height).floor().max(0.) as usize).min(count - 1)
+                };
+                let first = bin(a[1].min(b[1]));
+                let last = bin(a[1].max(b[1]));
+                for edges in &mut bins[first..=last] {
+                    edges.push((a, b));
+                }
+            }
+            let references = bins.iter().map(Vec::len).sum::<usize>();
+            let storage = count.saturating_add(references.saturating_mul(2));
+            let max_edges = bins.iter().map(Vec::len).max().unwrap_or(0);
+            let available = MAX_ITEMS
+                .saturating_sub(self.points.len())
+                .saturating_sub(self.primitives.len())
+                .saturating_sub(points.len())
+                .saturating_sub(1);
+            if storage
+                <= points
+                    .len()
+                    .saturating_mul(POLYGON_BIN_MAX_STORAGE_MULTIPLIER)
+                && storage <= available
+                && max_edges < points.len()
+            {
+                return Some((bins, y_min, inverse_height, max_edges));
+            }
+            if count <= 2 {
+                return None;
+            }
+            count = count.div_ceil(2);
+        }
     }
     fn flash(
         &mut self,
@@ -655,7 +757,7 @@ impl Scene {
                     add(p.a[2] - r, p.a[3] - r);
                     add(p.a[2] + r, p.a[3] + r);
                 }
-                1 => {
+                1 | 3 => {
                     for v in &self.points[p.meta[2] as usize..(p.meta[2] + p.meta[3]) as usize] {
                         add(v[0], v[1]);
                     }

@@ -3,6 +3,7 @@
 //! Everything here is workspace/view state. Rows only *emit* events; the events
 //! are applied to the service through `Action`s after the frame's widgets ran.
 use crate::{EditorApp, state::Action};
+use editor_core::command::ids as command_ids;
 use editor_core::workspace::{
     Color, ColorMode, DeleteRisk, DisplayClass, LayerDisplayMode, auto_layer_color,
 };
@@ -262,11 +263,10 @@ pub(crate) fn layer_menu(
     if ui
         .add_enabled(
             !busy,
-            egui::Button::new(if l.is_solo {
-                "取消独奏"
-            } else {
-                "独奏此图层"
-            }),
+            egui::Button::new(crate::ui::command_widgets::label(
+                command_ids::LAYER_SOLO,
+                l.is_solo,
+            )),
         )
         .clicked()
     {
@@ -491,7 +491,13 @@ impl EditorApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_enabled_ui(!busy, |ui| {
                     ui.menu_button("＋", |ui| {
-                        if ui.button("新建空图层").clicked() {
+                        if crate::ui::command_widgets::button(
+                            ui,
+                            command_ids::LAYER_CREATE,
+                            crate::ui::command_widgets::CommandState::enabled(true),
+                        )
+                        .clicked()
+                        {
                             new_layer = true;
                             ui.close();
                         }
@@ -505,15 +511,13 @@ impl EditorApp {
                 });
                 // right_to_left: the last added button is the leftmost one.
                 ui.add_enabled_ui(!busy && any_layers, |ui| {
-                    if ui
-                        .small_button("全隐")
+                    if crate::ui::buttons::compact_action(ui, "全隐", true)
                         .on_hover_text("隐藏所有图层（只改显示，不改制造内容）")
                         .clicked()
                     {
                         all_visible = Some(false);
                     }
-                    if ui
-                        .small_button("全显")
+                    if crate::ui::buttons::compact_action(ui, "全显", true)
                         .on_hover_text("显示所有图层（同时结束独奏）")
                         .clicked()
                     {

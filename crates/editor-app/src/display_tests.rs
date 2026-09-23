@@ -1,8 +1,8 @@
 use crate::{display::Scene, gpu::Uniforms, state::Model};
 use editor_core::*;
 use editor_service::{
-    BlockTransformParams, CreateBlockDefinitionParams, CreateBlockInstanceParams, LayerInfo,
-    PivotMm, QueryParams, RenderSnapshot,
+    BlockTransformParams, CreateBlockDefinitionParams, CreateBlockInstanceParams, HorizontalAlign,
+    LayerInfo, PivotMm, QueryParams, RenderSnapshot, TextLayout, TextParams, VerticalAlign,
 };
 use egui_wgpu::wgpu::{self, util::DeviceExt};
 use std::{
@@ -504,6 +504,79 @@ fn public_gui_sample_has_real_standard_and_macro_geometry() {
     assert!(Scene::build(&s, &l, MmPoint::new(30., 30.), 1000., 1).is_ok());
 }
 
+#[test]
+fn large_polygon_horizontal_bins_match_full_reference_winding() {
+    let (mut snapshot, layers) = fixture("s2a3/gui_primitives.gbr");
+    let vertices = 256usize;
+    let ring: Vec<_> = (0..vertices)
+        .map(|index| {
+            let angle = std::f64::consts::TAU * index as f64 / vertices as f64;
+            let radius = if index % 7 == 0 { 3. } else { 2. };
+            MmPoint::new(radius * angle.cos(), radius * angle.sin())
+        })
+        .collect();
+    let edges = (0..vertices)
+        .map(|index| RegionEdge::Line {
+            start: ring[index],
+            end: ring[(index + 1) % vertices],
+        })
+        .collect();
+    snapshot.layers[0].objects = vec![SemanticObject {
+        object_id: "large-region".into(),
+        geometry: SemanticGeometry::Region {
+            contours: vec![RegionContour {
+                role: RegionRole::Solid,
+                edges,
+            }],
+        },
+        exposure: Exposure::Dark,
+        origin: ObjectOrigin::Generated {
+            operation_id: "polygon-bin-regression".into(),
+        },
+    }];
+    let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 256., 1).unwrap();
+    let primitive = scene.primitives[0];
+    assert_eq!(
+        primitive.meta[0], 3,
+        "large polygon must use exact edge bins"
+    );
+    assert_eq!(primitive.meta[3], vertices as u32);
+    assert!(primitive.b[1] < vertices as f32 / 4.);
+
+    let crosses = |a: [f32; 2], b: [f32; 2], p: [f32; 2]| {
+        let cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        (a[1] <= p[1] && b[1] > p[1] && cross > 0.) as i32
+            - (a[1] > p[1] && b[1] <= p[1] && cross < 0.) as i32
+    };
+    for y in -35..=35 {
+        for x in -35..=35 {
+            let p = [x as f32 / 10., y as f32 / 10. + 0.0031];
+            let full = (0..primitive.meta[3] as usize)
+                .map(|index| {
+                    let a = scene.points[primitive.meta[2] as usize + index];
+                    let b = scene.points
+                        [primitive.meta[2] as usize + (index + 1) % primitive.meta[3] as usize];
+                    crosses(a, b, p)
+                })
+                .sum::<i32>()
+                != 0;
+            let bin_count = primitive.b[0] as usize;
+            let bin = (((p[1] - primitive.a[1]) * primitive.a[2]).floor().max(0.) as usize)
+                .min(bin_count - 1);
+            let header =
+                scene.points[primitive.meta[2] as usize + primitive.meta[3] as usize + bin];
+            let binned = (0..header[1] as usize)
+                .map(|index| {
+                    let start = header[0] as usize + index * 2;
+                    crosses(scene.points[start], scene.points[start + 1], p)
+                })
+                .sum::<i32>()
+                != 0;
+            assert_eq!(binned, full, "point {p:?}");
+        }
+    }
+}
+
 struct ParityRig {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -831,6 +904,244 @@ fn native_metal_reference_production_pixel_parity() {
         .unwrap();
         assert_parity(&rig, &scene, name);
     }
+}
+
+/// S4-B2 Final Closeout: a Block instance (Flash + Line + Arc + Region,
+/// resolved from a shared definition at identity and at 90°+mirror) must
+/// render bit-for-bit identically between the reference and production
+/// shaders under all three display modes. `assert_parity` already varies
+/// selection {0, 1, all} internally, covering the "selected/unselected"
+/// requirement without a separate loop.
+#[test]
+#[ignore = "requires native Metal; exact RGBA parity of BlockInstance display"]
+fn native_metal_block_instance_parity() {
+    let (snapshot, layers, _instance_ids) = block_fixture();
+    let rig = parity_rig();
+    for mode in [
+        workspace::LayerDisplayMode::Filled,
+        workspace::LayerDisplayMode::Outline,
+        workspace::LayerDisplayMode::ZeroWidth,
+    ] {
+        let mut layers = layers.clone();
+        layers[0].display_mode = mode;
+        let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1).unwrap();
+        assert_parity_cameras(
+            &rig,
+            &scene,
+            &format!("block-instance-{mode:?}"),
+            Some(100.),
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn lisong_light_text_scene(render_ppm: f64) -> (Scene, Vec<String>) {
+    let mut model = Model::default();
+    model
+        .open(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s2a3/gui_primitives.gbr"),
+        )
+        .unwrap();
+    let font_path = "/System/Library/Fonts/Supplemental/Songti.ttc";
+    model
+        .service
+        .grant_file_access(std::path::Path::new(font_path), false)
+        .unwrap();
+    let font = model
+        .service
+        .font_inspect_named(font_path, "STSongti-SC-Light")
+        .unwrap();
+    let info = model.view.info.as_ref().unwrap().clone();
+    let created = model
+        .service
+        .text_create(
+            &info.document_id,
+            &info.revision,
+            TextParams {
+                layer_id: model.view.layers[0].layer_id.clone(),
+                font: font.identity,
+                layout: TextLayout {
+                    text: "sdf 点".into(),
+                    x_mm: 0.,
+                    y_mm: 0.,
+                    height_mm: 3.,
+                    baseline_spacing_mm: 0.,
+                    stroke_width_mm: 0.15,
+                    outline_offset_mm: 0.,
+                    tracking_mm: 0.,
+                    rotation_deg: 0.,
+                    curve_tolerance_mm: 0.00025,
+                    h_align: HorizontalAlign::Left,
+                    v_align: VerticalAlign::Bottom,
+                },
+            },
+        )
+        .unwrap();
+    let snapshot = model.service.render_snapshot(&info.document_id).unwrap();
+    let scene = Scene::build(
+        &snapshot,
+        &model.view.layers,
+        MmPoint::new(0., 0.),
+        render_ppm,
+        1,
+    )
+    .unwrap();
+    (scene, created.generated_object_ids)
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "requires native Metal and the macOS Songti system font"]
+fn native_metal_lisong_light_text_bins_match_full_contour_reference() {
+    let render_ppm = 256.;
+    let (scene, _) = lisong_light_text_scene(render_ppm);
+    assert!(
+        scene
+            .primitives
+            .iter()
+            .any(|primitive| primitive.meta[0] == 3)
+    );
+    assert_parity_cameras(
+        &parity_rig(),
+        &scene,
+        "lisong-light-sdf-point-binned-contours",
+        Some(render_ppm),
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "native Metal release-only regression for the Lisong/Songti Light zoom stall"]
+fn native_metal_lisong_light_text_zoom_timing() {
+    assert!(!cfg!(debug_assertions), "run --release");
+    use eframe::egui::{Rect, pos2, vec2};
+    use egui_wgpu::CallbackTrait;
+    let render_ppm = 256.;
+    let (scene, text_ids) = lisong_light_text_scene(render_ppm);
+    let scene = Arc::new(scene);
+    let text_ids: std::collections::HashSet<_> = text_ids.iter().map(String::as_str).collect();
+    let bounds = scene
+        .objects
+        .iter()
+        .zip(&scene.ids)
+        .filter(|(_, id)| text_ids.contains(id.as_str()))
+        .fold(
+            [
+                f32::INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::NEG_INFINITY,
+            ],
+            |mut b, (object, _)| {
+                for axis in 0..2 {
+                    b[axis] = b[axis].min(object.bounds[axis]);
+                    b[axis + 2] = b[axis + 2].max(object.bounds[axis + 2]);
+                }
+                b
+            },
+        );
+    let rect = Rect::from_min_size(pos2(0., 0.), vec2(1600., 900.));
+    let camera = crate::camera::Camera {
+        center: MmPoint::new(
+            scene.anchor.x_mm + f64::from((bounds[0] + bounds[2]) * 0.5),
+            scene.anchor.y_mm + f64::from((bounds[1] + bounds[3]) * 0.5),
+        ),
+        scale: 1600. / 11.5,
+    };
+    let selected =
+        crate::gpu::selection_flags(&scene, &text_ids.iter().copied().collect::<Vec<_>>());
+    let prepared =
+        crate::gpu::prepare_measured(&scene, camera, rect, 1., &selected, MmPoint::new(0., 0.))
+            .unwrap();
+
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::METAL,
+        ..Default::default()
+    });
+    let adapter = block_on(instance.request_adapter(&Default::default())).unwrap();
+    println!("Lisong text timing adapter {:?}", adapter.get_info());
+    let (device, queue) = block_on(adapter.request_device(&Default::default())).unwrap();
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Lisong text 1600x900"),
+        size: wgpu::Extent3d {
+            width: 1600,
+            height: 900,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = target.create_view(&Default::default());
+    let mut resources = egui_wgpu::CallbackResources::default();
+    let mut frames = Vec::new();
+    for frame_index in 0..70 {
+        let frame = std::time::Instant::now();
+        let callback = crate::gpu::Callback {
+            painted: None,
+            scene: scene.clone(),
+            index: prepared.index.clone(),
+            uniforms: prepared.uniforms,
+            selected: Arc::new(selected.clone()),
+            format: wgpu::TextureFormat::Rgba8Unorm,
+        };
+        let mut encoder = device.create_command_encoder(&Default::default());
+        callback.prepare(
+            &device,
+            &queue,
+            &egui_wgpu::ScreenDescriptor {
+                size_in_pixels: [1600, 900],
+                pixels_per_point: 1.,
+            },
+            &mut encoder,
+            &mut resources,
+        );
+        {
+            let resources = resources.get::<crate::gpu::Resources>().unwrap();
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(&resources.pipeline);
+            pass.set_bind_group(0, &resources.bind, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        let submission = queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(30)),
+            })
+            .unwrap();
+        if frame_index >= 10 {
+            frames.push(frame.elapsed().as_secs_f64() * 1000.);
+        }
+    }
+    frames.sort_by(f64::total_cmp);
+    let p95 = frames[(frames.len() as f64 * 0.95).ceil() as usize - 1];
+    println!(
+        "LISONG_TEXT_ZOOM frames={} p95_ms={p95:.6} estimated_work={} display_points={} threshold_50ms_met={}",
+        frames.len(),
+        prepared.stats.estimated_work,
+        scene.points.len(),
+        p95 <= 50.
+    );
+    assert!(p95 <= 50., "native text zoom p95 {p95:.3} ms exceeds 50 ms");
 }
 
 /// Builds the display scene of a real multi-layer workspace after `setup` applied

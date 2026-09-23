@@ -1,5 +1,12 @@
 # 文档变更记录
 
+## 2026-09-23 · S4-B2 Final Closeout + complex text renderer
+
+修复 BlockDefinition 在当前 ManufacturingPrecision 下的导出语义，完成 BlockInstance display/cache、整实例选择、
+`.rcam` string/depth 显式预算、UI Component Foundation、Mac Metal/GUI/400×100 性能与固定交付门禁。
+复杂文字 Region 改用精确水平边分箱，修复 STSongti-SC-Light、3 mm、补偿 0、`sdf 点` 可见时的缩放/桌面卡顿；
+生产 shader 与完整轮廓参考保持零 RGBA 差异。S4-B2 = PASS（Mac-first）；Windows deferred；不启动 S4-B3。
+
 ## 2026-09-22 · S4-B1 Final Closeout
 
 Delete 对话框只讨论 RCam 工程风险；Layer 行回到 compact 设计（Active 指示、显示模式小菜单、无 inline 展开）；

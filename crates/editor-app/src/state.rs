@@ -217,6 +217,88 @@ pub fn selected_center(view: &View) -> Result<MmPoint, ServiceError> {
 }
 
 impl Model {
+    /// Dev-only synthetic Block fixture loader (S4-B2 Final Closeout native
+    /// GUI smoke, task §17): no Block Editor GUI ships this phase, so this
+    /// is the "internal/dev synthetic loading path" the closeout task
+    /// explicitly allows for native verification — it must never be called
+    /// from the normal app startup path or claimed as a Block Editor.
+    /// Imports a small Flash+Line+Arc+Region fixture, captures it as one
+    /// `BlockDefinition`, and places 5 instances at 0°/90°/37°/Mirror/
+    /// Mirror+90°, matching `docs` review's `sample.rcam` fixture shape.
+    pub(crate) fn autoload_block_fixture(&mut self) -> Result<(), ServiceError> {
+        const MIXED: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\nD10*\nX2000000Y2000000D03*\nX0Y0D02*\nG01X2000000Y0D01*\nG75*\nX1000000Y0D02*\nG03X0Y1000000I-1000000J0D01*\nG36*\nX10000000Y10000000D02*\nG01X12000000Y10000000D01*\nX12000000Y12000000D01*\nX10000000Y12000000D01*\nX10000000Y10000000D01*\nG37*\nM02*\n";
+        let dir = std::env::temp_dir().join(format!(
+            "rcam-native-smoke-{}-{}",
+            std::process::id(),
+            self.serial
+        ));
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| error("IO_ERROR", &format!("autoload scratch dir: {e}")))?;
+        let path = dir.join("block-fixture.gbr");
+        std::fs::write(&path, MIXED)
+            .map_err(|e| error("IO_ERROR", &format!("autoload fixture write: {e}")))?;
+        self.open(&path)?;
+        let doc_id = self.info()?.document_id;
+        let layer_id = self.view.layers[0].layer_id.clone();
+        let object_ids: Vec<String> = self
+            .service
+            .objects_query(
+                &doc_id,
+                QueryParams {
+                    layer_id: layer_id.clone(),
+                    geometry_type: None,
+                    region_mm: None,
+                    relation: None,
+                    limit: Some(1000),
+                    cursor: None,
+                },
+            )?
+            .objects
+            .into_iter()
+            .map(|o| o.object.object_id)
+            .collect();
+        // `self.service.blocks_*` is called directly (no Block Editor GUI
+        // exists to drive through `Action`/`self.run`), so `self.view.info`
+        // does not advance between calls — the revision must be re-read
+        // from the service itself each time, not from the cached view.
+        let revision = self.service.document_get(&doc_id)?.revision;
+        let create = self.service.blocks_create_definition_from_objects(
+            &doc_id,
+            &revision,
+            CreateBlockDefinitionParams {
+                layer_id: layer_id.clone(),
+                object_ids,
+                local_origin_mm: PivotMm { x_mm: 0., y_mm: 0. },
+                name: "native-smoke-opening".into(),
+            },
+        )?;
+        for (translation, rotation_deg, mirror) in [
+            (10., 0., false),
+            (20., 90., false),
+            (30., 37., false),
+            (40., 0., true),
+            (50., 90., true),
+        ] {
+            let revision = self.service.document_get(&doc_id)?.revision;
+            self.service.blocks_create_instance(
+                &doc_id,
+                &revision,
+                CreateBlockInstanceParams {
+                    layer_id: layer_id.clone(),
+                    definition_id: create.definition_id.clone(),
+                    transform: BlockTransformParams {
+                        translation_mm: PivotMm {
+                            x_mm: translation,
+                            y_mm: 0.,
+                        },
+                        rotation_deg,
+                        mirror,
+                    },
+                },
+            )?;
+        }
+        self.refresh(true)
+    }
     fn info(&self) -> Result<DocumentInfo, ServiceError> {
         self.view
             .info

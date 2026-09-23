@@ -66,6 +66,13 @@ S4-B1 只在 `editor-core::block` 留了 `BlockDefinition`/`BlockInstance` 占�
 9. **`DisplayClass::BlockInstance` 是新增分类，不是复用 `ApertureBlock`。** `ApertureBlock` 保留给 Gerber
    `%AB`（parser 仍拒绝，无产品入口）；RCam Block 是完全不同的概念。
 
+10. **显示时共享 Definition 派生结果，不写回制造模型。** `BlockDisplayCache` 的 key 为 definition id /
+    revision / rotation / mirror；instance 只追加 translation。renderer 中每个 resolved primitive 仍携带同一
+    instance ObjectId，因此选择 halo 覆盖整实例。Filled/Outline/ZeroWidth 与 Layer/Category 样式均只改显示。
+
+11. **Export 先 flatten，再按当前 ManufacturingPrecision 归一化。** Definition 内部坐标/线宽/光圈尺寸与
+    instance transform 都必须服从导出时 policy；粗量化破坏 Arc/Region 拓扑时 fail-closed，working project 不变。
+
 ## 不做（本阶段）
 
 Nested blocks；任意角 scale/shear；完整 GUI Block Editor（创建/浏览/编辑 Definition 的界面）；Block 专属

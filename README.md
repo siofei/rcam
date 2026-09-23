@@ -176,7 +176,7 @@ Windows、完整 V1、P100K、完整 CORE10 均未宣称。
 
 ### S4-B2 — Block Core + `.rcam` Native Project Model / schema v1（当前）
 
-范围与边界见 [S4_B2_PLAN](docs/S4_B2_PLAN.md)，实现证据与未执行项见 [S4_B2_REVIEW](docs/S4_B2_REVIEW.md)，
+范围与边界见 [S4_B2_PLAN](docs/S4_B2_PLAN.md)，最终证据与剩余边界见 [S4_B2_REVIEW](docs/S4_B2_REVIEW.md)，
 决策见 [ADR 0031](docs/adr/0031-rcam-native-project-format-v1.md) / [ADR 0032](docs/adr/0032-block-core.md)。
 
 - **Reusable Block**：`BlockDefinition`（项目级几何，存在 `SemanticDocument.block_definitions`）+ `BlockInstance`
@@ -185,12 +185,14 @@ Windows、完整 V1、P100K、完整 CORE10 均未宣称。
   `blocks.update_instance_transform`、`blocks.rename_definition`、`blocks.explode_instance`、
   `blocks.delete_definition`（被引用时拒绝）、`blocks.list_definitions`/`blocks.get_definition`。
   第一版无 nested block（`BlockObjectGeometry` 在类型层面无法表示实例）；Gerber Export 展平实例，
-  RectangularSweep 在非 90° 旋转下 fail-closed。
+  RectangularSweep 在非 90° 旋转下 fail-closed。BlockInstance 已进入 renderer，definition display cache 按
+  `(definition id, revision, rotation, mirror)` 共享，Filled/Outline/ZeroWidth、颜色与整实例选中均通过 Metal parity。
 - **`.rcam` schema v1**：新 crate `crates/rcam-project`（无 egui/eframe/wgpu/winit 依赖，`dependency_boundary`
   测试核对），`.rcam` = ZIP 容器（`manifest.json` + `project.json` + `layers/*.json` + `blocks/*.json`），
-  store-only、hand-rolled、确定性编码，读取全链路 fail-closed（路径穿越/重复路径/超预算/哈希不符/未知
-  `format_version`/未知 mandatory 类型均拒绝）。encode/decode 只是内存/测试路径，本阶段没有
+  store-only、hand-rolled、确定性编码，读取全链路 fail-closed（路径穿越/重复路径/entry/string/JSON depth
+  超预算/哈希不符/未知 `format_version`/未知 mandatory 类型均拒绝）。encode/decode 只是内存/测试路径，本阶段没有
   `File → Open/Save`；`system.capabilities` 继续把 `project.open/save (.rcam)` 列为 unsupported。
-- 状态：源码级实现 + 自动化测试（`cargo test --workspace` 全量通过，49 个测试二进制，含新增
-  `block_core`/`block_core_workflow`/`rcam_project_codec_workflow`/`performance_workflow`）；原生 Mac GUI
-  冒烟、Metal parity 与固定 ZIP 交付**本阶段未执行**，因此**不声称 “S4-B2 PASS”**，见 S4_B2_REVIEW。
+- **S4-B2 = PASS（Mac-first）**：同一 clean commit 的 workspace/codec/Block gates、Metal parity、原生 GUI
+  synthetic Block 冒烟、400×100 release 性能、固定 source/public-evidence ZIP、sidecar 与 fresh extract 全部通过。
+  同轮修复 Lisong/Songti Light `sdf 点`（3 mm、补偿 0）可见时的 GPU 轮廓扫描卡顿；详见 S4_B2_REVIEW。
+  Windows、完整 V1、P100K 与完整 CORE10 release 仍不宣称；本轮停止，不自动开始 S4-B3。

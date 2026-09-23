@@ -122,4 +122,12 @@ fn project_400_openings_times_100_instances_does_not_scale_like_flattened_primit
         encode_elapsed.as_secs() < 5 && decode_elapsed.as_secs() < 5,
         "encode {encode_elapsed:?} / decode {decode_elapsed:?} exceeded a generous bound"
     );
+    println!(
+        "S4B2_CODEC_PERF bytes={} encode_ms={:.3} decode_ms={:.3} definition_objects={} project_instances={}",
+        bytes.len(),
+        encode_elapsed.as_secs_f64() * 1e3,
+        decode_elapsed.as_secs_f64() * 1e3,
+        decoded.block_definitions[0].objects.len(),
+        decoded.layers[0].layer.objects.len(),
+    );
 }

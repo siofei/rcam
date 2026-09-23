@@ -19,6 +19,11 @@ Mac-first，2026-09-22。任务书：`RCam_MAC_FIRST_S4B2_BLOCK_RCAM_PROJECT_MOD
   编解码、`manifest.json` + 每条目 SHA-256、fail-closed 读取（路径穿越/重复路径/超预算/哈希不符/未知
   `format_version`/未知 mandatory 类型/非有限数值）、`decode_v1` 与未来 `migrate()` 的调用点分离。
   只做内存 encode/decode 与测试专用文件往返；不做 `File → Open/Save`。
+- **Final Closeout**：resolved Block geometry 使用当前 ManufacturingPrecision；BlockInstance renderer/cache、
+  整实例选择与 native parity；显式 `max_string_len`/`max_json_depth`；behavior-preserving UI Component Foundation；
+  同一 release binary 的原生 GUI synthetic fixture；400×100 bounded performance；fixed ZIP/fresh extract。
+- **同轮显示缺陷**（R12/R16/R17；AT-024/AT-050/AT-062/AT-063）：复杂系统字体文字的 Region 轮廓只在显示
+  路径建立精确水平边分箱，禁止从该缓存反推制造/导出几何；以完整轮廓 reference renderer 做零差异核对。
 - **文档**：Gate 0 收口 S4-B1 状态（见下）；ADR 0031/0032；README/CAPABILITIES/IMPLEMENTATION_PLAN/
   AUTOMATION_API/AGENTS 更新；本文件与 S4_B2_REVIEW。
 
@@ -41,5 +46,5 @@ Recent Projects；Windows；P100K。完成后**停止并提交审查，不自动
 undo-redo/hit-test/mirror-arc 8 例）、`crates/editor-service/tests/block_core_workflow.rs`（service 级完整
 headless workflow + 共享 Definition fixture + 锁定层拒绝 + capabilities 4 例）、
 `crates/rcam-project/tests/{rcam_project_codec_workflow,dependency_boundary,sample_fixture,
-performance_workflow}.rs`（codec 14 例 + 边界 2 例 + fixture 1 例 + 性能 1 例）、
+performance_workflow}.rs`（codec/security + 边界 + fixture + 400×100 性能）、
 `crates/rcam-project/src/zip_codec.rs` 内嵌单元测试（8 例）。

@@ -30,14 +30,42 @@ fn contains(s:Primitive,p:vec2<f32>)->bool {
         var w=s.a.w;if s.tag.w==1u {w=0.75/u.camera.z;}
         return abs(length(q)-s.a.z)<=w && (s.b.y>=6.283185 || sweep<=s.b.y);
     }
-    var winding=0i;var odd=false;
+    if s.tag.x==3u {
+        let bin_count=u32(s.b.x);
+        let bin=min(u32(clamp(floor((p.y-s.a.y)*s.a.z),0.,f32(bin_count-1u))),bin_count-1u);
+        let header=points[s.tag.z+s.tag.w+bin];
+        let start=u32(header.x);let count=u32(header.y);
+        if s.a.x>0. {
+            var winding=0i;
+            for(var i=0u;i<count;i++) {
+                let a=points[start+i*2u];let b=points[start+i*2u+1u];
+                if a.y<=p.y && b.y>p.y && cross(b-a,p-a)>0. {winding++;}
+                if a.y>p.y && b.y<=p.y && cross(b-a,p-a)<0. {winding--;}
+            }
+            return winding!=0i;
+        }
+        var odd=false;
+        for(var i=0u;i<count;i++) {
+            let a=points[start+i*2u];let b=points[start+i*2u+1u];
+            if (a.y>p.y)!=(b.y>p.y) {if p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x {odd=!odd;}}
+        }
+        return odd;
+    }
+    if s.a.x>0. {
+        var winding=0i;
+        for(var i=0u;i<s.tag.w;i++) {
+            let a=points[s.tag.z+i];let b=points[s.tag.z+(i+1u)%s.tag.w];
+            if a.y<=p.y && b.y>p.y && cross(b-a,p-a)>0. {winding++;}
+            if a.y>p.y && b.y<=p.y && cross(b-a,p-a)<0. {winding--;}
+        }
+        return winding!=0i;
+    }
+    var odd=false;
     for(var i=0u;i<s.tag.w;i++) {
         let a=points[s.tag.z+i];let b=points[s.tag.z+(i+1u)%s.tag.w];
-        if a.y<=p.y && b.y>p.y && cross(b-a,p-a)>0. {winding++;}
-        if a.y>p.y && b.y<=p.y && cross(b-a,p-a)<0. {winding--;}
         if (a.y>p.y)!=(b.y>p.y) {if p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x {odd=!odd;}}
     }
-    if s.a.x>0. {return winding!=0i;}return odd;
+    return odd;
 }
 fn object_material(o:Object,p:vec2<f32>)->bool {
     var material=false;

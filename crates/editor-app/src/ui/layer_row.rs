@@ -61,9 +61,8 @@ impl EditorApp {
                                 "点击设为当前图层",
                             )
                         };
-                        let indicator = ui
-                            .add_enabled(!busy, egui::Button::new(glyph).frame(false))
-                            .on_hover_text(tip);
+                        let indicator =
+                            crate::ui::buttons::icon(ui, glyph, !busy, false).on_hover_text(tip);
                         note("indicator", indicator.rect);
                         if indicator.clicked() && !l.is_active {
                             events
@@ -220,17 +219,16 @@ impl EditorApp {
                         let toggle = |ui: &mut egui::Ui,
                                       key: &'static str,
                                       on: bool,
-                                      glyph: &str,
+                                      icon: crate::ui::icons::RcamIcon,
                                       tip: &str| {
-                            let r = ui
-                                .add_enabled(
-                                    !busy,
-                                    egui::Button::new(glyph).selected(on).min_size(egui::vec2(
-                                        crate::ui::tokens::ROW_TOGGLE_MIN_WIDTH,
-                                        0.,
-                                    )),
-                                )
-                                .on_hover_text(tip);
+                            let r = crate::ui::buttons::toggle_icon(
+                                ui,
+                                icon,
+                                !busy,
+                                on,
+                                crate::ui::tokens::ROW_TOGGLE_MIN_WIDTH,
+                            )
+                            .on_hover_text(tip);
                             note(key, r.rect);
                             r.clicked()
                         };
@@ -238,7 +236,7 @@ impl EditorApp {
                             ui,
                             "locked",
                             l.locked,
-                            crate::ui::icons::RcamIcon::Locked.glyph(),
+                            crate::ui::icons::RcamIcon::Locked,
                             if l.locked {
                                 "已锁定（点击解锁）"
                             } else {
@@ -254,7 +252,7 @@ impl EditorApp {
                             ui,
                             "visible",
                             !l.visible,
-                            crate::ui::icons::RcamIcon::Visible.glyph(),
+                            crate::ui::icons::RcamIcon::Visible,
                             if l.visible {
                                 "可见（点击隐藏）"
                             } else {

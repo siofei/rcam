@@ -22,6 +22,14 @@ pub struct BlockDisplayCache {
 }
 
 impl BlockDisplayCache {
+    #[cfg(test)]
+    pub fn stats(&self) -> (usize, usize) {
+        (
+            self.entries.len(),
+            self.entries.values().map(Vec::len).sum(),
+        )
+    }
+
     /// Resolve `definition` under `transform` in world space.
     pub fn resolve(
         &mut self,

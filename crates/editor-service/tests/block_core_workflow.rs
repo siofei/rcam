@@ -432,6 +432,22 @@ fn shared_definition_fixture_does_not_scale_project_object_count_with_instance_g
     assert_eq!(reject.unwrap_err().code, "BLOCK_DEFINITION_REFERENCED");
 }
 
+/// S4-B2 Final Closeout regression (found via the native GUI smoke path,
+/// which calls this on every geometry-affecting `refresh`): `visible_bounds`
+/// used the block-unaware `geometries_bounds`, so any document containing a
+/// `BlockInstance` made it fail with `VALIDATION_FAILED: unknown block
+/// definition <id>` — even though the id was perfectly valid — as soon as
+/// anything called it, not only when a viewport happened to cull the scene.
+#[test]
+fn visible_bounds_resolves_a_block_instance() {
+    let mut w = W::new("visible-bounds");
+    let (layer, object_ids) = w.seed_square();
+    let create = w.create_definition(&layer, object_ids, (0.5, 0.5), "square");
+    let bounds = w.svc.visible_bounds(&w.doc).unwrap().bounds.unwrap();
+    assert!(bounds.max_x_mm > bounds.min_x_mm && bounds.max_y_mm > bounds.min_y_mm);
+    let _ = create;
+}
+
 #[test]
 fn locked_layer_rejects_block_mutations() {
     let mut w = W::new("locked");

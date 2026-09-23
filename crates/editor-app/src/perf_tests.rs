@@ -8,14 +8,165 @@
 use crate::display::Scene;
 use crate::selection::SelectionMode::Replace;
 use crate::state::{Action, Model};
-use editor_core::MmPoint;
-use editor_core::workspace::{DisplayClass, LayerDisplayMode};
-use editor_service::{ClassStyleUpdate, LayerUpdateParams};
+use editor_core::block::{
+    BlockDefinition, BlockDefinitionId, BlockObject, BlockObjectGeometry, BlockTransform,
+};
+use editor_core::workspace::{Color, DisplayClass, LayerDisplayMode};
+use editor_core::{
+    ApertureDefinition, ApertureShape, Exposure, LocalTransform, Mirror, MmPoint, ObjectOrigin,
+    SemanticGeometry, SemanticLayer, SemanticObject,
+};
+use editor_service::{ClassStyleUpdate, LayerInfo, LayerUpdateParams, RenderSnapshot};
 use serde_json::{Value, json};
 use std::time::Instant;
 
 const LAYERS: usize = 10;
 const OBJECTS: usize = 1000;
+
+fn s4b2_block_snapshot() -> (RenderSnapshot, Vec<LayerInfo>) {
+    let aperture = ApertureDefinition {
+        id: "block-opening".into(),
+        source_dcode: 10,
+        shape: ApertureShape::Circle {
+            diameter_mm: 0.1,
+            hole_diameter_mm: None,
+        },
+    };
+    let definition = BlockDefinition {
+        id: BlockDefinitionId("perf-definition".into()),
+        name: "400 openings".into(),
+        local_origin: MmPoint::new(0., 0.),
+        objects: (0..400)
+            .map(|index| BlockObject {
+                geometry: BlockObjectGeometry::Flash {
+                    center: MmPoint::new((index % 20) as f64 * 0.2, (index / 20) as f64 * 0.2),
+                    aperture_id: aperture.id.clone(),
+                    transform: LocalTransform {
+                        mirror: Mirror::None,
+                        rotation_deg: 0.,
+                        scale: 1.,
+                    },
+                },
+                exposure: Exposure::Dark,
+            })
+            .collect(),
+        revision: 1,
+    };
+    let layer = SemanticLayer {
+        id: "block-layer".into(),
+        objects: (0..100)
+            .map(|index| SemanticObject {
+                object_id: format!("instance-{index}"),
+                geometry: SemanticGeometry::BlockInstance {
+                    definition_id: definition.id.clone(),
+                    transform: BlockTransform {
+                        translation: MmPoint::new(
+                            (index % 10) as f64 * 5.,
+                            (index / 10) as f64 * 5.,
+                        ),
+                        rotation_deg: 0.,
+                        mirror: false,
+                    },
+                },
+                exposure: Exposure::Dark,
+                origin: ObjectOrigin::Generated {
+                    operation_id: "s4b2-performance".into(),
+                },
+            })
+            .collect(),
+    };
+    let snapshot = RenderSnapshot {
+        document_id: "s4b2-performance".into(),
+        revision: "1".into(),
+        workspace_revision: "1".into(),
+        layers: vec![layer],
+        apertures: vec![aperture],
+        styles: vec![],
+        block_definitions: vec![definition],
+    };
+    let layer_info = LayerInfo {
+        layer_id: "block-layer".into(),
+        display_name: "Block performance".into(),
+        base_color: Color::rgb(0x2d, 0xc7, 0x9f),
+        object_count: 100,
+        ..Default::default()
+    };
+    (snapshot, vec![layer_info])
+}
+
+#[test]
+#[ignore = "release/native S4-B2 400x100 display-cache and export-flatten evidence"]
+fn s4b2_block_release_performance() {
+    let (snapshot, layers) = s4b2_block_snapshot();
+    let definition = &snapshot.block_definitions[0];
+    let transform = match &snapshot.layers[0].objects[0].geometry {
+        SemanticGeometry::BlockInstance { transform, .. } => transform,
+        _ => unreachable!(),
+    };
+    let mut cache = crate::block_display::BlockDisplayCache::default();
+    let started = Instant::now();
+    let cached = cache.resolve(definition, transform).unwrap();
+    let cache_build_ms = ms(started);
+    assert_eq!(cached.len(), 400);
+    assert_eq!(cache.stats(), (1, 400));
+
+    let started = Instant::now();
+    let scene = Scene::build_cached(
+        &snapshot,
+        &layers,
+        MmPoint::new(0., 0.),
+        100.,
+        1,
+        None,
+        &mut cache,
+    )
+    .unwrap();
+    let instance_display_prepare_ms = ms(started);
+    assert_eq!(scene.objects.len(), 40_000);
+    assert_eq!(snapshot.layers[0].objects.len(), 100);
+    assert_eq!(snapshot.block_definitions[0].objects.len(), 400);
+    assert_eq!(cache.stats(), (1, 400));
+
+    const BASE: &[u8] = b"%FSLAX36Y36*%\n%MOMM*%\n%ADD10C,0.1*%\nD10*\nX0Y0D03*\nM02*\n";
+    let mut document = gerber_io::parse_s1(BASE, "s4b2-performance")
+        .unwrap()
+        .document;
+    document.layers = snapshot.layers.clone();
+    document.apertures = snapshot.apertures.clone();
+    document.block_definitions = snapshot.block_definitions.clone();
+    let started = Instant::now();
+    let flattened = gerber_io::flatten_block_instances_for_export(&document).unwrap();
+    let export_flatten_ms = ms(started);
+    assert_eq!(flattened.layers[0].objects.len(), 40_000);
+    assert!(flattened.block_definitions.is_empty());
+    assert_eq!(document.layers[0].objects.len(), 100);
+    assert_eq!(document.block_definitions[0].objects.len(), 400);
+
+    let display_memory_estimate_bytes = std::mem::size_of_val(scene.objects.as_slice())
+        + std::mem::size_of_val(scene.primitives.as_slice())
+        + std::mem::size_of_val(scene.points.as_slice());
+    let report = json!({
+        "schema": "rcam-s4b2-block-performance/1",
+        "build_profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+        "definition_openings": 400,
+        "project_instances": 100,
+        "project_top_level_objects": snapshot.layers[0].objects.len(),
+        "cache_entries": cache.stats().0,
+        "cache_resolved_objects": cache.stats().1,
+        "display_objects": scene.objects.len(),
+        "display_primitives": scene.primitives.len(),
+        "display_memory_estimate_bytes": display_memory_estimate_bytes,
+        "display_cache_build_ms": cache_build_ms,
+        "instance_display_prepare_ms": instance_display_prepare_ms,
+        "export_flatten_ms": export_flatten_ms,
+        "working_project_remained_shared": true,
+    });
+    let text = serde_json::to_string_pretty(&report).unwrap();
+    println!("S4B2_BLOCK_PERF_JSON_BEGIN\n{text}\nS4B2_BLOCK_PERF_JSON_END");
+    if let Ok(out) = std::env::var("RCAM_S4B2_BLOCK_PERF_OUT") {
+        std::fs::write(out, text).unwrap();
+    }
+}
 
 /// Deterministic layer: 70 % regions, 10 % circle flashes, 10 % rectangle flashes,
 /// 10 % strokes. Each layer is shifted a little so the layers overlap like a real stack.

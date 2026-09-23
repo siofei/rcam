@@ -74,11 +74,14 @@ state、Manufacturing Precision、Import Provenance 等好几类必须持久化�
     （§13/§14/§40/§44）。`LayerWorkspaceState` 没有 solo 字段；`WorkspaceProjectState` 没有 selection 字段；
     `RCamProject` 没有 history 字段；快捷键/面板宽度/最近颜色/主题不存在于本 crate 的任何类型里。
 
+13. **reader 安全预算是显式格式契约。** `Budget.max_string_len` 统一验证全部 persisted、用户可控 String；
+    `Budget.max_json_depth` 在 serde schema parse 前扫描 manifest/project/layer/block JSON。恰好等于上限允许，
+    上限 + 1 返回 `RESOURCE_LIMIT`（`string_len` / `json_depth`）；被 v1 policy 忽略的可选字段也不能绕过
+    entry、string 或 depth 预算。
+
 ## 不做（本阶段）
 
-`File → Open/Save/Save As .rcam`；Autosave；Crash Recovery；Recent Projects；v2 迁移的具体实现（只留调用点）；
-JSON 嵌套深度的专用限制器（依赖 `serde_json` 默认递归深度保护 + ZIP 条目大小预算的组合防护，作为已知的
-范围裁剪记录在这里，而不是假装实现了一个自定义的深度限制器）。
+`File → Open/Save/Save As .rcam`；Autosave；Crash Recovery；Recent Projects；v2 迁移的具体实现（只留调用点）。
 
 ## 不变量
 
