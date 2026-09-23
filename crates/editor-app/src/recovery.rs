@@ -162,6 +162,19 @@ fn identity(info: &editor_service::DocumentInfo) -> String {
     )
 }
 
+fn reset_after_save(
+    info: &editor_service::DocumentInfo,
+    last_dirty: &mut String,
+    last_recovered: &mut String,
+) -> bool {
+    if info.project_dirty {
+        return false;
+    }
+    last_dirty.clear();
+    last_recovered.clear();
+    true
+}
+
 pub(crate) fn complete_write(
     pending: &mut Option<String>,
     last_recovered: &mut String,
@@ -181,8 +194,11 @@ impl EditorApp {
         let Some(info) = self.view.info.as_ref() else {
             return;
         };
-        if !info.project_dirty {
-            self.last_dirty_identity.clear();
+        if reset_after_save(
+            info,
+            &mut self.last_dirty_identity,
+            &mut self.last_recovered_identity,
+        ) {
             return;
         }
         let identity = identity(info);
@@ -326,6 +342,19 @@ mod tests {
         write(&recovery_dir, &info, &bytes).unwrap();
         complete_write(&mut pending, &mut last_recovered, true, Some(&info));
         assert_eq!(last_recovered, identity(&info));
+        assert_eq!(fs::read(&saved_path).unwrap(), original);
+        let mut last_dirty = identity(&info);
+        let saved = svc
+            .project_save(&doc.document_id, &info.revision, None, false)
+            .unwrap();
+        let current_saved = fs::read(&saved_path).unwrap();
+        assert!(reset_after_save(
+            &saved,
+            &mut last_dirty,
+            &mut last_recovered
+        ));
+        assert!(last_dirty.is_empty());
+        assert!(last_recovered.is_empty());
         let candidates = discover(&recovery_dir);
         assert_eq!(candidates.len(), 1);
         let restored = svc
@@ -333,7 +362,7 @@ mod tests {
             .unwrap();
         assert!(restored.project_dirty);
         assert!(restored.project_path.is_none());
-        assert_eq!(fs::read(&saved_path).unwrap(), original);
+        assert_eq!(fs::read(&saved_path).unwrap(), current_saved);
         remove(&recovery_dir, &info.project_id);
         assert!(discover(&recovery_dir).is_empty());
         fs::remove_dir_all(dir).unwrap();
