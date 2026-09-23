@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-09-24 · EP11BAM 真实 Gerber 诊断与安全语法兼容
+
+导入器接受重复的 `%LN...*%` 段标签，并仅将旧式 `G1/G2/G3` 绘图命令规范化为 `G01/G02/G03`；段标签保存在来源元数据中，Gerber Export 仍需按现有元数据确认流程处理。真实 `EP11BAM-A_top_0mm_202607241511.gbr` 在继续解析后仍触发 G74 圆弧及 Region 拓扑安全拒绝。原文件不修改、不作为可编辑制造数据导入；等待源 CAD/CAM 重新导出的规范 Gerber 后复测。局部验收与阻断证据见 `GERBER_IMPORT_EP11BAM_REVIEW.md`。关联 R02/R04/R06/R19、AT-005/015/020/080，不改变既有门槛。
+
 ## 2026-09-24 · 密集真实 Gerber 导入修复
 
 GUI 显示容量及 RenderIndex 的整格扩展规则阻断 230409 个矩形 Flash 的真实 `.GPT`。提高有界显示预算，并把索引边界扩展收窄至 f32 舍入误差；导入失败时保留原始错误。使用 `0727SMT` 真实 Gerber 进行解析筛查与多格式 GUI Model 导入回归，实际结果见 `GERBER_IMPORT_DENSE_REAL_REVIEW.md`。不改变正式 V1、Windows 和 CORE10 验收门槛。

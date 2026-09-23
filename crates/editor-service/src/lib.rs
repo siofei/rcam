@@ -3348,6 +3348,7 @@ fn metadata_categories(metadata: &Value) -> Vec<String> {
     let mut categories: Vec<String> = [
         "image_name",
         "layer_name",
+        "section_names",
         "encoding",
         "file_attributes",
         "dropped_categories",
@@ -3371,7 +3372,12 @@ fn metadata_categories(metadata: &Value) -> Vec<String> {
 fn is_lossy_metadata_category(category: &str) -> bool {
     matches!(
         category,
-        "image_name" | "layer_name" | "encoding" | "file_attributes" | "dropped_categories"
+        "image_name"
+            | "layer_name"
+            | "section_names"
+            | "encoding"
+            | "file_attributes"
+            | "dropped_categories"
     )
 }
 

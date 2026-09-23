@@ -612,6 +612,9 @@ pub struct SemanticFormat {
 pub struct SourceMetadata {
     pub image_name: Option<String>,
     pub layer_name: Option<String>,
+    /// Repeated LN labels identify source sections rather than one whole layer.
+    #[serde(default)]
+    pub section_names: Vec<String>,
     pub encoding: Option<String>,
     pub file_attributes: Vec<String>,
     pub dropped_categories: Vec<String>,

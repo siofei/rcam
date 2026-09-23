@@ -220,6 +220,17 @@ fn prepare_source(
             continue;
         }
         let mut parser_line = line.to_string();
+        // Pre-2020 legacy files used G1/G2/G3 spelling. Normalize only the
+        // three plot modes, never G36/G37 or an arbitrary unknown G command.
+        if line.starts_with('G')
+            && matches!(line.as_bytes().get(1), Some(b'1' | b'2' | b'3'))
+            && matches!(
+                line.as_bytes().get(2),
+                Some(b'*' | b'X' | b'Y' | b'I' | b'J' | b'D')
+            )
+        {
+            parser_line.insert(1, '0');
+        }
         if let Some(comment) = line.strip_prefix("G04")
             && !matches!(comment.trim_start().chars().next(), Some('#' | '@' | '!'))
         {
@@ -365,18 +376,20 @@ fn prepare_source(
         }
         if line.starts_with("%LN") && line.ends_with("*%") {
             let value = line.trim_start_matches("%LN").trim_end_matches("*%");
-            if value.is_empty()
-                || value.contains('*')
-                || value.contains('%')
-                || seen_image_data
-                || metadata.layer_name.is_some()
-            {
+            if value.is_empty() || value.contains('*') || value.contains('%') {
                 return Err(S1Error::Semantic {
                     line: line_no,
-                    message: "LN name is empty".into(),
+                    message: "LN name is empty or invalid".into(),
                 });
             }
-            metadata.layer_name = Some(value.to_string());
+            if let Some(first) = metadata.layer_name.take() {
+                metadata.section_names.push(first);
+            }
+            if seen_image_data || !metadata.section_names.is_empty() {
+                metadata.section_names.push(value.to_string());
+            } else {
+                metadata.layer_name = Some(value.to_string());
+            }
             continue;
         }
         if line.starts_with("%IN") && line.ends_with("*%") {
