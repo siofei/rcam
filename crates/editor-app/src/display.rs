@@ -5,7 +5,9 @@ use editor_service::{LayerInfo, RenderSnapshot};
 use std::collections::HashMap;
 use std::f64::consts::TAU;
 
-const MAX_ITEMS: usize = 200_000;
+// One 230k-flash real stencil needs roughly 1.2M polygon vertices/primitives.
+// This remains a display-only budget; the manufacturing object limit is separate.
+const MAX_ITEMS: usize = 2_000_000;
 const POLYGON_BIN_THRESHOLD: usize = 32;
 const POLYGON_BIN_TARGET_EDGES: usize = 1;
 const POLYGON_BIN_MAX_COUNT: usize = 256;
@@ -389,7 +391,7 @@ impl Scene {
             }
         }
         if self.primitives.len() + self.points.len() > MAX_ITEMS {
-            return Err("RESOURCE_LIMIT: display items (200000)".into());
+            return Err(format!("RESOURCE_LIMIT: display items ({MAX_ITEMS})"));
         }
         let end = self.primitives.len();
         let mut bounds = self.primitive_bounds(start, end);
@@ -457,7 +459,7 @@ impl Scene {
             .saturating_add(extra)
             > MAX_ITEMS
         {
-            return Err("RESOURCE_LIMIT: display items (200000)".into());
+            return Err(format!("RESOURCE_LIMIT: display items ({MAX_ITEMS})"));
         }
         Ok(())
     }

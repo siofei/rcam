@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-09-24 · 密集真实 Gerber 导入修复
+
+GUI 显示容量及 RenderIndex 的整格扩展规则阻断 230409 个矩形 Flash 的真实 `.GPT`。提高有界显示预算，并把索引边界扩展收窄至 f32 舍入误差；导入失败时保留原始错误。使用 `0727SMT` 真实 Gerber 进行解析筛查与多格式 GUI Model 导入回归，实际结果见 `GERBER_IMPORT_DENSE_REAL_REVIEW.md`。不改变正式 V1、Windows 和 CORE10 验收门槛。
+
 ## 2026-09-24 · S4-B3 DisplayUnit / Recovery closeout
 
 修复 `.rcam` 保存时 µm 显示单位被降级为 mm：v1 增加 `micrometers`，GUI/Project 四单位一一映射，

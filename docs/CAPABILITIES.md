@@ -241,3 +241,7 @@ Metal parity、原生 GUI Block fixture、400×100 性能、固定 ZIP/sidecar/f
 
 `ApplicationService` 新增受 `FileAccessPolicy` 限定的 `project.new/open/info/save/save_as`，并将对应 JSON 操作列为 supported。`.rcam` Open 先完整解码再装载候选工程；Save 使用临时文件、完整复核与原子发布，成功后才更新 project path/hash/dirty。GUI File 菜单正式区分 `.rcam` New/Open/Save/Save As 与 Gerber Import/Export，新增关闭确认、Recent 和本机 Recovery；Solo/Selection/Undo 与 AppPreferences 不进入 `.rcam`。Mac 原生和交付门禁见 [S4_B3_REVIEW](S4_B3_REVIEW.md)；Windows、完整 V1 仍未执行。
 S4-B3 预冻结修正：mm/inch/mil/µm 四种 DisplayUnit 均一一持久化；历史三单位 v1 文件仍可打开。Recovery 写入失败不会把当前脏版本永久标记为已恢复。
+
+## 2026-09-24 密集真实 Gerber 导入修复
+
+GUI 派生显示上限现为 2000000 primitive + point，RenderIndex 最多 500000 对象，原 1000000 引用／16384 单格候选／采样工作预算仍生效。指定 230409 矩形 Flash 的 `.GPT` 在 Mac 原生窗口可导入和显示；`0727SMT` 另有 `.art`、`.pho`、`.gtp`、`.GBR` 真实文件通过 Model 导入回归，详见 [验收记录](GERBER_IMPORT_DENSE_REAL_REVIEW.md)。这不扩大 parser 支持集，也不证明完整 CORE10、P100K、Windows 或 V1。

@@ -29,3 +29,9 @@ preview 按已选对象平移后的 bounds 重建临时显示索引，不修改�
 本阶段无新依赖。未来 renderer 可升级层 tile/实例化，但须继续通过 reference 和独立几何真值。
 P1K 离屏 CPU+GPU fence 计时仅性能补充，不等于 native GUI frame interval 或 AT-075。
 Windows deferred / not executed，完整 V1/CORE10 和 P100K 门槛不变。
+
+## 2026-09-24：密集钢网真实文件导入修订
+
+原 200000 对象／显示条目限制拒绝了一个含 230409 个矩形 Flash 的合法 Gerber：解析及服务打开成功，GUI 构建显示场景时报 `RESOURCE_LIMIT`。本次只调整派生显示预算：对象上限 500000（与服务对象上限一致），primitive 与 point 的总上限 2000000；计数仍在分配前检查，超限继续安全拒绝。这不改变制造模型、服务、writer 或正式 P100K 性能门槛。
+
+原索引将每个对象 AABB 扩展整格再分配候选，规则密集阵列因此出现几倍于对象数的引用，逐步折半后可能让单格超过 16384。改为按 f32 坐标与网格跨度的舍入误差保守扩展边界；viewport 查询原有相邻格覆盖仍保留。CSR 顺序、1000000 引用与 16384 格／单格上限、曝光合成和局部材料测试不变。新增 230409 Flash 回归，并以真实 `.GPT` 及其他扩展名走 GUI Model 导入路径；结果另见 `GERBER_IMPORT_DENSE_REAL_REVIEW.md`。本修订不宣称所有真实 Gerber 格式可导入。

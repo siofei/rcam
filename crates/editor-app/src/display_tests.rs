@@ -40,6 +40,45 @@ fn fixture(name: &str) -> (RenderSnapshot, Vec<LayerInfo>) {
         .unwrap();
     (s, m.view.layers)
 }
+
+#[test]
+fn dense_rectangular_flash_scene_has_room_for_real_stencil_scale() {
+    let path = std::env::temp_dir().join(format!("rcam-dense-display-{}.gbr", std::process::id()));
+    std::fs::write(
+        &path,
+        b"%FSLAX44Y44*%\n%MOMM*%\n%ADD10R,0.09X0.09*%\nD10*\nX0Y0D03*\nM02*\n",
+    )
+    .unwrap();
+    let mut model = Model::default();
+    model.open(&path).unwrap();
+    let id = &model.view.info.as_ref().unwrap().document_id;
+    let mut snapshot = model.service.render_snapshot(id).unwrap();
+    let original = snapshot.layers[0].objects[0].clone();
+    snapshot.layers[0].objects = (0..230_409)
+        .map(|i| {
+            let mut object = original.clone();
+            object.object_id = format!("flash-{i}");
+            if let SemanticGeometry::Flash { center, .. } = &mut object.geometry {
+                *center = MmPoint::new((i % 481) as f64 * 0.3, (i / 481) as f64 * 0.3);
+            } else {
+                panic!("fixture must be a flash");
+            }
+            object
+        })
+        .collect();
+    let scene = Scene::build(
+        &snapshot,
+        &model.view.layers,
+        MmPoint::new(72., 72.),
+        20.,
+        1,
+    )
+    .expect("dense array must remain displayable within the bounded scene");
+    assert_eq!(scene.objects.len(), 230_409);
+    assert_eq!(scene.primitives.len(), 230_409);
+    assert_eq!(scene.points.len(), 230_409 * 4);
+    let _ = std::fs::remove_file(path);
+}
 /// A definition (Flash + Line + RectangularSweep + Arc + Region, via the `MIXED` fixture also
 /// used by `block_core_workflow.rs`) with 2 instances — identity, and
 /// rotated 90° + mirrored — so display coverage exercises every resolved

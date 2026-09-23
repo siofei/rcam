@@ -3,6 +3,7 @@ use crate::display::Object;
 
 pub const MAX_GRID_CELLS: usize = 16_384;
 pub const MAX_CELL_REFERENCES: usize = 1_000_000;
+const MAX_RENDER_OBJECTS: usize = 500_000;
 const MAX_OBJECTS_PER_CELL: usize = 16_384;
 #[derive(Clone, Debug, Default)]
 pub struct RenderIndex {
@@ -34,8 +35,8 @@ impl RenderIndex {
         delta: [f32; 2],
         budget: usize,
     ) -> Result<Self, String> {
-        if objects.len() > 200_000 {
-            return Err(limit("render_objects", 200_000, objects.len()));
+        if objects.len() > MAX_RENDER_OBJECTS {
+            return Err(limit("render_objects", MAX_RENDER_OBJECTS, objects.len()));
         }
         let bounds: Vec<_> = objects
             .iter()
@@ -225,7 +226,9 @@ impl RenderIndex {
         work
     }
     fn range(&self, b: [f32; 4]) -> [usize; 4] {
-        // One-cell halo protects CPU/GPU f32 rounding at grid boundaries.
+        // Pad by f32 rounding error at cell boundaries. A whole-cell halo
+        // multiplies references for dense flash arrays and can exhaust the
+        // bounded index even when each flash occupies only one cell.
         let cell = |v: f32, axis: usize| -> usize {
             (((v - self.grid[axis]) * self.grid[axis + 2])
                 .floor()
@@ -236,11 +239,15 @@ impl RenderIndex {
                     self.rows as usize - 1
                 })
         };
+        let pad = |v: f32, axis: usize| {
+            let span = (if axis == 0 { self.cols } else { self.rows }) as f32 / self.grid[axis + 2];
+            v.abs().max(self.grid[axis].abs()).max(span.abs()).max(1.) * f32::EPSILON * 16.
+        };
         [
-            cell(b[0], 0).saturating_sub(1),
-            cell(b[1], 1).saturating_sub(1),
-            (cell(b[2], 0) + 1).min(self.cols as usize - 1),
-            (cell(b[3], 1) + 1).min(self.rows as usize - 1),
+            cell(b[0] - pad(b[0], 0), 0),
+            cell(b[1] - pad(b[1], 1), 1),
+            cell(b[2] + pad(b[2], 0), 0),
+            cell(b[3] + pad(b[3], 1), 1),
         ]
     }
 }
@@ -283,8 +290,11 @@ mod tests {
     fn coarsening_keeps_all_candidates_and_budget_is_bounded() {
         let o = objects(1000);
         let r = RenderIndex::bounded(&o, &[], [0.; 2], 1000).unwrap();
-        assert_eq!(r.cols * r.rows, 1);
-        assert_eq!(&r.data[2..], &(0..1000).collect::<Vec<_>>());
+        assert!(r.data.len() <= r.cols as usize * r.rows as usize + 1 + 1000);
+        assert_eq!(
+            r.viewport([-10., -10., 200., 200.]).ordered_candidate_ids,
+            (0..1000).collect::<Vec<_>>()
+        );
         assert!(
             RenderIndex::bounded(&o, &[], [0.; 2], 999)
                 .unwrap_err()
@@ -306,5 +316,30 @@ mod tests {
         assert_eq!(r.grid[0], -100.);
         assert_eq!(o[0].bounds, before);
         assert!(r.data[r.data[0] as usize..r.data[1] as usize].contains(&0));
+    }
+
+    #[test]
+    fn dense_flash_grid_keeps_bounded_index_without_a_whole_cell_halo() {
+        let objects: Vec<_> = (0..230_409)
+            .map(|i| {
+                let x = (i % 481) as f32 * 0.3;
+                let y = (i / 481) as f32 * 0.3;
+                Object {
+                    meta: [0, 1, 1, 1],
+                    bounds: [x, y, x + 0.09, y + 0.09],
+                    ..Default::default()
+                }
+            })
+            .collect();
+        let index = RenderIndex::build(&objects, &[], [0.; 2]).unwrap();
+        assert!(index.max_candidates < 1_000);
+        assert!(index.data.len() <= MAX_CELL_REFERENCES + MAX_GRID_CELLS + 1);
+        assert_eq!(
+            index
+                .viewport([0., 0., 145., 145.])
+                .ordered_candidate_ids
+                .len(),
+            objects.len()
+        );
     }
 }

@@ -348,7 +348,7 @@ impl Model {
         if let Err(e) = prepared {
             if let Some(candidate) = &self.view.info {
                 self.service
-                    .close(&candidate.document_id, &candidate.revision, false)?;
+                    .close(&candidate.document_id, &candidate.revision, true)?;
             }
             self.view = old_view;
             self.snapshot = old_snapshot;
