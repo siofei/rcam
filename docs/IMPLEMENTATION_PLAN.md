@@ -186,7 +186,7 @@ Global Units & Manufacturing Precision 已收口为 PASS（Mac-first bounded）�
 决策见 [ADR 0031](adr/0031-rcam-native-project-format-v1.md) / [ADR 0032](adr/0032-block-core.md)。
 最终 closeout 已完成；S4-B3 按后续明确请求启动。Windows deferred / not executed。
 
-## 2026-09-24 S4-B3 `.rcam` Project Lifecycle（PASS，Mac-first）
+## 2026-09-24 S4-B3 `.rcam` Project Lifecycle（自动化通过，原生终验阻塞）
 
 范围、Exit Gate 及证据路径见 [S4_B3_PLAN](S4_B3_PLAN.md) / [S4_B3_REVIEW](S4_B3_REVIEW.md)，决策见 ADR 0033/0034。此阶段仅完成 `.rcam` 工程生命周期，不启动 S4-C。
 
@@ -202,7 +202,7 @@ S4-B1 Multi-Layer Workspace + reservations
 | 阶段 | 内容 | 前置/约束 |
 |---|---|---|
 | S4-B2 | BlockDefinition/BlockInstance core（无 nested，仅 translation/rotation/reflection，display + Export flatten）；`.rcam` Native Project Model / schema v1；Workspace state 与 Snap settings 持久化——**PASS（Mac-first）** | S4-B1 审查通过；同一 clean commit 完成 Metal/GUI/codec/package closeout |
-| S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects——**PASS（Mac-first）**；Gerber 仍只 Import/Export | S4-B2；双平台 V1 另验 |
+| S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects——**自动化通过，原生终验阻塞**；Gerber 仍只 Import/Export | S4-B2；双平台 V1 另验 |
 | S4-C | 完整 Object Snap、Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | S4-B3；Drill/Board Coordinate 按需要在此前后拆分立项 |
 
 每个阶段启动前先写任务书、需求/验收/ADR；架构方向见 DESIGN_V1 第 22 章与 ADR 0029/0030，长期约束见 AGENTS.md。
