@@ -32,6 +32,29 @@ fn setup() -> (ApplicationService, std::path::PathBuf) {
 }
 
 #[test]
+fn new_projects_have_distinct_stable_ids_across_service_sessions() {
+    let (mut first_service, first_root) = setup();
+    let (mut second_service, second_root) = setup();
+    let first = first_service.document_new().unwrap();
+    let second = second_service.document_new().unwrap();
+    assert_eq!(first.document_id, second.document_id);
+    assert_ne!(first.project_id, second.project_id);
+    let path = first_root.join("identity.rcam");
+    first_service
+        .project_save(
+            &first.document_id,
+            &first.revision,
+            Some(path.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+    let reopened = first_service.project_open(path.to_str().unwrap()).unwrap();
+    assert_eq!(first.project_id, reopened.project_id);
+    fs::remove_dir_all(first_root).unwrap();
+    fs::remove_dir_all(second_root).unwrap();
+}
+
+#[test]
 fn new_save_open_and_failed_open_preserves_existing_session() {
     let (mut service, root) = setup();
     let first = service.document_new().unwrap();

@@ -12,7 +12,23 @@ use editor_core::workspace::{
     utc_timestamp,
 };
 use editor_core::{ApertureDefinition, SemanticFormat, SemanticLayer, SourceMetadata};
-use std::collections::HashSet;
+use std::collections::{HashSet, hash_map::RandomState};
+use std::hash::BuildHasher;
+
+fn new_project_id() -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let seed = (
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed),
+    );
+    let high = RandomState::new().hash_one(seed);
+    let low = RandomState::new().hash_one((seed, high));
+    format!("project-{high:016x}{low:016x}")
+}
 
 /// Files accepted by one atomic `document.import_gerber_layers`.
 pub const MAX_IMPORT_FILES: usize = 64;
@@ -636,7 +652,7 @@ impl ApplicationService {
         document: SemanticDocument,
     ) -> Result<S1DocumentRecord, ServiceError> {
         let mut record = S1DocumentRecord {
-            project_id: document.id.clone(),
+            project_id: new_project_id(),
             project_path: None,
             last_saved_project_hash: None,
             saved_project_state_hash: String::new(),

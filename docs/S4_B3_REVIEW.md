@@ -1,6 +1,6 @@
 # S4-B3 — `.rcam` Project Lifecycle review
 
-状态：**PASS（Mac-first，限定 S4-B3）**。固定提交与完整原始日志见 `evidence/s4b3-final-20260924-02/`；交付副本和 SHA-256 校验见 `exports/`。Windows 未执行；完整 V1、CORE10、P100K 和 S4-C 不在本结论内。
+状态：**PASS（Mac-first，限定 S4-B3）**。固定提交与完整原始日志见 `evidence/s4b3-final-20260924-03/`；交付副本和 SHA-256 校验见 `exports/`。Windows 未执行；完整 V1、CORE10、P100K 和 S4-C 不在本结论内。
 
 范围与 Rxx／AT-xxx 映射见 [S4_B3_PLAN](S4_B3_PLAN.md)，业务及恢复边界见 ADR 0033/0034。`ApplicationService` 受 `FileAccessPolicy` 约束，正式提供 Project New/Open/Save/Save As 与无界面 JSON 操作。Open 完整解码、迁移分派和验证后才切换会话；Save 使用同目录临时文件、fsync、持久字节重读解码和原子发布，成功后才更新路径、哈希与 dirty 基线。Gerber 仍仅 Import/Export。
 
@@ -15,6 +15,6 @@
 | 原生恢复：后台快照、受控重启、打开脏副本、另存为 | PASS | `recovery-native-before-restart.json`、`recovery-native-after-save.json`、`native-probe/` |
 | 完整 Source/Public Evidence ZIP、fresh extract、双 ZIP SHA-256 | PASS | `exports/`、`source_fresh_extract_report.json`、`SHA256SUMS.txt` |
 
-独立测试覆盖：失败 Open 保留原会话；外部修改、Save As 未确认覆盖和注入的校验/发布失败不破坏已有项目；无变化重复保存字节一致；图层视图/Grid/Snap、Block 与稳定 ID 往返；Solo 不持久化；恢复副本无项目路径且不能隐式覆盖原件。原生界面检查了 dirty 提示的取消／不保存／保存、Recent 列表和 Save As 文件选择器重复使用时的单个 `.rcam` 扩展名。
+独立测试覆盖：新工程跨会话 project id 不复用；失败 Open 保留原会话；外部修改、Save As 未确认覆盖和注入的校验/发布失败不破坏已有项目；无变化重复保存字节一致；图层视图/Grid/Snap、Block 与稳定 ID 往返；Solo 不持久化；恢复副本无项目路径且不能隐式覆盖原件。原生界面检查了 dirty 提示的取消／不保存／保存、Recent 列表和 Save As 文件选择器重复使用时的单个 `.rcam` 扩展名。
 
 运行环境与命令以 `environment.json` 和 `gates.json` 为准；未执行项为 Windows 真机、完整 V1/CORE10/P100K、Finder 文件关联及 S4-C。Recovery 为基础单快照机制，不提供版本历史。恢复的正常保存需显式选新 `.rcam` 路径；不会自动覆盖原项目。
