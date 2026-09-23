@@ -50,6 +50,12 @@ def main():
         if layer["name"] == "block-fixture"
     )
     selected = any(item.get("selected_block_instances", 0) == 1 for item in fixture)
+    zero_width_centerline = any(
+        item.get("block_zero_width_stroke_centerline") is True for item in fixture
+    )
+    zero_width_edges = any(
+        item.get("block_zero_width_flash_region_edge") is True for item in fixture
+    )
     healthy = all(
         any(
             item.get("display_error") is None
@@ -75,6 +81,8 @@ def main():
         "layer_color_changed": len(colors) >= 2,
         "category_color": category_color,
         "whole_block_selected": selected,
+        "block_zero_width_stroke_centerline": zero_width_centerline,
+        "block_zero_width_flash_region_edge": zero_width_edges,
         "exported_gerber": exported,
         "reopened_flattened_export": bool(reopened) and reimported,
         "no_blank_or_display_error": healthy,

@@ -40,14 +40,14 @@ fn fixture(name: &str) -> (RenderSnapshot, Vec<LayerInfo>) {
         .unwrap();
     (s, m.view.layers)
 }
-/// A definition (Flash + Line + Arc + Region, via the `MIXED` fixture also
+/// A definition (Flash + Line + RectangularSweep + Arc + Region, via the `MIXED` fixture also
 /// used by `block_core_workflow.rs`) with 2 instances — identity, and
 /// rotated 90° + mirrored — so display coverage exercises every resolved
 /// primitive kind at more than one orientation. Returns the snapshot, the
 /// layer workspace, and the shared `object_id` both instances' resolved
 /// primitives report through `scene.ids`.
 fn block_fixture() -> (RenderSnapshot, Vec<LayerInfo>, Vec<String>) {
-    const MIXED: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\nD10*\nX2000000Y2000000D03*\nX0Y0D02*\nG01X2000000Y0D01*\nG75*\nX1000000Y0D02*\nG03X0Y1000000I-1000000J0D01*\nG36*\nX10000000Y10000000D02*\nG01X12000000Y10000000D01*\nX12000000Y12000000D01*\nX10000000Y12000000D01*\nX10000000Y10000000D01*\nG37*\nM02*\n";
+    const MIXED: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\n%ADD11R,0.3X0.2*%\nD10*\nX2000000Y2000000D03*\nX0Y0D02*\nG01X2000000Y0D01*\nD11*\nX3000000Y0D02*\nX4000000Y0D01*\nD10*\nG75*\nX1000000Y0D02*\nG03X0Y1000000I-1000000J0D01*\nG36*\nX10000000Y10000000D02*\nG01X12000000Y10000000D01*\nX12000000Y12000000D01*\nX10000000Y12000000D01*\nX10000000Y10000000D01*\nG37*\nM02*\n";
     let dir = std::env::temp_dir().join(format!("rcam-b2-display-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("mixed.gbr");
@@ -78,7 +78,11 @@ fn block_fixture() -> (RenderSnapshot, Vec<LayerInfo>, Vec<String>) {
         .into_iter()
         .map(|o| o.object.object_id)
         .collect();
-    assert_eq!(object_ids.len(), 4, "Flash + Line + Arc + Region");
+    assert_eq!(
+        object_ids.len(),
+        5,
+        "Flash + Line + RectangularSweep + Arc + Region"
+    );
     let revision = rev(&m);
     let create = m
         .service
@@ -149,33 +153,42 @@ fn block_instance_resolves_display_across_modes_color_and_selection() {
         let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1)
             .unwrap_or_else(|e| panic!("BlockInstance must display under {mode:?}: {e}"));
         assert!(!scene.primitives.is_empty());
-        // 2 instances x 4 resolved primitives (Flash + Line + Arc + Region) each.
-        assert_eq!(scene.ids.len(), 8);
+        // 2 instances x 5 resolved primitives each.
+        assert_eq!(scene.ids.len(), 10);
         for id in &instance_ids {
             assert_eq!(
                 scene.ids.iter().filter(|s| *s == id).count(),
-                4,
+                5,
                 "every resolved primitive of instance {id} must share its object_id \
                  (so gpu::selection_flags, which matches by id, flags all of them)"
             );
         }
-        // A block's own class is never Stroke, so under ZeroWidth its
-        // resolved content keeps its true width (outline, not centerline)
-        // instead of mixing per-primitive-kind hairline treatment within
-        // one shared category (S4-B2 Final Closeout §2.3).
-        let expected_mode = match mode {
-            workspace::LayerDisplayMode::Filled => crate::display::MODE_FILLED,
-            _ => crate::display::MODE_EDGE,
+        let expected_modes = match mode {
+            workspace::LayerDisplayMode::Filled => vec![crate::display::MODE_FILLED; 5],
+            workspace::LayerDisplayMode::Outline => vec![crate::display::MODE_EDGE; 5],
+            workspace::LayerDisplayMode::ZeroWidth => vec![
+                crate::display::MODE_EDGE,
+                crate::display::MODE_CENTERLINE,
+                crate::display::MODE_CENTERLINE,
+                crate::display::MODE_CENTERLINE,
+                crate::display::MODE_EDGE,
+            ],
         };
-        for object in &scene.objects {
-            assert_eq!(object.style[1], expected_mode);
+        for instance in scene.objects.chunks_exact(5) {
+            assert_eq!(
+                instance
+                    .iter()
+                    .map(|object| object.style[1])
+                    .collect::<Vec<_>>(),
+                expected_modes
+            );
         }
     }
 
     // Rotation + mirror actually move the second instance's geometry.
     let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1).unwrap();
-    let first = &scene.objects[0..4];
-    let second = &scene.objects[4..8];
+    let first = &scene.objects[0..5];
+    let second = &scene.objects[5..10];
     assert_ne!(
         first.iter().map(|o| o.bounds).collect::<Vec<_>>(),
         second.iter().map(|o| o.bounds).collect::<Vec<_>>(),
@@ -190,6 +203,91 @@ fn block_instance_resolves_display_across_modes_color_and_selection() {
         scene.objects.iter().map(|o| o.bounds).collect::<Vec<_>>(),
         again.objects.iter().map(|o| o.bounds).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn block_zero_width_matches_ordinary_geometry_without_splitting_category() {
+    use editor_core::block::BlockTransform;
+    use editor_core::workspace::{Color, ColorMode, DisplayClass, LayerDisplayMode};
+
+    let (mut snapshot, mut layers, _) = block_fixture();
+    let definition = snapshot.block_definitions[0].clone();
+    let mut objects: Vec<SemanticObject> = definition
+        .objects
+        .iter()
+        .enumerate()
+        .map(|(index, object)| SemanticObject {
+            object_id: format!("ordinary-{index}"),
+            geometry: object.geometry.clone().into(),
+            exposure: object.exposure,
+            origin: ObjectOrigin::Imported {
+                command_index: index,
+            },
+        })
+        .collect();
+    objects.push(SemanticObject {
+        object_id: "block".into(),
+        geometry: SemanticGeometry::BlockInstance {
+            definition_id: definition.id.clone(),
+            transform: BlockTransform::IDENTITY,
+        },
+        exposure: Exposure::Dark,
+        origin: ObjectOrigin::Generated {
+            operation_id: "block-zero-width".into(),
+        },
+    });
+    snapshot.layers[0].objects = objects;
+
+    let orange = Color::rgb(0xff, 0x88, 0x00);
+    layers[0].color_mode = ColorMode::CategoryColor;
+    layers[0].display_mode = LayerDisplayMode::ZeroWidth;
+    let block_style = layers[0]
+        .classes
+        .iter_mut()
+        .find(|style| style.class == DisplayClass::BlockInstance)
+        .expect("BlockInstance category style");
+    block_style.color_override = Some(orange);
+    block_style.effective_color = orange;
+
+    let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1).unwrap();
+    let expected = [
+        crate::display::MODE_EDGE,
+        crate::display::MODE_CENTERLINE,
+        crate::display::MODE_CENTERLINE,
+        crate::display::MODE_CENTERLINE,
+        crate::display::MODE_EDGE,
+    ];
+    assert_eq!(scene.objects.len(), 10);
+    assert_eq!(
+        scene.objects[..5]
+            .iter()
+            .map(|object| object.style[1])
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        scene.objects[5..]
+            .iter()
+            .map(|object| object.style[1])
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert!(scene.ids[5..].iter().all(|id| id == "block"));
+    assert!(
+        scene.objects[5..]
+            .iter()
+            .all(|object| object.style[0] == crate::display::pack_color(orange))
+    );
+
+    layers[0]
+        .classes
+        .iter_mut()
+        .find(|style| style.class == DisplayClass::BlockInstance)
+        .unwrap()
+        .visible = false;
+    let hidden = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 2).unwrap();
+    assert!(hidden.objects[..5].iter().all(|object| object.meta[3] != 0));
+    assert!(hidden.objects[5..].iter().all(|object| object.meta[3] == 0));
 }
 #[test]
 fn renderer_refuses_partial_unsupported_document() {
@@ -906,7 +1004,7 @@ fn native_metal_reference_production_pixel_parity() {
     }
 }
 
-/// S4-B2 Final Closeout: a Block instance (Flash + Line + Arc + Region,
+/// S4-B2 Final Closeout: a Block instance (Flash + Line + RectangularSweep + Arc + Region,
 /// resolved from a shared definition at identity and at 90°+mirror) must
 /// render bit-for-bit identically between the reference and production
 /// shaders under all three display modes. `assert_parity` already varies
@@ -925,6 +1023,26 @@ fn native_metal_block_instance_parity() {
         let mut layers = layers.clone();
         layers[0].display_mode = mode;
         let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 100., 1).unwrap();
+        if mode == workspace::LayerDisplayMode::ZeroWidth {
+            assert_eq!(
+                scene
+                    .objects
+                    .iter()
+                    .filter(|object| object.style[1] == crate::display::MODE_CENTERLINE)
+                    .count(),
+                6,
+                "Line, RectangularSweep and Arc must be centerlines in both instances"
+            );
+            assert_eq!(
+                scene
+                    .objects
+                    .iter()
+                    .filter(|object| object.style[1] == crate::display::MODE_EDGE)
+                    .count(),
+                4,
+                "Flash and Region must remain contour hairlines in both instances"
+            );
+        }
         assert_parity_cameras(
             &rig,
             &scene,

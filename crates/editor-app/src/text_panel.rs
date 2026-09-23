@@ -15,6 +15,43 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String) -> bool {
     })
     .inner
 }
+
+const TEXT_EDIT_ROWS: usize = 4;
+
+fn text_editor(ui: &mut egui::Ui, value: &mut String) -> egui::Response {
+    // `TextEdit::desired_rows` is a minimum for multiline editors. Without a
+    // bounded inner scroll area the editor grows with every wrapped/new line,
+    // pushing the preview/status controls below it on every draft update.
+    let height = ui.text_style_height(&egui::TextStyle::Body) * TEXT_EDIT_ROWS as f32 + 4.;
+    egui::ScrollArea::vertical()
+        .id_salt("manufacturing-text-scroll")
+        .max_height(height)
+        .min_scrolled_height(height)
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(value)
+                    .id(egui::Id::new("manufacturing-text"))
+                    .desired_rows(TEXT_EDIT_ROWS)
+                    .desired_width(f32::INFINITY),
+            )
+        })
+        .inner
+}
+
+fn fixed_status_line(ui: &mut egui::Ui, text: &str, small: bool) -> egui::Response {
+    let text = if small {
+        egui::RichText::new(text).small()
+    } else {
+        egui::RichText::new(text)
+    };
+    ui.add_sized(
+        [
+            ui.available_width(),
+            ui.text_style_height(&egui::TextStyle::Body),
+        ],
+        egui::Label::new(text).truncate(),
+    )
+}
 impl EditorApp {
     pub(crate) fn invalidate_text_overlay(&mut self) {
         if self.text.preview.as_ref().is_some_and(|p| {
@@ -535,14 +572,7 @@ impl EditorApp {
             "文本（{} / 128 字符，可多行）",
             self.text.text.chars().count()
         ));
-        changed |= ui
-            .add(
-                egui::TextEdit::multiline(&mut self.text.text)
-                    .id(egui::Id::new("manufacturing-text"))
-                    .desired_rows(4)
-                    .desired_width(f32::INFINITY),
-            )
-            .changed();
+        changed |= text_editor(ui, &mut self.text.text).changed();
         if self.ime_active {
             ui.label("输入法组合中；确认候选后才生成预览");
         }
@@ -561,8 +591,8 @@ impl EditorApp {
                 ui.colored_label(egui::Color32::YELLOW, e);
             }
         }
-        ui.label(&self.text.status);
-        if let Some(p) = &self.text.preview {
+        fixed_status_line(ui, &self.text.status, false).on_hover_text(&self.text.status);
+        let preview_summary = if let Some(p) = &self.text.preview {
             let (mut contours, mut edges) = (0, 0);
             for g in &p.geometries {
                 if let editor_core::SemanticGeometry::Region { contours: cs } = g {
@@ -572,11 +602,14 @@ impl EditorApp {
                     edges += 1;
                 }
             }
-            ui.small(format!(
-                "对象 {} · 轮廓 {contours} · 线段/边界 {edges}",
+            format!(
+                "预览统计：对象 {} · 轮廓 {contours} · 线段/边界 {edges}",
                 p.geometries.len()
-            ));
-        }
+            )
+        } else {
+            "预览统计：等待更新…".into()
+        };
+        fixed_status_line(ui, &preview_summary, true).on_hover_text(&preview_summary);
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
@@ -603,5 +636,67 @@ impl EditorApp {
             }
         });
         ui.small("确定后点击画布放置；Esc 返回此弹窗修改。普通 Gerber 不保留原文。");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn below_editor_y(text: &str) -> f32 {
+        let ctx = egui::Context::default();
+        let mut value = text.to_owned();
+        let mut below_y = 0.;
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(500., 500.),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                text_editor(ui, &mut value);
+                below_y = ui.label("preview below editor").rect.min.y;
+            });
+        });
+        below_y
+    }
+
+    #[test]
+    fn multiline_editor_keeps_preview_position_stable_as_text_grows() {
+        let short = below_editor_y("A");
+        let long = below_editor_y(&("many wrapped words ".repeat(80) + "\nline 2\nline 3\nline 4"));
+        assert_eq!(short, long);
+    }
+
+    #[test]
+    fn preview_status_rows_keep_following_controls_stable() {
+        fn below_status_y(status: &str, summary: &str) -> f32 {
+            let ctx = egui::Context::default();
+            let mut below_y = 0.;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(440., 300.),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    fixed_status_line(ui, status, false);
+                    fixed_status_line(ui, summary, true);
+                    below_y = ui.button("确定").rect.min.y;
+                });
+            });
+            below_y
+        }
+
+        let waiting = below_status_y("等待预览…", "预览统计：等待更新…");
+        let published = below_status_y(
+            &"很长的预览状态".repeat(40),
+            &"预览统计：对象 128 · 轮廓 9999 · 线段/边界 99999".repeat(8),
+        );
+        assert_eq!(waiting, published);
     }
 }

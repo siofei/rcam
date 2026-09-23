@@ -68,7 +68,10 @@ S4-B1 只在 `editor-core::block` 留了 `BlockDefinition`/`BlockInstance` 占�
 
 10. **显示时共享 Definition 派生结果，不写回制造模型。** `BlockDisplayCache` 的 key 为 definition id /
     revision / rotation / mirror；instance 只追加 translation。renderer 中每个 resolved primitive 仍携带同一
-    instance ObjectId，因此选择 halo 覆盖整实例。Filled/Outline/ZeroWidth 与 Layer/Category 样式均只改显示。
+    instance ObjectId，因此选择 halo 覆盖整实例。BlockInstance 的 Category color/visible/selectable/locked 始终按
+    外层 `DisplayClass::BlockInstance` 原子处理；`LayerDisplayMode::ZeroWidth` 则按每个 resolved primitive 的几何
+    类型处理：Line/Arc/RectangularSweep 为 centerline hairline，Flash/Region 为 contour hairline。Filled/Outline
+    与 Layer/Category 样式仍只改显示，不改变制造 revision、Gerber 或 `.rcam` bytes。
 
 11. **Export 先 flatten，再按当前 ManufacturingPrecision 归一化。** Definition 内部坐标/线宽/光圈尺寸与
     instance transform 都必须服从导出时 policy；粗量化破坏 Arc/Region 拓扑时 fail-closed，working project 不变。

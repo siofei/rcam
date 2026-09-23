@@ -43,9 +43,27 @@ working project 不被归一化或展开。`block_core_workflow` 固定覆盖 pr
   translation。缓存只属于 display，既不写回 `SemanticDocument`，也不作为 writer 输入。
 - `Scene` 对每个 resolved primitive 继续使用 instance ObjectId；`selection_flags` 因而同时标记整实例，不会只亮
   第一个内部 primitive。
-- `DisplayClass::BlockInstance` 独立于 Gerber `%AB` 的 `ApertureBlock`；Filled/Outline/ZeroWidth、Layer/Category
-  color、Visible、Selected 都按 Block 类别统一生效。
+- `DisplayClass::BlockInstance` 独立于 Gerber `%AB` 的 `ApertureBlock`；Category color、Visible、Selectable、
+  Locked 与 selection identity 继续按外层 Block 类别原子生效。
+- Display geometry semantics 与 Category semantics 分离：ZeroWidth 对每个 resolved primitive 判定，
+  Line/Arc/RectangularSweep 使用 centerline hairline，Flash/Region 使用 contour hairline；Filled/Outline 保持原行为。
 - service `visible_bounds` 同样 resolve Definition；Block fixture 的 Fit/GUI 初始 framing 不再漏掉实例。
+
+### ZeroWidth Block semantics follow-up
+
+2026-09-23 follow-up（R07/R08/R09/R17；AT-022/024/025/026/062/067）修复了 Final Closeout 后发现的
+Block ZeroWidth 显示偏差。Scene semantic 回归使用同一组顶层与 Block 内 Flash/Line/RectangularSweep/Arc/Region，
+逐项验证 `EDGE/CENTERLINE` mode 一致；同时验证 Block category orange override 作用于全部 resolved geometry、
+隐藏 Block 类别不会影响顶层普通对象、全部 resolved primitive 保持同一 instance ObjectId。hairline bounds 继续复用
+`HAIRLINE_PX × LOD_MAX_ZOOM_OUT` padding。
+
+原生 probe 新增 `block_zero_width_stroke_centerline`、`block_zero_width_flash_region_edge` 与 mode counts；
+`native_metal_block_instance_parity` 在 exact RGBA parity 前明确断言两实例的 6 个 stroke-like primitive 为
+centerline、4 个 Flash/Region primitive 为 edge。制造模型、revision、Gerber writer、`.rcam` schema/API/budget 均未修改。
+
+同轮按用户反馈修复文字弹窗布局稳定性（R12/R18；AT-043/046）：多行 TextEdit 放入固定四行高度的内部滚动区，
+状态与预览统计各保留一行固定布局（完整文字由 tooltip 提供）。文字增加、折行或预览 pending/published 切换时，
+下方状态/预览/确定区域不再被推移；自动布局测试比较短/长文本及 pending/published 内容的下方控件坐标。
 
 ### `.rcam` reader security
 

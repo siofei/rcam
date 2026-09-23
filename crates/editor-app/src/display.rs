@@ -1,5 +1,5 @@
 //! Display-only analytic primitives and adaptive Region contours. Never writer input.
-use editor_core::workspace::{DisplayClass, LayerDisplayMode, aperture_shape_map, classify_object};
+use editor_core::workspace::{LayerDisplayMode, aperture_shape_map, classify_object};
 use editor_core::*;
 use editor_service::{LayerInfo, RenderSnapshot};
 use std::collections::HashMap;
@@ -34,6 +34,19 @@ pub const HAIRLINE_PX: f64 = 1.0;
 /// render_ppm]`; outside that range the display is rebuilt. Hairline bounds must cover
 /// the coarsest supported zoom, otherwise zooming out clips the outer half of the line.
 pub const LOD_MAX_ZOOM_OUT: f64 = 4.;
+
+/// Geometry-only display semantics for `LayerDisplayMode::ZeroWidth`.
+/// Category policy remains owned by the outer `SemanticObject`; in particular,
+/// resolved Block primitives still use `DisplayClass::BlockInstance` for
+/// colour, visibility, selection and locking.
+fn is_stroke_geometry(geometry: &SemanticGeometry) -> bool {
+    matches!(
+        geometry,
+        SemanticGeometry::Line { .. }
+            | SemanticGeometry::RectangularSweep { .. }
+            | SemanticGeometry::Arc { .. }
+    )
+}
 
 pub fn pack_color(color: editor_core::workspace::Color) -> u32 {
     (u32::from(color.r) << 16) | (u32::from(color.g) << 8) | u32::from(color.b)
@@ -171,13 +184,9 @@ impl Scene {
         };
         Ok(scene)
     }
-    /// Push one manufacturing object. A category's Visible/Color and
-    /// ZeroWidth hairline eligibility are decided once, from `object`
-    /// itself — never per constituent primitive — so a `BlockInstance`
-    /// (its own `DisplayClass::BlockInstance` category, S4-B2 Final
-    /// Closeout §2/§3) is toggled/coloured as one atomic unit, not
-    /// decomposed into the Stroke/Flash*/Region categories its resolved
-    /// content would otherwise fall into.
+    /// Push one manufacturing object. Category Visible/Color comes from the
+    /// outer object, so a `BlockInstance` remains one atomic category. The
+    /// ZeroWidth geometry mode is evaluated for every resolved primitive.
     #[allow(clippy::too_many_arguments)]
     fn push_object(
         &mut self,
@@ -195,12 +204,7 @@ impl Scene {
         let class_style = ws.classes.iter().find(|c| c.class == class);
         let visible = layer_visible && class_style.is_none_or(|c| c.visible);
         let color = class_style.map_or(ws.base_color, |c| c.effective_color);
-        // Stroke-like geometry is drawn as its centre line in ZeroWidth. A
-        // Block's own class is never Stroke, so its resolved content always
-        // keeps its true (non-hairline) width under ZeroWidth — shown as an
-        // outline of the block's real footprint rather than degrading any
-        // internal trace to a screen-thin line losing the pattern's shape.
-        let hairline = zero_width && class == DisplayClass::Stroke;
+        let hairline = zero_width && is_stroke_geometry(&object.geometry);
         if let SemanticGeometry::BlockInstance {
             definition_id,
             transform,
@@ -212,6 +216,7 @@ impl Scene {
                 .ok_or("NOT_FOUND: block definition")?;
             let resolved = block_cache.resolve(definition, transform)?;
             for primitive in &resolved {
+                let primitive_hairline = zero_width && is_stroke_geometry(&primitive.geometry);
                 self.push_primitive_object(
                     &primitive.geometry,
                     primitive.exposure,
@@ -219,7 +224,7 @@ impl Scene {
                     layer_index,
                     visible,
                     color,
-                    hairline,
+                    primitive_hairline,
                     ws.display_mode,
                     apertures,
                 )?;

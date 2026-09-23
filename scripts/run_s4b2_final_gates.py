@@ -97,6 +97,10 @@ def main():
         ["cargo", "check", "--workspace", "--all-targets", "--locked"],
         ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
         ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"],
+        [
+            "cargo", "test", "--locked", "-p", "editor-app",
+            "block_zero_width_matches_ordinary_geometry_without_splitting_category",
+        ],
         ["cargo", "test", "--locked", "-p", "editor-core", "--test", "block_core"],
         ["cargo", "test", "--locked", "-p", "editor-service", "--test", "block_core_workflow"],
         ["cargo", "test", "--locked", "-p", "rcam-project"],

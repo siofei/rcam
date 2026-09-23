@@ -270,6 +270,28 @@ impl EditorApp {
             .collect();
         let info = self.view.info.as_ref();
         let raw_focus = ctx.input(|i| i.viewport().focused);
+        let block_zero_width = self.view.layers.iter().any(|layer| {
+            layer.display_name == "block-fixture"
+                && layer.display_mode == editor_core::workspace::LayerDisplayMode::ZeroWidth
+        });
+        let block_zero_width_modes =
+            self.view
+                .scene
+                .as_ref()
+                .filter(|_| block_zero_width)
+                .map(|scene| {
+                    let centerline = scene
+                        .objects
+                        .iter()
+                        .filter(|object| object.style[1] == crate::display::MODE_CENTERLINE)
+                        .count();
+                    let edge = scene
+                        .objects
+                        .iter()
+                        .filter(|object| object.style[1] == crate::display::MODE_EDGE)
+                        .count();
+                    json!({"centerline": centerline, "edge": edge})
+                });
         let observation = json!({
             "ppp": ctx.pixels_per_point(),
             "screen_points": [ctx.content_rect().width(), ctx.content_rect().height()],
@@ -297,6 +319,13 @@ impl EditorApp {
             "selected_block_instances": self.view.selected.ordered.iter().filter(|item| {
                 matches!(item.object.geometry, editor_core::SemanticGeometry::BlockInstance { .. })
             }).count(),
+            "block_zero_width_stroke_centerline": block_zero_width_modes
+                .as_ref()
+                .is_some_and(|counts| counts["centerline"].as_u64().is_some_and(|count| count > 0)),
+            "block_zero_width_flash_region_edge": block_zero_width_modes
+                .as_ref()
+                .is_some_and(|counts| counts["edge"].as_u64().is_some_and(|count| count > 0)),
+            "block_zero_width_mode_counts": block_zero_width_modes,
             "blocked": self.view.blocked,
             "display_error": self.display_error,
             "has_last_good_frame": self.last_good.is_some(),
