@@ -227,7 +227,14 @@ impl EditorApp {
             rcam_project::DisplayUnit::Millimeters => tools::DisplayUnit::Millimeter,
             rcam_project::DisplayUnit::Inches => tools::DisplayUnit::Inch,
             rcam_project::DisplayUnit::Mils => tools::DisplayUnit::Mil,
+            rcam_project::DisplayUnit::Micrometers => tools::DisplayUnit::Micrometer,
         };
+        if self.text.change_unit(self.display_unit).is_err() {
+            self.text = Default::default();
+            self.text
+                .change_unit(self.display_unit)
+                .expect("default text lengths are valid");
+        }
         if let Some(camera) = settings.camera {
             self.camera.center = camera.center_mm;
             self.camera.scale = camera.scale;
@@ -246,11 +253,10 @@ impl EditorApp {
         settings.grid.visible = self.grid.visible;
         settings.grid.snap = self.grid.snap_enabled;
         settings.display_unit = match self.display_unit {
-            tools::DisplayUnit::Millimeter | tools::DisplayUnit::Micrometer => {
-                rcam_project::DisplayUnit::Millimeters
-            }
+            tools::DisplayUnit::Millimeter => rcam_project::DisplayUnit::Millimeters,
             tools::DisplayUnit::Inch => rcam_project::DisplayUnit::Inches,
             tools::DisplayUnit::Mil => rcam_project::DisplayUnit::Mils,
+            tools::DisplayUnit::Micrometer => rcam_project::DisplayUnit::Micrometers,
         };
         self.send(Action::ProjectWorkspace(settings));
     }

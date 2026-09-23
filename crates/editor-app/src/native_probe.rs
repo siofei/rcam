@@ -305,7 +305,7 @@ impl EditorApp {
                         .count();
                     json!({"centerline": centerline, "edge": edge})
                 });
-        let observation = json!({
+        let mut observation = json!({
             "ppp": ctx.pixels_per_point(),
             "screen_points": [ctx.content_rect().width(), ctx.content_rect().height()],
             "focused": raw_focus,
@@ -352,6 +352,14 @@ impl EditorApp {
             "busy": self.busy,
             "dropped_file_batches": self.probe.as_ref().map_or(0, |p| p.drops),
         });
+        observation["display_unit"] = json!(self.display_unit.suffix());
+        observation["grid_visible"] = json!(self.grid.visible);
+        observation["grid_spacing_mm"] = json!(self.grid.spacing_mm);
+        observation["text_display_unit"] = json!(self.text.display_unit.suffix());
+        observation["measure_label"] = json!(self.measure.label_with_resolution(
+            self.display_unit,
+            info.map_or(0.0001, |i| i.manufacturing_precision.resolution_mm),
+        ));
         if let Some(probe) = self.probe.as_mut() {
             probe.observe(observation);
             probe.screenshots(ctx);

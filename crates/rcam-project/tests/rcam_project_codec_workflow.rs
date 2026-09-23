@@ -157,6 +157,40 @@ fn deterministic_encode_and_encode_decode_encode_round_trip() {
 }
 
 #[test]
+fn all_display_units_round_trip_with_deterministic_bytes() {
+    for (unit, spelling) in [
+        (DisplayUnit::Millimeters, "millimeters"),
+        (DisplayUnit::Inches, "inches"),
+        (DisplayUnit::Mils, "mils"),
+        (DisplayUnit::Micrometers, "micrometers"),
+    ] {
+        let mut project = sample_project();
+        project.workspace.display_unit = unit;
+        let encoded = encode_v1(&project).unwrap();
+        assert!(
+            encoded
+                .windows(spelling.len())
+                .any(|part| part == spelling.as_bytes())
+        );
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded.workspace.display_unit, unit);
+        assert_eq!(encode_v1(&decoded).unwrap(), encoded);
+    }
+}
+
+#[test]
+fn existing_millimeter_projects_still_open() {
+    for fixture in [
+        include_bytes!("../../../fixtures/synthetic/s4b2/sample.rcam").as_slice(),
+        include_bytes!("../../../fixtures/synthetic/s4b3/project.rcam").as_slice(),
+    ] {
+        let project = decode(fixture).unwrap();
+        assert_eq!(project.format_version, FORMAT_VERSION);
+        assert_eq!(project.workspace.display_unit, DisplayUnit::Millimeters);
+    }
+}
+
+#[test]
 fn manifest_hashes_are_verified_and_corruption_is_rejected() {
     let project = sample_project();
     let mut bytes = encode_v1(&project).unwrap();

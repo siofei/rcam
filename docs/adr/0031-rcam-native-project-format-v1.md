@@ -79,6 +79,10 @@ state、Manufacturing Precision、Import Provenance 等好几类必须持久化�
     上限 + 1 返回 `RESOURCE_LIMIT`（`string_len` / `json_depth`）；被 v1 policy 忽略的可选字段也不能绕过
     entry、string 或 depth 预算。
 
+14. **S4-B3 预冻结兼容修正：显示单位有四种。** `WorkspaceProjectState.display_unit` 的 v1 JSON 值为
+    `millimeters`、`inches`、`mils`、`micrometers`；默认仍为 `millimeters`。此前三种值的文件继续读取，
+    不提高 `format_version`。显示单位只影响 UI，制造几何仍为 f64 mm。
+
 ## 不做（本阶段）
 
 `File → Open/Save/Save As .rcam`；Autosave；Crash Recovery；Recent Projects；v2 迁移的具体实现（只留调用点）。

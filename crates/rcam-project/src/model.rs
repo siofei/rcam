@@ -61,6 +61,7 @@ pub enum DisplayUnit {
     Millimeters,
     Inches,
     Mils,
+    Micrometers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

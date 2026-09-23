@@ -155,6 +155,27 @@ pub(crate) fn load(dir: &Path, meta: &RecoveryMetadata) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+fn identity(info: &editor_service::DocumentInfo) -> String {
+    format!(
+        "{}:{}:{}",
+        info.project_id, info.revision, info.workspace_revision
+    )
+}
+
+pub(crate) fn complete_write(
+    pending: &mut Option<String>,
+    last_recovered: &mut String,
+    succeeded: bool,
+    current: Option<&editor_service::DocumentInfo>,
+) {
+    if let Some(identity) = pending.take()
+        && succeeded
+        && current.is_some_and(|info| info.project_dirty && self::identity(info) == identity)
+    {
+        *last_recovered = identity;
+    }
+}
+
 impl EditorApp {
     pub(crate) fn tick_recovery(&mut self, now: std::time::Instant) {
         let Some(info) = self.view.info.as_ref() else {
@@ -164,10 +185,7 @@ impl EditorApp {
             self.last_dirty_identity.clear();
             return;
         }
-        let identity = format!(
-            "{}:{}:{}",
-            info.project_id, info.revision, info.workspace_revision
-        );
+        let identity = identity(info);
         if self.last_dirty_identity != identity {
             self.last_dirty_identity = identity.clone();
             self.dirty_since = now;
@@ -189,7 +207,7 @@ impl EditorApp {
             self.send(Action::RecoveryWrite(dir));
             if self.busy {
                 self.last_recovery_at = now;
-                self.last_recovered_identity = identity;
+                self.pending_recovery_identity = Some(identity);
             }
         }
     }
@@ -292,8 +310,22 @@ mod tests {
         .unwrap();
         let info = svc.document_get(&doc.document_id).unwrap();
         let bytes = svc.project_recovery_bytes(&doc.document_id).unwrap();
+        let blocked_dir = root.join("blocked-cache");
+        fs::write(&blocked_dir, b"not a directory").unwrap();
+        let mut pending = Some(identity(&info));
+        let mut last_recovered = String::new();
+        assert!(write(&blocked_dir, &info, &bytes).is_err());
+        complete_write(&mut pending, &mut last_recovered, false, Some(&info));
+        assert!(pending.is_none());
+        assert!(
+            last_recovered.is_empty(),
+            "failed write must remain retryable"
+        );
         let recovery_dir = root.join("cache");
+        pending = Some(identity(&info));
         write(&recovery_dir, &info, &bytes).unwrap();
+        complete_write(&mut pending, &mut last_recovered, true, Some(&info));
+        assert_eq!(last_recovered, identity(&info));
         let candidates = discover(&recovery_dir);
         assert_eq!(candidates.len(), 1);
         let restored = svc

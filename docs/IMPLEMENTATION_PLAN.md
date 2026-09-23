@@ -189,6 +189,7 @@ Global Units & Manufacturing Precision 已收口为 PASS（Mac-first bounded）�
 ## 2026-09-24 S4-B3 `.rcam` Project Lifecycle（PASS，Mac-first）
 
 范围、Exit Gate 及证据路径见 [S4_B3_PLAN](S4_B3_PLAN.md) / [S4_B3_REVIEW](S4_B3_REVIEW.md)，决策见 ADR 0033/0034。此阶段仅完成 `.rcam` 工程生命周期，不启动 S4-C。
+预冻结 closeout 补齐 µm DisplayUnit 往返及 Recovery 写失败重试，保持 schema v1 和制造模型不变；最终状态以 S4_B3_REVIEW 的新证据为准。
 
 ## 长期路线（S4-B1 之后，冻结顺序）
 

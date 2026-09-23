@@ -1,8 +1,18 @@
 # S4-B3 — `.rcam` Project Lifecycle review
 
-状态：**PASS（Mac-first，S4-B3 范围）**。固定提交的门禁与交付证据见 `evidence/s4b3-final-20260924-05/`、`exports/S4B3_<final-sha>/`。Mac 原生 GUI 与 Recovery 使用同一 release 二进制，SHA-256 为 `6b050f7d012446f02ad7d2db926db8d842ed00dcebb74ae1438cc4a13f859a04`；原始 probe、截图、恢复前后哈希见 `native-probe/`、`screens/`、`native-gui-smoke.json`。Windows 未执行；完整 V1、CORE10、P100K 和 S4-C 不在本结论内。
+状态：**PASS（Mac-first，含 µm DisplayUnit 预冻结修正）**。本轮修正的固定提交门禁、原生 µm/Recovery 及完整交付证据见 `evidence/s4b3-displayunit-final-20260924-01/`、`exports/S4B3_<new-sha>/`。上轮 `f4aa57e` 的主体生命周期证据见 `evidence/s4b3-final-20260924-05/`；其原生二进制 SHA-256 为 `6b050f7d012446f02ad7d2db926db8d842ed00dcebb74ae1438cc4a13f859a04`，但尚未覆盖 µm roundtrip，不能代替本轮证据。Windows 未执行；完整 V1、CORE10、P100K 和 S4-C 不在本结论内。
 
 范围与 Rxx／AT-xxx 映射见 [S4_B3_PLAN](S4_B3_PLAN.md)，业务及恢复边界见 ADR 0033/0034。`ApplicationService` 受 `FileAccessPolicy` 约束，正式提供 Project New/Open/Save/Save As 与无界面 JSON 操作。Open 完整解码、迁移分派和验证后才切换会话；Save 使用同目录临时文件、fsync、持久字节重读解码和原子发布，成功后才更新路径、哈希与 dirty 基线。Gerber 仍仅 Import/Export。
+
+## 2026-09-24 DisplayUnit / Recovery closeout
+
+`rcam-project::DisplayUnit` 在 schema v1 中新增 `micrometers`，与既有 `millimeters/inches/mils` 一起逐项编码、解码并验证二次编码字节一致；默认仍为 mm，S4-B2 `sample.rcam` 与上轮 S4-B3 `project.rcam` 两份旧文件保持可读。GUI 的四单位一一映射到 Project，Open 后同步 Text 草稿显示单位。Service 四单位 Save As/Open 测试确认显示单位精确相等、制造 f64 mm 文档及 ManufacturingPrecision 未变、制造 revision 未推进，四份 Gerber 导出字节一致。关联 R08/R14/R15/R16；AT-045/062 与 S4-B3 局部工程门禁，不改变 V1 用例总体状态。
+
+RecoveryWrite 只在后台 worker 成功回报且当前脏身份匹配后记录为已恢复。失败清除 pending；原 60 秒最小间隔继续限制重试。失败注入测试覆盖首次写入失败、同一 revision 再写成功，原始项目不被覆盖。原生流程再次执行 dirty → snapshot → 受控重启 → 恢复为 Untitled dirty → Save As，并核对源文件哈希与缓存清理。
+
+本轮原始命令退出码、release 二进制哈希、原生操作/截图、四单位断言、恢复前后哈希、源码 fresh extract 和双 ZIP 逐文件校验均保存在上述新运行 ID。完整范围只授予 Mac-first S4-B3；Windows 与完整 V1 仍未执行。
+
+## 上轮主体生命周期证据（f4aa57e）
 
 | 门禁 | 结果 | 证据 |
 |---|---|---|

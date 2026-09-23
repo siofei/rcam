@@ -9,3 +9,7 @@ Open 由访问策略限定路径，先进行有预算的完整 ZIP/manifest/sche
 Save 使用 `rcam-project::encode_v1`，编码结果先解码比较；同目录临时文件完整写入并同步，重新读取解码后才发布。新文件用 hard-link no-clobber 发布，现有文件须经用户替换确认或已有项目路径，且已有项目路径保存前后复核磁盘 SHA-256。发布后再读取、校验，成功才移动 saved baseline/path/hash。Save As 失败保留原路径和 dirty。无路径的 headless `project.save` 返回验证错误，不弹文件选择器。
 
 格式本身仍为 ADR 0031 的 schema v1；不新增 Gerber Save As、Drill、嵌套 Block 或云同步。
+
+S4-B3 预冻结修正：GUI 的 Millimeter/Inch/Mil/Micrometer 分别一一映射到项目的
+Millimeters/Inches/Mils/Micrometers；Save/Open 后不得把 µm 降级为 mm。原三单位 v1 文件仍可读取，
+新建项目默认仍为 mm。显示单位变化不推进制造 revision，也不改变 Gerber writer 字节。

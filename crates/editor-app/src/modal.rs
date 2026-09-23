@@ -223,6 +223,7 @@ mod tests {
             dirty_since: std::time::Instant::now(),
             last_recovery_at: std::time::Instant::now(),
             last_recovered_identity: String::new(),
+            pending_recovery_identity: None,
             toast: None,
             last_structure_serial: 0,
             transition: None,

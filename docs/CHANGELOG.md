@@ -1,5 +1,11 @@
 # 文档变更记录
 
+## 2026-09-24 · S4-B3 DisplayUnit / Recovery closeout
+
+修复 `.rcam` 保存时 µm 显示单位被降级为 mm：v1 增加 `micrometers`，GUI/Project 四单位一一映射，
+保留旧三单位文件兼容与默认 mm；制造几何、precision 和 Gerber 输出不变。Recovery 写失败后不再永久抑制同一脏版本，
+在原有最小间隔后可重试。证据见 S4_B3_REVIEW；不进入 S4-C。
+
 ## 2026-09-24 · S4-B3 `.rcam` Project Lifecycle（PASS，Mac-first）
 
 新增 ADR 0033/0034 和 S4_B3_PLAN/REVIEW；ApplicationService 正式接入 `.rcam` 项目会话、分阶段打开、原子保存与 JSON project 操作；GUI 增加 File New/Open/Save/Save As、项目 dirty 关闭确认、Recent 本机偏好与 Recovery。Gerber 继续只 Import/Export。Mac 原生 GUI、Recovery、Metal、固定包门禁通过，证据见 S4_B3_REVIEW；Windows deferred。

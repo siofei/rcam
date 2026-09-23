@@ -102,6 +102,7 @@ struct EditorApp {
     dirty_since: Instant,
     last_recovery_at: Instant,
     last_recovered_identity: String,
+    pending_recovery_identity: Option<String>,
     /// Message plus its birth time; drives the "deleted … [Undo]" notice.
     toast: Option<(String, Instant)>,
     last_structure_serial: u64,
@@ -242,6 +243,7 @@ impl EditorApp {
             dirty_since: Instant::now(),
             last_recovery_at: Instant::now() - std::time::Duration::from_secs(60),
             last_recovered_identity: String::new(),
+            pending_recovery_identity: None,
             toast: None,
             last_structure_serial: 0,
             transition: None,
@@ -693,6 +695,12 @@ impl eframe::App for EditorApp {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
+            recovery::complete_write(
+                &mut self.pending_recovery_identity,
+                &mut self.last_recovered_identity,
+                self.view.error.is_none(),
+                self.view.info.as_ref(),
+            );
             if let (Some(title), Some(error)) = (
                 self.pending_project_error_title.take(),
                 self.view.error.as_ref(),

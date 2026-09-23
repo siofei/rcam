@@ -249,6 +249,86 @@ fn block_project_roundtrip_and_gerber_export_do_not_change_project_path() {
 }
 
 #[test]
+fn four_display_units_survive_save_open_without_changing_manufacturing_or_gerber() {
+    let (mut service, root) = setup();
+    let input = root.join("legacy-millimeters.rcam");
+    fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/synthetic/s4b2/sample.rcam"
+        ),
+        &input,
+    )
+    .unwrap();
+    let opened = service.project_open(input.to_str().unwrap()).unwrap();
+    let original = service.project_snapshot(&opened.document_id).unwrap();
+    assert_eq!(
+        original.workspace.display_unit,
+        rcam_project::DisplayUnit::Millimeters
+    );
+    let manufacturing = original.to_semantic_document();
+    let precision = original.manufacturing;
+    let mut gerber_bytes = None;
+
+    for (index, unit) in [
+        rcam_project::DisplayUnit::Millimeters,
+        rcam_project::DisplayUnit::Inches,
+        rcam_project::DisplayUnit::Mils,
+        rcam_project::DisplayUnit::Micrometers,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut workspace = service.project_workspace(&opened.document_id).unwrap();
+        workspace.display_unit = unit;
+        let changed = service
+            .project_set_workspace(&opened.document_id, workspace)
+            .unwrap();
+        assert_eq!(changed.revision, opened.revision);
+        let path = root.join(format!("unit-{index}.rcam"));
+        service
+            .project_save(
+                &opened.document_id,
+                &changed.revision,
+                Some(path.to_str().unwrap()),
+                false,
+            )
+            .unwrap();
+        let reopened = service.project_open(path.to_str().unwrap()).unwrap();
+        let restored = service.project_snapshot(&reopened.document_id).unwrap();
+        assert_eq!(restored.workspace.display_unit, unit);
+        assert_eq!(restored.to_semantic_document(), manufacturing);
+        assert_eq!(restored.manufacturing, precision);
+        let export_path = root.join(format!("unit-{index}.gbr"));
+        service
+            .export_layer(
+                &reopened.document_id,
+                &reopened.revision,
+                ExportParams {
+                    layer_id: reopened.layer_ids[0].clone(),
+                    path: export_path.to_string_lossy().into_owned(),
+                    overwrite: OverwritePolicy {
+                        mode: "deny".into(),
+                        expected_sha256: None,
+                    },
+                    metadata_policy: MetadataPolicy {
+                        mode: "require_confirmation".into(),
+                        categories: None,
+                    },
+                },
+            )
+            .unwrap();
+        let exported = fs::read(export_path).unwrap();
+        if let Some(first) = &gerber_bytes {
+            assert_eq!(&exported, first);
+        } else {
+            gerber_bytes = Some(exported);
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn recovery_copy_is_unsaved_and_cannot_overwrite_original_implicitly() {
     let (mut service, root) = setup();
     let first = service.document_new().unwrap();
