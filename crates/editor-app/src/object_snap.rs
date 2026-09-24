@@ -3,7 +3,7 @@ use crate::{camera::Camera, tools, world_index::WorldIndex};
 use editor_core::MmPoint;
 use editor_core::snap::{
     SnapCandidate, SnapFeatureProvider, SnapGeometry, SnapGeometryCache, SnapKind, SnapQuery,
-    SnapResolution, SnapResolver, intersection_features,
+    SnapRadiiPx, SnapResolution, SnapResolver, intersection_features,
 };
 use editor_core::workspace::{aperture_shape_map, classify_object};
 use editor_service::{LayerInfo, RenderSnapshot};
@@ -70,6 +70,9 @@ pub struct Stats {
     pub nearby_objects: usize,
     pub features_generated: usize,
     pub intersection_pairs: usize,
+    pub candidate_query_us: u128,
+    pub resolver_us: u128,
+    pub retained_previous: bool,
     pub elapsed_us: u128,
 }
 
@@ -133,13 +136,17 @@ impl Runtime {
         let mut candidates = Vec::new();
         let mut nearby = Vec::new();
         let mut intersection_pairs = 0;
+        let resolver = SnapResolver::default();
         if settings.enabled
             && (settings.manufacturing_boundary || settings.original_path)
             && let Some(snapshot) = snapshot
         {
             let query = SnapQuery::from_screen(
                 raw,
-                settings.radius_px,
+                SnapRadiiPx {
+                    acquire: settings.radius_px,
+                    candidate: settings.radius_px + resolver.release_extra_px,
+                },
                 camera.scale,
                 f64::from(pixels_per_point),
                 settings.enabled_kinds.clone(),
@@ -147,9 +154,8 @@ impl Runtime {
                 settings.original_path,
             )
             .ok_or_else(|| "Object Snap 半径或缩放无效".to_string())?;
-            let release_mm = SnapResolver::default().release_extra_px / pixels_per_mm;
             let shapes = aperture_shape_map(&snapshot.apertures);
-            for (layer_index, object_index) in index.query_indices(query.bounds(release_mm)) {
+            for (layer_index, object_index) in index.query_indices(query.bounds()) {
                 let layer = &snapshot.layers[layer_index];
                 let object = &layer.objects[object_index];
                 if excluded.is_some_and(|excluded| excluded.contains(&object.object_id)) {
@@ -219,19 +225,26 @@ impl Runtime {
                 }
             }
         }
-        let resolution = SnapResolver::default().resolve(
+        let resolver_started = Instant::now();
+        let previous = self.previous.clone();
+        let resolution = resolver.resolve(
             raw,
             pixels_per_mm,
             settings.radius_px,
             &candidates,
             grid_point,
-            self.previous.as_ref(),
+            previous.as_ref(),
         );
+        let resolver_us = resolver_started.elapsed().as_micros();
+        let retained_previous = previous.is_some() && resolution.candidate == previous;
         self.previous = resolution.candidate.clone();
         self.stats = Stats {
             nearby_objects: nearby.len(),
             features_generated: candidates.len(),
             intersection_pairs,
+            candidate_query_us: resolver_started.duration_since(started).as_micros(),
+            resolver_us,
+            retained_previous,
             elapsed_us: started.elapsed().as_micros(),
         };
         self.current = Some(resolution.clone());
@@ -389,6 +402,508 @@ mod tests {
             styles: vec![],
             block_definitions: vec![],
         }
+    }
+
+    fn region_object(id: &str, edge: RegionEdge) -> SemanticObject {
+        SemanticObject {
+            object_id: id.into(),
+            geometry: SemanticGeometry::Region {
+                contours: vec![RegionContour {
+                    role: RegionRole::Solid,
+                    edges: vec![edge],
+                }],
+            },
+            exposure: Exposure::Dark,
+            origin: ObjectOrigin::Generated {
+                operation_id: "runtime-hysteresis".into(),
+            },
+        }
+    }
+
+    fn runtime_layers(snapshot: &RenderSnapshot) -> Vec<LayerInfo> {
+        snapshot
+            .layers
+            .iter()
+            .enumerate()
+            .map(|(z_index, layer)| LayerInfo {
+                layer_id: layer.id.clone(),
+                z_index,
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    fn resolve_runtime(
+        runtime: &mut Runtime,
+        snapshot: &RenderSnapshot,
+        index: &WorldIndex,
+        layers: &[LayerInfo],
+        settings: &Settings,
+        raw: MmPoint,
+        grid: tools::GridSettings,
+    ) -> SnapResolution {
+        runtime
+            .resolve(
+                raw,
+                settings,
+                grid,
+                Camera {
+                    scale: 100.,
+                    ..Default::default()
+                },
+                2.,
+                Some(snapshot),
+                index,
+                layers,
+                None,
+                false,
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn runtime_static_center_uses_eight_px_acquire_and_eleven_px_release() {
+        let snapshot = snapshot(vec![SemanticLayer {
+            id: "layer".into(),
+            objects: vec![circle_object(0, 0., 0.)],
+        }]);
+        let index = WorldIndex::build(&snapshot).unwrap();
+        let layers = runtime_layers(&snapshot);
+        let settings = Settings {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Center],
+            ..Default::default()
+        };
+        let mut runtime = Runtime::default();
+
+        let acquired = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(7.5 / 200., 0.),
+            tools::GridSettings::default(),
+        );
+        assert_eq!(acquired.kind, Some(SnapKind::Center));
+        let feature = acquired.feature.clone();
+        for distance_px in [9.0, 10.9] {
+            let retained = resolve_runtime(
+                &mut runtime,
+                &snapshot,
+                &index,
+                &layers,
+                &settings,
+                MmPoint::new(distance_px / 200., 0.),
+                tools::GridSettings::default(),
+            );
+            assert_eq!(retained.feature, feature, "distance_px={distance_px}");
+        }
+        let released = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(11.1 / 200., 0.),
+            tools::GridSettings::default(),
+        );
+        assert_eq!(released.kind, None);
+    }
+
+    #[test]
+    fn runtime_does_not_acquire_a_new_object_candidate_beyond_eight_px() {
+        let snapshot = snapshot(vec![SemanticLayer {
+            id: "layer".into(),
+            objects: vec![circle_object(0, 0., 0.)],
+        }]);
+        let index = WorldIndex::build(&snapshot).unwrap();
+        let layers = runtime_layers(&snapshot);
+        let settings = Settings {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Center],
+            ..Default::default()
+        };
+        let grid = tools::GridSettings {
+            snap_enabled: true,
+            spacing_mm: 0.1,
+            ..Default::default()
+        };
+        let result = resolve_runtime(
+            &mut Runtime::default(),
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(9. / 200., 0.),
+            grid,
+        );
+        assert_eq!(result.kind, None);
+        assert!(result.from_grid);
+    }
+
+    #[test]
+    fn runtime_nearest_retains_the_same_edge_until_release_radius() {
+        let snapshot = snapshot(vec![SemanticLayer {
+            id: "layer".into(),
+            objects: vec![region_object(
+                "line",
+                RegionEdge::Line {
+                    start: MmPoint::new(-1., 0.),
+                    end: MmPoint::new(1., 0.),
+                },
+            )],
+        }]);
+        let index = WorldIndex::build(&snapshot).unwrap();
+        let layers = runtime_layers(&snapshot);
+        let settings = Settings {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Nearest],
+            ..Default::default()
+        };
+        let mut runtime = Runtime::default();
+        let acquired = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(0., 7.5 / 200.),
+            tools::GridSettings::default(),
+        );
+        assert_eq!(acquired.kind, Some(SnapKind::Nearest));
+        let feature = acquired.feature.clone();
+        for distance_px in [9.0, 10.9] {
+            let retained = resolve_runtime(
+                &mut runtime,
+                &snapshot,
+                &index,
+                &layers,
+                &settings,
+                MmPoint::new(0., distance_px / 200.),
+                tools::GridSettings::default(),
+            );
+            assert_eq!(retained.feature, feature, "distance_px={distance_px}");
+        }
+        assert_eq!(
+            resolve_runtime(
+                &mut runtime,
+                &snapshot,
+                &index,
+                &layers,
+                &settings,
+                MmPoint::new(0., 11.1 / 200.),
+                tools::GridSettings::default(),
+            )
+            .kind,
+            None
+        );
+    }
+
+    #[test]
+    fn runtime_intersection_hysteresis_covers_line_line_and_line_arc() {
+        let settings = Settings {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Intersection],
+            ..Default::default()
+        };
+        let cases = [
+            (
+                vec![
+                    region_object(
+                        "horizontal",
+                        RegionEdge::Line {
+                            start: MmPoint::new(-2., 0.),
+                            end: MmPoint::new(2., 0.),
+                        },
+                    ),
+                    region_object(
+                        "vertical",
+                        RegionEdge::Line {
+                            start: MmPoint::new(0., -2.),
+                            end: MmPoint::new(0., 2.),
+                        },
+                    ),
+                ],
+                MmPoint::new(0., 0.),
+            ),
+            (
+                vec![
+                    region_object(
+                        "line",
+                        RegionEdge::Line {
+                            start: MmPoint::new(1., -2.),
+                            end: MmPoint::new(1., 2.),
+                        },
+                    ),
+                    region_object(
+                        "arc",
+                        RegionEdge::Arc(editor_core::ArcGeometry {
+                            start: MmPoint::new(1., 0.),
+                            end: MmPoint::new(1., 0.),
+                            center: MmPoint::new(0., 0.),
+                            direction: editor_core::ArcDirection::CounterClockwise,
+                            full_circle: true,
+                            source: None,
+                        }),
+                    ),
+                ],
+                MmPoint::new(1., 0.),
+            ),
+        ];
+        for (objects, intersection) in cases {
+            let snapshot = snapshot(vec![SemanticLayer {
+                id: "layer".into(),
+                objects,
+            }]);
+            let index = WorldIndex::build(&snapshot).unwrap();
+            let layers = runtime_layers(&snapshot);
+            let mut runtime = Runtime::default();
+            let acquired = resolve_runtime(
+                &mut runtime,
+                &snapshot,
+                &index,
+                &layers,
+                &settings,
+                MmPoint::new(intersection.x_mm + 7.5 / 200., intersection.y_mm),
+                tools::GridSettings::default(),
+            );
+            assert_eq!(acquired.kind, Some(SnapKind::Intersection));
+            let feature = acquired.feature.clone();
+            for distance_px in [9.0, 10.9] {
+                let retained = resolve_runtime(
+                    &mut runtime,
+                    &snapshot,
+                    &index,
+                    &layers,
+                    &settings,
+                    MmPoint::new(intersection.x_mm + distance_px / 200., intersection.y_mm),
+                    tools::GridSettings::default(),
+                );
+                assert_eq!(retained.feature, feature, "distance_px={distance_px}");
+            }
+            assert_eq!(
+                resolve_runtime(
+                    &mut runtime,
+                    &snapshot,
+                    &index,
+                    &layers,
+                    &settings,
+                    MmPoint::new(intersection.x_mm + 11.1 / 200., intersection.y_mm),
+                    tools::GridSettings::default(),
+                )
+                .kind,
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_retains_previous_candidate_before_switching_to_a_closer_one() {
+        let snapshot = snapshot(vec![SemanticLayer {
+            id: "layer".into(),
+            objects: vec![circle_object(0, 0., 0.), circle_object(1, 0.07, 0.)],
+        }]);
+        let index = WorldIndex::build(&snapshot).unwrap();
+        let layers = runtime_layers(&snapshot);
+        let settings = Settings {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Center],
+            ..Default::default()
+        };
+        let mut runtime = Runtime::default();
+        let acquired = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(0.03, 0.),
+            tools::GridSettings::default(),
+        );
+        assert_eq!(acquired.point, MmPoint::new(0., 0.));
+        let retained = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(0.045, 0.),
+            tools::GridSettings::default(),
+        );
+        assert_eq!(retained.point, acquired.point);
+        assert_eq!(retained.feature, acquired.feature);
+        let switched = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(0.06, 0.),
+            tools::GridSettings::default(),
+        );
+        assert_eq!(switched.point, MmPoint::new(0.07, 0.));
+    }
+
+    #[test]
+    fn runtime_alt_disable_resets_hysteresis_before_reenable() {
+        let snapshot = snapshot(vec![SemanticLayer {
+            id: "layer".into(),
+            objects: vec![circle_object(0, 0., 0.)],
+        }]);
+        let index = WorldIndex::build(&snapshot).unwrap();
+        let layers = runtime_layers(&snapshot);
+        let settings = Settings {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Center],
+            ..Default::default()
+        };
+        let camera = Camera {
+            scale: 100.,
+            ..Default::default()
+        };
+        let mut runtime = Runtime::default();
+        let acquired = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            MmPoint::new(7.5 / 200., 0.),
+            tools::GridSettings::default(),
+        );
+        assert_eq!(acquired.kind, Some(SnapKind::Center));
+        let raw = MmPoint::new(9. / 200., 0.);
+        let disabled = runtime
+            .resolve(
+                raw,
+                &settings,
+                tools::GridSettings::default(),
+                camera,
+                2.,
+                Some(&snapshot),
+                &index,
+                &layers,
+                None,
+                true,
+            )
+            .unwrap();
+        assert_eq!(disabled.point, raw);
+        assert_eq!(disabled.kind, None);
+        let reenabled = resolve_runtime(
+            &mut runtime,
+            &snapshot,
+            &index,
+            &layers,
+            &settings,
+            raw,
+            tools::GridSettings::default(),
+        );
+        assert_eq!(reenabled.kind, None, "9 px must not reacquire after Alt");
+    }
+
+    #[test]
+    #[ignore = "native Apple Silicon runtime observation evidence"]
+    fn s4c1_native_runtime_hysteresis_observations() {
+        let output = std::env::var_os("RCAM_S4C1_NATIVE_HYSTERESIS_OUT")
+            .expect("RCAM_S4C1_NATIVE_HYSTERESIS_OUT required");
+        let pixels_per_point = std::env::var("RCAM_S4C1_NATIVE_PPP")
+            .ok()
+            .and_then(|value| value.parse::<f32>().ok())
+            .unwrap_or(2.);
+        let camera = Camera {
+            scale: 100.,
+            ..Default::default()
+        };
+        let pixels_per_mm = camera.scale * f64::from(pixels_per_point);
+        let snapshot = snapshot(vec![SemanticLayer {
+            id: "layer".into(),
+            objects: vec![circle_object(0, 0., 0.)],
+        }]);
+        let index = WorldIndex::build(&snapshot).unwrap();
+        let layers = runtime_layers(&snapshot);
+        let settings = Settings {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Center],
+            ..Default::default()
+        };
+        let mut runtime = Runtime::default();
+        let mut observations = Vec::new();
+        for distance_px in [7.5, 9.0, 10.9, 11.1] {
+            let resolution = runtime
+                .resolve(
+                    MmPoint::new(distance_px / pixels_per_mm, 0.),
+                    &settings,
+                    tools::GridSettings::default(),
+                    camera,
+                    pixels_per_point,
+                    Some(&snapshot),
+                    &index,
+                    &layers,
+                    None,
+                    false,
+                )
+                .unwrap();
+            observations.push(serde_json::json!({
+                "raw_distance_px": distance_px,
+                "acquire_radius_px": settings.radius_px,
+                "release_radius_px": settings.radius_px + SnapResolver::default().release_extra_px,
+                "snap_kind": resolution.kind.map(|kind| format!("{kind:?}")),
+                "feature_id": resolution.feature.as_ref().map(|feature| format!("{feature:?}")),
+                "retained_previous": runtime.stats.retained_previous,
+                "resolved_world_point": [resolution.point.x_mm, resolution.point.y_mm],
+                "nearby_objects": runtime.stats.nearby_objects,
+                "features_generated": runtime.stats.features_generated,
+                "intersection_pairs": runtime.stats.intersection_pairs,
+                "candidate_query_us": runtime.stats.candidate_query_us,
+                "resolver_us": runtime.stats.resolver_us,
+            }));
+        }
+        runtime.reset();
+        let resolution = runtime
+            .resolve(
+                MmPoint::new(9. / pixels_per_mm, 0.),
+                &settings,
+                tools::GridSettings::default(),
+                camera,
+                pixels_per_point,
+                Some(&snapshot),
+                &index,
+                &layers,
+                None,
+                false,
+            )
+            .unwrap();
+        observations.push(serde_json::json!({
+            "raw_distance_px": 9.0,
+            "acquire_radius_px": settings.radius_px,
+            "release_radius_px": settings.radius_px + SnapResolver::default().release_extra_px,
+            "snap_kind": resolution.kind.map(|kind| format!("{kind:?}")),
+            "feature_id": resolution.feature.as_ref().map(|feature| format!("{feature:?}")),
+            "retained_previous": runtime.stats.retained_previous,
+            "resolved_world_point": [resolution.point.x_mm, resolution.point.y_mm],
+            "case": "no_previous",
+        }));
+        assert_eq!(observations[0]["snap_kind"], "Center");
+        assert_eq!(observations[1]["feature_id"], observations[0]["feature_id"]);
+        assert_eq!(observations[2]["feature_id"], observations[0]["feature_id"]);
+        assert!(observations[1]["retained_previous"].as_bool().unwrap());
+        assert!(observations[2]["retained_previous"].as_bool().unwrap());
+        assert!(observations[3]["snap_kind"].is_null());
+        assert!(observations[4]["snap_kind"].is_null());
+
+        let report = serde_json::json!({
+            "schema_version": 2,
+            "status": "PASS",
+            "target_arch": std::env::consts::ARCH,
+            "target_os": std::env::consts::OS,
+            "pixels_per_point": pixels_per_point,
+            "camera_points_per_mm": camera.scale,
+            "observations": observations,
+        });
+        let output = std::path::PathBuf::from(output);
+        std::fs::create_dir_all(output.parent().expect("output parent")).unwrap();
+        std::fs::write(output, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
 
     #[test]

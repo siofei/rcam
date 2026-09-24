@@ -22,13 +22,14 @@ raw pointer
 ## 验收切片
 
 1. Rectangle/Circle/Polygon/Obround/Line/Arc/Region/AM/CompatibilitySolid/BlockInstance 解析特征。
-2. Endpoint/Vertex、Midpoint、Center、Quadrant、Intersection、Nearest；稳定 ID、距离优先与 hysteresis。
+2. Endpoint/Vertex、Midpoint、Center、Quadrant、Intersection、Nearest；稳定 ID、距离优先与 hysteresis。候选生成半径固定覆盖 11 physical px；resolver 仅允许 8 px 内 acquire，并允许同一候选在 11 px 内 retain。
 3. visible/selectable/class 过滤；locked selectable 可捕捉；Object 高于 Grid；Alt 临时禁用；F3 开关。
 4. 8 physical px 默认半径与 Retina ppp；状态坐标复用 mm/in/mil/µm formatter。
 5. Direct Drag、多选共同位移、文字浮动放置、测距、Pick Base Point 共用 resolver；预览与提交同一点。
 6. `.rcam v1` 设置往返和旧字段缺省兼容；不保存当前候选/hysteresis。
 7. 10×1K 邻域、100K 空间索引与 1000-edge Region 的有界性能证据。
 8. Mac 原生 UI/Metal、机器可读捕捉观察、release build 和固定 source/evidence ZIP。
+9. Runtime 回归必须覆盖静态特征、Nearest、线线/线弧 Intersection、无 previous 的 9 px 拒绝、双候选切换与 Retina；不得只测 core resolver。
 
 ## 阻断规则
 

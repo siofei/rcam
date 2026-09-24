@@ -37,8 +37,8 @@ mod world_index;
 
 use camera::Camera;
 use editor_core::command::{
-    Key, Keymap, Modifiers, Resolution, Shortcut, ShortcutContext, ShortcutResolver,
-    ids as command_ids,
+    CommandDispatcher, CommandId, Key, Keymap, Modifiers, Resolution, Shortcut, ShortcutContext,
+    ShortcutResolver, ids as command_ids,
 };
 use eframe::egui::{self, Color32, RichText, Vec2};
 use state::{Action, MirrorDirection, Model, PivotInput, View};
@@ -650,6 +650,23 @@ impl EditorApp {
         }
     }
 }
+
+impl CommandDispatcher for EditorApp {
+    type Outcome = bool;
+
+    fn dispatch(&mut self, command: CommandId) -> Self::Outcome {
+        match command {
+            command_ids::SNAP_TOGGLE => {
+                self.object_snap.enabled = !self.object_snap.enabled;
+                self.object_snap_runtime.reset();
+                self.persist_project_view();
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         // egui clears text focus on Escape before update; retain its event-time owner.
@@ -1001,18 +1018,13 @@ impl eframe::App for EditorApp {
                     self.fit = true;
                 }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::F3)
-                    && matches!(
-                        ShortcutResolver::resolve(
-                            &Keymap::standard(),
-                            &[ShortcutContext::Canvas],
-                            Shortcut::new(Modifiers::NONE, Key::F(3)),
-                        ),
-                        Resolution::Command(command_ids::SNAP_TOGGLE)
+                    && let Resolution::Command(command) = ShortcutResolver::resolve(
+                        &Keymap::standard(),
+                        &[ShortcutContext::Canvas],
+                        Shortcut::new(Modifiers::NONE, Key::F(3)),
                     )
                 {
-                    self.object_snap.enabled = !self.object_snap.enabled;
-                    self.object_snap_runtime.reset();
-                    self.persist_project_view();
+                    self.dispatch(command);
                 }
             });
         }
@@ -1246,16 +1258,16 @@ impl eframe::App for EditorApp {
                         self.open_modal(ActiveModal::Grid);
                         ui.close();
                     }
+                    let mut object_snap_enabled = self.object_snap.enabled;
                     if crate::ui::command_widgets::checkbox(
                         ui,
                         command_ids::SNAP_TOGGLE,
-                        &mut self.object_snap.enabled,
+                        &mut object_snap_enabled,
                         true,
                     )
                     .changed()
                     {
-                        self.object_snap_runtime.reset();
-                        self.persist_project_view();
+                        self.dispatch(command_ids::SNAP_TOGGLE);
                     }
                     if ui.button("Object Snap 设置…").clicked() {
                         self.open_modal(ActiveModal::ObjectSnap);
@@ -1523,9 +1535,7 @@ impl eframe::App for EditorApp {
                     )
                     .clicked()
                 {
-                    self.object_snap.enabled = !self.object_snap.enabled;
-                    self.object_snap_runtime.reset();
-                    self.persist_project_view();
+                    self.dispatch(command_ids::SNAP_TOGGLE);
                 }
                 if ui.button("Object Snap 设置…").clicked() {
                     self.open_modal(ActiveModal::ObjectSnap);

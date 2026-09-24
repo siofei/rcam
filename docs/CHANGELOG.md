@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-09-25 · S4-C1 Runtime Hysteresis Closeout（PASS，Mac-first bounded）
+
+纠正 `28e5f50` runtime 仍在 8 px feature generation 截断的问题：候选查询扩至 11 physical px，resolver 保持 8 px acquire / 11 px release，并补齐 static、Nearest、线线/线弧 Intersection、双候选、Retina 与无 previous 9 px 拒绝回归。F3 统一经 Command/Keymap/Dispatcher；Mac 原生完成 Vertex→Center Measure（µm/mm）和 Pick Base Point Center→preview→一次 commit。另修复 `.rcam` 重开后 generated ID allocator 从 0 重启导致文字预览冲突。下一阶段为 INFRA1，但本轮不启动 INFRA1 或 S4-C2；Windows deferred。
+
 ## 2026-09-25 · S4-C1 Full Object Snap（PASS，Mac-first bounded）
 
 新增 ADR 0036 与 S4_C1_PLAN/REVIEW。统一解析制造边界 Object Snap，接入 WorldIndex 邻域、稳定 feature id、Intersection/Nearest、Object/Grid resolver、physical-pixel 半径、hysteresis、Layer/Class filter、F3/Alt、marker/status，以及 Drag/Text/Measure/Base Point。`.rcam v1` Snap settings 增加有默认值的 boundary/path 字段，不保存当前 candidate。Mac 原生证据、有界性能与固定交付完成；不启动 S4-C2，Windows deferred。

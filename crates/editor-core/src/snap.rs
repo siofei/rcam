@@ -76,10 +76,20 @@ pub struct SnapFeature {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SnapQuery {
     pub center: MmPoint,
-    pub radius_mm: f64,
+    /// Radius used by the resolver to acquire a new object candidate.
+    pub acquire_radius_mm: f64,
+    /// Wider radius used only to generate candidates so an existing candidate
+    /// can remain available through the hysteresis release band.
+    pub candidate_radius_mm: f64,
     pub kinds: Vec<SnapKind>,
     pub manufacturing_boundary: bool,
     pub original_path: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SnapRadiiPx {
+    pub acquire: f64,
+    pub candidate: f64,
 }
 
 impl SnapQuery {
@@ -87,7 +97,7 @@ impl SnapQuery {
     /// `pixels_per_point` makes the configured radius physical-pixel stable.
     pub fn from_screen(
         center: MmPoint,
-        radius_physical_px: f64,
+        radii_physical_px: SnapRadiiPx,
         points_per_mm: f64,
         pixels_per_point: f64,
         kinds: Vec<SnapKind>,
@@ -96,13 +106,16 @@ impl SnapQuery {
     ) -> Option<Self> {
         let pixels_per_mm = points_per_mm * pixels_per_point;
         (center.is_finite()
-            && radius_physical_px.is_finite()
-            && radius_physical_px > 0.
+            && radii_physical_px.acquire.is_finite()
+            && radii_physical_px.acquire > 0.
+            && radii_physical_px.candidate.is_finite()
+            && radii_physical_px.candidate >= radii_physical_px.acquire
             && pixels_per_mm.is_finite()
             && pixels_per_mm > 0.)
             .then(|| Self {
                 center,
-                radius_mm: radius_physical_px / pixels_per_mm,
+                acquire_radius_mm: radii_physical_px.acquire / pixels_per_mm,
+                candidate_radius_mm: radii_physical_px.candidate / pixels_per_mm,
                 kinds,
                 manufacturing_boundary,
                 original_path,
@@ -116,8 +129,8 @@ impl SnapQuery {
         }
     }
 
-    pub fn bounds(&self, extra_mm: f64) -> BoundsMm {
-        let radius = self.radius_mm + extra_mm.max(0.);
+    pub fn bounds(&self) -> BoundsMm {
+        let radius = self.candidate_radius_mm;
         BoundsMm {
             min_x_mm: self.center.x_mm - radius,
             min_y_mm: self.center.y_mm - radius,
@@ -200,14 +213,14 @@ impl SnapFeatureProvider for SnapGeometry {
             .filter(|feature| {
                 query.kinds.contains(&feature.kind)
                     && query.source_enabled(feature.source)
-                    && feature.point.distance_mm(query.center) <= query.radius_mm
+                    && feature.point.distance_mm(query.center) <= query.candidate_radius_mm
             })
             .cloned()
             .collect();
         if query.kinds.contains(&SnapKind::Nearest) {
             for edge in self.nearby_edges(query) {
                 let point = nearest_on_edge(query.center, &edge.edge);
-                if point.distance_mm(query.center) <= query.radius_mm {
+                if point.distance_mm(query.center) <= query.candidate_radius_mm {
                     push_feature(
                         &mut result,
                         SnapFeature {
@@ -227,7 +240,7 @@ impl SnapFeatureProvider for SnapGeometry {
 
 impl SnapGeometry {
     fn nearby_edges(&self, query: &SnapQuery) -> Vec<&SnapEdge> {
-        let bounds = query.bounds(0.);
+        let bounds = query.bounds();
         self.edges
             .iter()
             .filter(|edge| query.source_enabled(edge.source) && edge.bounds.intersects(bounds))
@@ -348,7 +361,7 @@ pub fn intersection_features(
                     .then(left.y_mm.total_cmp(&right.y_mm))
             });
             for (point_index, point) in points.into_iter().enumerate() {
-                if point.distance_mm(query.center) <= query.radius_mm {
+                if point.distance_mm(query.center) <= query.candidate_radius_mm {
                     let (first_id, second_id) = if a.id <= b.id {
                         (a.id, b.id)
                     } else {
@@ -911,16 +924,56 @@ mod tests {
     }
 
     fn query(center: MmPoint, kinds: Vec<SnapKind>) -> SnapQuery {
-        SnapQuery::from_screen(center, 8., 10., 2., kinds, true, false).unwrap()
+        SnapQuery::from_screen(
+            center,
+            SnapRadiiPx {
+                acquire: 8.,
+                candidate: 8.,
+            },
+            10.,
+            2.,
+            kinds,
+            true,
+            false,
+        )
+        .unwrap()
     }
 
     #[test]
     fn retina_radius_converts_physical_pixels_once() {
         let q = query(MmPoint::new(1., 2.), vec![SnapKind::Endpoint]);
-        assert!((q.radius_mm - 0.4).abs() < 1e-12);
+        assert!((q.acquire_radius_mm - 0.4).abs() < 1e-12);
+        assert!((q.candidate_radius_mm - 0.4).abs() < 1e-12);
         assert!(
-            SnapQuery::from_screen(MmPoint::new(0., 0.), 8., 40., 0., vec![], true, false)
-                .is_none()
+            SnapQuery::from_screen(
+                MmPoint::new(0., 0.),
+                SnapRadiiPx {
+                    acquire: 8.,
+                    candidate: 11.,
+                },
+                40.,
+                0.,
+                vec![],
+                true,
+                false,
+            )
+            .is_none()
+        );
+        assert!(
+            SnapQuery::from_screen(
+                MmPoint::new(0., 0.),
+                SnapRadiiPx {
+                    acquire: 11.,
+                    candidate: 8.,
+                },
+                40.,
+                1.,
+                vec![],
+                true,
+                false,
+            )
+            .is_none(),
+            "candidate radius cannot be narrower than acquire radius"
         );
     }
 
@@ -1106,7 +1159,10 @@ mod tests {
         });
         let q = SnapQuery::from_screen(
             MmPoint::new(0., 0.),
-            30.,
+            SnapRadiiPx {
+                acquire: 30.,
+                candidate: 30.,
+            },
             10.,
             1.,
             vec![SnapKind::Intersection],
@@ -1233,7 +1289,10 @@ mod tests {
             .unwrap();
         let query = SnapQuery::from_screen(
             MmPoint::new(10., 18.),
-            8.,
+            SnapRadiiPx {
+                acquire: 8.,
+                candidate: 8.,
+            },
             10.,
             1.,
             vec![SnapKind::Endpoint],
@@ -1256,7 +1315,10 @@ mod tests {
         let rebuilt = cache.geometry_for(&instance, &[], &[definition]).unwrap();
         let query = SnapQuery::from_screen(
             MmPoint::new(10., 16.),
-            8.,
+            SnapRadiiPx {
+                acquire: 8.,
+                candidate: 8.,
+            },
             10.,
             1.,
             vec![SnapKind::Endpoint],

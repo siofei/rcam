@@ -1890,3 +1890,5 @@ create/cancel/reopen. Native Mac steps and actual results belong to the stage re
 ### S4-C1 Object Snap 局部覆盖（2026-09-25）
 
 关联 AT-025/030/032/044/045/062/074/075 与 R08/R09/R13/R17/R18。增加解析制造边界特征、Block rigid transform、交点/Nearest、physical-pixel 半径、Layer/Class 过滤、Object/Grid resolver、hysteresis、Drag/Text/Measure/Base Point 与 `.rcam` Snap settings 往返。其自动化与 Mac 原生证据见 S4_C1_REVIEW；不修改 96 个 case 身份、阈值或 `required_platforms`，不替代 Windows、CORE10、P100K 或完整 V1 验收。
+
+Closeout 额外要求真实 app Runtime 在 11 physical px 生成候选、8 px 内 acquire、11 px 内 retain；覆盖 static、Nearest、线线/线弧 Intersection、双候选、Retina 与无 previous 9 px 拒绝。Mac 原生 Measure 必须完成 Vertex→Center 且不改变 revision/dirty/Undo；用户可达的 Pick Base Point 必须证明 resolved point = preview point = committed base point。

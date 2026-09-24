@@ -601,6 +601,19 @@ mod tests {
             ShortcutResolver::resolve(&keymap, &[ShortcutContext::Global], undo),
             Resolution::Command(ids::EDIT_UNDO)
         );
+
+        let f3 = Shortcut::new(Modifiers::NONE, Key::F(3));
+        assert_eq!(
+            ShortcutResolver::resolve(&keymap, &[ShortcutContext::Canvas], f3),
+            Resolution::Command(ids::SNAP_TOGGLE)
+        );
+        for blocking in [ShortcutContext::TextInput, ShortcutContext::Modal] {
+            assert_eq!(
+                ShortcutResolver::resolve(&keymap, &[ShortcutContext::Canvas, blocking], f3),
+                Resolution::Blocked,
+                "F3 must respect {blocking:?}"
+            );
+        }
     }
 
     #[test]

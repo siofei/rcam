@@ -383,6 +383,11 @@ impl EditorApp {
                 "nearby_objects": self.object_snap_runtime.stats.nearby_objects,
                 "features_generated": self.object_snap_runtime.stats.features_generated,
                 "intersection_pairs": self.object_snap_runtime.stats.intersection_pairs,
+                "acquire_radius_px": self.object_snap.radius_px,
+                "release_radius_px": self.object_snap.radius_px + editor_core::snap::SnapResolver::default().release_extra_px,
+                "candidate_query_us": self.object_snap_runtime.stats.candidate_query_us,
+                "resolver_us": self.object_snap_runtime.stats.resolver_us,
+                "retained_previous": self.object_snap_runtime.stats.retained_previous,
                 "elapsed_us": self.object_snap_runtime.stats.elapsed_us,
             }
         });

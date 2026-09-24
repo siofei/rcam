@@ -468,4 +468,16 @@ mod tests {
             assert!(matches!(action, Action::Move(x,y) if x=="25.4" && y=="-0.1"));
         }
     }
+
+    #[test]
+    fn snap_toggle_dispatcher_is_the_single_state_mutation_path() {
+        use editor_core::command::{CommandDispatcher, ids};
+
+        let mut app = app();
+        assert!(!app.object_snap.enabled);
+        assert!(app.dispatch(ids::SNAP_TOGGLE));
+        assert!(app.object_snap.enabled);
+        assert!(app.dispatch(ids::SNAP_TOGGLE));
+        assert!(!app.object_snap.enabled);
+    }
 }

@@ -651,6 +651,12 @@ impl ApplicationService {
         &self,
         document: SemanticDocument,
     ) -> Result<S1DocumentRecord, ServiceError> {
+        let mut history =
+            EditHistory::with_limits(self.history_max_entries, self.history_max_bytes)
+                .map_err(map_edit_error)?;
+        history
+            .seed_generated_ids(&document)
+            .map_err(map_edit_error)?;
         let mut record = S1DocumentRecord {
             project_id: new_project_id(),
             project_path: None,
@@ -677,8 +683,7 @@ impl ApplicationService {
             diagnostics: Vec::new(),
             revision: 0,
             content_hash_cache: HashCache::default(),
-            history: EditHistory::with_limits(self.history_max_entries, self.history_max_bytes)
-                .map_err(map_edit_error)?,
+            history,
         };
         if record.document.layers.is_empty() {
             record.saved_project_state_hash = record.project_state_hash()?;

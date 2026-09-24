@@ -1,5 +1,5 @@
 use editor_service::{
-    ApplicationService, CreateEmptyLayerParams, ExportParams, FileAccessPolicy,
+    ApplicationService, CreateEmptyLayerParams, DuplicateParams, ExportParams, FileAccessPolicy,
     ImportGerberLayersParams, LayerUpdateParams, MetadataPolicy, OverwritePolicy,
     SetSoloLayerParams,
 };
@@ -558,6 +558,69 @@ fn gerber_import_after_project_open_adds_a_layer_without_changing_project_path()
         .project_open(project_path.to_str().unwrap())
         .unwrap();
     assert_eq!(reopened.layer_ids.len(), after.layer_ids.len());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn generated_ids_continue_after_project_reopen() {
+    let (mut service, root) = setup();
+    let gerber = root.join("source.gbr");
+    fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/synthetic/s1a/ordered_local_hole.gbr"
+        ),
+        &gerber,
+    )
+    .unwrap();
+    let opened = service.open(gerber.to_str().unwrap()).unwrap();
+    let snapshot = service.project_snapshot(&opened.document_id).unwrap();
+    let layer_id = snapshot.layers[0].layer.id.clone();
+    let source_id = snapshot.layers[0].layer.objects[0].object_id.clone();
+    let first = service
+        .objects_duplicate(
+            &opened.document_id,
+            &opened.revision,
+            DuplicateParams {
+                layer_id: layer_id.clone(),
+                object_ids: vec![source_id.clone()],
+                dx_mm: 1.0,
+                dy_mm: 0.0,
+            },
+        )
+        .unwrap();
+    assert!(first.changed_object_ids[0].ends_with("-generated-object-0"));
+    let project = root.join("generated-ids.rcam");
+    service
+        .project_save(
+            &opened.document_id,
+            &first.revision,
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+
+    let mut reopened_service = ApplicationService::with_file_access(FileAccessPolicy::new(
+        &root,
+        [root.clone()],
+        [root.clone()],
+    ));
+    let reopened = reopened_service
+        .project_open(project.to_str().unwrap())
+        .unwrap();
+    let second = reopened_service
+        .objects_duplicate(
+            &reopened.document_id,
+            &reopened.revision,
+            DuplicateParams {
+                layer_id,
+                object_ids: vec![source_id],
+                dx_mm: 2.0,
+                dy_mm: 0.0,
+            },
+        )
+        .unwrap();
+    assert!(second.changed_object_ids[0].ends_with("-generated-object-1"));
     fs::remove_dir_all(root).unwrap();
 }
 

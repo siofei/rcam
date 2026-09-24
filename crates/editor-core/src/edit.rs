@@ -309,6 +309,46 @@ impl EditHistory {
         })
     }
 
+    /// Resume generated identifiers after loading a persisted document.
+    /// History itself is intentionally session-local, but stable project IDs
+    /// must never restart at zero and collide with restored content.
+    pub fn seed_generated_ids(&mut self, document: &SemanticDocument) -> Result<(), EditError> {
+        fn next_suffix<'a>(
+            ids: impl Iterator<Item = &'a str>,
+            prefix: &str,
+        ) -> Result<u64, EditError> {
+            ids.filter_map(|id| id.strip_prefix(prefix)?.parse::<u64>().ok())
+                .max()
+                .map_or(Ok(0), |value| {
+                    value.checked_add(1).ok_or(EditError::ResourceLimit)
+                })
+        }
+
+        self.next_generated_id = next_suffix(
+            document
+                .layers
+                .iter()
+                .flat_map(|layer| &layer.objects)
+                .map(|object| object.object_id.as_str()),
+            &format!("{}-generated-object-", document.id),
+        )?;
+        self.next_generated_aperture_id = next_suffix(
+            document
+                .apertures
+                .iter()
+                .map(|aperture| aperture.id.as_str()),
+            &format!("{}-generated-aperture-", document.id),
+        )?;
+        self.next_generated_block_id = next_suffix(
+            document
+                .block_definitions
+                .iter()
+                .map(|definition| definition.id.0.as_str()),
+            &format!("{}-block-", document.id),
+        )?;
+        Ok(())
+    }
+
     pub fn undo_len(&self) -> usize {
         self.undo.len()
     }
