@@ -678,11 +678,13 @@ impl CommandDispatcher for EditorApp {
         match command {
             command_ids::SNAP_TOGGLE => {
                 self.object_snap.enabled = !self.object_snap.enabled;
-                rcam_diagnostics::measurements(
-                    rcam_diagnostics::Level::Info,
-                    "snap.toggle",
-                    &[("enabled", u64::from(self.object_snap.enabled))],
-                );
+                rcam_diagnostics::with_source(self.operation_source, || {
+                    rcam_diagnostics::measurements(
+                        rcam_diagnostics::Level::Info,
+                        "snap.toggle",
+                        &[("enabled", u64::from(self.object_snap.enabled))],
+                    );
+                });
                 self.object_snap_runtime.reset();
                 self.persist_project_view();
                 true

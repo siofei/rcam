@@ -322,7 +322,7 @@ impl Runtime {
             // Reconstruct from known typed fields; never copy arbitrary crash payload strings.
             let value: serde_json::Value = serde_json::from_slice(&fs::read(entry.path())?)?;
             let events: Vec<Event> = serde_json::from_value(value["recent_operations"].clone())?;
-            let report = json!({"session_id": token(value["session_id"].as_str().unwrap_or_default()), "error_code":"RUST_PANIC", "panic_payload":"redacted", "recent_operations": events.into_iter().take(RING_COUNT).collect::<Vec<_>>()});
+            let report = json!({"session_id": token(value["session_id"].as_str().unwrap_or_default()), "error_code":"RUST_PANIC", "panic_payload":"redacted", "location": value["location"].as_array().filter(|a| a.len() == 3).map(|a| (token(a[0].as_str().unwrap_or_default()), a[1].as_u64(), a[2].as_u64())), "panic_hash": value["panic_hash"].as_str().map(token), "recent_operations": events.into_iter().take(RING_COUNT).collect::<Vec<_>>()});
             files.push((
                 format!("crashes/{}", entry.file_name().to_string_lossy()),
                 serde_json::to_vec(&report)?,
