@@ -2,7 +2,9 @@ use std::{collections::BTreeSet, process::Command};
 
 // Reviewed normal dependencies through S4-A2 (ADR 0025: bounded pure Rust material offset). Adding any package
 // requires an explicit boundary review, including native window/dialog crates.
-const ALLOWED: &str = "editor-service miniz_oxide adler2 simd-adler32 editor-core editor-text rcam-project clipper2-rust ttf-parser gerber-io gerber-types gerber_parser serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn chrono iana-time-zone core-foundation-sys num-traits num-rational num-bigint num-integer strum strum_macros heck thiserror thiserror-impl uuid anyhow lazy-regex lazy-regex-proc_macros regex regex-automata regex-syntax aho-corasick memchr once_cell log itoa zmij windows-core windows-implement windows-interface windows-result windows-strings windows-link";
+// ADR 0037: rcam-diagnostics uses only std, serde, editor-core and rcam-project.
+// No OS dialog, window, GPU or network dependency is introduced.
+const ALLOWED: &str = "rcam-diagnostics editor-service miniz_oxide adler2 simd-adler32 editor-core editor-text rcam-project clipper2-rust ttf-parser gerber-io gerber-types gerber_parser serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn chrono iana-time-zone core-foundation-sys num-traits num-rational num-bigint num-integer strum strum_macros heck thiserror thiserror-impl uuid anyhow lazy-regex lazy-regex-proc_macros regex regex-automata regex-syntax aho-corasick memchr once_cell log itoa zmij windows-core windows-implement windows-interface windows-result windows-strings windows-link";
 
 fn unreviewed(tree: &str) -> BTreeSet<&str> {
     let allowed: BTreeSet<_> = ALLOWED.split_whitespace().collect();

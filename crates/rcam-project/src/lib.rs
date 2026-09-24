@@ -16,6 +16,7 @@ pub mod error;
 pub mod manifest;
 pub mod migrate;
 pub mod model;
+pub mod timings;
 pub mod zip_codec;
 
 pub use codec::{decode, encode_v1};

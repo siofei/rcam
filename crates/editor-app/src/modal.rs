@@ -241,6 +241,8 @@ mod tests {
         let (tx, _requests) = std::sync::mpsc::sync_channel(1);
         let (_reply, rx) = std::sync::mpsc::sync_channel(1);
         EditorApp {
+            diagnostic_export: None,
+            operation_source: rcam_diagnostics::Source::System,
             tx,
             rx,
             view: crate::state::View::default(),

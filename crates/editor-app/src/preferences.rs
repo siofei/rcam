@@ -12,6 +12,7 @@ const MAX_RECENT: usize = 12;
 #[serde(default)]
 pub(crate) struct AppPreferences {
     pub recent_projects: Vec<PathBuf>,
+    pub logging_level: rcam_diagnostics::Level,
     pub shortcut_overrides: std::collections::BTreeMap<String, String>,
     pub panel_width: Option<f32>,
     pub recent_colors: Vec<String>,
@@ -47,6 +48,9 @@ impl AppPreferences {
         prefs.panel_width = prefs
             .panel_width
             .filter(|width| width.is_finite() && (240.0..=480.0).contains(width));
+        if prefs.logging_level == rcam_diagnostics::Level::Trace {
+            prefs.logging_level = rcam_diagnostics::Level::Info;
+        }
         prefs
     }
     pub fn remember(&mut self, path: PathBuf) {

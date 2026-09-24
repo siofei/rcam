@@ -258,3 +258,8 @@ S4-B3 预冻结修正：mm/inch/mil/µm 四种 DisplayUnit 均一一持久化；
 ## 2026-09-24 密集真实 Gerber 导入修复
 
 GUI 派生显示上限现为 2000000 primitive + point，RenderIndex 最多 1000000 对象，原 1000000 引用／16384 单格候选／采样工作预算仍生效。指定 230409 矩形 Flash 的 `.GPT` 在 Mac 原生窗口可导入和显示；`0727SMT` 批量兼容结果见 [验收记录](GERBER_COMPAT_20260924_REVIEW.md)。百万对象预算只表示资源界限，不证明完整 CORE10、P100K、Windows 或 V1。
+
+
+### INFRA1 Runtime Diagnostics（实施中）
+
+本地日志/诊断基础设施已启动，状态与缺口见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`；尚未达到 INFRA1 PASS。不自动开始 S4-C2；Windows deferred。

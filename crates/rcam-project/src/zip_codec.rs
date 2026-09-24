@@ -36,6 +36,7 @@ pub struct ReadEntry {
 }
 
 pub fn write_zip(entries: &[ZipEntry]) -> Vec<u8> {
+    let _timing = crate::timings::Timer::new("container_build_us");
     let mut out = Vec::new();
     let mut central = Vec::new();
     for entry in entries {
@@ -43,7 +44,10 @@ pub fn write_zip(entries: &[ZipEntry]) -> Vec<u8> {
         let name = entry.path.as_bytes();
         let crc = crc32(entry.data);
         let size = entry.data.len() as u32;
+        let deflate_timing = crate::timings::Timer::new("deflate_us");
         let compressed = miniz_oxide::deflate::compress_to_vec(entry.data, 6);
+        drop(deflate_timing);
+        crate::timings::add("uncompressed_bytes", entry.data.len() as u64);
         let (method, payload): (u16, &[u8]) = if compressed.len() < entry.data.len() {
             (8, &compressed)
         } else {
@@ -138,11 +142,13 @@ fn safe_path(raw: &str, max_len: usize) -> Result<String, ProjectError> {
 }
 
 pub fn read_zip(bytes: &[u8], policy: &ReadPolicy) -> Result<Vec<ReadEntry>, ProjectError> {
+    let _timing = crate::timings::Timer::new("zip_index_inflate_us");
     if bytes.len() < 22 {
         return Err(ProjectError::MalformedArchive(
             "too small to be a zip".into(),
         ));
     }
+    let index_timing = crate::timings::Timer::new("zip_index_us");
     let eocd_at = bytes.len() - 22;
     if read_u32(bytes, eocd_at)? != EOCD_SIG {
         return Err(ProjectError::MalformedArchive(
@@ -174,11 +180,13 @@ pub fn read_zip(bytes: &[u8], policy: &ReadPolicy) -> Result<Vec<ReadEntry>, Pro
         ));
     }
 
+    drop(index_timing);
     let mut entries = Vec::with_capacity(total_entries);
     let mut seen_paths = std::collections::HashSet::with_capacity(total_entries);
     let mut total_uncompressed: usize = 0;
     let mut cursor = cd_offset;
     for _ in 0..total_entries {
+        let entry_index_timing = crate::timings::Timer::new("zip_index_us");
         if read_u32(bytes, cursor)? != CENTRAL_HEADER_SIG {
             return Err(ProjectError::MalformedArchive(
                 "central directory record signature mismatch".into(),
@@ -276,6 +284,7 @@ pub fn read_zip(bytes: &[u8], policy: &ReadPolicy) -> Result<Vec<ReadEntry>, Pro
         let payload = bytes
             .get(data_at..data_at + compressed_size)
             .ok_or_else(|| ProjectError::MalformedArchive("truncated entry data".into()))?;
+        drop(entry_index_timing);
         let data = if method == 0 {
             payload.to_vec()
         } else {
@@ -286,6 +295,7 @@ pub fn read_zip(bytes: &[u8], policy: &ReadPolicy) -> Result<Vec<ReadEntry>, Pro
             // Never let an untrusted stream grow the output beyond the declared,
             // already budget-checked size. Require full stream and exact length.
             let mut decoded = vec![0; uncompressed_size];
+            let inflate_timing = crate::timings::Timer::new("inflate_us");
             let (status, consumed, written) = decompress(
                 &mut DecompressorOxide::new(),
                 payload,
@@ -293,6 +303,7 @@ pub fn read_zip(bytes: &[u8], policy: &ReadPolicy) -> Result<Vec<ReadEntry>, Pro
                 0,
                 inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
             );
+            drop(inflate_timing);
             if status != TINFLStatus::Done
                 || consumed != payload.len()
                 || written != uncompressed_size

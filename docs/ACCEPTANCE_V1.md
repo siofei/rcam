@@ -1892,3 +1892,7 @@ create/cancel/reopen. Native Mac steps and actual results belong to the stage re
 关联 AT-025/030/032/044/045/062/074/075 与 R08/R09/R13/R17/R18。增加解析制造边界特征、Block rigid transform、交点/Nearest、physical-pixel 半径、Layer/Class 过滤、Object/Grid resolver、hysteresis、Drag/Text/Measure/Base Point 与 `.rcam` Snap settings 往返。其自动化与 Mac 原生证据见 S4_C1_REVIEW；不修改 96 个 case 身份、阈值或 `required_platforms`，不替代 Windows、CORE10、P100K 或完整 V1 验收。
 
 Closeout 额外要求真实 app Runtime 在 11 physical px 生成候选、8 px 内 acquire、11 px 内 retain；覆盖 static、Nearest、线线/线弧 Intersection、双候选、Retina 与无 previous 9 px 拒绝。Mac 原生 Measure 必须完成 Vertex→Center 且不改变 revision/dirty/Undo；用户可达的 Pick Base Point 必须证明 resolved point = preview point = committed base point。
+
+### INFRA1 局部诊断验证
+
+R16/R17/R18/R19/R20/R21/R22、AT-063/066/069/077/082/083/086/090/097：追加有界日志、操作修订号、失败零修改、隐私白名单、panic child-process、分段计时与原生诊断包检查。维持 96 个有效用例、既有 required_platforms 和 schema_version=2；当前实施状态见 INFRA1_RUNTIME_DIAGNOSTICS_REVIEW，不替代双平台验收。

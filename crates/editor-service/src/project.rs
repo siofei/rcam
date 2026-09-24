@@ -207,12 +207,16 @@ fn atomic_project_write_with_hook(
             .create_new(true)
             .open(&temp)
             .map_err(|e| ServiceError::io("create temp", &temp, e))?;
+        let temp_timing = rcam_diagnostics::Timing::start("project.save.temp_write");
         file.write_all(bytes)
             .map_err(|e| ServiceError::io("write temp", &temp, e))?;
         file.flush()
             .map_err(|e| ServiceError::io("flush temp", &temp, e))?;
+        drop(temp_timing);
+        let fsync_timing = rcam_diagnostics::Timing::start("project.save.fsync");
         file.sync_all()
             .map_err(|e| ServiceError::io("sync temp", &temp, e))?;
+        drop(fsync_timing);
         drop(file);
         let persisted = fs::read(&temp).map_err(|e| ServiceError::io("verify temp", &temp, e))?;
         if persisted != bytes {
@@ -238,6 +242,7 @@ fn atomic_project_write_with_hook(
             })?;
             let _ = fs::remove_file(&temp);
         }
+        let _reread_timing = rcam_diagnostics::Timing::start("project.save.final_reread_decode");
         let final_bytes =
             fs::read(path).map_err(|e| ServiceError::io("verify project", path, e))?;
         if final_bytes != bytes {
@@ -261,19 +266,51 @@ impl ApplicationService {
     /// candidate session only after every validation succeeds. The caller can
     /// still reject the candidate without touching its existing session.
     pub fn project_open(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin("project.open", None);
+        let result = self.project_open_observed(path);
+        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        result
+    }
+
+    fn project_open_observed(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
         require_rcam(Path::new(path))?;
         let access = self
             .file_access
             .as_ref()
             .ok_or_else(|| ServiceError::permission(Path::new(path), "read"))?;
+        let read_timing = rcam_diagnostics::Timing::start("project.open.read");
         let (canonical, bytes) = access.read_path_limited(path, 512 * 1024 * 1024)?;
+        drop(read_timing);
+        rcam_diagnostics::measurements(
+            rcam_diagnostics::Level::Info,
+            "project.open.bytes",
+            &[("compressed_bytes", bytes.len() as u64)],
+        );
+        rcam_project::timings::take();
+        let decode_timing = rcam_diagnostics::Timing::start("project.open.decode");
         let project = rcam_project::decode(&bytes).map_err(project_error)?;
+        drop(decode_timing);
+        rcam_diagnostics::measurements(
+            rcam_diagnostics::Level::Info,
+            "project.open.codec",
+            &rcam_project::timings::take()
+                .into_iter()
+                .collect::<Vec<_>>(),
+        );
+        let _model_timing = rcam_diagnostics::Timing::start("project.open.model_build");
         self.insert_project(project, Some(canonical), Some(sha256_hex(&bytes)), false)
     }
 
     /// Recovery opens as a dirty, unsaved copy. It never adopts the original
     /// project path or writes to it without an explicit later Save As.
     pub fn project_restore(&mut self, bytes: &[u8]) -> Result<DocumentInfo, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin("project.restore", None);
+        let result = self.project_restore_observed(bytes);
+        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        result
+    }
+
+    fn project_restore_observed(&mut self, bytes: &[u8]) -> Result<DocumentInfo, ServiceError> {
         let project = rcam_project::decode(bytes).map_err(project_error)?;
         self.insert_project(project, None, None, true)
     }
@@ -360,6 +397,24 @@ impl ApplicationService {
     }
 
     pub fn project_recovery_bytes(&self, document_id: &str) -> Result<Vec<u8>, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "project.recovery_bytes",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.project_recovery_bytes_observed(document_id);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn project_recovery_bytes_observed(&self, document_id: &str) -> Result<Vec<u8>, ServiceError> {
         let project = self.project_snapshot(document_id)?;
         rcam_project::encode_v1(&project).map_err(project_error)
     }
@@ -415,6 +470,37 @@ impl ApplicationService {
         allow_replace: bool,
         camera: Option<rcam_project::CameraState>,
     ) -> Result<DocumentInfo, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "project.save",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.project_save_with_camera_observed(
+            document_id,
+            expected_revision,
+            path,
+            allow_replace,
+            camera,
+        );
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn project_save_with_camera_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        path: Option<&str>,
+        allow_replace: bool,
+        camera: Option<rcam_project::CameraState>,
+    ) -> Result<DocumentInfo, ServiceError> {
         let record = self
             .documents
             .get(document_id)
@@ -443,15 +529,36 @@ impl ApplicationService {
         } else {
             None
         };
+        let snapshot_timing = rcam_diagnostics::Timing::start("project.save.snapshot");
         let mut project = record.project_snapshot();
+        drop(snapshot_timing);
         if let Some(camera) = camera {
             project.workspace.camera = Some(camera);
         }
+        rcam_project::timings::take();
+        let encode_timing = rcam_diagnostics::Timing::start("project.save.encode");
         let bytes = rcam_project::encode_v1(&project).map_err(project_error)?;
+        drop(encode_timing);
+        rcam_diagnostics::measurements(
+            rcam_diagnostics::Level::Info,
+            "project.save.codec",
+            &rcam_project::timings::take()
+                .into_iter()
+                .collect::<Vec<_>>(),
+        );
+        rcam_diagnostics::measurements(
+            rcam_diagnostics::Level::Info,
+            "project.save.bytes",
+            &[("compressed_bytes", bytes.len() as u64)],
+        );
+        let self_check_timing = rcam_diagnostics::Timing::start("project.save.self_check");
         if rcam_project::decode(&bytes).map_err(project_error)? != project {
             return Err(ServiceError::invalid("project roundtrip mismatch"));
         }
+        drop(self_check_timing);
+        let publish_timing = rcam_diagnostics::Timing::start("project.save.atomic_publish");
         atomic_project_write(&target, &bytes, expected, allow_replace || same)?;
+        drop(publish_timing);
         let record = self
             .documents
             .get_mut(document_id)

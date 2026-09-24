@@ -27,6 +27,7 @@ fn limit(resource: &str, limit: usize, actual: usize) -> String {
 }
 impl RenderIndex {
     pub fn build(objects: &[Object], selected: &[u32], delta: [f32; 2]) -> Result<Self, String> {
+        let _timing = rcam_diagnostics::Timing::start("render_index.build");
         Self::bounded(objects, selected, delta, MAX_CELL_REFERENCES)
     }
     fn bounded(

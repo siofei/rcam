@@ -247,6 +247,36 @@ impl Runtime {
             retained_previous,
             elapsed_us: started.elapsed().as_micros(),
         };
+        static LAST_SLOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        static LAST_TRANSITION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let fields = [
+            ("candidate_query_us", self.stats.candidate_query_us as u64),
+            ("resolver_us", resolver_us as u64),
+            ("nearby_objects", nearby.len() as u64),
+            ("features_generated", candidates.len() as u64),
+            ("intersection_pairs", intersection_pairs as u64),
+        ];
+        if self.stats.candidate_query_us > 5000 || intersection_pairs > 10000 {
+            rcam_diagnostics::rate_limited(
+                &LAST_SLOW,
+                rcam_diagnostics::Level::Warn,
+                "snap.query.slow_or_high_pairs",
+                &fields,
+            );
+        }
+        if previous != resolution.candidate {
+            let event = match (&previous, &resolution.candidate) {
+                (None, Some(_)) => "snap.acquire",
+                (Some(_), None) => "snap.release",
+                _ => "snap.switch",
+            };
+            rcam_diagnostics::rate_limited(
+                &LAST_TRANSITION,
+                rcam_diagnostics::Level::Debug,
+                event,
+                &fields,
+            );
+        }
         self.current = Some(resolution.clone());
         Ok(resolution)
     }

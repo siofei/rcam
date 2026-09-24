@@ -62,7 +62,9 @@ struct LastFrame {
     uniforms: gpu::Uniforms,
 }
 struct EditorApp {
-    tx: SyncSender<(u64, Action)>,
+    operation_source: rcam_diagnostics::Source,
+    diagnostic_export: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    tx: SyncSender<(u64, rcam_diagnostics::Source, Action)>,
     rx: Receiver<(u64, View)>,
     view: View,
     busy: bool,
@@ -165,7 +167,7 @@ impl EditorApp {
                 break;
             }
         }
-        let (tx, request) = mpsc::sync_channel::<(u64, Action)>(1);
+        let (tx, request) = mpsc::sync_channel::<(u64, rcam_diagnostics::Source, Action)>(1);
         let (reply, rx) = mpsc::sync_channel(1);
         let ctx = cc.egui_ctx.clone();
         std::thread::spawn(move || {
@@ -185,10 +187,15 @@ impl EditorApp {
                     Err(e) => eprintln!("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE failed: {e:?}"),
                 }
             }
-            while let Ok((id, action)) = request.recv() {
+            while let Ok((id, source, action)) = request.recv() {
                 let start = Instant::now();
-                model.run(action);
-                eprintln!("gui_job={id} elapsed_ms={}", start.elapsed().as_millis());
+                rcam_diagnostics::with_source(source, || model.run(action));
+                if start.elapsed().as_millis() > 100 {
+                    rcam_diagnostics::runtime_event(
+                        rcam_diagnostics::Level::Warn,
+                        "gui.worker.slow",
+                    );
+                }
                 if reply.send((id, model.view.clone())).is_err() {
                     break;
                 }
@@ -199,7 +206,11 @@ impl EditorApp {
             .wgpu_render_state
             .as_ref()
             .expect("eframe wgpu renderer required");
-        let adapter = format!("{:?}", gpu.adapter.get_info());
+        let adapter_info = gpu.adapter.get_info();
+        if let Some(runtime) = rcam_diagnostics::global() {
+            runtime.set_gpu(&adapter_info.name, &format!("{:?}", adapter_info.backend));
+        }
+        let adapter = format!("{:?}", adapter_info);
         eprintln!("RCam S4-A2 native GPU: {adapter}");
         let prefs = preferences::AppPreferences::path()
             .map_or_else(preferences::AppPreferences::default, |path| {
@@ -208,6 +219,8 @@ impl EditorApp {
         let recovery_candidate =
             recovery::directory().and_then(|dir| recovery::discover(&dir).into_iter().next());
         let mut app = Self {
+            operation_source: rcam_diagnostics::Source::System,
+            diagnostic_export: None,
             tx,
             rx,
             view: View::default(),
@@ -287,6 +300,13 @@ impl EditorApp {
         app
     }
     fn send(&mut self, a: Action) {
+        let source = if matches!(&a, Action::RestoreProject(..) | Action::RecoveryWrite(..)) {
+            rcam_diagnostics::Source::Recovery
+        } else if self.modal.is_some() {
+            rcam_diagnostics::Source::Modal
+        } else {
+            self.operation_source
+        };
         let a = match self.length_action(a) {
             Ok(a) => a,
             Err(e) => {
@@ -323,7 +343,7 @@ impl EditorApp {
         if let Some(probe) = &self.probe {
             probe.action(&native_probe::action_text(&a));
         }
-        match self.tx.try_send((self.sequence, a)) {
+        match self.tx.try_send((self.sequence, source, a)) {
             Ok(()) => {
                 self.busy = true;
                 self.ui_error = None;
@@ -658,6 +678,11 @@ impl CommandDispatcher for EditorApp {
         match command {
             command_ids::SNAP_TOGGLE => {
                 self.object_snap.enabled = !self.object_snap.enabled;
+                rcam_diagnostics::measurements(
+                    rcam_diagnostics::Level::Info,
+                    "snap.toggle",
+                    &[("enabled", u64::from(self.object_snap.enabled))],
+                );
                 self.object_snap_runtime.reset();
                 self.persist_project_view();
                 true
@@ -693,6 +718,26 @@ impl eframe::App for EditorApp {
         }
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if let Some(rx) = &self.diagnostic_export {
+            match rx.try_recv() {
+                Ok(Ok(())) => {
+                    self.toast = Some(("诊断包已导出".into(), Instant::now()));
+                    self.diagnostic_export = None;
+                }
+                Ok(Err(error)) => {
+                    self.ui_error = Some(error);
+                    self.diagnostic_export = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.ui_error = Some("诊断包导出线程已停止".into());
+                    self.diagnostic_export = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100))
+                }
+            }
+        }
+
         let now = Instant::now();
         if self.reported_ppp != ctx.pixels_per_point() {
             self.reported_ppp = ctx.pixels_per_point();
@@ -767,8 +812,11 @@ impl eframe::App for EditorApp {
                 }
             }
             self.accept_text_reply();
-            if let Some(diagnostic) = &self.view.display_transient {
-                eprintln!("display_transient={diagnostic}");
+            if self.view.display_transient.is_some() {
+                rcam_diagnostics::runtime_event(
+                    rcam_diagnostics::Level::Warn,
+                    "render.last_good_frame_fallback",
+                );
             }
             if let Some(generation) = self.text.pending_apply.take()
                 && generation == self.text.generation
@@ -941,6 +989,7 @@ impl eframe::App for EditorApp {
                 i.pointer.primary_released(),
             )
         });
+        self.operation_source = rcam_diagnostics::Source::Shortcut;
         let text_focus = self.text_input_at_event || ctx.wants_keyboard_input();
         if !modal_open && !self.ime_active && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.measure.clear();
@@ -1028,6 +1077,7 @@ impl eframe::App for EditorApp {
                 }
             });
         }
+        self.operation_source = rcam_diagnostics::Source::Menu;
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             if modal_open {
                 ui.disable();
@@ -1288,9 +1338,39 @@ impl eframe::App for EditorApp {
                     ui.label("Gerber 只导入 / 导出：导出必须选择新文件名，不会保存工作区。Windows 延后验收。");
                     ui.separator();
                     ui.label(&self.adapter);
+                    ui.separator();
+                    if let Some(runtime) = rcam_diagnostics::global() {
+                        ui.label("日志仅保存在本机；诊断包不包含工程、Gerber 或字体。");
+                        for (label, level) in [("Info", rcam_diagnostics::Level::Info), ("Debug", rcam_diagnostics::Level::Debug), ("Trace（仅本次）", rcam_diagnostics::Level::Trace)] {
+                            if ui.button(label).clicked() {
+                                runtime.set_level(level);
+                                self.prefs.logging_level = if level == rcam_diagnostics::Level::Trace { rcam_diagnostics::Level::Info } else { level };
+                                if let Some(path) = preferences::AppPreferences::path() { let _ = self.prefs.save(&path); }
+                            }
+                        }
+                        if ui.button("打开日志文件夹").clicked() {
+                            let _ = std::process::Command::new("open").arg(runtime.directory()).spawn();
+                            ui.close();
+                        }
+                        if ui.add_enabled(self.diagnostic_export.is_none(), egui::Button::new("导出诊断包…")).clicked() {
+                            match platform::choose_diagnostics() {
+                                Ok(Some(path)) => {
+                                    let runtime = runtime.clone();
+                                    let (tx, rx) = std::sync::mpsc::channel();
+                                    self.diagnostic_export = Some(rx);
+                                    std::thread::spawn(move || { let _ = tx.send(runtime.export(&path).map_err(|_| "诊断包导出失败：请使用新文件名并检查写入权限".to_string())); });
+                                }
+                                Ok(None) => {},
+                                Err(error) => self.ui_error = Some(error),
+                            }
+                            ui.close();
+                        }
+                    } else { ui.label("本次日志不可用：无法打开本机日志目录。"); }
+
                 });
             });
             ui.horizontal(|ui| {
+                self.operation_source = rcam_diagnostics::Source::Toolbar;
                 if crate::ui::buttons::toolbar(ui, "导入…", !self.busy).clicked() {
                     self.import_gerbers();
                 }
@@ -1402,6 +1482,7 @@ impl eframe::App for EditorApp {
                 });
             }
         });
+        self.operation_source = rcam_diagnostics::Source::Menu;
         let layer_panel = egui::SidePanel::left("layers")
             .resizable(true)
             .default_width(self.prefs.panel_width.unwrap_or(250.))
@@ -1423,6 +1504,7 @@ impl eframe::App for EditorApp {
                 let _ = self.prefs.save(&path);
             }
         }
+        self.operation_source = rcam_diagnostics::Source::Modal;
         egui::SidePanel::right("properties")
             .default_width(260.)
             .width_range(230.0..=380.)
@@ -1513,6 +1595,7 @@ impl eframe::App for EditorApp {
                     }
                 });
             });
+        self.operation_source = rcam_diagnostics::Source::Toolbar;
         egui::TopBottomPanel::top("grid-tools").show(ctx, |ui| {
             if modal_open {
                 ui.disable();
@@ -1566,6 +1649,7 @@ impl eframe::App for EditorApp {
             });
         });
         let modal_open = modal_open || self.modal.is_some();
+        self.operation_source = rcam_diagnostics::Source::Canvas;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::from_rgb(14, 18, 22)))
             .show(ctx, |ui| {
@@ -1848,7 +1932,7 @@ impl eframe::App for EditorApp {
                         }
                         Err(e) => {
                             if self.display_error.as_ref() != Some(&e) {
-                                eprintln!("display_prepare_diagnostic={e}");
+                                rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Warn, "render.display_prepare_failed");
                             }
                             self.display_error = Some(e);
                             self.drag = None;
@@ -2202,6 +2286,23 @@ fn geometry_properties(
     }
 }
 fn main() -> eframe::Result {
+    let diagnostics = std::env::var_os("HOME").and_then(|home| {
+        rcam_diagnostics::Runtime::start(
+            std::path::PathBuf::from(home).join("Library/Logs/RCam"),
+            env!("CARGO_PKG_VERSION"),
+            option_env!("RCAM_BUILD_COMMIT").unwrap_or("unknown"),
+        )
+        .ok()
+    });
+    if let Some(guard) = &diagnostics {
+        guard.install();
+        if let Some(path) = preferences::AppPreferences::path() {
+            guard
+                .runtime()
+                .set_level(preferences::AppPreferences::load(&path).logging_level);
+        }
+    }
+
     let result = eframe::run_native(
         "RCam",
         eframe::NativeOptions {

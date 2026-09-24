@@ -124,3 +124,37 @@ pub fn choose_path(save: bool, name: &str) -> Result<Option<PathBuf>, String> {
         Err("本轮原生文件选择器只在 macOS 实施；Windows 待验收".into())
     }
 }
+
+/// Explicit diagnostic export; no overwrite is performed by the background exporter.
+pub fn choose_diagnostics() -> Result<Option<PathBuf>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::{NSModalResponseCancel, NSModalResponseOK, NSSavePanel};
+        use objc2_foundation::{NSArray, NSString};
+        let mtm = MainThreadMarker::new().ok_or("文件选择器必须在 UI 线程运行")?;
+        let panel = NSSavePanel::savePanel(mtm);
+        panel.setTitle(Some(&NSString::from_str("导出诊断包（请选择新文件名）")));
+        let types = NSArray::from_retained_slice(&[NSString::from_str("zip")]);
+        #[allow(deprecated)]
+        panel.setAllowedFileTypes(Some(&types));
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        panel.setNameFieldStringValue(&NSString::from_str(&format!("RCam-diagnostics-{stamp}")));
+        match panel.runModal() {
+            response if response == NSModalResponseOK => panel
+                .URL()
+                .and_then(|url| url.path())
+                .map(|p| Some(PathBuf::from(p.to_string())))
+                .ok_or("文件选择器没有返回路径".into()),
+            response if response == NSModalResponseCancel => Ok(None),
+            _ => Err("原生文件选择器未能完成".into()),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("诊断导出选择器本轮仅验收 macOS".into())
+    }
+}

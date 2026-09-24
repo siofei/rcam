@@ -1459,6 +1459,30 @@ impl ApplicationService {
         expected_revision: &str,
         params: MoveParams,
     ) -> Result<EditResult, ServiceError> {
+        let mut operation = rcam_diagnostics::Operation::begin_document(
+            "objects.move",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        operation.selection_count(params.object_ids.len());
+        let result = self.objects_move_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn objects_move_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: MoveParams,
+    ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
@@ -1476,6 +1500,30 @@ impl ApplicationService {
     }
 
     pub fn objects_rotate(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: RotateParams,
+    ) -> Result<EditResult, ServiceError> {
+        let mut operation = rcam_diagnostics::Operation::begin_document(
+            "objects.rotate",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        operation.selection_count(params.object_ids.len());
+        let result = self.objects_rotate_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn objects_rotate_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -1503,6 +1551,30 @@ impl ApplicationService {
         expected_revision: &str,
         params: MirrorParams,
     ) -> Result<EditResult, ServiceError> {
+        let mut operation = rcam_diagnostics::Operation::begin_document(
+            "objects.mirror",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        operation.selection_count(params.object_ids.len());
+        let result = self.objects_mirror_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn objects_mirror_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: MirrorParams,
+    ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
@@ -1519,6 +1591,30 @@ impl ApplicationService {
     }
 
     pub fn objects_duplicate(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: DuplicateParams,
+    ) -> Result<EditResult, ServiceError> {
+        let mut operation = rcam_diagnostics::Operation::begin_document(
+            "objects.duplicate",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        operation.selection_count(params.object_ids.len());
+        let result = self.objects_duplicate_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn objects_duplicate_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -1557,6 +1653,30 @@ impl ApplicationService {
         expected_revision: &str,
         params: DeleteParams,
     ) -> Result<EditResult, ServiceError> {
+        let mut operation = rcam_diagnostics::Operation::begin_document(
+            "objects.delete",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        operation.selection_count(params.object_ids.len());
+        let result = self.objects_delete_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn objects_delete_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: DeleteParams,
+    ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let ids = record
@@ -1569,6 +1689,30 @@ impl ApplicationService {
     }
 
     pub fn objects_set_properties(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: SetPropertiesParams,
+    ) -> Result<EditResult, ServiceError> {
+        let mut operation = rcam_diagnostics::Operation::begin_document(
+            "objects.set_properties",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        operation.selection_count(params.object_ids.len());
+        let result = self.objects_set_properties_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn objects_set_properties_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -1648,6 +1792,33 @@ impl ApplicationService {
         expected_revision: &str,
         params: CreateBlockDefinitionParams,
     ) -> Result<CreateBlockDefinitionResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "blocks.create_definition_from_objects",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.blocks_create_definition_from_objects_observed(
+            document_id,
+            expected_revision,
+            params,
+        );
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn blocks_create_definition_from_objects_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: CreateBlockDefinitionParams,
+    ) -> Result<CreateBlockDefinitionResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
         let (definition_id, instance_id) = record
@@ -1680,6 +1851,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: CreateBlockInstanceParams,
     ) -> Result<BlockInstanceResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "blocks.create_instance",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.blocks_create_instance_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn blocks_create_instance_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: CreateBlockInstanceParams,
+    ) -> Result<BlockInstanceResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         check_workspace_edit(record, &params.layer_id, &[])?;
         let object_id = record
@@ -1701,6 +1895,30 @@ impl ApplicationService {
     /// `objects.*` ops, since a rigid instance transform composes exactly
     /// like any other manufacturing geometry — see ADR 0032).
     pub fn blocks_update_instance_transform(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: UpdateBlockInstanceTransformParams,
+    ) -> Result<EditResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "blocks.update_instance_transform",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result =
+            self.blocks_update_instance_transform_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn blocks_update_instance_transform_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -1732,6 +1950,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: RenameBlockDefinitionParams,
     ) -> Result<EditResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "blocks.rename_definition",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.blocks_rename_definition_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn blocks_rename_definition_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: RenameBlockDefinitionParams,
+    ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         record
             .history
@@ -1748,6 +1989,29 @@ impl ApplicationService {
     /// `blocks.explode_instance`: resolve one instance into world-space
     /// primitives and remove it; the definition itself is untouched.
     pub fn blocks_explode_instance(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: ExplodeBlockInstanceParams,
+    ) -> Result<EditResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "blocks.explode_instance",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.blocks_explode_instance_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn blocks_explode_instance_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -1777,6 +2041,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: BlockDefinitionIdParams,
     ) -> Result<EditResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "blocks.delete_definition",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.blocks_delete_definition_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn blocks_delete_definition_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: BlockDefinitionIdParams,
+    ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         record
             .history
@@ -1790,6 +2077,29 @@ impl ApplicationService {
     }
 
     pub fn edit_batch(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: BatchParams,
+    ) -> Result<EditResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "edit.batch",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.edit_batch_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn edit_batch_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -1863,6 +2173,28 @@ impl ApplicationService {
         document_id: &str,
         expected_revision: &str,
     ) -> Result<EditResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "history.undo",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.history_undo_observed(document_id, expected_revision);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn history_undo_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+    ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         let shape_changed = record.history.next_undo_changes_shape();
         let layer_effect = record.history.peek_undo_layer_effect();
@@ -1904,6 +2236,28 @@ impl ApplicationService {
     }
 
     pub fn history_redo(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+    ) -> Result<EditResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "history.redo",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.history_redo_observed(document_id, expected_revision);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn history_redo_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -2035,6 +2389,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: ExportParams,
     ) -> Result<ExportResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "export.layer",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.export_layer_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn export_layer_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: ExportParams,
+    ) -> Result<ExportResult, ServiceError> {
         let record = self
             .documents
             .get(document_id)
@@ -2053,6 +2430,7 @@ impl ApplicationService {
         // governs former block geometry exactly like top-level geometry
         // (S4-B2 Final Closeout B0) instead of whatever precision was active
         // when the block definition was captured.
+        let normalize_timing = rcam_diagnostics::Timing::start("gerber.export.normalize");
         let flattened =
             gerber_io::flatten_block_instances_for_export(&snapshot).map_err(map_s1_error)?;
         let project_precision = record.manufacturing_precision;
@@ -2106,6 +2484,7 @@ impl ApplicationService {
                 ));
             }
         };
+        drop(normalize_timing);
         let temp = temporary_output_path(&target)?;
         if temp.exists() {
             return Err(ServiceError {

@@ -224,6 +224,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: TextParams,
     ) -> Result<TextResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "text.create",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.text_create_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn text_create_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: TextParams,
+    ) -> Result<TextResult, ServiceError> {
         // Re-read/hash and validate: a prior preview never authorizes changed font bytes.
         let (geometries, _) = self.prepare_text(document_id, expected_revision, &params)?;
         let record = self.edit_record(document_id, expected_revision)?;

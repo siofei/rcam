@@ -52,6 +52,22 @@ pub(crate) fn write(
     info: &editor_service::DocumentInfo,
     bytes: &[u8],
 ) -> io::Result<()> {
+    rcam_diagnostics::with_source(rcam_diagnostics::Source::Recovery, || {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "recovery.write",
+            &info.project_id,
+            info.revision.parse().ok(),
+        );
+        let result = write_observed(dir, info, bytes);
+        operation.end(
+            info.revision.parse().ok(),
+            result.as_ref().err().map(|_| "RECOVERY_WRITE_FAILED"),
+        );
+        result
+    })
+}
+
+fn write_observed(dir: &Path, info: &editor_service::DocumentInfo, bytes: &[u8]) -> io::Result<()> {
     if !info.project_dirty {
         return Ok(());
     }

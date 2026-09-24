@@ -1187,3 +1187,7 @@ Save/Save As 为 `.rcam` 保留。View state（颜色/可见/可选/锁定/层�
 原生工程 ZIP 支持 Store/Deflate，默认固定 level 6 无损压缩，仍使用 schema v1；详见 ADR 0031。
 新读取器兼容旧工程；解压不改变制造 f64 数据，预算/校验/原子保存保持。范围 R15/R16/R20/R21/R22，
 局部关联 AT-058/059/064/086/090/093，不扩展 S4-C 或双平台验收声明。
+
+### INFRA1 本地诊断基础设施
+
+依据 ADR 0037，制造与交互结果不变；日志通过独立有界后台管线记录白名单摘要，默认本地 INFO。服务入口记录修改结果，不采集制造 payload。诊断 ZIP 仅显式导出，不遥测或自动上传。具体范围与剩余验收见 INFRA1_RUNTIME_DIAGNOSTICS_PLAN/REVIEW。

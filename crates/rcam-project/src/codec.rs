@@ -98,6 +98,7 @@ struct ProjectRootFile {
 /// `SemanticDocument::validate`, plus the project-only float settings it
 /// checks directly — so nothing non-finite ever reaches this function.
 fn to_json(value: &impl serde::Serialize, what: &'static str) -> Result<Vec<u8>, ProjectError> {
+    let _timing = crate::timings::Timer::new("json_serialize_us");
     serde_json::to_vec(value).map_err(|e| ProjectError::SchemaInvalid(format!("{what}: {e}")))
 }
 
@@ -106,7 +107,9 @@ fn to_json(value: &impl serde::Serialize, what: &'static str) -> Result<Vec<u8>,
 /// timestamp, and `serde_json::to_string`'s canonical compact form. Encoding
 /// the same logical `RCamProject` twice yields byte-identical output.
 pub fn encode_v1(project: &RCamProject) -> Result<Vec<u8>, ProjectError> {
+    let validation_timing = crate::timings::Timer::new("validation_us");
     project.validate()?;
+    drop(validation_timing);
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
 
     let root = ProjectRootFile {
@@ -210,6 +213,7 @@ fn parse_json<T: serde::de::DeserializeOwned>(
     budget: &Budget,
     what: &'static str,
 ) -> Result<T, ProjectError> {
+    let _timing = crate::timings::Timer::new("json_parse_us");
     let value: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|e| ProjectError::SchemaInvalid(format!("{what}: {e}")))?;
     check_json_budget(&value, budget)?;
@@ -239,7 +243,9 @@ pub fn decode_with_budget(bytes: &[u8], budget: &Budget) -> Result<RCamProject, 
     if manifest.format_version != crate::model::FORMAT_VERSION {
         return migrate::migrate(manifest.format_version, bytes);
     }
+    let schema_timing = crate::timings::Timer::new("schema_hash_validation_us");
     manifest::verify(&manifest, &files)?;
+    drop(schema_timing);
 
     let project_bytes = files
         .get("project.json")
@@ -330,7 +336,9 @@ pub fn decode_with_budget(bytes: &[u8], budget: &Budget) -> Result<RCamProject, 
         block_definitions,
         board: root.board,
     };
+    let validation_timing = crate::timings::Timer::new("validation_us");
     project.validate()?;
+    drop(validation_timing);
     Ok(project)
 }
 

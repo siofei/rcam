@@ -201,3 +201,8 @@ Windows、完整 V1、P100K、完整 CORE10 均未宣称。
   synthetic Block 冒烟、400×100 release 性能、固定 source/public-evidence ZIP、sidecar 与 fresh extract 全部通过。
   同轮修复 Lisong/Songti Light `sdf 点`（3 mm、补偿 0）可见时的 GPU 轮廓扫描卡顿；详见 S4_B2_REVIEW。
   Windows、完整 V1、P100K 与完整 CORE10 release 仍不宣称；S4-B3 的正式文件生命周期见本文开头及阶段 review。
+
+
+### INFRA1 Runtime Diagnostics（实施中）
+
+本地日志/诊断基础设施已启动，状态与缺口见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`；尚未达到 INFRA1 PASS。不自动开始 S4-C2；Windows deferred。

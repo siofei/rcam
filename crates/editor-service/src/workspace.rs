@@ -693,6 +693,13 @@ impl ApplicationService {
 
     /// Create an empty Workspace: no layer, no source, nothing dirty.
     pub fn document_new(&mut self) -> Result<DocumentInfo, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin("document.new", None);
+        let result = self.document_new_observed();
+        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        result
+    }
+
+    fn document_new_observed(&mut self) -> Result<DocumentInfo, ServiceError> {
         let document_id = self.allocate_document_id()?;
         let record = self.new_record(empty_semantic_document(&document_id))?;
         let info = document_info(&document_id, &record);
@@ -711,9 +718,12 @@ impl ApplicationService {
             .ok_or_else(|| ServiceError::permission(Path::new(path), "read"))?;
         let (canonical, bytes) = access.read_path(path)?;
         let sha256 = sha256_hex(&bytes);
+        let parse_started = std::time::Instant::now();
+        let mut compatibility = false;
         let scene = match parse_s1(&bytes, document_id) {
             Ok(scene) => scene,
             Err(strict_error) if strict_error.allows_compatibility_fallback() => {
+                compatibility = true;
                 let mut scene =
                     gerber_io::parse_s1_compat(&bytes, document_id).map_err(map_s1_error)?;
                 scene
@@ -723,6 +733,65 @@ impl ApplicationService {
             }
             Err(error) => return Err(map_s1_error(error)),
         };
+        rcam_diagnostics::measurements(
+            rcam_diagnostics::Level::Info,
+            "gerber.import.summary",
+            &[
+                ("source_bytes", bytes.len() as u64),
+                (
+                    "parse_semantic_us",
+                    parse_started.elapsed().as_micros() as u64,
+                ),
+                ("compatibility", u64::from(compatibility)),
+                ("layer_count", scene.document.layers.len() as u64),
+                ("aperture_count", scene.document.apertures.len() as u64),
+                (
+                    "object_count",
+                    scene
+                        .document
+                        .layers
+                        .iter()
+                        .map(|l| l.objects.len() as u64)
+                        .sum(),
+                ),
+            ],
+        );
+        let categories = [
+            ("fs_widening", "FS"),
+            ("mi", "MI"),
+            ("region_repair", "Region"),
+            ("g74", "G74"),
+            ("am20", "20"),
+            ("am22", "22"),
+            ("thermal7", "Thermal"),
+            ("invalid_utf8", "UTF-8"),
+            ("zero_aperture_lossy", "零直径"),
+            ("compatibility_solid", "CompatibilitySolid"),
+        ];
+        let counts: Vec<_> = categories
+            .iter()
+            .map(|(code, marker)| {
+                let count = scene
+                    .metadata
+                    .compatibility_issues
+                    .iter()
+                    .filter(|issue| issue.contains(marker))
+                    .map(|issue| {
+                        issue
+                            .rsplit_once('（')
+                            .and_then(|(_, tail)| tail.split_whitespace().next())
+                            .and_then(|number| number.parse::<u64>().ok())
+                            .unwrap_or(1)
+                    })
+                    .sum();
+                (*code, count)
+            })
+            .collect();
+        rcam_diagnostics::measurements(
+            rcam_diagnostics::Level::Info,
+            "gerber.compatibility.categories",
+            &counts,
+        );
         let file_name = canonical
             .file_name()
             .unwrap_or_default()
@@ -747,6 +816,13 @@ impl ApplicationService {
     /// Import into a fresh Workspace, not a link to the file: the source keeps
     /// the legacy identities of the first file and there is no Undo entry.
     pub fn open(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin("document.open", None);
+        let result = self.open_observed(path);
+        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        result
+    }
+
+    fn open_observed(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
         let document_id = self.allocate_document_id()?;
         let prepared = self.read_and_parse(path, &document_id)?;
         let PreparedSource {
@@ -834,6 +910,29 @@ impl ApplicationService {
     /// Add several Gerbers as ONE atomic transaction: any read, parse or
     /// validation failure adds nothing; one Undo removes the whole batch.
     pub fn import_gerber_layers(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: ImportGerberLayersParams,
+    ) -> Result<ImportLayersResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "document.import_gerber_layers",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.import_gerber_layers_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn import_gerber_layers_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -992,6 +1091,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: CreateEmptyLayerParams,
     ) -> Result<LayerStructureResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "document.create_empty_layer",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.create_empty_layer_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn create_empty_layer_observed(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: CreateEmptyLayerParams,
+    ) -> Result<LayerStructureResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
         if let Some(name) = &params.display_name
             && (name.trim().is_empty() || name.len() > 1024)
@@ -1107,6 +1229,29 @@ impl ApplicationService {
     /// Remove one layer as ONE Undo transaction. A layer with objects needs the
     /// explicit `allow_non_empty` flag (the GUI sets it after its confirmation).
     pub fn remove_layer(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: RemoveLayerParams,
+    ) -> Result<RemoveLayerResult, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "document.remove_layer",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.remove_layer_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn remove_layer_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,
@@ -1247,6 +1392,29 @@ impl ApplicationService {
     /// Replace the panel order (top first). Workspace-only: no manufacturing
     /// revision, no history entry, no effect on any object's exposure order.
     pub fn layers_reorder(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: ReorderLayersParams,
+    ) -> Result<DocumentInfo, ServiceError> {
+        let operation = rcam_diagnostics::Operation::begin_document(
+            "layers.reorder",
+            document_id,
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+        );
+        let result = self.layers_reorder_observed(document_id, expected_revision, params);
+        operation.end(
+            self.documents
+                .get(document_id)
+                .map(|record| record.revision),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        result
+    }
+
+    fn layers_reorder_observed(
         &mut self,
         document_id: &str,
         expected_revision: &str,

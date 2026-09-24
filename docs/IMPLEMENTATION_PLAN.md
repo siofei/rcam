@@ -216,3 +216,8 @@ S4-B1 Multi-Layer Workspace + reservations
 
 每个阶段启动前先写任务书、需求/验收/ADR；架构方向见 DESIGN_V1 第 22 章与 ADR 0029/0030，长期约束见 AGENTS.md。
 Windows、完整 V1、P100K、完整 CORE10 release 的门槛不因上述路线改变。
+
+
+### INFRA1 Runtime Diagnostics（实施中）
+
+本地日志/诊断基础设施已启动，状态与缺口见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`；尚未达到 INFRA1 PASS。不自动开始 S4-C2；Windows deferred。

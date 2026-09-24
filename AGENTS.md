@@ -151,3 +151,8 @@ S4-B1 Multi-Layer Workspace + reservations — PASS（Mac-first）
 → S4-C1 Full Object Snap — 当前实施切片
 → S4-C2+ Grip/Block/PnP/RefDes（必须另行立项）
 ```
+
+
+### INFRA1 Runtime Diagnostics（实施中）
+
+本地日志/诊断基础设施已启动，状态与缺口见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`；尚未达到 INFRA1 PASS。不自动开始 S4-C2；Windows deferred。

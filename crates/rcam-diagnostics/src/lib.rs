@@ -1,0 +1,717 @@
+//! Local diagnostics. Typed summaries only: never pass payloads or error messages.
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::{
+    collections::VecDeque,
+    fs::{self, File, OpenOptions},
+    io::{self, Write},
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, SyncSender},
+    },
+    thread::JoinHandle,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
+const MAX_EVENT: usize = 4096;
+const RING_COUNT: usize = 1000;
+static GLOBAL: OnceLock<Arc<Runtime>> = OnceLock::new();
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Source {
+    Menu,
+    Toolbar,
+    Shortcut,
+    Canvas,
+    Modal,
+    #[default]
+    Automation,
+    Recovery,
+    System,
+}
+thread_local! { static SOURCE: std::cell::Cell<Source> = const { std::cell::Cell::new(Source::Automation) }; }
+pub fn with_source<T>(source: Source, f: impl FnOnce() -> T) -> T {
+    struct Reset(Source);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            SOURCE.set(self.0);
+        }
+    }
+    let _reset = Reset(SOURCE.replace(source));
+    f()
+}
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Level {
+    Off,
+    Error,
+    Warn,
+    #[default]
+    Info,
+    Debug,
+    Trace,
+}
+impl Level {
+    fn rank(self) -> u64 {
+        match self {
+            Self::Off => 0,
+            Self::Error => 1,
+            Self::Warn => 2,
+            Self::Info => 3,
+            Self::Debug => 4,
+            Self::Trace => 5,
+        }
+    }
+}
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Event {
+    pub timestamp_ms: u64,
+    pub session_id: String,
+    pub app_version: String,
+    pub commit: String,
+    pub operation_id: u64,
+    #[serde(default)]
+    pub document_id_hash: Option<String>,
+    pub command_id: String,
+    pub source: Source,
+    pub phase: String,
+    pub revision_before: Option<u64>,
+    pub revision_after: Option<u64>,
+    pub duration_us: u64,
+    #[serde(default)]
+    pub metrics: std::collections::BTreeMap<String, u64>,
+    pub error_code: Option<String>,
+}
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u64::MAX as u128) as u64
+}
+fn token(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        .take(96)
+        .collect()
+}
+
+type LogSnapshot = Vec<(String, Vec<u8>)>;
+
+enum Message {
+    Event(bool, Vec<u8>),
+    Flush(mpsc::Sender<()>),
+    Snapshot(mpsc::Sender<io::Result<LogSnapshot>>),
+    Stop,
+}
+pub struct Runtime {
+    dir: PathBuf,
+    session: String,
+    version: String,
+    commit: String,
+    ring: Mutex<VecDeque<Event>>,
+    gpu: Mutex<Option<(String, String)>>,
+    summaries: Mutex<std::collections::BTreeMap<String, Event>>,
+    tx: SyncSender<Message>,
+    dropped: AtomicU64,
+    level: AtomicU64,
+    io_errors: Arc<AtomicU64>,
+}
+pub struct Guard {
+    runtime: Arc<Runtime>,
+    worker: Option<JoinHandle<()>>,
+}
+impl Runtime {
+    pub fn start(dir: PathBuf, version: &str, commit: &str) -> io::Result<Guard> {
+        fs::create_dir_all(dir.join("crashes"))?;
+        let runtime_log = Rolling::new(&dir, "rcam", 20 * 1024 * 1024, 5)?;
+        let operations = Rolling::new(&dir, "operations", 10 * 1024 * 1024, 5)?;
+        let (tx, rx) = mpsc::sync_channel(2048);
+        let errors = Arc::new(AtomicU64::new(0));
+        let worker_errors = errors.clone();
+        let worker = std::thread::Builder::new()
+            .name("rcam-diagnostics".into())
+            .spawn(move || {
+                let (mut runtime_log, mut operations) = (runtime_log, operations);
+                loop {
+                    let result = match rx.recv_timeout(Duration::from_millis(250)) {
+                        Ok(Message::Event(operation, bytes)) => {
+                            if operation {
+                                operations.write(&bytes)
+                            } else {
+                                runtime_log.write(&bytes)
+                            }
+                        }
+                        Ok(Message::Snapshot(ack)) => {
+                            let snapshot = runtime_log.snapshot().and_then(|first| {
+                                operations.snapshot().map(|second| vec![first, second])
+                            });
+                            let _ = ack.send(snapshot);
+                            Ok(())
+                        }
+                        Ok(Message::Flush(ack)) => {
+                            let r = runtime_log.flush().and_then(|_| operations.flush());
+                            let _ = ack.send(());
+                            r
+                        }
+                        Ok(Message::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                            let _ = runtime_log.flush();
+                            let _ = operations.flush();
+                            break;
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            runtime_log.flush().and_then(|_| operations.flush())
+                        }
+                    };
+                    if result.is_err() {
+                        worker_errors.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            })?;
+        let runtime = Arc::new(Self {
+            dir,
+            session: format!(
+                "{}-{}-{}",
+                now(),
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ),
+            version: token(version),
+            commit: token(commit),
+            ring: Mutex::new(VecDeque::with_capacity(RING_COUNT)),
+            gpu: Mutex::new(None),
+            summaries: Mutex::new(Default::default()),
+            tx,
+            dropped: AtomicU64::new(0),
+            level: AtomicU64::new(3),
+            io_errors: errors,
+        });
+        runtime.runtime_event(Level::Info, "session.start");
+        Ok(Guard {
+            runtime,
+            worker: Some(worker),
+        })
+    }
+    pub fn set_gpu(&self, name: &str, backend: &str) {
+        if let Ok(mut gpu) = self.gpu.lock() {
+            *gpu = Some((token(name), token(backend)));
+        }
+        self.runtime_event(Level::Info, "gpu.initialized");
+    }
+    pub fn set_level(&self, level: Level) {
+        self.level.store(level.rank(), Ordering::Relaxed);
+    }
+    pub fn directory(&self) -> &Path {
+        &self.dir
+    }
+    fn emit(&self, operation: bool, event: Event) {
+        if !operation
+            && !event.metrics.is_empty()
+            && let Ok(mut summaries) = self.summaries.lock()
+            && (summaries.contains_key(&event.command_id) || summaries.len() < 32)
+        {
+            summaries.insert(event.command_id.clone(), event.clone());
+        }
+        if operation && let Ok(mut ring) = self.ring.lock() {
+            if ring.len() == RING_COUNT {
+                ring.pop_front();
+            }
+            ring.push_back(event.clone());
+        }
+        if let Ok(mut bytes) = serde_json::to_vec(&event) {
+            if bytes.len() > MAX_EVENT {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+            bytes.push(b'\n');
+            if self.tx.try_send(Message::Event(operation, bytes)).is_err() {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+    fn event(&self, command: &str, phase: &str, id: u64) -> Event {
+        Event {
+            timestamp_ms: now(),
+            session_id: self.session.clone(),
+            app_version: self.version.clone(),
+            commit: self.commit.clone(),
+            operation_id: id,
+            document_id_hash: None,
+            command_id: token(command),
+            source: SOURCE.get(),
+            phase: token(phase),
+            revision_before: None,
+            revision_after: None,
+            duration_us: 0,
+            metrics: Default::default(),
+            error_code: None,
+        }
+    }
+    pub fn runtime_event(&self, level: Level, command: &str) {
+        if level != Level::Off && level.rank() <= self.level.load(Ordering::Relaxed) {
+            self.emit(false, self.event(command, &format!("{level:?}"), 0));
+        }
+    }
+    pub fn recent(&self) -> Vec<Event> {
+        self.ring
+            .lock()
+            .map(|r| r.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+    pub fn flush(&self) -> bool {
+        let (tx, rx) = mpsc::channel();
+        self.tx.try_send(Message::Flush(tx)).is_ok()
+            && rx.recv_timeout(Duration::from_secs(2)).is_ok()
+    }
+    pub fn export(&self, path: &Path) -> io::Result<()> {
+        if !self.flush() {
+            return Err(io::Error::other("diagnostic flush timed out"));
+        }
+        // Read only explicit diagnostic names; never recursively walk project or log directories.
+        let mut files: Vec<(String, Vec<u8>)> = vec![
+            (
+                "environment.json".into(),
+                serde_json::to_vec(
+                    &json!({"os": std::env::consts::OS, "arch": std::env::consts::ARCH, "profile": if cfg!(debug_assertions) { "debug" } else { "release" }, "gpu": self.gpu.lock().ok().and_then(|g| g.clone()), "app_version": self.version, "commit": self.commit}),
+                )?,
+            ),
+            (
+                "diagnostic.json".into(),
+                serde_json::to_vec(
+                    &json!({"schema_version": 1, "session_id": self.session, "dropped_events": self.dropped.load(Ordering::Relaxed), "io_errors": self.io_errors.load(Ordering::Relaxed), "recent_operations": self.recent()}),
+                )?,
+            ),
+        ];
+        let summary = self.summaries.lock().map(|s| s.clone()).unwrap_or_default();
+        for (name, prefix) in [
+            ("project_summary.json", "project."),
+            ("compatibility_summary.json", "gerber."),
+            ("performance_summary.json", ""),
+        ] {
+            let selected: Vec<_> = summary
+                .values()
+                .filter(|e| e.command_id.starts_with(prefix))
+                .collect();
+            files.push((name.into(), serde_json::to_vec(&selected)?));
+        }
+        let (tx, rx) = mpsc::channel();
+        self.tx
+            .try_send(Message::Snapshot(tx))
+            .map_err(|_| io::Error::other("diagnostic writer busy or unavailable"))?;
+        files.extend(
+            rx.recv_timeout(Duration::from_secs(5))
+                .map_err(|_| io::Error::other("diagnostic snapshot timed out"))??,
+        );
+        let mut crashes: Vec<_> = fs::read_dir(self.dir.join("crashes"))?
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry.file_name().to_string_lossy().starts_with("crash-")
+                    && entry.path().extension().is_some_and(|ext| ext == "json")
+            })
+            .collect();
+        crashes.sort_by_key(|entry| entry.file_name());
+        for entry in crashes.into_iter().rev().take(3) {
+            let metadata = fs::symlink_metadata(entry.path())?;
+            if !metadata.is_file() || metadata.len() > 5 * 1024 * 1024 {
+                continue;
+            }
+            // Reconstruct from known typed fields; never copy arbitrary crash payload strings.
+            let value: serde_json::Value = serde_json::from_slice(&fs::read(entry.path())?)?;
+            let events: Vec<Event> = serde_json::from_value(value["recent_operations"].clone())?;
+            let report = json!({"session_id": token(value["session_id"].as_str().unwrap_or_default()), "error_code":"RUST_PANIC", "panic_payload":"redacted", "recent_operations": events.into_iter().take(RING_COUNT).collect::<Vec<_>>()});
+            files.push((
+                format!("crashes/{}", entry.file_name().to_string_lossy()),
+                serde_json::to_vec(&report)?,
+            ));
+        }
+        files.push(("manifest.json".into(), serde_json::to_vec(&json!({"app_version": self.version, "commit": self.commit, "session_id": self.session, "created_at_ms": now(), "redaction_mode": "typed-summary-only", "included_files": files.iter().map(|(n,_)| n).chain(std::iter::once(&"manifest.json".to_string())).collect::<Vec<_>>()}))?));
+        let entries: Vec<_> = files
+            .iter()
+            .map(|(name, bytes)| rcam_project::zip_codec::ZipEntry {
+                path: name,
+                data: bytes,
+            })
+            .collect();
+        let bytes = rcam_project::zip_codec::write_zip(&entries);
+        let mut output = OpenOptions::new().write(true).create_new(true).open(path)?;
+        if let Err(error) = output.write_all(&bytes).and_then(|_| output.sync_all()) {
+            drop(output);
+            let _ = fs::remove_file(path);
+            return Err(error);
+        }
+        Ok(())
+    }
+    pub fn write_crash(&self) -> io::Result<()> {
+        self.write_crash_details(None, None)
+    }
+    fn write_crash_details(
+        &self,
+        location: Option<(String, u32, u32)>,
+        panic_hash: Option<String>,
+    ) -> io::Result<()> {
+        // Intentionally omit arbitrary panic payload/location/backtrace: all can contain private paths or text.
+        let recent = self
+            .ring
+            .try_lock()
+            .map(|r| r.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let bytes = serde_json::to_vec(
+            &json!({"session_id": self.session, "timestamp_ms": now(), "app_version": self.version, "commit": self.commit, "error_code": "RUST_PANIC", "panic_payload": "redacted", "location": location, "panic_hash": panic_hash, "os": std::env::consts::OS, "arch": std::env::consts::ARCH, "recent_operations": recent}),
+        )?;
+        let dir = self.dir.join("crashes");
+        let path = dir.join(format!(
+            "crash-{}-{}.json",
+            now(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut out = OpenOptions::new().create_new(true).write(true).open(path)?;
+        out.write_all(&bytes)?;
+        let mut paths: Vec<_> = fs::read_dir(dir)?
+            .filter_map(Result::ok)
+            .filter(|e| {
+                e.file_name().to_string_lossy().starts_with("crash-")
+                    && e.path().extension().is_some_and(|s| s == "json")
+            })
+            .map(|e| e.path())
+            .collect();
+        paths.sort();
+        let excess = paths.len().saturating_sub(20);
+        for path in paths.into_iter().take(excess) {
+            let _ = fs::remove_file(path);
+        }
+        Ok(())
+    }
+}
+impl Guard {
+    pub fn runtime(&self) -> Arc<Runtime> {
+        self.runtime.clone()
+    }
+    pub fn install_sink(&self) -> bool {
+        GLOBAL.set(self.runtime.clone()).is_ok()
+    }
+    pub fn install(&self) -> bool {
+        if GLOBAL.set(self.runtime.clone()).is_err() {
+            return false;
+        }
+        std::panic::set_hook(Box::new(|info| {
+            if let Some(runtime) = GLOBAL.get() {
+                let location = info.location().map(|l| {
+                    (
+                        token(l.file().rsplit(['/', '\\']).next().unwrap_or("unknown")),
+                        l.line(),
+                        l.column(),
+                    )
+                });
+                let message = info
+                    .payload()
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str));
+                let hash = message
+                    .map(|s| editor_core::hash::sha256_hex(&s.as_bytes()[..s.len().min(4096)]));
+                let _ = runtime.write_crash_details(location, hash);
+            }
+        }));
+        true
+    }
+}
+impl Drop for Guard {
+    fn drop(&mut self) {
+        self.runtime.runtime_event(
+            Level::Info,
+            if std::thread::panicking() {
+                "session.end.panic"
+            } else {
+                "session.end.clean"
+            },
+        );
+        let _ = self.runtime.tx.send(Message::Stop);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+pub fn measurements(level: Level, command: &'static str, fields: &[(&'static str, u64)]) {
+    if let Some(runtime) = global() {
+        if level == Level::Off || level.rank() > runtime.level.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut event = runtime.event(command, &format!("{level:?}"), 0);
+        event.metrics = fields
+            .iter()
+            .take(24)
+            .map(|(k, v)| (token(k), *v))
+            .collect();
+        runtime.emit(false, event);
+    }
+}
+/// Monotonic, aggregate stage timing; never includes user strings.
+pub struct Timing {
+    command: &'static str,
+    start: Instant,
+}
+impl Timing {
+    pub fn start(command: &'static str) -> Self {
+        Self {
+            command,
+            start: Instant::now(),
+        }
+    }
+}
+impl Drop for Timing {
+    fn drop(&mut self) {
+        measurements(
+            Level::Info,
+            self.command,
+            &[(
+                "duration_us",
+                self.start.elapsed().as_micros().min(u64::MAX as u128) as u64,
+            )],
+        );
+    }
+}
+/// Per-call-site suppression; hot paths never write to disk or acquire the writer lock.
+pub fn rate_limited(
+    last: &AtomicU64,
+    level: Level,
+    command: &'static str,
+    fields: &[(&'static str, u64)],
+) {
+    let current = now();
+    let old = last.load(Ordering::Relaxed);
+    if current.saturating_sub(old) >= 1000
+        && last
+            .compare_exchange(old, current, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    {
+        measurements(level, command, fields);
+    }
+}
+pub fn global() -> Option<&'static Arc<Runtime>> {
+    GLOBAL.get()
+}
+pub fn runtime_event(level: Level, command: &str) {
+    if let Some(runtime) = global() {
+        runtime.runtime_event(level, command);
+    }
+}
+pub struct Operation {
+    runtime: Option<Arc<Runtime>>,
+    event: Option<Event>,
+    start: Instant,
+}
+impl Operation {
+    pub fn begin(command: &str, revision: Option<u64>) -> Self {
+        Self::with_runtime(
+            global()
+                .filter(|r| r.level.load(Ordering::Relaxed) != 0)
+                .cloned(),
+            command,
+            revision,
+        )
+    }
+    pub fn begin_document(command: &str, document_id: &str, revision: Option<u64>) -> Self {
+        let runtime = global()
+            .filter(|r| r.level.load(Ordering::Relaxed) != 0)
+            .cloned();
+        let event = runtime.as_ref().map(|r| {
+            let mut event = r.event(command, "begin", NEXT.fetch_add(1, Ordering::Relaxed));
+            event.revision_before = revision;
+            event.document_id_hash =
+                Some(editor_core::hash::sha256_hex(document_id.as_bytes())[..16].into());
+            r.emit(true, event.clone());
+            event
+        });
+        Self {
+            runtime,
+            event,
+            start: Instant::now(),
+        }
+    }
+    pub fn with_runtime(
+        runtime: Option<Arc<Runtime>>,
+        command: &str,
+        revision: Option<u64>,
+    ) -> Self {
+        let event = runtime.as_ref().map(|r| {
+            let mut event = r.event(command, "begin", NEXT.fetch_add(1, Ordering::Relaxed));
+            event.revision_before = revision;
+            r.emit(true, event.clone());
+            event
+        });
+        Self {
+            runtime,
+            event,
+            start: Instant::now(),
+        }
+    }
+    pub fn selection_count(&mut self, count: usize) {
+        if let Some(event) = &mut self.event {
+            event.metrics.insert("selection_count".into(), count as u64);
+        }
+    }
+    pub fn end(mut self, revision: Option<u64>, error: Option<&str>) {
+        if let (Some(runtime), Some(mut event)) = (&self.runtime, self.event.take()) {
+            event.phase = if error.is_some() { "error" } else { "ok" }.into();
+            event.revision_after = revision;
+            event.error_code = error.map(token);
+            event.duration_us = self.start.elapsed().as_micros().min(u64::MAX as u128) as u64;
+            runtime.emit(true, event);
+        }
+    }
+}
+// An unwound operation keeps its BEGIN in the ring, without inventing a successful END.
+struct Rolling {
+    dir: PathBuf,
+    name: String,
+    limit: u64,
+    count: usize,
+    bytes: u64,
+    file: Option<io::BufWriter<File>>,
+}
+impl Rolling {
+    fn new(dir: &Path, name: &str, limit: u64, count: usize) -> io::Result<Self> {
+        let path = dir.join(format!("{name}.log"));
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        let bytes = file.metadata()?.len();
+        Ok(Self {
+            dir: dir.into(),
+            name: name.into(),
+            limit,
+            count,
+            bytes,
+            file: Some(io::BufWriter::new(file)),
+        })
+    }
+    fn snapshot(&mut self) -> io::Result<(String, Vec<u8>)> {
+        self.flush()?;
+        let path = self.path(0);
+        let metadata = fs::symlink_metadata(&path)?;
+        if !metadata.is_file() || metadata.len() > self.limit {
+            return Err(io::Error::other("invalid diagnostic log"));
+        }
+        Ok((format!("{}.log", self.name), fs::read(path)?))
+    }
+    fn path(&self, n: usize) -> PathBuf {
+        self.dir.join(if n == 0 {
+            format!("{}.log", self.name)
+        } else {
+            format!("{}.{n}.log", self.name)
+        })
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.file
+            .as_mut()
+            .ok_or_else(|| io::Error::other("log unavailable"))?
+            .flush()
+    }
+    fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
+        if bytes.len() as u64 > self.limit {
+            return Err(io::Error::other("oversized log event"));
+        }
+        if self.bytes + bytes.len() as u64 > self.limit {
+            self.flush()?;
+            self.file.take();
+            for n in (1..self.count).rev() {
+                let from = self.path(n - 1);
+                if from.exists() {
+                    let to = self.path(n);
+                    if to.exists() {
+                        fs::remove_file(&to)?;
+                    }
+                    fs::rename(from, to)?;
+                }
+            }
+            self.file = Some(io::BufWriter::new(
+                OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(self.path(0))?,
+            ));
+            self.bytes = 0;
+        }
+        self.file
+            .as_mut()
+            .ok_or_else(|| io::Error::other("log unavailable"))?
+            .write_all(bytes)?;
+        self.bytes += bytes.len() as u64;
+        Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn dir() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "rcam-diagnostics-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+    #[test]
+    fn rotation_and_retention() {
+        let dir = dir();
+        let mut log = Rolling::new(&dir, "test", 16, 3).unwrap();
+        for _ in 0..20 {
+            log.write(b"12345678\n").unwrap();
+        }
+        log.flush().unwrap();
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 3);
+        for f in fs::read_dir(&dir).unwrap() {
+            assert!(f.unwrap().metadata().unwrap().len() <= 16);
+        }
+        drop(log);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn ring_and_export_are_bounded_and_private() {
+        let dir = dir();
+        let guard = Runtime::start(dir.clone(), "1", "test").unwrap();
+        let runtime = guard.runtime();
+        for _ in 0..1100 {
+            Operation::with_runtime(Some(runtime.clone()), "objects.move", Some(1))
+                .end(Some(2), None);
+        }
+        assert_eq!(runtime.recent().len(), 1000);
+        fs::write(dir.join("secret.gbr"), b"PRIVATE").unwrap();
+        let zip = dir.join("diagnostics.zip");
+        runtime.export(&zip).unwrap();
+        let entries = rcam_project::zip_codec::read_zip(
+            &fs::read(zip).unwrap(),
+            &rcam_project::zip_codec::ReadPolicy {
+                max_entries: 10,
+                max_uncompressed_bytes: 40 * 1024 * 1024,
+                max_entry_bytes: 20 * 1024 * 1024,
+                max_path_len: 100,
+            },
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 8);
+        for e in entries {
+            assert!(!String::from_utf8_lossy(&e.data).contains("PRIVATE"));
+        }
+        drop(guard);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn crash_retention_and_incomplete_operation() {
+        let dir = dir();
+        let guard = Runtime::start(dir.clone(), "1", "test").unwrap();
+        let runtime = guard.runtime();
+        let _operation = Operation::with_runtime(Some(runtime.clone()), "objects.rotate", Some(4));
+        for _ in 0..22 {
+            runtime.write_crash().unwrap();
+        }
+        assert_eq!(fs::read_dir(dir.join("crashes")).unwrap().count(), 20);
+        assert_eq!(runtime.recent().last().unwrap().phase, "begin");
+        drop(guard);
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
