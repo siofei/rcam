@@ -66,7 +66,7 @@ fn capsule(a: MmPoint, b: MmPoint, r: f64) -> Vec<RegionEdge> {
         }),
     ]
 }
-fn aperture_edges(shape: &ApertureShape) -> Vec<RegionEdge> {
+fn aperture_edges(shape: &ApertureShape, include_hole: bool) -> Vec<RegionEdge> {
     let zero = MmPoint::new(0., 0.);
     let (mut edges, hole) = match shape {
         ApertureShape::Circle {
@@ -118,7 +118,7 @@ fn aperture_edges(shape: &ApertureShape) -> Vec<RegionEdge> {
         }
         ApertureShape::Macro { .. } => unreachable!("prepared material"),
     };
-    if let Some(d) = hole {
+    if include_hole && let Some(d) = hole {
         edges.push(circle(zero, d / 2.));
     }
     edges
@@ -223,11 +223,12 @@ fn geometry_edges(
 /// Edges of one Flash-or-simpler geometry. `BlockInstance` is never passed in
 /// here: the caller resolves it into primitives first (see `select_rect`),
 /// since only the caller has the document's `block_definitions` table.
-fn edges_for(
+pub(super) fn edges_for(
     g: &SemanticGeometry,
     apertures: &HashMap<&str, &ApertureShape>,
     macros: &mut HashMap<String, Material>,
     budget: &mut Budget,
+    include_standard_holes: bool,
 ) -> Result<Vec<RegionEdge>, HitTestError> {
     if let SemanticGeometry::Flash {
         center,
@@ -245,7 +246,7 @@ fn edges_for(
             budget.charge(macros[aperture_id.as_str()].boundary.len())?;
             macros[aperture_id.as_str()].boundary.clone()
         } else {
-            aperture_edges(shape)
+            aperture_edges(shape, include_standard_holes)
         };
         Ok(local
             .into_iter()
@@ -380,11 +381,12 @@ impl SemanticDocument {
                         &apertures,
                         &mut macros,
                         &mut budget,
+                        true,
                     )?);
                 }
                 all
             } else {
-                edges_for(g, &apertures, &mut macros, &mut budget)?
+                edges_for(g, &apertures, &mut macros, &mut budget, true)?
             };
             budget.charge(edges.len().saturating_mul(8))?;
             if edges.is_empty() {

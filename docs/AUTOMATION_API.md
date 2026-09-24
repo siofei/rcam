@@ -57,6 +57,8 @@ GUI 负责鼠标坐标转换、当前选择、面板焦点、工具预览、对�
 
 **属性栏、快捷键、图层锁定以及文字创建都不得绕过服务直接写文档。** 后续脚本不需要模拟点击按钮，也不依赖某个图层恰好处于活动状态。
 
+S4-C1 Object Snap 是 UI/tool 的只读输入解析：由核心 `SnapFeatureProvider` 从 f64 制造边界生成附近特征，提交后仍调用既有 `objects.move` / `text.create` 等业务 API。Automation 不模拟鼠标、marker、F3、Alt 或 hysteresis；本轮不新增 public operation。未来若需要 headless 查询，只能在同一 provider 上增加 `geometry.snap_features`，不得复制一套脚本专用捕捉器。
+
 ## 3. 请求、结果和类型约束
 
 V1 在进程内提供强类型调用；同时为公共 DTO 提供 JSON 编解码测试。JSON 只是语言无关的数据边界，**不是已经开启的网络协议，也不表示 Rust 的二进制 ABI 稳定**。

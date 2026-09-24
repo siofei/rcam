@@ -17,7 +17,10 @@ pub struct View {
     pub layers: Vec<LayerInfo>,
     pub apertures: Vec<editor_core::ApertureDefinition>,
     pub block_definitions: Vec<editor_core::block::BlockDefinition>,
-    pub snap_points: Vec<crate::tools::SnapPoint>,
+    /// Immutable manufacturing snapshot plus its object envelope index. Object
+    /// Snap queries these lazily around the cursor; no global point list exists.
+    pub snap_snapshot: Option<Arc<RenderSnapshot>>,
+    pub snap_index: Arc<crate::world_index::WorldIndex>,
     pub selected: crate::selection::SelectionSet,
     pub bounds: Option<BoundsMm>,
     pub scene: Option<Arc<Scene>>,
@@ -106,7 +109,7 @@ fn operation_id(origin: &editor_core::ObjectOrigin) -> Option<&str> {
 pub struct Model {
     pub service: ApplicationService,
     pub view: View,
-    snapshot: Option<RenderSnapshot>,
+    snapshot: Option<Arc<RenderSnapshot>>,
     metrics_identity: String,
     world_index: crate::world_index::WorldIndex,
     viewport: Option<(MmPoint, BoundsMm)>,
@@ -591,11 +594,13 @@ impl Model {
         self.view.layers = self.service.layers_list(&id)?;
         self.view.bounds = self.service.visible_bounds(&id)?.bounds;
         if geometry {
-            let snapshot = self.service.render_snapshot(&id)?;
+            let snapshot = Arc::new(self.service.render_snapshot(&id)?);
             self.view.apertures = snapshot.apertures.clone();
             self.view.block_definitions = snapshot.block_definitions.clone();
             self.world_index = crate::world_index::WorldIndex::build(&snapshot)
                 .map_err(|e| error("VALIDATION_FAILED", &e))?;
+            self.view.snap_index = Arc::new(self.world_index.clone());
+            self.view.snap_snapshot = Some(snapshot.clone());
             self.snapshot = Some(snapshot);
         }
         // Selection follows the selectable policy: an object that became hidden or
@@ -619,9 +624,6 @@ impl Model {
         let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
         selected.retain(|o| classifier.selectable(o));
         self.view.selected.ordered = selected;
-        self.view.snap_points = self.snapshot.as_ref().map_or_else(Vec::new, |snapshot| {
-            snap_points(snapshot, &self.view.layers)
-        });
         self.rebuild();
         Ok(())
     }
@@ -1385,73 +1387,6 @@ impl Model {
             );
         }
     }
-}
-
-fn snap_points(snapshot: &RenderSnapshot, layers: &[LayerInfo]) -> Vec<crate::tools::SnapPoint> {
-    use crate::tools::{SnapKind, SnapPoint};
-    let mut points = Vec::new();
-    let mut push = |point, object_id: &str, kind| {
-        points.push(SnapPoint {
-            point,
-            object_id: object_id.into(),
-            kind,
-        });
-    };
-    let shapes = aperture_shape_map(&snapshot.apertures);
-    for layer in &snapshot.layers {
-        let Some(workspace) = layers
-            .iter()
-            .find(|workspace| workspace.layer_id == layer.id && workspace.visible)
-            .filter(|workspace| workspace.effective_visible)
-        else {
-            continue;
-        };
-        for object in &layer.objects {
-            let class = classify_object(object, &shapes);
-            if workspace
-                .classes
-                .iter()
-                .any(|style| style.class == class && !style.visible)
-            {
-                continue;
-            }
-            let id = object.object_id.as_str();
-            match &object.geometry {
-                editor_core::SemanticGeometry::Flash { center, .. } => {
-                    push(*center, id, SnapKind::Center)
-                }
-                editor_core::SemanticGeometry::Line { start, end, .. }
-                | editor_core::SemanticGeometry::RectangularSweep { start, end, .. } => {
-                    push(*start, id, SnapKind::Endpoint);
-                    push(*end, id, SnapKind::Endpoint);
-                }
-                editor_core::SemanticGeometry::Arc { path, .. } => {
-                    push(path.start, id, SnapKind::Endpoint);
-                    push(path.end, id, SnapKind::Endpoint);
-                    push(path.center, id, SnapKind::Center);
-                }
-                editor_core::SemanticGeometry::Region { contours } => {
-                    for edge in contours.iter().flat_map(|contour| &contour.edges) {
-                        match edge {
-                            editor_core::RegionEdge::Line { start, end } => {
-                                push(*start, id, SnapKind::Endpoint);
-                                push(*end, id, SnapKind::Endpoint);
-                            }
-                            editor_core::RegionEdge::Arc(path) => {
-                                push(path.start, id, SnapKind::Endpoint);
-                                push(path.end, id, SnapKind::Endpoint);
-                                push(path.center, id, SnapKind::Center);
-                            }
-                        }
-                    }
-                }
-                // No Block Editor ships this phase; a live document cannot
-                // contain one yet (S4-B2 §27/§67).
-                editor_core::SemanticGeometry::BlockInstance { .. } => {}
-            }
-        }
-    }
-    points
 }
 
 /// UI policy only. The closure must call the exact service query.

@@ -23,9 +23,6 @@ pub struct Drag {
     pub last: Pos2,
     pub dragging: bool,
     pub delta: MmPoint,
-    pub grid: crate::tools::GridSettings,
-    pub snap_points: Vec<crate::tools::SnapPoint>,
-    pub snap_disabled: bool,
     pub error: Option<String>,
 }
 pub fn editable_selection(view: &View) -> bool {
@@ -68,13 +65,14 @@ impl Drag {
             last: start,
             dragging: false,
             delta: MmPoint::new(0., 0.),
-            grid: Default::default(),
-            snap_points: view.snap_points.clone(),
-            snap_disabled: false,
             error: None,
         })
     }
+    #[cfg(test)]
     pub fn update(&mut self, pos: Pos2) {
+        self.update_snapped(pos, None);
+    }
+    pub fn update_snapped(&mut self, pos: Pos2, snapped_target: Option<MmPoint>) {
         self.last = pos;
         if !self.confirmed {
             return;
@@ -82,23 +80,12 @@ impl Drag {
         self.dragging |= pos.distance(self.start) * self.ppp >= THRESHOLD_PX;
         if self.dragging {
             let a = self.camera.world(self.start, self.rect);
-            let b = match crate::tools::snap_point(
-                self.camera.world(pos, self.rect),
-                self.grid,
-                &self.snap_points,
-                self.camera,
-                Some(&self.excluded_snap_objects),
-                self.snap_disabled,
-            ) {
-                Ok(b) => b,
-                Err(e) => {
-                    self.error = Some(e);
-                    self.delta = MmPoint::new(0., 0.);
-                    return;
-                }
-            };
+            let b = snapped_target.unwrap_or_else(|| self.camera.world(pos, self.rect));
             self.delta = MmPoint::new(b.x_mm - a.x_mm, b.y_mm - a.y_mm);
         }
+    }
+    pub fn set_error(&mut self, error: Option<String>) {
+        self.error = error;
     }
     pub fn release(self) -> Option<Action> {
         (self.error.is_none()
@@ -166,18 +153,18 @@ impl Gesture {
             },
         }
     }
-    pub fn set_grid(&mut self, grid: crate::tools::GridSettings) {
-        if let Some(d) = &mut self.object_drag {
-            d.grid = grid;
-        }
-    }
-    pub fn set_snap_disabled(&mut self, disabled: bool) {
-        if let Some(d) = &mut self.object_drag {
-            d.snap_disabled = disabled;
-        }
+    pub fn snap_exclusions(&self) -> Option<&HashSet<String>> {
+        self.object_drag
+            .as_ref()
+            .map(|drag| &drag.excluded_snap_objects)
     }
     pub fn error(&self) -> Option<&str> {
         self.object_drag.as_ref().and_then(|d| d.error.as_deref())
+    }
+    pub fn set_snap_error(&mut self, error: Option<String>) {
+        if let Some(drag) = &mut self.object_drag {
+            drag.set_error(error);
+        }
     }
     pub fn confirm(&mut self, view: &View) {
         self.confirmed = true;
@@ -191,10 +178,13 @@ impl Gesture {
         self.update(self.last);
     }
     pub fn update(&mut self, pos: Pos2) {
+        self.update_snapped(pos, None);
+    }
+    pub fn update_snapped(&mut self, pos: Pos2, snapped_target: Option<MmPoint>) {
         self.last = pos;
         self.moved |= pos.distance(self.start) * self.ppp >= THRESHOLD_PX;
         if let Some(d) = &mut self.object_drag {
-            d.update(pos);
+            d.update_snapped(pos, snapped_target);
             self.delta = d.delta;
         }
     }

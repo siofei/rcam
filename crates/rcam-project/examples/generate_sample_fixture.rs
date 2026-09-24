@@ -111,6 +111,8 @@ fn build_project() -> RCamProject {
                 enabled: true,
                 enabled_kinds: vec![SnapKind::Endpoint, SnapKind::Center, SnapKind::Midpoint],
                 radius_px: 8.0,
+                manufacturing_boundary: true,
+                original_path: false,
             },
             active_layer_id: Some("steel-mesh".into()),
             camera: None,

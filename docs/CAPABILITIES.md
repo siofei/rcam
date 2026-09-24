@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发切片为 Mac-first S4-B3 `.rcam` Project Lifecycle（Global Units、S4-B1、S4-B2 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
+当前开发切片为 Mac-first S4-C1 Full Object Snap（Global Units、S4-B1、S4-B2、S4-B3 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -211,7 +211,7 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 | 有效状态 | `effective_visible/selectable/locked` = 层与类别的组合；锁定由服务强制 |
 | 渲染/命中 | layer-aware RenderSnapshot / RenderIndex；隐藏层和类别不进入渲染与命中候选 |
 | 占位类型 | LayerKind::Drill、Board/CoordinateTransform2D/ComponentPlacement、BlockDefinition/Instance、Snap 类型、Command/Keymap：**仅类型与测试，无产品入口，不构成已支持能力** |
-| 未做 | `.rcam`、Block core、Object Snap 全功能、Drill 导入、PnP/RefDes、DXF/SVG/PLT、图层合并/跨层 Boolean、Windows、P100K |
+| 未做 | 当时为 `.rcam`、Block core、Object Snap 全功能、Drill 导入、PnP/RefDes、DXF/SVG/PLT、图层合并/跨层 Boolean、Windows、P100K |
 
 **S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**：Mac 上 fmt/check/clippy/test/release 与 Metal parity（180+288 例）、
 固定 ZIP 交付与 fresh extract（318/318）、§107 逐项原生检查（14/14）均已完成，见 S4_B1_REVIEW。
@@ -241,6 +241,19 @@ Metal parity、原生 GUI Block fixture、400×100 性能、固定 ZIP/sidecar/f
 
 `ApplicationService` 新增受 `FileAccessPolicy` 限定的 `project.new/open/info/save/save_as`，并将对应 JSON 操作列为 supported。`.rcam` Open 先完整解码再装载候选工程；Save 使用临时文件、完整复核与原子发布，成功后才更新 project path/hash/dirty。GUI File 菜单正式区分 `.rcam` New/Open/Save/Save As 与 Gerber Import/Export，新增关闭确认、Recent 和本机 Recovery；Solo/Selection/Undo 与 AppPreferences 不进入 `.rcam`。Mac 原生和交付门禁见 [S4_B3_REVIEW](S4_B3_REVIEW.md)；Windows、完整 V1 仍未执行。
 S4-B3 预冻结修正：mm/inch/mil/µm 四种 DisplayUnit 均一一持久化；历史三单位 v1 文件仍可打开。Recovery 写入失败不会把当前脏版本永久标记为已恢复。
+
+## S4-C1 Full Object Snap（实施中，Mac-first）
+
+| 能力 | 当前边界 |
+|---|---|
+| 几何与类型 | f64 解析 Manufacturing Boundary：Rectangle/Circle/Polygon/Obround/Line/Arc/Region/AM/CompatibilitySolid/BlockInstance；Endpoint/Vertex、Midpoint、Center、Quadrant、Intersection、Nearest（默认关闭） |
+| 查询与性能 | 8 physical px（4–20）→ WorldIndex 邻域 → lazy features/nearby edge pairs；无全局 snap-point 库；BlockDefinition 局部 cache 按 revision 失效 |
+| 过滤/解析 | effective visible + selectable；locked selectable 允许；Object 优先于 Grid；距离为主、类型为辅；8 px acquire / 11 px release hysteresis |
+| GUI/工具 | 固定物理像素 marker、统一单位 status、F3 开关、Alt 临时关闭；Direct Drag、Text、Measure、Pick Base Point 共用 resolver |
+| Project | `.rcam v1` 保存 enabled/kinds/radius/boundary/path；旧文件缺新字段安全默认；candidate/hysteresis 不保存 |
+| 明确未做 | 标准 aperture hole boundary snap、Tangent/Perpendicular 完整 UX、Grip Editing、Block Editor、Alignment、Drill、PnP/RefDes、Windows、P100K、S4-C2 |
+
+最终 PASS 与证据路径只看 [S4_C1_REVIEW](S4_C1_REVIEW.md)。
 
 ## 2026-09-24 密集真实 Gerber 导入修复
 

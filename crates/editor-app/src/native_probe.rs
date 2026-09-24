@@ -152,6 +152,12 @@ pub fn action_text(a: &Action) -> String {
             pt.x_mm, pt.y_mm
         ),
         Action::SelectRect(..) => "SelectRect".into(),
+        Action::DragMove(drag) => format!(
+            "DragMove objects={} delta=({:.6},{:.6})",
+            drag.objects.len(),
+            drag.delta.x_mm,
+            drag.delta.y_mm
+        ),
         Action::Move(dx, dy) => format!("Move {dx} {dy}"),
         Action::Rotate(..) => "Rotate".into(),
         Action::Mirror(_) => "Mirror".into(),
@@ -316,6 +322,7 @@ impl EditorApp {
             "layer_panel_width": self.layer_panel_rect.width(),
             "canvas": rect_json(self.canvas_rect),
             "camera_scale": self.camera.scale,
+            "camera_center_mm": [self.camera.center.x_mm, self.camera.center.y_mm],
             "manufacturing_revision": info.map(|i| i.revision.clone()),
             "workspace_revision": info.map(|i| i.workspace_revision.clone()),
             "dirty": info.map(|i| i.dirty),
@@ -358,6 +365,27 @@ impl EditorApp {
         observation["display_unit"] = json!(self.display_unit.suffix());
         observation["grid_visible"] = json!(self.grid.visible);
         observation["grid_spacing_mm"] = json!(self.grid.spacing_mm);
+        observation["object_snap"] = json!({
+            "enabled": self.object_snap.enabled,
+            "enabled_kinds": self.object_snap.enabled_kinds.iter().map(|kind| format!("{kind:?}")).collect::<Vec<_>>(),
+            "radius_physical_px": self.object_snap.radius_px,
+            "manufacturing_boundary": self.object_snap.manufacturing_boundary,
+            "original_path": self.object_snap.original_path,
+            "current": self.object_snap_runtime.current.as_ref().map(|snap| json!({
+                "kind": snap.kind.map(|kind| format!("{kind:?}")),
+                "source": snap.source.map(|source| format!("{source:?}")),
+                "world_mm": [snap.point.x_mm, snap.point.y_mm],
+                "screen_distance_px": snap.distance_px,
+                "from_grid": snap.from_grid,
+                "candidate": snap.candidate.as_ref().map(|candidate| format!("{candidate:?}")),
+            })),
+            "stats": {
+                "nearby_objects": self.object_snap_runtime.stats.nearby_objects,
+                "features_generated": self.object_snap_runtime.stats.features_generated,
+                "intersection_pairs": self.object_snap_runtime.stats.intersection_pairs,
+                "elapsed_us": self.object_snap_runtime.stats.elapsed_us,
+            }
+        });
         observation["text_display_unit"] = json!(self.text.display_unit.suffix());
         observation["measure_label"] = json!(self.measure.label_with_resolution(
             self.display_unit,

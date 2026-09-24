@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-09-25 · S4-C1 Full Object Snap（PASS，Mac-first bounded）
+
+新增 ADR 0036 与 S4_C1_PLAN/REVIEW。统一解析制造边界 Object Snap，接入 WorldIndex 邻域、稳定 feature id、Intersection/Nearest、Object/Grid resolver、physical-pixel 半径、hysteresis、Layer/Class filter、F3/Alt、marker/status，以及 Drag/Text/Measure/Base Point。`.rcam v1` Snap settings 增加有默认值的 boundary/path 字段，不保存当前 candidate。Mac 原生证据、有界性能与固定交付完成；不启动 S4-C2，Windows deferred。
+
 ## 2026-09-24 · Gerber compatibility final closeout（Mac-first）
 
 Product Service 在严格解析返回 `Unsupported` 或 `InvalidUtf8` 时也执行一次兼容解析。零直径 C,0 占位明确为有损 2 µm（`0.002 mm`）；导出先按工程精度，兼容几何需要更细精度时由每次导出显式授权。96 个正式 AT 定义恢复至 S4-B3 `0a8e908`，兼容用例列在 `GERBER_COMPAT_ACCEPTANCE_ADDENDUM.md`。不据此声称 Windows、独立 CAM 制造等价或完整 V1 通过。

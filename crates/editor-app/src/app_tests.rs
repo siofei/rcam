@@ -1033,14 +1033,24 @@ fn s2c1_snap_common_delta_preview_single_transaction_and_undo() {
             2.,
         )
         .unwrap();
-        drag.grid = crate::tools::GridSettings {
+        let grid = crate::tools::GridSettings {
             visible: false,
             spacing_mm: 0.5,
             snap_enabled: true,
         };
         drag.confirmed = true;
         for n in 0..20 {
-            drag.update(eframe::egui::pos2(110. + n as f32, 107.));
+            let position = eframe::egui::pos2(110. + n as f32, 107.);
+            let target = grid
+                .point(crate::camera::Camera::default().world(
+                    position,
+                    eframe::egui::Rect::from_min_size(
+                        eframe::egui::Pos2::ZERO,
+                        eframe::egui::vec2(400., 400.),
+                    ),
+                ))
+                .unwrap();
+            drag.update_snapped(position, Some(target));
         }
         assert_eq!(drag.delta, MmPoint::new(3., -0.5));
         assert_eq!(m.view.info, before);
@@ -1079,11 +1089,15 @@ fn s2c1_snap_common_delta_preview_single_transaction_and_undo() {
 fn s2c1_invalid_snap_cannot_commit() {
     let (mut m, _) = setup();
     let mut drag = armed(&mut m, 2.);
-    drag.grid.snap_enabled = true;
-    drag.grid.spacing_mm = 1e-300;
+    let grid = crate::tools::GridSettings {
+        visible: false,
+        spacing_mm: 1e-300,
+        snap_enabled: true,
+    };
     let before = m.view.info.clone();
+    let error = grid.point(MmPoint::new(1., 1.)).unwrap_err();
+    drag.set_error(Some(error));
     drag.update(eframe::egui::pos2(120., 120.));
-    assert!(drag.error.is_some());
     assert!(drag.release().is_none());
     assert_eq!(m.view.info, before);
 }
@@ -1477,12 +1491,126 @@ fn s3_flash_size_gui_path_is_cow_undoable_and_roundtrips() {
 #[test]
 fn s3_snap_candidates_come_from_visible_manufacturing_geometry() {
     let (mut m, _) = setup();
-    assert!(m.view.snap_points.iter().any(|candidate| {
-        candidate.point == MmPoint::new(10., 20.)
-            && candidate.kind == crate::tools::SnapKind::Center
-    }));
+    let mut runtime = crate::object_snap::Runtime::default();
+    let settings = crate::object_snap::Settings {
+        enabled: true,
+        ..Default::default()
+    };
+    let result = runtime
+        .resolve(
+            MmPoint::new(10., 20.),
+            &settings,
+            crate::tools::GridSettings::default(),
+            crate::camera::Camera {
+                scale: 20.,
+                ..Default::default()
+            },
+            2.,
+            m.view.snap_snapshot.as_deref(),
+            &m.view.snap_index,
+            &m.view.layers,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(result.kind, Some(editor_core::snap::SnapKind::Center));
     patch(&mut m, Some(false), None, None);
-    assert!(m.view.snap_points.is_empty());
+    let result = runtime
+        .resolve(
+            MmPoint::new(10.01, 20.01),
+            &settings,
+            crate::tools::GridSettings::default(),
+            crate::camera::Camera {
+                scale: 20.,
+                ..Default::default()
+            },
+            2.,
+            m.view.snap_snapshot.as_deref(),
+            &m.view.snap_index,
+            &m.view.layers,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(result.kind, None);
+
+    patch(&mut m, Some(true), Some(true), None);
+    let result = runtime
+        .resolve(
+            MmPoint::new(10.01, 20.01),
+            &settings,
+            crate::tools::GridSettings::default(),
+            crate::camera::Camera {
+                scale: 20.,
+                ..Default::default()
+            },
+            2.,
+            m.view.snap_snapshot.as_deref(),
+            &m.view.snap_index,
+            &m.view.layers,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        result.kind,
+        Some(editor_core::snap::SnapKind::Center),
+        "locked but selectable reference layers remain snappable"
+    );
+
+    let info = m.view.info.as_ref().unwrap();
+    m.run(Action::Layer(LayerUpdateParams {
+        layer_id: info.layer_ids[0].clone(),
+        expected_workspace_revision: info.workspace_revision.clone(),
+        selectable: Some(false),
+        ..Default::default()
+    }));
+    let raw = MmPoint::new(10.01, 20.01);
+    let result = runtime
+        .resolve(
+            raw,
+            &settings,
+            crate::tools::GridSettings::default(),
+            crate::camera::Camera {
+                scale: 20.,
+                ..Default::default()
+            },
+            2.,
+            m.view.snap_snapshot.as_deref(),
+            &m.view.snap_index,
+            &m.view.layers,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(result.kind, None, "nonselectable layers are excluded");
+
+    let result = runtime
+        .resolve(
+            raw,
+            &settings,
+            crate::tools::GridSettings {
+                visible: true,
+                spacing_mm: 1.,
+                snap_enabled: true,
+            },
+            crate::camera::Camera {
+                scale: 20.,
+                ..Default::default()
+            },
+            2.,
+            m.view.snap_snapshot.as_deref(),
+            &m.view.snap_index,
+            &m.view.layers,
+            None,
+            true,
+        )
+        .unwrap();
+    assert_eq!(
+        result.point, raw,
+        "Alt temporarily disables object and grid snap"
+    );
+    assert!(!result.from_grid);
 }
 
 fn text_draft(m: &mut Model) -> crate::text_tool::Draft {

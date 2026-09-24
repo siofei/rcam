@@ -338,7 +338,7 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
             ids::SNAP_TOGGLE,
             "开关吸附",
             C::Snap,
-            Some(Shortcut::new(Modifiers::NONE, ch('s'))),
+            Some(Shortcut::new(Modifiers::NONE, Key::F(3))),
             X::Canvas,
         ),
     ]

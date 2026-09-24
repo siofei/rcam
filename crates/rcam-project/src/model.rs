@@ -38,6 +38,14 @@ pub struct SnapSettingsState {
     pub enabled: bool,
     pub enabled_kinds: Vec<SnapKind>,
     pub radius_px: f64,
+    #[serde(default = "default_true")]
+    pub manufacturing_boundary: bool,
+    #[serde(default)]
+    pub original_path: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Workspace convenience only (§15); never manufacturing truth. An invalid
@@ -192,6 +200,11 @@ impl RCamProject {
                 "workspace.snap.radius_px".into(),
             ));
         }
+        if !(4.0..=20.0).contains(&self.workspace.snap.radius_px) {
+            return Err(ProjectError::SchemaInvalid(
+                "workspace.snap.radius_px must be within 4..=20 physical px".into(),
+            ));
+        }
         // An invalid camera is deliberately *not* checked here (§15): it must
         // never block loading. `codec::decode` sanitizes it to `None` before
         // this method ever sees it; `encode_v1` never writes an invalid one.
@@ -199,5 +212,36 @@ impl RCamProject {
             .validate()
             .map_err(|error| ProjectError::SemanticInvalid(error.to_string()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod object_snap_tests {
+    use super::*;
+
+    #[test]
+    fn snap_sources_default_for_pre_s4c1_json() {
+        let decoded: SnapSettingsState = serde_json::from_str(
+            r#"{"enabled":true,"enabled_kinds":["endpoint"],"radius_px":8.0}"#,
+        )
+        .unwrap();
+        assert!(decoded.manufacturing_boundary);
+        assert!(!decoded.original_path);
+    }
+
+    #[test]
+    fn snap_sources_roundtrip_without_losing_advanced_path_mode() {
+        let value = SnapSettingsState {
+            enabled: true,
+            enabled_kinds: vec![SnapKind::Nearest, SnapKind::Intersection],
+            radius_px: 12.,
+            manufacturing_boundary: false,
+            original_path: true,
+        };
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<SnapSettingsState>(&bytes).unwrap(),
+            value
+        );
     }
 }

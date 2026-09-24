@@ -223,6 +223,8 @@ impl EditorApp {
             visible: settings.grid.visible,
             snap_enabled: settings.grid.snap,
         };
+        self.object_snap = crate::object_snap::Settings::from_project(&settings.snap);
+        self.object_snap_runtime.reset();
         self.display_unit = match settings.display_unit {
             rcam_project::DisplayUnit::Millimeters => tools::DisplayUnit::Millimeter,
             rcam_project::DisplayUnit::Inches => tools::DisplayUnit::Inch,
@@ -252,6 +254,7 @@ impl EditorApp {
         settings.grid.spacing_mm = self.grid.spacing_mm;
         settings.grid.visible = self.grid.visible;
         settings.grid.snap = self.grid.snap_enabled;
+        self.object_snap.write_project(&mut settings.snap);
         settings.display_unit = match self.display_unit {
             tools::DisplayUnit::Millimeter => rcam_project::DisplayUnit::Millimeters,
             tools::DisplayUnit::Inch => rcam_project::DisplayUnit::Inches,

@@ -191,20 +191,26 @@ Global Units & Manufacturing Precision 已收口为 PASS（Mac-first bounded）�
 范围、Exit Gate 及证据路径见 [S4_B3_PLAN](S4_B3_PLAN.md) / [S4_B3_REVIEW](S4_B3_REVIEW.md)，决策见 ADR 0033/0034。此阶段仅完成 `.rcam` 工程生命周期，不启动 S4-C。
 预冻结 closeout 补齐 µm DisplayUnit 往返及 Recovery 写失败重试，保持 schema v1 和制造模型不变；最终状态以 S4_B3_REVIEW 的新证据为准。
 
+## 2026-09-25 S4-C1 Full Object Snap（实施中，Mac-first）
+
+范围、Exit Gate 与实际结果见 [S4_C1_PLAN](S4_C1_PLAN.md) / [S4_C1_REVIEW](S4_C1_REVIEW.md)，架构决策见 [ADR 0036](adr/0036-object-snap.md)。本切片只实现 Object Snap，不启动 Grip Editing、Block Editor、Drill、PnP/RefDes 或 S4-C2。
+
 ## 长期路线（S4-B1 之后，冻结顺序）
 
 ```text
 S4-B1 Multi-Layer Workspace + reservations
 → S4-B2 Block Core + .rcam schema v1
 → S4-B3 Project lifecycle
-→ S4-C Full stencil editing (Snap/Grip/Block/PnP/RefDes)
+→ S4-C1 Full Object Snap
+→ S4-C2+ Grip/Block/PnP/RefDes（需另行立项）
 ```
 
 | 阶段 | 内容 | 前置/约束 |
 |---|---|---|
 | S4-B2 | BlockDefinition/BlockInstance core（无 nested，仅 translation/rotation/reflection，display + Export flatten）；`.rcam` Native Project Model / schema v1；Workspace state 与 Snap settings 持久化——**PASS（Mac-first）** | S4-B1 审查通过；同一 clean commit 完成 Metal/GUI/codec/package closeout |
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects——**PASS（Mac-first）**；Gerber 仍只 Import/Export | S4-B2；双平台 V1 另验 |
-| S4-C | 完整 Object Snap、Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | S4-B3；Drill/Board Coordinate 按需要在此前后拆分立项 |
+| S4-C1 | Full Object Snap（制造边界、Intersection/Nearest、Layer/Class filter、Grid resolver、Drag/Text/Measure/Base Point、project settings）——**实施中** | S4-B3；Mac-first，Windows 后补 |
+| S4-C2+ | Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | S4-C1 独立复审通过后另行立项 |
 
 每个阶段启动前先写任务书、需求/验收/ADR；架构方向见 DESIGN_V1 第 22 章与 ADR 0029/0030，长期约束见 AGENTS.md。
 Windows、完整 V1、P100K、完整 CORE10 release 的门槛不因上述路线改变。

@@ -18,6 +18,7 @@ mod perf_tests;
 use modal::ActiveModal;
 mod native_bench;
 mod native_probe;
+mod object_snap;
 mod platform;
 mod preferences;
 mod project_ui;
@@ -35,7 +36,10 @@ mod viewport_tests;
 mod world_index;
 
 use camera::Camera;
-use editor_core::command::ids as command_ids;
+use editor_core::command::{
+    Key, Keymap, Modifiers, Resolution, Shortcut, ShortcutContext, ShortcutResolver,
+    ids as command_ids,
+};
 use eframe::egui::{self, Color32, RichText, Vec2};
 use state::{Action, MirrorDirection, Model, PivotInput, View};
 use std::{
@@ -67,6 +71,9 @@ struct EditorApp {
     last_good: Option<LastFrame>,
     grid: tools::GridSettings,
     grid_visual: tools::GridVisualState,
+    object_snap: object_snap::Settings,
+    object_snap_runtime: object_snap::Runtime,
+    draft_object_snap: object_snap::Settings,
     spacing: String,
     tool: tools::ActiveTool,
     text: text_tool::Draft,
@@ -210,6 +217,9 @@ impl EditorApp {
             last_good: None,
             grid: Default::default(),
             grid_visual: Default::default(),
+            object_snap: Default::default(),
+            object_snap_runtime: Default::default(),
+            draft_object_snap: Default::default(),
             spacing: "0.1".into(),
             tool: Default::default(),
             text: Default::default(),
@@ -781,6 +791,7 @@ impl eframe::App for EditorApp {
                 }
             }
             if changed {
+                self.object_snap_runtime.clear_cache();
                 self.last_good = None;
                 self.modal = None;
                 self.text.cancel();
@@ -988,6 +999,20 @@ impl eframe::App for EditorApp {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::F) {
                     self.drag = None;
                     self.fit = true;
+                }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::F3)
+                    && matches!(
+                        ShortcutResolver::resolve(
+                            &Keymap::standard(),
+                            &[ShortcutContext::Canvas],
+                            Shortcut::new(Modifiers::NONE, Key::F(3)),
+                        ),
+                        Resolution::Command(command_ids::SNAP_TOGGLE)
+                    )
+                {
+                    self.object_snap.enabled = !self.object_snap.enabled;
+                    self.object_snap_runtime.reset();
+                    self.persist_project_view();
                 }
             });
         }
@@ -1221,6 +1246,21 @@ impl eframe::App for EditorApp {
                         self.open_modal(ActiveModal::Grid);
                         ui.close();
                     }
+                    if crate::ui::command_widgets::checkbox(
+                        ui,
+                        command_ids::SNAP_TOGGLE,
+                        &mut self.object_snap.enabled,
+                        true,
+                    )
+                    .changed()
+                    {
+                        self.object_snap_runtime.reset();
+                        self.persist_project_view();
+                    }
+                    if ui.button("Object Snap 设置…").clicked() {
+                        self.open_modal(ActiveModal::ObjectSnap);
+                        ui.close();
+                    }
                     self.unit_controls(ui);
                     if ui.button("适合窗口  F").clicked() {
                         self.fit = true;
@@ -1288,6 +1328,21 @@ impl eframe::App for EditorApp {
                     self.display_unit.suffix()
                 ));
                 ui.label(format!("网格 {}", self.length(self.grid.spacing_mm)));
+                ui.label(if self.object_snap.enabled {
+                    "Object Snap ON"
+                } else {
+                    "Object Snap OFF"
+                });
+                if let Some(resolution) = &self.object_snap_runtime.current
+                    && let Some(kind) = resolution.kind
+                {
+                    ui.label(format!(
+                        "{}  X {}  Y {}",
+                        object_snap::kind_label(kind),
+                        self.length(resolution.point.x_mm),
+                        self.length(resolution.point.y_mm)
+                    ));
+                }
                 if let Some(o) = self.view.selected.primary() {
                     ui.label(format!("选中 {}", o.object.object_id));
                 }
@@ -1457,6 +1512,24 @@ impl eframe::App for EditorApp {
                 if ui.button("网格 / 吸附设置…").clicked() {
                     self.open_modal(ActiveModal::Grid);
                 }
+                if ui
+                    .selectable_label(
+                        self.object_snap.enabled,
+                        if self.object_snap.enabled {
+                            "Object Snap ON"
+                        } else {
+                            "Object Snap OFF"
+                        },
+                    )
+                    .clicked()
+                {
+                    self.object_snap.enabled = !self.object_snap.enabled;
+                    self.object_snap_runtime.reset();
+                    self.persist_project_view();
+                }
+                if ui.button("Object Snap 设置…").clicked() {
+                    self.open_modal(ActiveModal::ObjectSnap);
+                }
                 self.unit_controls(ui);
                 let old = self.tool;
                 ui.selectable_value(&mut self.tool, tools::ActiveTool::Select, "选择");
@@ -1488,6 +1561,7 @@ impl eframe::App for EditorApp {
             .show(ctx, |ui| {
                 let mut cursor_label = None;
                 let mut measure_hover = None;
+                self.object_snap_runtime.current = None;
                 let (r, painter) =
                     ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
                 let rect = r.rect;
@@ -1547,21 +1621,27 @@ impl eframe::App for EditorApp {
                     let w = self.camera.world(pos, rect);
                     cursor_label = Some(format!("X {}  Y {}", self.length(w.x_mm), self.length(w.y_mm)));
                     if self.tool == tools::ActiveTool::Text && !modal_open && !text_focus {
-                        let point = if self.text.snap_text {
-                            tools::snap_point(
-                                w,
-                                tools::GridSettings {
-                                    snap_enabled: true,
-                                    ..self.grid
-                                },
-                                &[],
-                                self.camera,
-                                None,
-                                false,
-                            )
-                            .unwrap_or(w)
-                        } else {
-                            w
+                        let text_grid = tools::GridSettings {
+                            snap_enabled: self.grid.snap_enabled && self.text.snap_text,
+                            ..self.grid
+                        };
+                        let point = match self.object_snap_runtime.resolve(
+                            w,
+                            &self.object_snap,
+                            text_grid,
+                            self.camera,
+                            ctx.pixels_per_point(),
+                            self.view.snap_snapshot.as_deref(),
+                            &self.view.snap_index,
+                            &self.view.layers,
+                            None,
+                            ctx.input(|input| input.modifiers.alt),
+                        ) {
+                            Ok(resolution) => resolution.point,
+                            Err(error) => {
+                                self.ui_error = Some(error);
+                                w
+                            }
                         };
                         if self.text.floating.is_some() {
                             if self.text.floating != Some(point) && std::env::var_os("RCAM_INTERACTION_LOG").is_some() {
@@ -1587,18 +1667,23 @@ impl eframe::App for EditorApp {
                         && !modal_open
                         && !ctx.wants_keyboard_input()
                     {
-                        match tools::snap_point(
+                        match self.object_snap_runtime.resolve(
                             w,
+                            &self.object_snap,
                             self.grid,
-                            &self.view.snap_points,
                             self.camera,
+                            ctx.pixels_per_point(),
+                            self.view.snap_snapshot.as_deref(),
+                            &self.view.snap_index,
+                            &self.view.layers,
                             None,
                             ctx.input(|input| input.modifiers.alt),
                         ) {
-                            Ok(p) => {
-                                measure_hover = Some(p);
+                            Ok(resolution) => {
+                                measure_hover = Some((resolution.point, resolution.kind));
                                 if r.clicked_by(egui::PointerButton::Primary) {
-                                    self.measure.click(p);
+                                    self.measure
+                                        .click_snapped(resolution.point, resolution.kind);
                                 }
                             }
                             Err(e) => self.ui_error = Some(e),
@@ -1629,8 +1714,7 @@ impl eframe::App for EditorApp {
                             ctx.pixels_per_point(),
                             selection::SelectionMode::from_modifiers(modifiers),
                         ));
-                        if let Some(d) = &mut self.drag {
-                            d.set_grid(self.grid);
+                        if self.drag.is_some() {
                             self.send(Action::ProbeDrag(
                                 self.camera.world(press, rect),
                                 self.camera.tolerance(ctx.pixels_per_point()),
@@ -1638,12 +1722,45 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                let drag_update = self.drag.as_ref().and_then(|drag| {
+                    (!drag.released)
+                        .then(|| ctx.input(|input| input.pointer.interact_pos()))
+                        .flatten()
+                        .map(|position| {
+                            (
+                                position,
+                                drag.snap_exclusions().cloned().unwrap_or_default(),
+                            )
+                        })
+                });
+                let (snapped_drag, drag_snap_error) = drag_update.as_ref().map_or(
+                    (None, None),
+                    |(position, excluded)| {
+                        let raw = self.camera.world(*position, rect);
+                        match self.object_snap_runtime.resolve(
+                        raw,
+                        &self.object_snap,
+                        self.grid,
+                        self.camera,
+                        ctx.pixels_per_point(),
+                        self.view.snap_snapshot.as_deref(),
+                        &self.view.snap_index,
+                        &self.view.layers,
+                        Some(excluded),
+                        ctx.input(|input| input.modifiers.alt),
+                    ) {
+                        Ok(resolution) => (Some(resolution.point), None),
+                        Err(error) => {
+                            self.ui_error = Some(error.clone());
+                            (None, Some(error))
+                        }
+                    }
+                    },
+                );
                 if let Some(drag) = &mut self.drag {
-                    drag.set_snap_disabled(ctx.input(|input| input.modifiers.alt));
-                    if !drag.released
-                        && let Some(pos) = ctx.input(|i| i.pointer.interact_pos())
-                    {
-                        drag.update(pos);
+                    if let Some((position, _)) = drag_update {
+                        drag.set_snap_error(drag_snap_error);
+                        drag.update_snapped(position, snapped_drag);
                     }
                     drag.released |= ctx.input(|i| i.pointer.primary_released());
                     if let Some(error) = drag.error() {
@@ -1656,7 +1773,10 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
-                self.measure.hover(measure_hover);
+                match measure_hover {
+                    Some((point, kind)) => self.measure.hover_snapped(Some(point), kind),
+                    None => self.measure.hover(None),
+                }
                 let ppm = self.camera.scale * f64::from(ctx.pixels_per_point());
                 let coverage = self.view.render_viewport;
                 let lo = self.camera.world(rect.left_bottom(), rect);
@@ -1768,6 +1888,15 @@ impl eframe::App for EditorApp {
                     ctx.pixels_per_point(),
                     self.grid_visual.opacity,
                 );
+                if let Some(resolution) = &self.object_snap_runtime.current {
+                    object_snap::paint_marker(
+                        &painter,
+                        self.camera,
+                        rect,
+                        ctx.pixels_per_point(),
+                        resolution,
+                    );
+                }
                 if self.tool == tools::ActiveTool::Measure {
                     self.measure
                         .paint_in(&painter, self.camera, rect, self.display_unit, self.precision().resolution_mm);

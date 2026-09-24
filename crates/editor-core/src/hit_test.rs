@@ -48,6 +48,23 @@ pub fn validate_hit_point(point: MmPoint, tolerance: f64) -> Result<(), HitTestE
     Ok(())
 }
 
+/// Reuse the exact analytic material boundary used by hit-test/selection.
+/// Snap deliberately excludes standard aperture holes in its first product
+/// version; macro Clear primitives and Region hole contours remain part of
+/// their stored manufacturing boundary.
+pub(crate) fn manufacturing_boundary_edges(
+    geometry: &SemanticGeometry,
+    apertures: &[ApertureDefinition],
+) -> Result<Vec<RegionEdge>, HitTestError> {
+    let apertures: HashMap<_, _> = apertures
+        .iter()
+        .map(|aperture| (aperture.id.as_str(), &aperture.shape))
+        .collect();
+    let mut macros = HashMap::new();
+    let mut budget = Budget(MAX_HIT_TEST_WORK);
+    select_rect::edges_for(geometry, &apertures, &mut macros, &mut budget, false)
+}
+
 impl SemanticDocument {
     /// The service supplies validated manufacturing geometry. A query either
     /// returns all matching IDs in exposure order, or one error (no partial IDs).

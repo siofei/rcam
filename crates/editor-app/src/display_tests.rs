@@ -12,10 +12,14 @@ use editor_service::{
 use egui_wgpu::wgpu::{self, util::DeviceExt};
 use std::{
     future::Future,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     task::{Context, Poll, Wake, Waker},
     time::Duration,
 };
+static BLOCK_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
 fn block_on<T>(f: impl Future<Output = T>) -> T {
     struct WakeThread(std::thread::Thread);
     impl Wake for WakeThread {
@@ -352,7 +356,11 @@ fn dense_rectangular_flash_scene_has_room_for_real_stencil_scale() {
 /// primitives report through `scene.ids`.
 fn block_fixture() -> (RenderSnapshot, Vec<LayerInfo>, Vec<String>) {
     const MIXED: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\n%ADD11R,0.3X0.2*%\nD10*\nX2000000Y2000000D03*\nX0Y0D02*\nG01X2000000Y0D01*\nD11*\nX3000000Y0D02*\nX4000000Y0D01*\nD10*\nG75*\nX1000000Y0D02*\nG03X0Y1000000I-1000000J0D01*\nG36*\nX10000000Y10000000D02*\nG01X12000000Y10000000D01*\nX12000000Y12000000D01*\nX10000000Y12000000D01*\nX10000000Y10000000D01*\nG37*\nM02*\n";
-    let dir = std::env::temp_dir().join(format!("rcam-b2-display-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "rcam-b2-display-{}-{}",
+        std::process::id(),
+        BLOCK_FIXTURE_ID.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("mixed.gbr");
     std::fs::write(&path, MIXED).unwrap();

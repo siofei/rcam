@@ -995,12 +995,14 @@ S4-B2 起 `BlockDefinition` 存在 `SemanticDocument.block_definitions`，`Block
 `blocks.create_definition_from_objects`/`create_instance`/`update_instance_transform`/`rename_definition`/
 `explode_instance`/`delete_definition` 是新增的 Service API。完整 GUI Block Editor 仍属 S4-C。
 
-### 22.6 Object Snap 与 Grip
+### 22.6 Object Snap 与 Grip（S4-C1 Object Snap 已实施，ADR 0036）
 
 统一 `SnapKind/SnapFeature/SnapFeatureId/SnapQuery/SnapCandidate/SnapFeatureProvider/SnapResolver`，目标支持 Endpoint/Vertex、Midpoint、
 Center、Quadrant、Intersection、Nearest，后续 Tangent/Perpendicular。Region/AM/Block 从**制造边界**提供 snap，不是 GPU/显示几何。
 采用 “screen-radius → 附近对象空间查询 → lazy feature generation”，**禁止全局预生成所有 snap 点**。Grid/Object Snap 由同一 Resolver 处理。
 Grip 不等于 Object Snap：现在只预留稳定 feature identity（`SnapFeatureId`/`GripFeatureId`）。
+
+S4-C1 的产品规则为：Manufacturing Boundary 默认开启、Original Path 为高级选项；标准 aperture hole 暂不提供 boundary snap，Region hole/归一化 AM/CompatibilitySolid 仍按解析边界处理。默认半径 8 physical px（可设 4–20），以 `pixels_per_point` 换算；8 px 捕获、11 px 释放。只有 effective visible/selectable 对象进入候选，locked selectable 仍可捕捉。Object 在半径内高于 Grid；Alt 临时关闭两者，F3 通过 Command/Keymap 切换。当前 candidate/hysteresis 不持久化。
 
 ### 22.7 Command / Shortcut
 
@@ -1015,7 +1017,8 @@ CommandId。Context 优先级：IME/TextInput > Modal > Tool > Canvas > Global�
 | S4-B1 | Multi-Layer Workspace、Layer UI/style/filter、layer add/delete/order、Gerber Import 语义；Drill Layer / Board Coordinate / Block / Object Snap / Command-Shortcut 架构**占位** |
 | S4-B2 | Block Core、`.rcam` Native Project Model/schema v1、Workspace state 持久化、Snap settings 持久化 |
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects |
-| S4-C | 完整 Object Snap、Grip Editing、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette |
+| S4-C1 | 完整 Object Snap：解析制造边界、Intersection/Nearest、过滤、Grid resolver、Drag/Text/Measure/Base Point、project settings |
+| S4-C2+ | Grip Editing、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette |
 
 ### 22.9 基本不变量
 

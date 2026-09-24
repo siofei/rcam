@@ -118,6 +118,8 @@ fn sample_project() -> RCamProject {
                 enabled: true,
                 enabled_kinds: vec![SnapKind::Endpoint, SnapKind::Center],
                 radius_px: 8.0,
+                manufacturing_boundary: true,
+                original_path: false,
             },
             active_layer_id: Some("layer-a".into()),
             camera: Some(CameraState {

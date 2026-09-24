@@ -75,6 +75,8 @@ pub fn big_project(openings: usize, instances: usize) -> RCamProject {
                 enabled: true,
                 enabled_kinds: vec![SnapKind::Endpoint],
                 radius_px: 8.0,
+                manufacturing_boundary: true,
+                original_path: false,
             },
             active_layer_id: None,
             camera: None,

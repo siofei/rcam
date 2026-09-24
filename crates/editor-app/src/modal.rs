@@ -9,6 +9,7 @@ pub(crate) enum ActiveModal {
     Mirror,
     Flash,
     Grid,
+    ObjectSnap,
     Units,
 }
 impl ActiveModal {
@@ -20,6 +21,7 @@ impl ActiveModal {
             Self::Mirror => "镜像",
             Self::Flash => "Flash 尺寸属性",
             Self::Grid => "网格 / 吸附设置",
+            Self::ObjectSnap => "Object Snap",
             Self::Units => "单位 / 制造精度",
         }
     }
@@ -60,6 +62,7 @@ impl EditorApp {
             }
         }
         self.draft_snap = self.grid.snap_enabled;
+        self.draft_object_snap = self.object_snap.clone();
         self.dx = "0".into();
         self.dy = "0".into();
         self.angle = "90".into();
@@ -144,6 +147,7 @@ impl EditorApp {
                                         }
                                     }
                                 }
+                                ActiveModal::ObjectSnap => self.object_snap_controls(ui),
                             },
                         );
                         if let Some(error) = &self.ui_error {
@@ -173,6 +177,61 @@ impl EditorApp {
             self.cancel_modal();
         }
     }
+
+    fn object_snap_controls(&mut self, ui: &mut egui::Ui) {
+        use editor_core::snap::SnapKind;
+        ui.checkbox(&mut self.draft_object_snap.enabled, "启用 Object Snap");
+        ui.separator();
+        for (kind, label) in [
+            (SnapKind::Endpoint, "Endpoint / 端点"),
+            (SnapKind::Vertex, "Vertex / 顶点"),
+            (SnapKind::Midpoint, "Midpoint / 中点"),
+            (SnapKind::Center, "Center / 圆心"),
+            (SnapKind::Quadrant, "Quadrant / 象限点"),
+            (SnapKind::Intersection, "Intersection / 交点"),
+            (SnapKind::Nearest, "Nearest / 最近点"),
+        ] {
+            let mut enabled = self.draft_object_snap.enabled_kinds.contains(&kind);
+            if ui.checkbox(&mut enabled, label).changed() {
+                self.draft_object_snap.set_kind(kind, enabled);
+            }
+        }
+        ui.add(
+            egui::Slider::new(&mut self.draft_object_snap.radius_px, 4.0..=20.0)
+                .integer()
+                .text("Snap Radius (physical px)"),
+        );
+        ui.checkbox(
+            &mut self.draft_object_snap.manufacturing_boundary,
+            "Manufacturing Boundary",
+        );
+        ui.checkbox(
+            &mut self.draft_object_snap.original_path,
+            "Original Path（高级）",
+        );
+        ui.small("对象捕捉优先于 Grid；按住 Alt 临时关闭全部捕捉。Nearest 默认关闭。");
+        ui.horizontal(|ui| {
+            if crate::ui::buttons::secondary(ui, "恢复默认").clicked() {
+                self.draft_object_snap = Default::default();
+            }
+            if crate::ui::buttons::primary(ui, "应用", true).clicked() || self.dialog_enter(ui) {
+                if self.draft_object_snap.enabled_kinds.is_empty()
+                    || !(4.0..=20.0).contains(&self.draft_object_snap.radius_px)
+                    || (!self.draft_object_snap.manufacturing_boundary
+                        && !self.draft_object_snap.original_path)
+                {
+                    self.ui_error = Some(
+                        "至少启用一种捕捉类型和一种几何来源；半径范围为 4–20 physical px".into(),
+                    );
+                } else {
+                    self.object_snap = self.draft_object_snap.clone();
+                    self.object_snap_runtime.reset();
+                    self.persist_project_view();
+                    self.modal = None;
+                }
+            }
+        });
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +250,9 @@ mod tests {
             last_good: None,
             grid: Default::default(),
             grid_visual: Default::default(),
+            object_snap: Default::default(),
+            object_snap_runtime: Default::default(),
+            draft_object_snap: Default::default(),
             spacing: "0.1".into(),
             tool: Default::default(),
             text: Default::default(),

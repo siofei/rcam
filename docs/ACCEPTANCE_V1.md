@@ -1880,3 +1880,7 @@ Check default/preset/custom resolution, symmetric ties-away rounding, idempotenc
 invalid/overflow rejection, source preservation, policy dirty/revision/no-op,
 export/reparse, quantized Arc/Region topology rejection and text retention across
 create/cancel/reopen. Native Mac steps and actual results belong to the stage review.
+
+### S4-C1 Object Snap 局部覆盖（2026-09-25）
+
+关联 AT-025/030/032/044/045/062/074/075 与 R08/R09/R13/R17/R18。增加解析制造边界特征、Block rigid transform、交点/Nearest、physical-pixel 半径、Layer/Class 过滤、Object/Grid resolver、hysteresis、Drag/Text/Measure/Base Point 与 `.rcam` Snap settings 往返。其自动化与 Mac 原生证据见 S4_C1_REVIEW；不修改 96 个 case 身份、阈值或 `required_platforms`，不替代 Windows、CORE10、P100K 或完整 V1 验收。

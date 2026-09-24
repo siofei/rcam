@@ -2,62 +2,8 @@
 use crate::camera::Camera;
 use editor_core::{MmPoint, grid::snap_scalar};
 use eframe::egui::{self, Color32, Rect, Stroke};
-use std::collections::HashSet;
 
 pub use editor_core::units::DisplayUnit;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SnapKind {
-    Endpoint,
-    Center,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct SnapPoint {
-    pub point: MmPoint,
-    pub object_id: String,
-    pub kind: SnapKind,
-}
-
-pub fn snap_point(
-    raw: MmPoint,
-    grid: GridSettings,
-    candidates: &[SnapPoint],
-    camera: Camera,
-    excluded_object_ids: Option<&HashSet<String>>,
-    temporarily_disabled: bool,
-) -> Result<MmPoint, String> {
-    if !raw.is_finite() {
-        return Err("坐标不是有限值".into());
-    }
-    if !grid.snap_enabled || temporarily_disabled {
-        return Ok(raw);
-    }
-    let radius_mm = 8. / camera.scale;
-    if !radius_mm.is_finite() || radius_mm <= 0. {
-        return Err("当前缩放无法计算吸附半径".into());
-    }
-    let best = candidates
-        .iter()
-        .filter(|candidate| {
-            excluded_object_ids.is_none_or(|excluded| !excluded.contains(&candidate.object_id))
-        })
-        .filter_map(|candidate| {
-            let distance = raw.distance_mm(candidate.point);
-            (distance <= radius_mm).then_some((candidate, distance))
-        })
-        .min_by(|(left, left_distance), (right, right_distance)| {
-            left_distance
-                .total_cmp(right_distance)
-                .then_with(|| left.kind.cmp(&right.kind))
-                .then_with(|| left.object_id.cmp(&right.object_id))
-        });
-    if let Some((candidate, _)) = best {
-        Ok(candidate.point)
-    } else {
-        grid.point(raw)
-    }
-}
 
 #[derive(Clone, Copy)]
 pub struct GridSettings {
@@ -213,6 +159,8 @@ impl Measurement {
 pub struct MeasureState {
     pub a: Option<MmPoint>,
     pub b: Option<MmPoint>,
+    pub a_kind: Option<editor_core::snap::SnapKind>,
+    pub b_kind: Option<editor_core::snap::SnapKind>,
     pub fixed: bool,
     pub completed: Vec<Measurement>,
 }
@@ -220,13 +168,20 @@ impl MeasureState {
     pub fn clear(&mut self) {
         *self = Self::default();
     }
+    #[cfg(test)]
     pub fn click(&mut self, p: MmPoint) {
+        self.click_snapped(p, None);
+    }
+    pub fn click_snapped(&mut self, p: MmPoint, kind: Option<editor_core::snap::SnapKind>) {
         if self.a.is_none() || self.fixed {
             self.a = Some(p);
             self.b = None;
+            self.a_kind = kind;
+            self.b_kind = None;
             self.fixed = false;
         } else {
             self.b = Some(p);
+            self.b_kind = kind;
             self.fixed = true;
             self.completed.push(Measurement {
                 a: self.a.expect("measurement start exists"),
@@ -235,8 +190,12 @@ impl MeasureState {
         }
     }
     pub fn hover(&mut self, p: Option<MmPoint>) {
+        self.hover_snapped(p, None);
+    }
+    pub fn hover_snapped(&mut self, p: Option<MmPoint>, kind: Option<editor_core::snap::SnapKind>) {
         if self.a.is_some() && !self.fixed {
             self.b = p;
+            self.b_kind = kind;
         }
     }
     pub fn values(&self) -> Option<(f64, f64, f64)> {
@@ -270,14 +229,22 @@ impl MeasureState {
         };
         let length = |v| unit.format_length(v, resolution);
         let mut label = format!(
-            "两点直线测距 · 已保留 {retained} 条 · +X 轴逆时针角度\nA ({}, {})",
+            "两点直线测距 · 已保留 {retained} 条 · +X 轴逆时针角度\nA{} ({}, {})",
+            self.a_kind.map_or(String::new(), |kind| format!(
+                "：{}",
+                crate::object_snap::kind_label(kind)
+            )),
             length(a.x_mm),
             length(a.y_mm)
         );
         if let (Some(b), Some((dx, dy, d)), Some(angle)) = (self.b, self.values(), self.angle_deg())
         {
             label.push_str(&format!(
-                "\nB ({}, {})\nΔX {}  ΔY {}\nDistance {}  Angle {angle:.6}° · {}",
+                "\nB{} ({}, {})\nΔX {}  ΔY {}\nDistance {}  Angle {angle:.6}° · {}",
+                self.b_kind.map_or(String::new(), |kind| format!(
+                    "：{}",
+                    crate::object_snap::kind_label(kind)
+                )),
                 length(b.x_mm),
                 length(b.y_mm),
                 length(dx),
@@ -476,47 +443,6 @@ mod tests {
             };
             assert_eq!(measurement.values().unwrap().3, expected);
         }
-    }
-    #[test]
-    fn object_snap_precedes_grid_and_uses_logical_point_radius() {
-        let grid = GridSettings {
-            visible: true,
-            spacing_mm: 1.,
-            snap_enabled: true,
-        };
-        let candidate = SnapPoint {
-            point: MmPoint::new(1.4, 2.4),
-            object_id: "object-1".into(),
-            kind: SnapKind::Endpoint,
-        };
-        let camera = Camera {
-            scale: 10.,
-            ..Default::default()
-        };
-        assert_eq!(
-            snap_point(
-                MmPoint::new(1.45, 2.45),
-                grid,
-                std::slice::from_ref(&candidate),
-                camera,
-                None,
-                false
-            )
-            .unwrap(),
-            candidate.point
-        );
-        assert_eq!(
-            snap_point(
-                MmPoint::new(1.45, 2.45),
-                grid,
-                &[candidate],
-                camera,
-                None,
-                true
-            )
-            .unwrap(),
-            MmPoint::new(1.45, 2.45)
-        );
     }
     #[test]
     fn inch_display_does_not_change_manufacturing_values() {
