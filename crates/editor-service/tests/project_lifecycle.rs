@@ -539,6 +539,23 @@ fn gerber_import_after_project_open_adds_a_layer_without_changing_project_path()
     assert_eq!(after.project_path, opened.project_path);
     assert!(after.project_dirty);
     assert_eq!(after.layer_ids.len(), opened.layer_ids.len() + 1);
+    let snapshot = service.project_snapshot(&opened.document_id).unwrap();
+    assert_eq!(
+        snapshot.layer_order,
+        snapshot
+            .layers
+            .iter()
+            .map(|layer| layer.layer.id.clone())
+            .collect::<Vec<_>>()
+    );
+    let saved = service
+        .project_save(&opened.document_id, &after.revision, None, false)
+        .unwrap();
+    assert!(!saved.project_dirty);
+    let reopened = service
+        .project_open(project_path.to_str().unwrap())
+        .unwrap();
+    assert_eq!(reopened.layer_ids.len(), after.layer_ids.len());
     fs::remove_dir_all(root).unwrap();
 }
 

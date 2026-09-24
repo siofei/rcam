@@ -56,7 +56,6 @@ struct LastFrame {
     selected: std::sync::Arc<Vec<u32>>,
     index: std::sync::Arc<render_index::RenderIndex>,
     uniforms: gpu::Uniforms,
-    camera: Camera,
 }
 struct EditorApp {
     tx: SyncSender<(u64, Action)>,
@@ -743,9 +742,6 @@ impl eframe::App for EditorApp {
             self.accept_text_reply();
             if let Some(diagnostic) = &self.view.display_transient {
                 eprintln!("display_transient={diagnostic}");
-                if let Some(last) = &self.last_good {
-                    self.camera = last.camera;
-                }
             }
             if let Some(generation) = self.text.pending_apply.take()
                 && generation == self.text.generation
@@ -1510,15 +1506,23 @@ impl eframe::App for EditorApp {
                 {
                     self.camera.pan(ctx.input(|i| i.pointer.delta()));
                 }
-                let camera_before = self.camera;
-                if !modal_open
-                    && r.hovered()
-                    && let Some(pos) = r.hover_pos()
-                {
-                    let (scroll, zoom) = ctx.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
-
-                    if self.drag.is_none() {
+                let (scroll, zoom, pinch) = ctx.input(|i| {
+                    (
+                        i.smooth_scroll_delta,
+                        i.zoom_delta(),
+                        i.raw
+                            .events
+                            .iter()
+                            .any(|event| matches!(event, egui::Event::Zoom(_))),
+                    )
+                });
+                if !modal_open && !text_focus && self.drag.is_none() {
+                    if r.hovered() {
                         self.camera.pan(scroll);
+                    }
+                    // Native trackpad pinch can arrive without a hovered pointer.
+                    // In that case, keep the gesture anchored to the canvas center.
+                    if (r.hovered() || pinch) && zoom != 1. {
                         let extent = self.view.scene.as_ref().map_or(1e-12, |s| {
                             s.objects
                                 .iter()
@@ -1528,25 +1532,20 @@ impl eframe::App for EditorApp {
                         });
                         self.camera.zoom_view(
                             f64::from(zoom),
-                            pos,
+                            r.hover_pos().unwrap_or(rect.center()),
                             rect,
                             ctx.pixels_per_point(),
                             self.view.bounds,
                             extent,
                         );
                     }
+                }
+                if !modal_open
+                    && r.hovered()
+                    && let Some(pos) = r.hover_pos()
+                {
                     let w = self.camera.world(pos, rect);
                     cursor_label = Some(format!("X {}  Y {}", self.length(w.x_mm), self.length(w.y_mm)));
-                    if camera_before.center != self.camera.center
-                        || camera_before.scale != self.camera.scale
-                    {
-                        eprintln!(
-                            "native_camera center={:?} scale={} ppp={}",
-                            self.camera.center,
-                            self.camera.scale,
-                            ctx.pixels_per_point()
-                        );
-                    }
                     if self.tool == tools::ActiveTool::Text && !modal_open && !text_focus {
                         let point = if self.text.snap_text {
                             tools::snap_point(
@@ -1714,7 +1713,6 @@ impl eframe::App for EditorApp {
                                 selected: self.selected_flags.clone(),
                                 index,
                                 uniforms,
-                                camera: self.camera,
                             });
                             rendered = true;
                         }
@@ -1723,9 +1721,6 @@ impl eframe::App for EditorApp {
                                 eprintln!("display_prepare_diagnostic={e}");
                             }
                             self.display_error = Some(e);
-                            if let Some(last) = &self.last_good {
-                                self.camera = last.camera;
-                            }
                             self.drag = None;
                         }
                     }

@@ -33,21 +33,30 @@ fn contains(s:Primitive,p:vec2<f32>)->bool {
     if s.tag.x==3u {
         let bin_count=u32(s.b.x);
         let bin=min(u32(clamp(floor((p.y-s.a.y)*s.a.z),0.,f32(bin_count-1u))),bin_count-1u);
-        let header=points[s.tag.z+s.tag.w+bin];
+        let left=p.x<s.b.z;
+        var header_index=s.tag.z+s.tag.w+bin;
+        if left {header_index=u32(s.b.w)+bin;}
+        let header=points[header_index];
         let start=u32(header.x);let count=u32(header.y);
         if s.a.x>0. {
             var winding=0i;
             for(var i=0u;i<count;i++) {
                 let a=points[start+i*2u];let b=points[start+i*2u+1u];
-                if a.y<=p.y && b.y>p.y && cross(b-a,p-a)>0. {winding++;}
-                if a.y>p.y && b.y<=p.y && cross(b-a,p-a)<0. {winding--;}
+                if (left && min(a.x,b.x)>p.x) || (!left && max(a.x,b.x)<p.x) {break;}
+                let side=select(1.,-1.,left);
+                if a.y<=p.y && b.y>p.y && cross(b-a,p-a)*side>0. {winding++;}
+                if a.y>p.y && b.y<=p.y && cross(b-a,p-a)*side<0. {winding--;}
             }
             return winding!=0i;
         }
         var odd=false;
         for(var i=0u;i<count;i++) {
             let a=points[start+i*2u];let b=points[start+i*2u+1u];
-            if (a.y>p.y)!=(b.y>p.y) {if p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x {odd=!odd;}}
+            if (left && min(a.x,b.x)>p.x) || (!left && max(a.x,b.x)<p.x) {break;}
+            if (a.y>p.y)!=(b.y>p.y) {
+                let crossing=(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x;
+                if select(p.x<crossing,p.x>crossing,left) {odd=!odd;}
+            }
         }
         return odd;
     }

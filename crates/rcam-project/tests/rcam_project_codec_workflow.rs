@@ -157,6 +157,19 @@ fn deterministic_encode_and_encode_decode_encode_round_trip() {
 }
 
 #[test]
+fn imported_arc_centers_keep_exact_f64_bits_in_project_json() {
+    let mut project = sample_project();
+    let SemanticGeometry::Flash { center, .. } = &mut project.layers[0].layer.objects[0].geometry
+    else {
+        panic!("sample object must be a flash");
+    };
+    // Values produced by arc-center arithmetic in art08.art previously
+    // changed by one ULP during JSON parsing and blocked .rcam Save As.
+    *center = MmPoint::new(-17.400019999999998, -0.0018799999999998818);
+    assert_eq!(decode(&encode_v1(&project).unwrap()).unwrap(), project);
+}
+
+#[test]
 fn all_display_units_round_trip_with_deterministic_bytes() {
     for (unit, spelling) in [
         (DisplayUnit::Millimeters, "millimeters"),

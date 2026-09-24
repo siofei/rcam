@@ -1,4 +1,9 @@
-use crate::{display::Scene, gpu::Uniforms, state::Model};
+use crate::{
+    camera::Camera,
+    display::Scene,
+    gpu::Uniforms,
+    state::{Action, Model},
+};
 use editor_core::*;
 use editor_service::{
     BlockTransformParams, CreateBlockDefinitionParams, CreateBlockInstanceParams, HorizontalAlign,
@@ -48,16 +53,237 @@ fn real_compat_region_scene_remains_displayable() {
     let mut model = Model::default();
     model.open(&path).unwrap();
     let id = &model.view.info.as_ref().unwrap().document_id;
+    let project = model.service.project_snapshot(id).unwrap();
+    let decoded = rcam_project::decode(&rcam_project::encode_v1(&project).unwrap()).unwrap();
+    assert_eq!(project, decoded, "art08 project must save losslessly");
     let snapshot = model.service.render_snapshot(id).unwrap();
-    let scene = Scene::build(&snapshot, &model.view.layers, MmPoint::new(0., 0.), 100., 1)
+    let initial_scene = Scene::build(&snapshot, &model.view.layers, MmPoint::new(0., 0.), 100., 1)
         .expect("compat Region with fuzzy Hole arc must display");
-    assert!(!scene.objects.is_empty());
-    println!(
-        "objects={} primitives={} points={}",
-        scene.objects.len(),
-        scene.primitives.len(),
-        scene.points.len()
+    assert!(!initial_scene.objects.is_empty());
+    let bounds = model.view.bounds.unwrap();
+    let rect = eframe::egui::Rect::from_min_max(
+        eframe::egui::Pos2::new(230., 90.),
+        eframe::egui::Pos2::new(942., 748.),
     );
+    let cursor = eframe::egui::Pos2::new(480., 250.);
+    let mut camera = Camera::default();
+    camera.fit(Some(bounds), rect);
+    let target = camera.world(cursor, rect);
+    let extent = initial_scene
+        .objects
+        .iter()
+        .flat_map(|o| o.bounds)
+        .map(|v| f64::from(v).abs())
+        .fold(1e-12, f64::max);
+    for _ in 0..24 {
+        camera.zoom_view(1.25, cursor, rect, 2., Some(bounds), extent);
+    }
+    assert!(camera.scale > 0.);
+    assert!(camera.world(cursor, rect).distance_mm(target) < 1e-6);
+
+    // Reproduce hiding art08, changing the viewport scale, then showing it.
+    let layer_id = model.view.layers[0].layer_id.clone();
+    if let Ok(companion) = std::env::var("RCAM_COMPAT_EP11") {
+        model.run(Action::ImportGerbers(vec![companion.into()]));
+        assert!(model.view.error.is_none(), "{:?}", model.view.error);
+    }
+    let mut patch = layer_patch(&model, &layer_id);
+    patch.visible = Some(false);
+    model.run(Action::Layer(patch));
+    assert!(model.view.error.is_none(), "{:?}", model.view.error);
+    let center = target;
+    let half = 400. / 32.;
+    model.run(Action::Viewport(
+        center,
+        BoundsMm {
+            min_x_mm: center.x_mm - half,
+            min_y_mm: center.y_mm - half,
+            max_x_mm: center.x_mm + half,
+            max_y_mm: center.y_mm + half,
+        },
+        32.,
+    ));
+    assert!(model.view.blocked.is_none(), "{:?}", model.view.blocked);
+    let mut patch = layer_patch(&model, &layer_id);
+    patch.visible = Some(true);
+    model.run(Action::Layer(patch));
+    assert!(model.view.error.is_none(), "{:?}", model.view.error);
+
+    for ppm in [8., 32., 40.62, 128., 200.] {
+        let half = 400. / ppm;
+        model.run(Action::Viewport(
+            center,
+            BoundsMm {
+                min_x_mm: center.x_mm - half,
+                min_y_mm: center.y_mm - half,
+                max_x_mm: center.x_mm + half,
+                max_y_mm: center.y_mm + half,
+            },
+            ppm,
+        ));
+        assert!(
+            model.view.blocked.is_none(),
+            "ppm={ppm}: {:?}",
+            model.view.blocked
+        );
+        let s = model.view.scene.as_ref().unwrap();
+        let zoom_camera = Camera {
+            center,
+            scale: ppm / 2.,
+        };
+        let flags = vec![0; s.objects.len()];
+        let prepared =
+            crate::gpu::prepare_measured(s, zoom_camera, rect, 2., &flags, MmPoint::new(0., 0.))
+                .unwrap_or_else(|e| panic!("art08 display at {ppm} px/mm: {e}"));
+        println!(
+            "art08 ppm={ppm} objects={} candidates={} estimated_work={}",
+            s.objects.len(),
+            prepared.stats.candidate_count,
+            prepared.stats.estimated_work
+        );
+    }
+    let path = std::env::temp_dir().join(format!("rcam-art08-zoom-{}.rcam", std::process::id()));
+    let mut project = model
+        .service
+        .project_snapshot(&model.view.info.as_ref().unwrap().document_id)
+        .unwrap();
+    project.workspace.camera = Some(rcam_project::CameraState {
+        center_mm: camera.center,
+        scale: camera.scale,
+    });
+    let decoded = rcam_project::decode(&rcam_project::encode_v1(&project).unwrap()).unwrap();
+    assert_eq!(project, decoded, "layered project must save losslessly");
+    model
+        .service
+        .grant_file_access(&std::env::temp_dir(), true)
+        .unwrap();
+    let current = model.view.info.as_ref().unwrap();
+    model
+        .service
+        .project_save_with_camera(
+            &current.document_id,
+            &current.revision,
+            Some(path.to_str().unwrap()),
+            false,
+            Some(rcam_project::CameraState {
+                center_mm: camera.center,
+                scale: camera.scale,
+            }),
+        )
+        .unwrap();
+    model.service.grant_file_access(&path, false).unwrap();
+    let reopened = model.service.project_open(path.to_str().unwrap()).unwrap();
+    assert_eq!(reopened.layer_ids.len(), model.view.layers.len());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+#[ignore = "requires RCAM_ART08_PROJECT local recovery project"]
+fn recovered_two_art08_layers_remain_navigable() {
+    let path = std::path::PathBuf::from(std::env::var("RCAM_ART08_PROJECT").unwrap());
+    let mut model = Model::default();
+    model.open_project(&path, false).unwrap();
+    let center = MmPoint::new(-10.249040239783856, -17.23586933468424);
+    let rect = eframe::egui::Rect::from_min_max(
+        eframe::egui::Pos2::new(230., 90.),
+        eframe::egui::Pos2::new(942., 748.),
+    );
+    let camera = Camera {
+        center,
+        scale: 17.41,
+    };
+    let ppm = camera.scale * 2.;
+    let half_x = f64::from(rect.width()) / camera.scale + 4. / ppm;
+    let half_y = f64::from(rect.height()) / camera.scale + 4. / ppm;
+    model.run(Action::Viewport(
+        center,
+        BoundsMm {
+            min_x_mm: center.x_mm - half_x,
+            min_y_mm: center.y_mm - half_y,
+            max_x_mm: center.x_mm + half_x,
+            max_y_mm: center.y_mm + half_y,
+        },
+        64.,
+    ));
+    assert!(model.view.blocked.is_none(), "{:?}", model.view.blocked);
+    let scene = model.view.scene.as_ref().unwrap();
+    let flags = vec![0; scene.objects.len()];
+    for (dx, dy, scale) in [
+        (0., 0., 17.41),
+        (-2., 0., 17.41),
+        (2., 0., 17.41),
+        (0., -2., 17.41),
+        (0., 2., 17.41),
+        (0., 0., 20.31),
+    ] {
+        let moved = Camera {
+            center: MmPoint::new(center.x_mm + dx, center.y_mm + dy),
+            scale,
+        };
+        let prepared =
+            crate::gpu::prepare_measured(scene, moved, rect, 2., &flags, MmPoint::new(0., 0.))
+                .unwrap_or_else(|e| {
+                    panic!("recovered 4-layer viewport dx={dx} dy={dy} scale={scale}: {e}")
+                });
+        println!(
+            "RECOVERED_ART08 dx={dx} dy={dy} scale={scale} objects={} candidates={} work={}",
+            scene.objects.len(),
+            prepared.stats.candidate_count,
+            prepared.stats.estimated_work
+        );
+    }
+    let detail_center = MmPoint::new(-5.838407334296949, -2.8985730670103975);
+    let detail_scale = 1017.1450859401518;
+    let detail_ppm = detail_scale * 2.;
+    let detail_half_x = f64::from(rect.width()) / detail_scale + 4. / detail_ppm;
+    let detail_half_y = f64::from(rect.height()) / detail_scale + 4. / detail_ppm;
+    model.run(Action::Viewport(
+        detail_center,
+        BoundsMm {
+            min_x_mm: detail_center.x_mm - detail_half_x,
+            min_y_mm: detail_center.y_mm - detail_half_y,
+            max_x_mm: detail_center.x_mm + detail_half_x,
+            max_y_mm: detail_center.y_mm + detail_half_y,
+        },
+        2048.,
+    ));
+    assert!(model.view.blocked.is_none(), "{:?}", model.view.blocked);
+    let scene = model.view.scene.as_ref().unwrap();
+    let flags = vec![0; scene.objects.len()];
+    for dx in [-0.1, 0., 0.1] {
+        let moved = Camera {
+            center: MmPoint::new(detail_center.x_mm + dx, detail_center.y_mm),
+            scale: detail_scale,
+        };
+        let prepared =
+            crate::gpu::prepare_measured(scene, moved, rect, 2., &flags, MmPoint::new(0., 0.))
+                .unwrap_or_else(|e| panic!("art08 detail dx={dx}: {e}"));
+        println!(
+            "ART08_DETAIL dx={dx} work={}",
+            prepared.stats.estimated_work
+        );
+    }
+    if let Ok(output) = std::env::var("RCAM_ART08_HIGH_ZOOM_OUT") {
+        let output = std::path::PathBuf::from(output);
+        model
+            .service
+            .grant_file_access(output.parent().unwrap(), true)
+            .unwrap();
+        let current = model.view.info.as_ref().unwrap();
+        model
+            .service
+            .project_save_with_camera(
+                &current.document_id,
+                &current.revision,
+                Some(output.to_str().unwrap()),
+                false,
+                Some(rcam_project::CameraState {
+                    center_mm: center,
+                    scale: camera.scale,
+                }),
+            )
+            .unwrap();
+    }
 }
 
 #[test]
@@ -739,16 +965,38 @@ fn large_polygon_horizontal_bins_match_full_reference_winding() {
             let bin_count = primitive.b[0] as usize;
             let bin = (((p[1] - primitive.a[1]) * primitive.a[2]).floor().max(0.) as usize)
                 .min(bin_count - 1);
-            let header =
-                scene.points[primitive.meta[2] as usize + primitive.meta[3] as usize + bin];
-            let binned = (0..header[1] as usize)
-                .map(|index| {
-                    let start = header[0] as usize + index * 2;
-                    crosses(scene.points[start], scene.points[start + 1], p)
-                })
-                .sum::<i32>()
-                != 0;
-            assert_eq!(binned, full, "point {p:?}");
+            for left in [false, true] {
+                let header_index = if left {
+                    primitive.b[3] as usize + bin
+                } else {
+                    primitive.meta[2] as usize + primitive.meta[3] as usize + bin
+                };
+                let header = scene.points[header_index];
+                let binned = (0..header[1] as usize)
+                    .map(|index| {
+                        let start = header[0] as usize + index * 2;
+                        (scene.points[start], scene.points[start + 1])
+                    })
+                    .take_while(|(a, b)| {
+                        if left {
+                            a[0].min(b[0]) <= p[0]
+                        } else {
+                            a[0].max(b[0]) >= p[0]
+                        }
+                    })
+                    .map(|(a, b)| {
+                        let cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+                        if left {
+                            (a[1] <= p[1] && b[1] > p[1] && cross < 0.) as i32
+                                - (a[1] > p[1] && b[1] <= p[1] && cross > 0.) as i32
+                        } else {
+                            crosses(a, b, p)
+                        }
+                    })
+                    .sum::<i32>()
+                    != 0;
+                assert_eq!(binned, full, "point {p:?} left={left}");
+            }
         }
     }
 }

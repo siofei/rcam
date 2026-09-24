@@ -67,6 +67,91 @@ pub struct Prepared {
     pub index: Arc<crate::render_index::RenderIndex>,
     pub stats: PrepareStats,
 }
+/// Conservative per-row work for a binned polygon. The shader only visits
+/// edges in the current Y bin. Charge each physical row the densest bin that
+/// row can reach, including one adjacent row and bin for sample phase and
+/// rounding. This avoids charging every row the densest bin in the Region.
+fn binned_polygon_work(
+    scene: &Scene,
+    primitive: &Primitive,
+    visible_x: [f64; 2],
+    visible_y: [f64; 2],
+    ppm: f64,
+    shifted_x: f64,
+    shifted_y: f64,
+) -> Option<f64> {
+    let bins = primitive.b[0] as usize;
+    let inverse = f64::from(primitive.a[2]);
+    if bins == 0 || !inverse.is_finite() || inverse <= 0. || !ppm.is_finite() || ppm <= 0. {
+        return None;
+    }
+    let split = f64::from(primitive.b[2]) + shifted_x;
+    let side = if visible_x[1] < split {
+        Some(true)
+    } else if visible_x[0] >= split {
+        Some(false)
+    } else {
+        None
+    };
+    let headers = if side == Some(true) {
+        primitive.b[3] as usize
+    } else {
+        primitive.meta[2] as usize + primitive.meta[3] as usize
+    };
+    let counts = scene.points.get(headers..headers.checked_add(bins)?)?;
+    let origin = f64::from(primitive.a[1]) + shifted_y;
+    let rows = ((visible_y[1] - visible_y[0]).max(0.) * ppm).ceil() as usize;
+    if rows > 16_384 {
+        return None;
+    }
+    let mut sum = 0.;
+    let mut max_count = 0f64;
+    let mut prefix_cache = vec![None; bins];
+    let bin_at = |y: f64| (((y - origin) * inverse).floor().max(0.) as usize).min(bins - 1);
+    for row in 0..rows {
+        let lo = visible_y[0] + (row as f64 - 1.) / ppm;
+        let hi = (visible_y[0] + (row + 2) as f64 / ppm).min(visible_y[1] + 1. / ppm);
+        let first = bin_at(lo).saturating_sub(1);
+        let last = (bin_at(hi) + 1).min(bins - 1);
+        let mut count = 0f64;
+        for bin in first..=last {
+            let active = if let Some(active) = prefix_cache[bin] {
+                active
+            } else {
+                let header = counts[bin];
+                let edge_count = header[1] as usize;
+                let active = if let Some(left) = side {
+                    let start = header[0] as usize;
+                    let end = start.checked_add(edge_count.checked_mul(2)?)?;
+                    let edges = scene.points.get(start..end)?;
+                    let cutoff = if left {
+                        visible_x[1] - shifted_x
+                    } else {
+                        visible_x[0] - shifted_x
+                    };
+                    edges
+                        .chunks_exact(2)
+                        .take_while(|edge| {
+                            if left {
+                                f64::from(edge[0][0].min(edge[1][0])) <= cutoff
+                            } else {
+                                f64::from(edge[0][0].max(edge[1][0])) >= cutoff
+                            }
+                        })
+                        .count() as f64
+                } else {
+                    edge_count as f64
+                };
+                prefix_cache[bin] = Some(active);
+                active
+            };
+            count = count.max(active);
+        }
+        sum += count;
+        max_count = max_count.max(count);
+    }
+    Some(sum + 4. * max_count)
+}
 pub fn viewport_bounds(
     scene: &Scene,
     camera: Camera,
@@ -157,19 +242,47 @@ pub fn prepare_measured(
             ((f64::from(b[1]) - cy) * ppm + f64::from(height) / 2.).clamp(0., f64::from(height));
         let top =
             ((f64::from(b[3]) - cy) * ppm + f64::from(height) / 2.).clamp(0., f64::from(height));
-        let cost: usize = scene.primitives[object.meta[0] as usize..object.meta[1] as usize]
-            .iter()
-            .map(|p| {
-                if p.meta[0] == 1 {
-                    p.meta[3] as usize
-                } else if p.meta[0] == 3 {
-                    p.b[1] as usize
-                } else {
-                    1
-                }
-            })
-            .sum();
-        work += ((right - left).max(0.) + 4.) * ((top - bottom).max(0.) + 4.) * cost as f64 * 20.;
+        // Filled objects only need the quarter-pixel AA probes. A two-pixel
+        // halo is needed for selected edges and outline/centre-line display;
+        // charging it to every filled Region overstates the zoomed view.
+        let sample_margin_px = if selected_flags[index] != 0 || object.style[1] != 0 {
+            2.
+        } else {
+            0.5
+        };
+        let horizontal = (right - left).max(0.) + sample_margin_px * 2.;
+        let vertical = (top - bottom).max(0.) + sample_margin_px * 2.;
+        let visible_y = [
+            f64::from(b[1]).max(viewport.world_bounds[1]) - sample_margin_px / ppm,
+            f64::from(b[3]).min(viewport.world_bounds[3]) + sample_margin_px / ppm,
+        ];
+        let visible_x = [
+            f64::from(b[0]).max(viewport.world_bounds[0]) - sample_margin_px / ppm,
+            f64::from(b[2]).min(viewport.world_bounds[2]) + sample_margin_px / ppm,
+        ];
+        let shifted_x = if selected_flags[index] != 0 {
+            f64::from(preview[0])
+        } else {
+            0.
+        };
+        let shifted_y = if selected_flags[index] != 0 {
+            f64::from(preview[1])
+        } else {
+            0.
+        };
+        for primitive in &scene.primitives[object.meta[0] as usize..object.meta[1] as usize] {
+            let cost = if primitive.meta[0] == 1 {
+                vertical * f64::from(primitive.meta[3])
+            } else if primitive.meta[0] == 3 {
+                binned_polygon_work(
+                    scene, primitive, visible_x, visible_y, ppm, shifted_x, shifted_y,
+                )
+                .unwrap_or(vertical * f64::from(primitive.b[1]))
+            } else {
+                vertical
+            };
+            work += horizontal * cost * 20.;
+        }
     }
     // Four coverage samples plus four selected-edge samples, conservatively bounded.
     if !work.is_finite() || work > 2_000_000_000. {
@@ -442,6 +555,44 @@ impl egui_wgpu::CallbackTrait for Callback {
             if let Some((stamp, id)) = &self.painted {
                 stamp.store(*id, std::sync::atomic::Ordering::Release);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod binned_work_tests {
+    use super::*;
+
+    #[test]
+    fn subpixel_bins_cover_every_sample_phase() {
+        let counts: Vec<u32> = (0..100)
+            .map(|bin| if bin % 13 == 0 { 50 } else { 1 })
+            .collect();
+        let scene = Scene {
+            serial: 0,
+            index: Arc::default(),
+            anchor: editor_core::MmPoint::new(0., 0.),
+            objects: Vec::new(),
+            primitives: Vec::new(),
+            points: counts.iter().map(|&count| [0., count as f32]).collect(),
+            ids: Vec::new(),
+            ppm: 10.,
+        };
+        let primitive = Primitive {
+            meta: [3, 1, 0, 0],
+            a: [1., 0., 100., 0.],
+            b: [100., 50., 0., 0.],
+        };
+        let estimate =
+            binned_polygon_work(&scene, &primitive, [-1., 1.], [0., 1.], 10., 0., 0.).unwrap();
+        for phase in 0..40 {
+            let actual: u32 = (0..10)
+                .map(|row| {
+                    let y = (row as f64 + phase as f64 / 40.) / 10.;
+                    counts[(y * 100.).floor().min(99.) as usize]
+                })
+                .sum();
+            assert!(estimate >= f64::from(actual), "phase={phase}");
         }
     }
 }

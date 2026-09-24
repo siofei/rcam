@@ -1,7 +1,7 @@
 //! Bounded, ordered, display-only world-space bins. No manufacturing state.
 use crate::display::Object;
 
-pub const MAX_GRID_CELLS: usize = 16_384;
+pub const MAX_GRID_CELLS: usize = 262_144;
 pub const MAX_CELL_REFERENCES: usize = 1_000_000;
 const MAX_RENDER_OBJECTS: usize = 1_000_000;
 const MAX_OBJECTS_PER_CELL: usize = 16_384;
@@ -77,7 +77,14 @@ impl RenderIndex {
         }
         let w = (f64::from(world[2]) - f64::from(world[0])).max(1e-20);
         let h = (f64::from(world[3]) - f64::from(world[1])).max(1e-20);
-        let cells = bounds.len().clamp(1, MAX_GRID_CELLS);
+        // Denser bins keep zoomed, sparse viewports from charging every
+        // sample for unrelated nearby objects. Reference budget still bounds
+        // the index and the loop below coarsens when necessary.
+        let cells = bounds
+            .len()
+            .saturating_mul(16)
+            .max(if bounds.len() >= 16 { 4096 } else { 1 })
+            .clamp(1, MAX_GRID_CELLS);
         let mut cols = ((cells as f64 * w / h).sqrt().ceil() as usize).clamp(1, cells);
         let mut rows = (cells / cols).max(1);
         loop {
@@ -200,7 +207,9 @@ impl RenderIndex {
     }
     /// Bound actual per-cell candidate visits, not the densest cell multiplied
     /// by every pixel in an otherwise sparse viewport. The shader indexes one
-    /// cell per sample; a four-pixel halo covers AA/selected-edge samples.
+    /// cell per sample. The viewport already includes a two-pixel halo for
+    /// AA/selected-edge samples, so adding a halo to every intersected cell
+    /// would charge the same pixels repeatedly on a fine grid.
     pub fn sample_candidate_work(&self, view: &ViewportRenderSet, ppm: f64) -> f64 {
         let Some([x0, y0, x1, y1]) = view.cell_range else {
             return 0.;
@@ -218,7 +227,7 @@ impl RenderIndex {
                     let hi = origin + (coordinate + 1) as f64 / inverse;
                     let visible =
                         hi.min(view.world_bounds[axis + 2]) - lo.max(view.world_bounds[axis]);
-                    dimensions[axis] = (visible * ppm + 4.).max(0.);
+                    dimensions[axis] = (visible * ppm).max(0.);
                 }
                 work += dimensions[0] * dimensions[1] * f64::from(count) * 20.;
             }

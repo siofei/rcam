@@ -10,8 +10,8 @@ use std::f64::consts::TAU;
 const MAX_ITEMS: usize = 2_000_000;
 const POLYGON_BIN_THRESHOLD: usize = 32;
 const POLYGON_BIN_TARGET_EDGES: usize = 1;
-const POLYGON_BIN_MAX_COUNT: usize = 256;
-const POLYGON_BIN_MAX_STORAGE_MULTIPLIER: usize = 16;
+const POLYGON_BIN_MAX_COUNT: usize = 4096;
+const POLYGON_BIN_MAX_STORAGE_MULTIPLIER: usize = 64;
 type PolygonEdge = ([f32; 2], [f32; 2]);
 type PolygonBins = (Vec<Vec<PolygonEdge>>, f32, f32, usize);
 #[repr(C)]
@@ -395,20 +395,28 @@ impl Scene {
         }
         let end = self.primitives.len();
         let mut bounds = self.primitive_bounds(start, end);
-        // Use the actual arc sweeps, not full-circle envelopes: a nearly
-        // straight text edge can have a huge radius. Keep bounds independent
-        // of display LOD and round outward to enclose local f32 vertices.
-        if matches!(geometry, SemanticGeometry::Region { .. }) {
+        // Use actual arc sweeps rather than the full-circle envelope of the
+        // shader primitive. Short imported arcs otherwise occupy entire
+        // index cells and can falsely exhaust the viewport work budget.
+        if matches!(
+            geometry,
+            SemanticGeometry::Region { .. } | SemanticGeometry::Arc { .. }
+        ) {
             let exact = geometries_bounds([geometry], &[])
                 .map_err(|e| format!("VALIDATION_FAILED: {e}"))?
-                .ok_or("VALIDATION_FAILED: empty Region bounds")?;
+                .ok_or("VALIDATION_FAILED: empty arc/Region bounds")?;
             let lo = self.point(MmPoint::new(exact.min_x_mm, exact.min_y_mm))?;
             let hi = self.point(MmPoint::new(exact.max_x_mm, exact.max_y_mm))?;
+            let pad = if matches!(geometry, SemanticGeometry::Arc { .. }) {
+                f32::EPSILON * 16. * lo.into_iter().chain(hi).map(f32::abs).fold(1., f32::max)
+            } else {
+                0.
+            };
             bounds = [
-                lo[0].next_down(),
-                lo[1].next_down(),
-                hi[0].next_up(),
-                hi[1].next_up(),
+                lo[0].next_down() - pad,
+                lo[1].next_down() - pad,
+                hi[0].next_up() + pad,
+                hi[1].next_up() + pad,
             ];
         }
         let mode = match (display_mode, hairline) {
@@ -520,15 +528,34 @@ impl Scene {
             let edge_references = bins.iter().map(Vec::len).sum::<usize>();
             let extra = local
                 .len()
-                .saturating_add(bins.len())
-                .saturating_add(edge_references.saturating_mul(2));
+                .saturating_add(bins.len().saturating_mul(2))
+                .saturating_add(edge_references.saturating_mul(4));
             self.check_budget(extra.saturating_add(1))?;
+            let x_min = local
+                .iter()
+                .map(|point| point[0])
+                .fold(f32::INFINITY, f32::min);
+            let x_max = local
+                .iter()
+                .map(|point| point[0])
+                .fold(f32::NEG_INFINITY, f32::max);
             self.points.extend_from_slice(&local);
             let headers = self.points.len();
-            self.points.resize(headers + bins.len(), [0.; 2]);
-            for (index, bin) in bins.iter().enumerate() {
+            let left_headers = headers + bins.len();
+            self.points.resize(headers + bins.len() * 2, [0.; 2]);
+            for (index, mut bin) in bins.into_iter().enumerate() {
+                // The right ray ignores edges wholly left of p; the left ray
+                // ignores edges wholly right of p. Sorting lets the shader
+                // stop without changing winding or even/odd fill semantics.
+                bin.sort_by(|(a, b), (c, d)| c[0].max(d[0]).total_cmp(&a[0].max(b[0])));
                 self.points[headers + index] = [self.points.len() as f32, bin.len() as f32];
-                for &(a, b) in bin {
+                for &(a, b) in &bin {
+                    self.points.push(a);
+                    self.points.push(b);
+                }
+                bin.sort_by(|(a, b), (c, d)| a[0].min(b[0]).total_cmp(&c[0].min(d[0])));
+                self.points[left_headers + index] = [self.points.len() as f32, bin.len() as f32];
+                for (a, b) in bin {
                     self.points.push(a);
                     self.points.push(b);
                 }
@@ -544,7 +571,12 @@ impl Scene {
                     local.len() as u32,
                 ],
                 a: [u32::from(winding) as f32, y_min, inverse_height, 0.],
-                b: [bins.len() as f32, max_edges as f32, 0., 0.],
+                b: [
+                    (left_headers - headers) as f32,
+                    max_edges as f32,
+                    x_min + (x_max - x_min) * 0.5,
+                    left_headers as f32,
+                ],
             });
             return Ok(());
         }
@@ -604,7 +636,9 @@ impl Scene {
                 }
             }
             let references = bins.iter().map(Vec::len).sum::<usize>();
-            let storage = count.saturating_add(references.saturating_mul(2));
+            let storage = count
+                .saturating_mul(2)
+                .saturating_add(references.saturating_mul(4));
             let max_edges = bins.iter().map(Vec::len).max().unwrap_or(0);
             let available = MAX_ITEMS
                 .saturating_sub(self.points.len())

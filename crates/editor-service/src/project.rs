@@ -53,21 +53,31 @@ impl S1DocumentRecord {
             },
             workspace,
             layer_order: self.display_order.clone(),
+            // The codec rebuilds layers in layer_order. Match that order in
+            // the pre-save snapshot so importing above an existing layer
+            // cannot fail the exact project round-trip check.
             layers: self
-                .document
-                .layers
+                .display_order
                 .iter()
-                .map(|layer| LayerProjectState {
-                    layer: layer.clone(),
-                    workspace: self
-                        .workspace
-                        .get(&layer.id)
-                        .cloned()
-                        .expect("live layer has workspace state"),
-                    provenance: self
-                        .sources
-                        .get(&layer.id)
-                        .and_then(|source| source.provenance.clone()),
+                .map(|id| {
+                    let layer = self
+                        .document
+                        .layers
+                        .iter()
+                        .find(|layer| &layer.id == id)
+                        .expect("display layer exists in document");
+                    LayerProjectState {
+                        layer: layer.clone(),
+                        workspace: self
+                            .workspace
+                            .get(&layer.id)
+                            .cloned()
+                            .expect("live layer has workspace state"),
+                        provenance: self
+                            .sources
+                            .get(&layer.id)
+                            .and_then(|source| source.provenance.clone()),
+                    }
                 })
                 .collect(),
             apertures: self.document.apertures.clone(),

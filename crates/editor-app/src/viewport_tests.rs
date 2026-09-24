@@ -105,16 +105,13 @@ fn viewport_dense_offscreen_budget_and_hundred_thousand_visit_counter() {
         center: MmPoint::new(1000., 1000.),
         ..camera
     };
-    assert!(
-        gpu::prepare_measured(&s, dense, rect(), 1., &flags, MmPoint::new(0., 0.))
-            .err()
-            .unwrap()
-            .contains("candidate_sample_work")
-    );
+    let dense_view =
+        gpu::prepare_measured(&s, dense, rect(), 1., &flags, MmPoint::new(0., 0.)).unwrap();
+    assert_eq!(dense_view.stats.candidate_count, 1000);
     assert!(Arc::ptr_eq(&s.index, &sparse.index));
     println!(
         "VIEWPORT_DENSE {}",
-        serde_json::json!({"global_max":s.index.max_candidates,"sparse_max":sparse.stats.max_candidates_in_view,"sparse_work":sparse.stats.estimated_work,"dense_status":"RESOURCE_LIMIT"})
+        serde_json::json!({"global_max":s.index.max_candidates,"sparse_max":sparse.stats.max_candidates_in_view,"sparse_work":sparse.stats.estimated_work,"dense_work":dense_view.stats.estimated_work,"dense_status":"PASS"})
     );
 }
 #[test]
