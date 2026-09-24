@@ -83,6 +83,7 @@ fn sample_project() -> RCamProject {
             imported_sha256: "a".repeat(64),
             imported_at: "2026-01-01T00:00:00Z".into(),
         }),
+        compatibility_issues: Vec::new(),
     };
     let layer_b = LayerProjectState {
         layer: SemanticLayer {
@@ -95,6 +96,7 @@ fn sample_project() -> RCamProject {
             Color::rgb(20, 200, 20),
         ),
         provenance: None,
+        compatibility_issues: Vec::new(),
     };
 
     RCamProject {

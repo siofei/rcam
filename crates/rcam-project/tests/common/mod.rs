@@ -87,6 +87,7 @@ pub fn big_project(openings: usize, instances: usize) -> RCamProject {
             },
             workspace: LayerWorkspaceState::new(LayerKind::Gerber, "l1", Color::rgb(0, 0, 0)),
             provenance: None,
+            compatibility_issues: Vec::new(),
         }],
         apertures: vec![aperture],
         block_definitions: vec![definition],

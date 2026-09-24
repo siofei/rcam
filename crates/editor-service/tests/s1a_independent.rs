@@ -68,6 +68,8 @@ fn public_truth_opens_or_rejects_and_normalizes_without_source_writes() {
                     | "region_not_closed"
                     | "fs_width_overflow"
                     | "g75_region_deviation_unsafe"
+                    | "mi_nonzero"
+                    | "rect_diagonal"
             );
             if compatibility_case {
                 if response["status"] != "completed" {

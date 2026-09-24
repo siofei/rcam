@@ -150,6 +150,7 @@ fn text_transaction_undo_redo_export_reopen_and_metrics() {
                         mode: "require_confirmation".into(),
                         categories: None,
                     },
+                    compatibility_precision_override_mm: None,
                 },
             )
             .unwrap_or_else(|e| panic!("{text} export: {e:?}"));
@@ -238,6 +239,7 @@ fn hole_keeps_background_and_empty_hole_after_reopen() {
                     mode: "require_confirmation".into(),
                     categories: None,
                 },
+                compatibility_precision_override_mm: None,
             },
         )
         .unwrap();
@@ -385,6 +387,7 @@ fn multiline_stroke_and_outline_share_atomic_export_workflow() {
                         mode: "require_confirmation".into(),
                         categories: None,
                     },
+                    compatibility_precision_override_mm: None,
                 },
             )
             .unwrap();

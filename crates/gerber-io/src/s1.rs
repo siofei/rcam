@@ -112,6 +112,18 @@ pub enum S1Error {
     },
 }
 
+impl S1Error {
+    pub fn allows_compatibility_fallback(&self) -> bool {
+        matches!(
+            self,
+            Self::Syntax { .. }
+                | Self::Semantic { .. }
+                | Self::Unsupported { .. }
+                | Self::InvalidUtf8
+        )
+    }
+}
+
 impl std::fmt::Display for S1Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -303,6 +315,26 @@ fn prepare_source(
                 .compatibility_issues
                 .push("兼容导入：空 AD 占位声明已忽略".into());
             continue;
+        }
+        if line.starts_with("%AM")
+            && let Some(code) = line
+                .split('*')
+                .skip(1)
+                .map(str::trim_start)
+                .find_map(|segment| {
+                    if segment.starts_with("5,") {
+                        Some("AM primitive 5 Polygon")
+                    } else if segment.starts_with("6,") {
+                        Some("AM primitive 6 Moiré")
+                    } else {
+                        None
+                    }
+                })
+        {
+            return Err(S1Error::Unsupported {
+                line: line_no,
+                feature: code.into(),
+            });
         }
         let mut parser_line = line.to_string();
         if compatibility
@@ -613,6 +645,30 @@ fn normalize_lower_left_macro(source: &str) -> (String, usize) {
                     fields[3],
                     values[3] + values[1] / 2.0,
                     values[4] + values[2] / 2.0,
+                    fields[6]
+                ));
+                count += 1;
+                continue;
+            }
+            // Keep macro variables as expressions; the normal macro parser and
+            // semantic validator still resolve actual AD arguments and reject
+            // missing variables or nonpositive dimensions.
+            if fields[1..].iter().all(|field| {
+                !field.trim().is_empty()
+                    && field.chars().all(|c| {
+                        c.is_ascii_digit()
+                            || matches!(c, '.' | '$' | '+' | '-' | '/' | 'x' | 'X' | '(' | ')')
+                    })
+            }) {
+                output.push_str(&format!(
+                    "21,{},{},{},({}+({})/2),({}+({})/2),{}*",
+                    fields[1],
+                    fields[2],
+                    fields[3],
+                    fields[4],
+                    fields[2],
+                    fields[5],
+                    fields[3],
                     fields[6]
                 ));
                 count += 1;
@@ -1267,8 +1323,8 @@ fn convert_aperture(
                 && circle.diameter == 0.0
                 && circle.hole_diameter.is_none()
             {
-                compat.note("零直径圆光圈以 2 µm 可编辑占位替代");
-                0.000002
+                compat.note("零直径圆光圈已损失性转换为 2 µm 圆形开口；原始 C,0 不代表该制造面积，导出需显式确认");
+                0.002
             } else {
                 checked_value(circle.diameter, scale, "circle diameter")?
             },

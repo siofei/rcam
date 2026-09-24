@@ -112,6 +112,7 @@ fn geometry_matrix() {
                                 mode: "require_confirmation".into(),
                                 categories: None,
                             },
+                            compatibility_precision_override_mm: None,
                         },
                     );
                     row["writer_ms"] = json!(start.elapsed().as_secs_f64() * 1000.);

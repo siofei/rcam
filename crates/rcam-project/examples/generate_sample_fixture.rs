@@ -91,6 +91,7 @@ fn build_project() -> RCamProject {
             Color::rgb(120, 160, 220),
         ),
         provenance: None,
+        compatibility_issues: Vec::new(),
     };
 
     RCamProject {

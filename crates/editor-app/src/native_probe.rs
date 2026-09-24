@@ -159,6 +159,9 @@ pub fn action_text(a: &Action) -> String {
         Action::Delete => "DeleteObjects".into(),
         Action::History(redo) => format!("History {}", if *redo { "redo" } else { "undo" }),
         Action::Save(path, layer, _) => format!("ExportLayer {layer} -> {}", basename(path)),
+        Action::SaveWithPrecision(path, layer, _, q) => {
+            format!("ExportLayer {layer} -> {} at {q}mm", basename(path))
+        }
         Action::Close(discard) => format!("Close discard={discard}"),
         Action::TextCreate(_) => "TextCreate".into(),
         _ => "Other".into(),

@@ -1,7 +1,35 @@
 use editor_core::{
     ApertureShape, ArcDirection, Exposure, MacroPrimitive, MmPoint, SemanticGeometry,
 };
-use gerber_io::{parse_s1, parse_s1_compat, write_s1};
+use gerber_io::{S1Error, parse_s1, parse_s1_compat, write_s1};
+
+#[test]
+fn fallback_policy_excludes_resource_and_io_failures() {
+    assert!(S1Error::InvalidUtf8.allows_compatibility_fallback());
+    assert!(
+        S1Error::Unsupported {
+            line: 1,
+            feature: "MI".into()
+        }
+        .allows_compatibility_fallback()
+    );
+    assert!(
+        !S1Error::ResourceLimit {
+            resource: "source_bytes",
+            limit: 1,
+            actual: 2
+        }
+        .allows_compatibility_fallback()
+    );
+    assert!(
+        !S1Error::Io {
+            path: "x".into(),
+            message: "failed".into()
+        }
+        .allows_compatibility_fallback()
+    );
+    assert!(!S1Error::TargetExists("x".into()).allows_compatibility_fallback());
+}
 
 #[test]
 fn leading_zero_format_integer_overflow_is_explicitly_widened() {
@@ -82,7 +110,7 @@ fn zero_diameter_aperture_is_marked_and_exportable() {
             .any(|x| x.contains("零直径"))
     );
     assert!(matches!(scene.document.apertures[0].shape,
-        ApertureShape::Circle { diameter_mm, .. } if (diameter_mm - 0.000002).abs() < 1e-12));
+        ApertureShape::Circle { diameter_mm, .. } if (diameter_mm - 0.002).abs() < 1e-12));
     assert!(write_s1(&scene.document).is_ok());
 }
 

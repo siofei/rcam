@@ -871,6 +871,9 @@ pub struct ExportParams {
     pub path: String,
     pub overwrite: OverwritePolicy,
     pub metadata_policy: MetadataPolicy,
+    /// Explicitly approved finer manufacturing grid for compatibility geometry.
+    #[serde(default)]
+    pub compatibility_precision_override_mm: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2044,7 +2047,7 @@ impl ApplicationService {
         let target = access.write_path(&params.path)?;
         let snapshot = workspace::layer_export_snapshot(record, &params.layer_id)?;
         let metadata = serde_json::to_value(&snapshot.source).map_err(serialize_error)?;
-        validate_export_policy(&params, &target, &metadata)?;
+        validate_export_policy(&params, &target, &metadata, &snapshot)?;
         // Resolve BlockInstance geometry into ordinary primitives before
         // precision normalization runs, so the current ManufacturingPrecision
         // governs former block geometry exactly like top-level geometry
@@ -2052,17 +2055,57 @@ impl ApplicationService {
         // when the block definition was captured.
         let flattened =
             gerber_io::flatten_block_instances_for_export(&snapshot).map_err(map_s1_error)?;
-        let output_precision = if flattened.source.compatibility_issues.is_empty() {
-            record.manufacturing_precision
-        } else {
-            // Preserve the source's tiny contours in the bounded FS 6.6 writer.
-            // The compatibility warning stays attached to this layer.
-            ManufacturingPrecision {
-                resolution_mm: record.manufacturing_precision.resolution_mm.min(0.000001),
+        let project_precision = record.manufacturing_precision;
+        let project_result = gerber_io::normalize_manufacturing(&flattened, project_precision);
+        let document = match project_result {
+            Ok(document) => {
+                if params.compatibility_precision_override_mm.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "params.compatibility_precision_override_mm",
+                        "project precision already preserves this geometry",
+                    ));
+                }
+                document
+            }
+            Err(error) if !flattened.source.compatibility_issues.is_empty() => {
+                let required = [0.001, 0.0001, 0.00001, 0.000001]
+                    .into_iter()
+                    .filter(|q| *q < project_precision.resolution_mm)
+                    .find_map(|q| {
+                        gerber_io::normalize_manufacturing(
+                            &flattened,
+                            ManufacturingPrecision { resolution_mm: q },
+                        )
+                        .ok()
+                        .map(|document| (q, document))
+                    });
+                let Some((required_resolution_mm, document)) = required else {
+                    return Err(ServiceError::invalid_field(
+                        "manufacturing_precision",
+                        &error,
+                    ));
+                };
+                if params.compatibility_precision_override_mm != Some(required_resolution_mm) {
+                    return Err(ServiceError {
+                        code: "CONFIRMATION_REQUIRED".into(),
+                        message: "compatibility geometry requires an explicitly approved finer export precision".into(),
+                        details: serde_json::json!({
+                            "reason": "compatibility_precision_override",
+                            "project_resolution_mm": project_precision.resolution_mm,
+                            "required_resolution_mm": required_resolution_mm,
+                            "project_normalization_error": error,
+                        }),
+                    });
+                }
+                document
+            }
+            Err(error) => {
+                return Err(ServiceError::invalid_field(
+                    "manufacturing_precision",
+                    &error,
+                ));
             }
         };
-        let document = gerber_io::normalize_manufacturing(&flattened, output_precision)
-            .map_err(|e| ServiceError::invalid_field("manufacturing_precision", &e))?;
         let temp = temporary_output_path(&target)?;
         if temp.exists() {
             return Err(ServiceError {
@@ -3258,7 +3301,22 @@ fn validate_export_policy(
     params: &ExportParams,
     target: &Path,
     metadata: &Value,
+    snapshot: &SemanticDocument,
 ) -> Result<(), ServiceError> {
+    let compatibility_regions = snapshot
+        .layers
+        .iter()
+        .flat_map(|layer| &layer.objects)
+        .filter(|object| matches!(
+            &object.geometry,
+            SemanticGeometry::Region { contours }
+                if contours.iter().any(|contour| contour.role == editor_core::RegionRole::CompatibilitySolid)
+        ))
+        .count();
+    let mut required_categories = metadata_categories(metadata);
+    if compatibility_regions > 0 {
+        required_categories.push("nonstandard_compatibility_region".into());
+    }
     match params.overwrite.mode.as_str() {
         "deny" => {
             if target.exists() {
@@ -3287,15 +3345,22 @@ fn validate_export_policy(
     }
     match params.metadata_policy.mode.as_str() {
         "require_confirmation" => {
-            let categories = metadata_categories(metadata);
-            if !categories.is_empty() {
+            if !required_categories.is_empty() {
                 return Err(ServiceError {
                     code: "CONFIRMATION_REQUIRED".into(),
                     message: "export requires explicit source metadata and compatibility warning confirmation"
                         .into(),
                     details: serde_json::json!({
                         "reason": "metadata_loss",
-                        "categories": categories,
+                        "categories": required_categories,
+                        "compatibility_warning": {
+                            "layer_id": params.layer_id,
+                            "issue_categories": snapshot.source.compatibility_issues,
+                            "issue_category_codes": compatibility_issue_category_codes(&snapshot.source.compatibility_issues),
+                            "contains_nonstandard_compatibility_region": compatibility_regions > 0,
+                            "nonstandard_compatibility_region_count": compatibility_regions,
+                            "contains_lossy_zero_aperture_conversion": snapshot.source.compatibility_issues.iter().any(|issue| issue.contains("零直径圆光圈")),
+                        },
                     }),
                 });
             }
@@ -3312,16 +3377,17 @@ fn validate_export_policy(
                     "drop_listed requires one or more categories",
                 ));
             }
-            let required = metadata_categories(metadata);
             let unknown = listed
                 .iter()
                 .filter(|category| {
                     !is_lossy_metadata_category(category)
-                        || metadata.get(category.as_str()).is_none()
+                        || (metadata.get(category.as_str()).is_none()
+                            && !(category.as_str() == "nonstandard_compatibility_region"
+                                && compatibility_regions > 0))
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            let missing = required
+            let missing = required_categories
                 .iter()
                 .filter(|category| !listed.iter().any(|item| item == *category))
                 .cloned()
@@ -3347,6 +3413,30 @@ fn validate_export_policy(
         }
     }
     Ok(())
+}
+
+fn compatibility_issue_category_codes(issues: &[String]) -> Vec<&'static str> {
+    let mut codes = Vec::new();
+    for issue in issues {
+        let code = if issue.contains("零直径") {
+            "manufacturing_size_changed"
+        } else if issue.contains("非规范轮廓") {
+            "nonstandard_region"
+        } else if issue.contains("已忽略")
+            || issue.contains("日期")
+            || issue.contains("属性")
+            || issue.contains("UTF-8")
+            || issue.contains("DOS EOF")
+        {
+            "metadata_ignored"
+        } else {
+            "geometry_repaired"
+        };
+        if !codes.contains(&code) {
+            codes.push(code);
+        }
+    }
+    codes
 }
 
 fn metadata_categories(metadata: &Value) -> Vec<String> {
@@ -3385,6 +3475,7 @@ fn is_lossy_metadata_category(category: &str) -> bool {
             | "layer_name"
             | "section_names"
             | "compatibility_issues"
+            | "nonstandard_compatibility_region"
             | "encoding"
             | "file_attributes"
             | "dropped_categories"

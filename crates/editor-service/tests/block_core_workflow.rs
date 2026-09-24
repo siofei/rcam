@@ -301,6 +301,7 @@ fn create_definition_duplicate_rotate_mirror_move_metrics_bounds_export_reopen_u
                     mode: "require_confirmation".into(),
                     categories: None,
                 },
+                compatibility_precision_override_mm: None,
             },
         )
         .unwrap();
@@ -615,6 +616,7 @@ fn block_geometry_follows_current_manufacturing_precision_on_export() {
                     mode: "require_confirmation".into(),
                     categories: None,
                 },
+                compatibility_precision_override_mm: None,
             },
         )
         .unwrap();
@@ -750,6 +752,7 @@ fn block_export_fails_closed_when_precision_collapses_definition_geometry() {
                 mode: "require_confirmation".into(),
                 categories: None,
             },
+            compatibility_precision_override_mm: None,
         },
     );
     assert!(

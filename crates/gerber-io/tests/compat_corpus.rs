@@ -23,15 +23,18 @@ fn scan_real_corpus() {
                 bytes.len(),
                 scene.document.object_count()
             ),
-            Err(strict) => match gerber_io::parse_s1_compat(&bytes, relative) {
-                Ok(scene) => println!(
-                    "COMPAT\t{}\t{}\t{}\t{relative}\t{strict}",
-                    bytes.len(),
-                    scene.document.object_count(),
-                    scene.metadata.compatibility_issues.join(";")
-                ),
-                Err(error) => println!("REJECTED\t{}\t0\t0\t{relative}\t{error}", bytes.len()),
-            },
+            Err(strict) if strict.allows_compatibility_fallback() => {
+                match gerber_io::parse_s1_compat(&bytes, relative) {
+                    Ok(scene) => println!(
+                        "COMPAT\t{}\t{}\t{}\t{relative}\t{strict}",
+                        bytes.len(),
+                        scene.document.object_count(),
+                        scene.metadata.compatibility_issues.join(";")
+                    ),
+                    Err(error) => println!("REJECTED\t{}\t0\t0\t{relative}\t{error}", bytes.len()),
+                }
+            }
+            Err(error) => println!("REJECTED\t{}\t0\t0\t{relative}\t{error}", bytes.len()),
         }
     }
 }

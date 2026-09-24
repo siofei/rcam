@@ -79,6 +79,7 @@ fn policy_is_separate_atomic_and_normalizes_only_export_snapshot() {
                 mode: "require_confirmation".into(),
                 categories: None,
             },
+            compatibility_precision_override_mm: None,
         },
     );
     assert!(exported.is_ok(), "{exported:?}");
@@ -121,6 +122,7 @@ fn subgrid_arc_export_rejects_without_touching_files_or_state_and_finer_policy_w
                 mode: "require_confirmation".into(),
                 categories: None,
             },
+            compatibility_precision_override_mm: None,
         };
         assert!(
             s.export_layer(&info.document_id, "0", params.clone())
@@ -219,6 +221,7 @@ fn text_policy_matrix() {
                             mode: "require_confirmation".into(),
                             categories: None,
                         },
+                        compatibility_precision_override_mm: None,
                     },
                 )?;
                 Ok((objects, edges, export.bytes))

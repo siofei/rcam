@@ -377,6 +377,7 @@ fn accepted_custom_precision_exports_and_reopens_within_writer_budget() {
                 mode: "require_confirmation".into(),
                 categories: None,
             },
+            compatibility_precision_override_mm: None,
         },
     );
     if let Err(error) = exported {

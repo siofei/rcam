@@ -85,6 +85,7 @@ impl Run {
                         mode: "require_confirmation".into(),
                         categories: None,
                     },
+                    compatibility_precision_override_mm: None,
                 },
             )
             .unwrap();

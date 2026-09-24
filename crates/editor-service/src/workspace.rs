@@ -708,10 +708,7 @@ impl ApplicationService {
         let sha256 = sha256_hex(&bytes);
         let scene = match parse_s1(&bytes, document_id) {
             Ok(scene) => scene,
-            Err(
-                strict_error @ (gerber_io::S1Error::Semantic { .. }
-                | gerber_io::S1Error::Syntax { .. }),
-            ) => {
+            Err(strict_error) if strict_error.allows_compatibility_fallback() => {
                 let mut scene =
                     gerber_io::parse_s1_compat(&bytes, document_id).map_err(map_s1_error)?;
                 scene

@@ -88,6 +88,9 @@ pub struct LayerProjectState {
     pub workspace: LayerWorkspaceState,
     #[serde(default)]
     pub provenance: Option<ImportProvenance>,
+    /// Audit trail for lossy or nonstandard Gerber compatibility geometry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compatibility_issues: Vec<String>,
 }
 
 /// Reserved extension point (§42): a real `.rcam` schema position for board

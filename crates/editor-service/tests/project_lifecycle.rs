@@ -233,6 +233,7 @@ fn block_project_roundtrip_and_gerber_export_do_not_change_project_path() {
                     mode: "require_confirmation".into(),
                     categories: None,
                 },
+                compatibility_precision_override_mm: None,
             },
         )
         .unwrap();
@@ -315,6 +316,7 @@ fn four_display_units_survive_save_open_without_changing_manufacturing_or_gerber
                         mode: "require_confirmation".into(),
                         categories: None,
                     },
+                    compatibility_precision_override_mm: None,
                 },
             )
             .unwrap();

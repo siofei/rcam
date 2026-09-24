@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-09-24 · Gerber compatibility final closeout（Mac-first）
+
+Product Service 在严格解析返回 `Unsupported` 或 `InvalidUtf8` 时也执行一次兼容解析。零直径 C,0 占位明确为有损 2 µm（`0.002 mm`）；导出先按工程精度，兼容几何需要更细精度时由每次导出显式授权。96 个正式 AT 定义恢复至 S4-B3 `0a8e908`，兼容用例列在 `GERBER_COMPAT_ACCEPTANCE_ADDENDUM.md`。不据此声称 Windows、独立 CAM 制造等价或完整 V1 通过。
+
 ## 2026-09-24 · art08 图层隐藏后缩放恢复
 
 修复 `art08.art` 在隐藏图层期间改变画布倍率、再显示图层时触发的显示工作量误判：复杂 Region 按可见像素行与左右射线可达边估算，细化有界 RenderIndex、分箱密度与短圆弧的显示索引。补充 1017 点/mm 的真实恢复工程回归。显示准备失败时不再把相机强制回退到旧帧；触控板捏合在没有悬停指针时以画布中心缩放。原生复现还暴露 `.rcam` 保存的精确浮点和图层顺序往返失败，现保留精确 f64 并按显示顺序构建工程快照。真实样本与原生复测见 `ART08_ZOOM_RECOVERY_20260924_REVIEW.md`。制造几何、Gerber 导出和资源上限不变。

@@ -77,6 +77,11 @@ impl S1DocumentRecord {
                             .sources
                             .get(&layer.id)
                             .and_then(|source| source.provenance.clone()),
+                        compatibility_issues: self
+                            .sources
+                            .get(&layer.id)
+                            .map(|source| source.metadata.compatibility_issues.clone())
+                            .unwrap_or_default(),
                     }
                 })
                 .collect(),
@@ -291,6 +296,8 @@ impl ApplicationService {
             record.workspace.insert(id.clone(), layer.workspace);
             let mut source = workspace::LayerSource::empty();
             source.provenance = layer.provenance;
+            source.metadata.compatibility_issues = layer.compatibility_issues;
+            source.diagnostics = source.metadata.compatibility_issues.clone();
             record.sources.insert(id, source);
         }
         record.next_layer_number = record

@@ -169,6 +169,7 @@ pub enum Action {
     History(bool),
     Layer(LayerUpdateParams),
     Save(PathBuf, String, Option<Vec<String>>),
+    SaveWithPrecision(PathBuf, String, Option<Vec<String>>, f64),
     #[cfg(test)]
     Rebuild(f64),
     Viewport(MmPoint, BoundsMm, f64),
@@ -934,6 +935,16 @@ impl Model {
         layer: String,
         categories: Option<Vec<String>>,
     ) -> Result<(), ServiceError> {
+        self.save_with_precision(path, layer, categories, None)
+    }
+
+    pub fn save_with_precision(
+        &mut self,
+        path: &Path,
+        layer: String,
+        categories: Option<Vec<String>>,
+        compatibility_precision_override_mm: Option<f64>,
+    ) -> Result<(), ServiceError> {
         self.editable()?;
         let d = self.info()?;
         self.service.grant_file_access(
@@ -941,7 +952,7 @@ impl Model {
                 .ok_or_else(|| error("INVALID_ARGUMENT", "缺少输出目录"))?,
             true,
         )?;
-        let metadata_policy = match categories {
+        let metadata_policy = match categories.clone() {
             None => MetadataPolicy {
                 mode: "require_confirmation".into(),
                 categories: None,
@@ -962,6 +973,7 @@ impl Model {
                     expected_sha256: None,
                 },
                 metadata_policy,
+                compatibility_precision_override_mm,
             },
         );
         match result {
@@ -976,6 +988,7 @@ impl Model {
                 e.details["gui_target_path"] = serde_json::json!(path);
                 e.details["gui_document_id"] = serde_json::json!(d.document_id);
                 e.details["gui_revision"] = serde_json::json!(d.revision);
+                e.details["gui_confirmed_categories"] = serde_json::json!(categories);
                 Err(e)
             }
         }
@@ -1329,6 +1342,9 @@ impl Model {
                 self.refresh(false)
             }
             Action::Save(path, layer, c) => self.save(&path, layer, c),
+            Action::SaveWithPrecision(path, layer, c, q) => {
+                self.save_with_precision(&path, layer, c, Some(q))
+            }
             Action::Viewport(origin, bounds, ppm) => {
                 self.viewport = Some((origin, bounds));
                 self.ppm = ppm;
