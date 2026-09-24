@@ -1881,6 +1881,12 @@ invalid/overflow rejection, source preservation, policy dirty/revision/no-op,
 export/reparse, quantized Arc/Region topology rejection and text retention across
 create/cancel/reopen. Native Mac steps and actual results belong to the stage review.
 
+### S4-B3 压缩局部回归（2026-09-25）
+关联 AT-058/059/064/086/090/093、R15/R16/R20/R21/R22。仅修改 rcam-project codec、
+依赖许可清单和相应服务/codec 测试。需验证旧 Store 打开、新 Deflate 保存/重开、重复编码确定性、
+解压预算、虚报尺寸/截断/尾随数据/CRC 拒绝，以及真实工程每个条目和完整语义完全相等。
+不替代原生 GUI、Windows 或完整 V1 证据；原始样本只读。运行证据按独立目录保存。
+
 ### S4-C1 Object Snap 局部覆盖（2026-09-25）
 
 关联 AT-025/030/032/044/045/062/074/075 与 R08/R09/R13/R17/R18。增加解析制造边界特征、Block rigid transform、交点/Nearest、physical-pixel 半径、Layer/Class 过滤、Object/Grid resolver、hysteresis、Drag/Text/Measure/Base Point 与 `.rcam` Snap settings 往返。其自动化与 Mac 原生证据见 S4_C1_REVIEW；不修改 96 个 case 身份、阈值或 `required_platforms`，不替代 Windows、CORE10、P100K 或完整 V1 验收。

@@ -27,7 +27,11 @@ fn sample_fixture_decodes_validates_and_shares_one_definition() {
         "5 shared instances, not 5*40 flattened primitives"
     );
 
-    // Encoding it again is byte-identical (§38/§46).
+    // Keep the checked-in Store fixture as legacy-reader coverage. Compression
+    // changes the container bytes, while decoded content and new encodes stay stable.
     let re_encoded = rcam_project::encode_v1(&project).unwrap();
-    assert_eq!(bytes, re_encoded);
+    assert!(re_encoded.len() < bytes.len());
+    let reopened = rcam_project::decode(&re_encoded).unwrap();
+    assert_eq!(reopened, project);
+    assert_eq!(rcam_project::encode_v1(&reopened).unwrap(), re_encoded);
 }

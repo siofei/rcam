@@ -110,3 +110,13 @@ in preference to handwritten FFI or approximate directory scans.
 created for RCam under the workspace MIT OR Apache-2.0 license. No CircuitCAM font,
 Hershey dataset, operating-system font bytes, or third-party glyph table was copied.
 CircuitCAM screenshots supplied by the user inform interaction behavior only.
+
+## S4-B3 project compression (2026-09-25)
+
+`miniz_oxide` **0.8.9** (MIT OR Zlib OR Apache-2.0), source:
+https://github.com/Frommi/miniz_oxide . Already locked transitively; now directly used by
+`rcam-project` for raw Deflate level 6 and fixed-buffer inflation. Pure Rust on both
+macOS and Windows; no native zlib, filesystem extraction, window or GPU dependency.
+Reviewed locked source APIs `compress_to_vec` and `inflate::core::decompress`.
+Alternative: flate2 adds a wrapper/backend choice; a full zip crate would replace the
+existing bounded container parser unnecessarily. Transitive adler2/simd-adler32 remain locked.

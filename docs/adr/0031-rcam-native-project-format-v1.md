@@ -18,12 +18,11 @@ state、Manufacturing Precision、Import Provenance 等好几类必须持久化�
    `block_definition_ids`（Definition id 列表）作为索引，不重复存一份内容——避免同一份几何在
    `project.json` 与 `layers/*.json` 之间不一致。
 
-2. **ZIP 编解码是手写的、只用 store（不压缩）**，不引入 `zip` crate 依赖。这与代码库现有的做法一致——
-   `editor-service` 早就手写了一份不依赖 `sha2` crate 的 SHA-256（`sha256_hex`），现在把它搬到
-   `editor_core::hash`（S4-B2 起 `editor-service`/`rcam-project` 共用同一份实现，不重复）。手写 store-only
-   写入/读取给了完全可控的 fail-closed 读取策略（§8 要求“不能直接 `extractall()`”），比信任第三方解压器
-   更省心；store（无压缩）让“两次 encode 同一逻辑内容得到相同字节”这件事没有任何压缩级别方差需要锁定。
-   以后要加压缩，可以在同一个 manifest 形状下加一个新字段，不需要 schema 破坏性变更。
+2. **ZIP 支持 Store（0）和 Deflate（8）**（2026-09-25 S4-B3 压缩补充）。保留受控 ZIP
+   结构解析器，复用已锁定的纯 Rust `miniz_oxide =0.8.9`，固定 raw Deflate level 6；压缩不省空间时
+   使用 Store。schema v1 与 manifest 字段不变，哈希仍覆盖原始 JSON。新读取器兼容旧 Store 工程；
+   旧版应用不能打开含 Deflate 的新工程。读取先检查单项/总解压预算，再分配固定输出缓冲；必须达到
+   stream end、耗尽压缩输入、精确匹配解压长度，并通过 CRC/SHA 校验，失败不替换当前工程。
 
 3. **`crates/rcam-project` 是纯模型 + 编解码 crate**，依赖只有 `editor-core`/`serde`/`serde_json`，没有
    `egui`/`eframe`/`wgpu`/`winit`（`dependency_boundary.rs` 测试核对，镜像 `editor-service` 自己的边界测试）。

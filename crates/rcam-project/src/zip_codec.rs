@@ -1,12 +1,6 @@
-//! Deterministic, store-only (uncompressed) ZIP reader/writer (§5/§7/§8/§38
-//! of the S4-B2 brief). Hand-rolled rather than a `zip` crate dependency, the
-//! same call the codebase already made for SHA-256
-//! (`editor_core::hash::Sha256`): full control over the bounded, fail-closed
-//! reader policy instead of trusting a third-party extractor, and a trivial
-//! determinism story since there is no compression-level variance to pin.
-//! Compression can be added behind the same manifest later without a schema
-//! break (§5); v1 project sizes (shared block definitions, not flattened
-//! geometry) do not need it.
+//! Deterministic ZIP with Store (legacy) and raw Deflate entries.
+//! Compression uses pinned miniz_oxide level 6; schema and manifest hashes
+//! remain over the original JSON. Inflation has a fixed, pre-budgeted buffer.
 
 use crate::error::ProjectError;
 
@@ -49,29 +43,36 @@ pub fn write_zip(entries: &[ZipEntry]) -> Vec<u8> {
         let name = entry.path.as_bytes();
         let crc = crc32(entry.data);
         let size = entry.data.len() as u32;
+        let compressed = miniz_oxide::deflate::compress_to_vec(entry.data, 6);
+        let (method, payload): (u16, &[u8]) = if compressed.len() < entry.data.len() {
+            (8, &compressed)
+        } else {
+            (0, entry.data)
+        };
+        let compressed_size = payload.len() as u32;
         out.extend_from_slice(&LOCAL_HEADER_SIG.to_le_bytes());
         out.extend_from_slice(&VERSION.to_le_bytes());
         out.extend_from_slice(&GENERAL_PURPOSE_FLAG.to_le_bytes());
-        out.extend_from_slice(&0u16.to_le_bytes()); // method: store
+        out.extend_from_slice(&method.to_le_bytes()); // Store or Deflate
         out.extend_from_slice(&DOS_TIME.to_le_bytes());
         out.extend_from_slice(&DOS_DATE.to_le_bytes());
         out.extend_from_slice(&crc.to_le_bytes());
-        out.extend_from_slice(&size.to_le_bytes()); // compressed size
+        out.extend_from_slice(&compressed_size.to_le_bytes()); // compressed size
         out.extend_from_slice(&size.to_le_bytes()); // uncompressed size
         out.extend_from_slice(&(name.len() as u16).to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes()); // extra field length
         out.extend_from_slice(name);
-        out.extend_from_slice(entry.data);
+        out.extend_from_slice(payload);
 
         central.extend_from_slice(&CENTRAL_HEADER_SIG.to_le_bytes());
         central.extend_from_slice(&VERSION.to_le_bytes()); // version made by
         central.extend_from_slice(&VERSION.to_le_bytes()); // version needed
         central.extend_from_slice(&GENERAL_PURPOSE_FLAG.to_le_bytes());
-        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&method.to_le_bytes());
         central.extend_from_slice(&DOS_TIME.to_le_bytes());
         central.extend_from_slice(&DOS_DATE.to_le_bytes());
         central.extend_from_slice(&crc.to_le_bytes());
-        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&compressed_size.to_le_bytes());
         central.extend_from_slice(&size.to_le_bytes());
         central.extend_from_slice(&(name.len() as u16).to_le_bytes());
         central.extend_from_slice(&0u16.to_le_bytes()); // extra field length
@@ -201,12 +202,12 @@ pub fn read_zip(bytes: &[u8], policy: &ReadPolicy) -> Result<Vec<ReadEntry>, Pro
         if !seen_paths.insert(path.clone()) {
             return Err(ProjectError::DuplicatePath(path));
         }
-        if method != 0 {
+        if method != 0 && method != 8 {
             return Err(ProjectError::UnsupportedFeature(format!(
-                "compression method {method} (only store is supported)"
+                "compression method {method} (only Store and Deflate are supported)"
             )));
         }
-        if compressed_size != uncompressed_size {
+        if method == 0 && compressed_size != uncompressed_size {
             return Err(ProjectError::MalformedArchive(
                 "store entry must have equal compressed/uncompressed size".into(),
             ));
@@ -267,16 +268,45 @@ pub fn read_zip(bytes: &[u8], policy: &ReadPolicy) -> Result<Vec<ReadEntry>, Pro
             ));
         }
         let data_at = local_name_at + local_name_len + local_extra_len;
-        let data = bytes
-            .get(data_at..data_at + uncompressed_size)
+        if data_at + compressed_size > cd_offset {
+            return Err(ProjectError::MalformedArchive(
+                "entry overlaps central directory".into(),
+            ));
+        }
+        let payload = bytes
+            .get(data_at..data_at + compressed_size)
             .ok_or_else(|| ProjectError::MalformedArchive("truncated entry data".into()))?;
-        if crc32(data) != crc {
+        let data = if method == 0 {
+            payload.to_vec()
+        } else {
+            use miniz_oxide::inflate::{
+                TINFLStatus,
+                core::{DecompressorOxide, decompress, inflate_flags},
+            };
+            // Never let an untrusted stream grow the output beyond the declared,
+            // already budget-checked size. Require full stream and exact length.
+            let mut decoded = vec![0; uncompressed_size];
+            let (status, consumed, written) = decompress(
+                &mut DecompressorOxide::new(),
+                payload,
+                &mut decoded,
+                0,
+                inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
+            );
+            if status != TINFLStatus::Done
+                || consumed != payload.len()
+                || written != uncompressed_size
+            {
+                return Err(ProjectError::MalformedArchive(
+                    "invalid Deflate stream or size mismatch".into(),
+                ));
+            }
+            decoded
+        };
+        if crc32(&data) != crc {
             return Err(ProjectError::HashMismatch { path: path.clone() });
         }
-        entries.push(ReadEntry {
-            path,
-            data: data.to_vec(),
-        });
+        entries.push(ReadEntry { path, data });
         cursor = name_at + name_len + extra_len + comment_len;
     }
     if cursor != cd_offset + cd_size {
@@ -312,6 +342,66 @@ mod tests {
             max_entry_bytes: 1_000_000,
             max_path_len: 512,
         }
+    }
+
+    #[test]
+    fn compressed_and_legacy_entries_round_trip_deterministically() {
+        let large = vec![b'a'; 10000];
+        let entries = [
+            ZipEntry {
+                path: "large",
+                data: &large,
+            },
+            ZipEntry {
+                path: "small",
+                data: b"x",
+            },
+        ];
+        let bytes = write_zip(&entries);
+        assert_eq!(bytes, write_zip(&entries));
+        assert!(bytes.len() < 500);
+        assert_eq!(read_u16(&bytes, 8).unwrap(), 8);
+        let decoded = read_zip(&bytes, &policy()).unwrap();
+        assert_eq!(decoded[0].data, large);
+        assert_eq!(decoded[1].data, b"x");
+    }
+
+    #[test]
+    fn deflate_rejects_false_lengths_truncation_trailing_bytes_and_crc() {
+        let original = write_zip(&[ZipEntry {
+            path: "a",
+            data: &vec![b'a'; 1000],
+        }]);
+        let cd = read_u32(&original, original.len() - 6).unwrap() as usize;
+        for size in [0u32, 999, 1001] {
+            let mut bytes = original.clone();
+            bytes[22..26].copy_from_slice(&size.to_le_bytes());
+            bytes[cd + 24..cd + 28].copy_from_slice(&size.to_le_bytes());
+            assert!(read_zip(&bytes, &policy()).is_err());
+        }
+        for delta in [-1i32, 1] {
+            let mut bytes = original.clone();
+            let end = cd - 1;
+            if delta < 0 {
+                bytes.remove(end);
+            } else {
+                bytes.insert(cd, 0);
+            }
+            let new_cd = (cd as i32 + delta) as usize;
+            let size = (read_u32(&original, 18).unwrap() as i32 + delta) as u32;
+            bytes[18..22].copy_from_slice(&size.to_le_bytes());
+            bytes[new_cd + 20..new_cd + 24].copy_from_slice(&size.to_le_bytes());
+            let eocd_offset = bytes.len() - 6;
+            bytes[eocd_offset..eocd_offset + 4].copy_from_slice(&(new_cd as u32).to_le_bytes());
+            assert!(read_zip(&bytes, &policy()).is_err());
+        }
+        let mut bytes = original;
+        bytes[14] ^= 1;
+        bytes[cd + 16] ^= 1;
+        assert!(matches!(
+            read_zip(&bytes, &policy()),
+            Err(ProjectError::HashMismatch { .. })
+        ));
     }
 
     #[test]

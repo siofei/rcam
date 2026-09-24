@@ -185,7 +185,7 @@ fn all_display_units_round_trip_with_deterministic_bytes() {
         project.workspace.display_unit = unit;
         let encoded = encode_v1(&project).unwrap();
         assert!(
-            encoded
+            decoded_archive_bytes(&encoded)
                 .windows(spelling.len())
                 .any(|part| part == spelling.as_bytes())
         );
@@ -421,7 +421,7 @@ fn solo_selection_and_app_preferences_have_no_schema_field_to_persist() {
     // types themselves have no Solo/Selection/shortcut/panel-width/recent-
     // color/theme field to serialize in the first place.
     let bytes = encode_v1(&sample_project()).unwrap();
-    let text = String::from_utf8(bytes).unwrap_or_default();
+    let text = String::from_utf8(decoded_archive_bytes(&bytes)).unwrap();
     for forbidden in [
         "solo",
         "\"selection\"",
@@ -610,4 +610,20 @@ mod rcam_project_test_support {
             .map(|e| (e.path, e.data))
             .collect()
     }
+}
+
+fn decoded_archive_bytes(bytes: &[u8]) -> Vec<u8> {
+    rcam_project::zip_codec::read_zip(
+        bytes,
+        &rcam_project::zip_codec::ReadPolicy {
+            max_entries: 20000,
+            max_uncompressed_bytes: 512 * 1024 * 1024,
+            max_entry_bytes: 128 * 1024 * 1024,
+            max_path_len: 512,
+        },
+    )
+    .unwrap()
+    .into_iter()
+    .flat_map(|entry| entry.data)
+    .collect()
 }

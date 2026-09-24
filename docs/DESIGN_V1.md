@@ -1182,3 +1182,8 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 一个 Workspace 含多个独立 Gerber Layer；Gerber 只 Import/Export（第 22 章）；Export 不清 dirty、不建 source link；
 Save/Save As 为 `.rcam` 保留。View state（颜色/可见/可选/锁定/层序/显示模式/分类样式/面板宽度）不影响 writer bytes。
 不冻结 `.rcam`；S4-B2 待审查后另行启动。原生 Mac 验收未执行前不声称 S4-B1 PASS。
+
+### S4-B3 工程压缩补充（2026-09-25）
+原生工程 ZIP 支持 Store/Deflate，默认固定 level 6 无损压缩，仍使用 schema v1；详见 ADR 0031。
+新读取器兼容旧工程；解压不改变制造 f64 数据，预算/校验/原子保存保持。范围 R15/R16/R20/R21/R22，
+局部关联 AT-058/059/064/086/090/093，不扩展 S4-C 或双平台验收声明。

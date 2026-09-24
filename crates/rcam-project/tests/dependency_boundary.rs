@@ -3,7 +3,7 @@
 //! `editor-service`'s own `dependency_boundary.rs`.
 use std::{collections::BTreeSet, process::Command};
 
-const ALLOWED: &str = "rcam-project editor-core serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn itoa memchr zmij";
+const ALLOWED: &str = "rcam-project miniz_oxide adler2 simd-adler32 editor-core serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn itoa memchr zmij";
 
 fn unreviewed(tree: &str) -> BTreeSet<&str> {
     let allowed: BTreeSet<_> = ALLOWED.split_whitespace().collect();
