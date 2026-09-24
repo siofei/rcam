@@ -96,7 +96,19 @@ impl EditorApp {
                                 .borrow_mut()
                                 .push(RowEvent::Settings(l.layer_id.clone()));
                         }
-                        let mut name = RichText::new(&l.display_name);
+                        let compatibility = l
+                            .import_diagnostics
+                            .iter()
+                            .any(|line| line.starts_with("兼容导入："));
+                        let label = if compatibility {
+                            format!("⚠ {}", l.display_name)
+                        } else {
+                            l.display_name.clone()
+                        };
+                        let mut name = RichText::new(label.clone());
+                        if compatibility {
+                            name = name.color(egui::Color32::YELLOW);
+                        }
                         if l.is_active {
                             name = name.strong();
                         }
@@ -112,7 +124,7 @@ impl EditorApp {
                         note("name", name_rect);
                         if probing {
                             let galley = ui.painter().layout_no_wrap(
-                                l.display_name.clone(),
+                                label,
                                 egui::TextStyle::Body.resolve(ui.style()),
                                 Color32::WHITE,
                             );
@@ -153,6 +165,12 @@ impl EditorApp {
                                     ui.label("不可选择");
                                 }
                                 if !l.import_diagnostics.is_empty() {
+                                    if compatibility {
+                                        ui.colored_label(
+                                            egui::Color32::YELLOW,
+                                            "含兼容解释的几何，编辑和导出前请查看图层设置",
+                                        );
+                                    }
                                     ui.label(format!(
                                         "解析提示 {} 条（见图层设置）",
                                         l.import_diagnostics.len()

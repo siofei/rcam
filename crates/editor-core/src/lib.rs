@@ -494,6 +494,9 @@ pub enum RegionEdge {
 pub enum RegionRole {
     Solid,
     Hole,
+    /// Invalid source contour retained with a deterministic winding interpretation.
+    /// It remains visibly marked as compatibility geometry in the project.
+    CompatibilitySolid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -615,6 +618,9 @@ pub struct SourceMetadata {
     /// Repeated LN labels identify source sections rather than one whole layer.
     #[serde(default)]
     pub section_names: Vec<String>,
+    /// Explicit source geometry repairs used by compatibility import.
+    #[serde(default)]
+    pub compatibility_issues: Vec<String>,
     pub encoding: Option<String>,
     pub file_attributes: Vec<String>,
     pub dropped_categories: Vec<String>,
@@ -1076,7 +1082,7 @@ pub fn validate_region_contour(contour: &RegionContour) -> Result<(), SemanticEr
 }
 
 fn validate_contour(contour: &RegionContour) -> Result<(), SemanticError> {
-    if contour.role != RegionRole::Solid {
+    if contour.role == RegionRole::Hole {
         return Err(SemanticError::Invalid(
             "independent hole contours are unsupported; encode holes as cut-ins".into(),
         ));
@@ -1128,15 +1134,28 @@ fn validate_contour(contour: &RegionContour) -> Result<(), SemanticError> {
             "full circle is only valid as a standalone contour".into(),
         ));
     }
-    let canonical = canonical_region_contour(contour)?;
-    validate_contour_intersections(&canonical.edges)?;
-    validate_region_envelopes(contour, &canonical)?;
+    if contour.role == RegionRole::Solid {
+        let canonical = canonical_region_contour(contour)?;
+        validate_contour_intersections(&canonical.edges)?;
+        validate_region_envelopes(contour, &canonical)?;
+    }
     Ok(())
 }
 
 /// A Region may use a circular interpretation only when its entire directed
 /// curve stays in the declared annulus. Major fuzzy arcs needing another curve
 /// remain unsupported here; stroke coverage handles them with radial joins.
+/// Derived display/query geometry may use the source arc when a non-Solid
+/// contour was admitted without canonical-circle proof. This does not relax
+/// validation or authorize the contour as a standard manufacturing Region.
+pub fn derived_region_contour(contour: &RegionContour) -> Result<RegionContour, SemanticError> {
+    match canonical_region_contour(contour) {
+        Ok(canonical) => Ok(canonical),
+        Err(_) if contour.role != RegionRole::Solid => Ok(contour.clone()),
+        Err(error) => Err(error),
+    }
+}
+
 pub fn canonical_region_contour(contour: &RegionContour) -> Result<RegionContour, SemanticError> {
     let mut result = contour.clone();
     for edge in &mut result.edges {

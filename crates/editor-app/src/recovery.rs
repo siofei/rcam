@@ -343,6 +343,8 @@ mod tests {
         complete_write(&mut pending, &mut last_recovered, true, Some(&info));
         assert_eq!(last_recovered, identity(&info));
         assert_eq!(fs::read(&saved_path).unwrap(), original);
+        let candidates = discover(&recovery_dir);
+        assert_eq!(candidates.len(), 1);
         let mut last_dirty = identity(&info);
         let saved = svc
             .project_save(&doc.document_id, &info.revision, None, false)
@@ -355,8 +357,6 @@ mod tests {
         ));
         assert!(last_dirty.is_empty());
         assert!(last_recovered.is_empty());
-        let candidates = discover(&recovery_dir);
-        assert_eq!(candidates.len(), 1);
         let restored = svc
             .project_restore(&load(&recovery_dir, &candidates[0]).unwrap())
             .unwrap();

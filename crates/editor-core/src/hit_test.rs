@@ -401,7 +401,7 @@ fn geometry_distance(
             let mut distance = f64::INFINITY;
             for contour in contours {
                 budget.charge(contour.edges.len())?;
-                let c = canonical_region_contour(contour)?;
+                let c = derived_region_contour(contour)?;
                 // Frozen Gerber contours are independently filled; holes are
                 // cut-ins within a contour, not sibling SVG subtraction.
                 if c.edges

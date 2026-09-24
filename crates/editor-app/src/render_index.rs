@@ -3,7 +3,7 @@ use crate::display::Object;
 
 pub const MAX_GRID_CELLS: usize = 16_384;
 pub const MAX_CELL_REFERENCES: usize = 1_000_000;
-const MAX_RENDER_OBJECTS: usize = 500_000;
+const MAX_RENDER_OBJECTS: usize = 1_000_000;
 const MAX_OBJECTS_PER_CELL: usize = 16_384;
 #[derive(Clone, Debug, Default)]
 pub struct RenderIndex {

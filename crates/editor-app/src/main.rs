@@ -1893,7 +1893,16 @@ impl eframe::App for EditorApp {
         {
             egui::Modal::new(egui::Id::new("metadata-confirmation")).show(ctx, |ui| {
                 ui.heading("确认导出为几何文件");
-                ui.label("导出将移除以下来源元数据：");
+                if e.details["categories"]
+                    .as_array()
+                    .is_some_and(|items| items.iter().any(|item| item == "compatibility_issues"))
+                {
+                    ui.colored_label(
+                        egui::Color32::YELLOW,
+                        "此图层含非规范几何。导出保留 RCam 的兼容解释；其他 Gerber 软件可能显示不同。",
+                    );
+                }
+                ui.label("导出需确认以下来源信息或兼容告警：");
                 ui.label(e.details["categories"].to_string());
                 if ui.button("取消").clicked() {
                     self.view.error = None;

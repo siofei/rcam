@@ -2052,9 +2052,17 @@ impl ApplicationService {
         // when the block definition was captured.
         let flattened =
             gerber_io::flatten_block_instances_for_export(&snapshot).map_err(map_s1_error)?;
-        let document =
-            gerber_io::normalize_manufacturing(&flattened, record.manufacturing_precision)
-                .map_err(|e| ServiceError::invalid_field("manufacturing_precision", &e))?;
+        let output_precision = if flattened.source.compatibility_issues.is_empty() {
+            record.manufacturing_precision
+        } else {
+            // Preserve the source's tiny contours in the bounded FS 6.6 writer.
+            // The compatibility warning stays attached to this layer.
+            ManufacturingPrecision {
+                resolution_mm: record.manufacturing_precision.resolution_mm.min(0.000001),
+            }
+        };
+        let document = gerber_io::normalize_manufacturing(&flattened, output_precision)
+            .map_err(|e| ServiceError::invalid_field("manufacturing_precision", &e))?;
         let temp = temporary_output_path(&target)?;
         if temp.exists() {
             return Err(ServiceError {
@@ -3283,7 +3291,7 @@ fn validate_export_policy(
             if !categories.is_empty() {
                 return Err(ServiceError {
                     code: "CONFIRMATION_REQUIRED".into(),
-                    message: "export drops source metadata; explicit categories are required"
+                    message: "export requires explicit source metadata and compatibility warning confirmation"
                         .into(),
                     details: serde_json::json!({
                         "reason": "metadata_loss",
@@ -3349,6 +3357,7 @@ fn metadata_categories(metadata: &Value) -> Vec<String> {
         "image_name",
         "layer_name",
         "section_names",
+        "compatibility_issues",
         "encoding",
         "file_attributes",
         "dropped_categories",
@@ -3375,6 +3384,7 @@ fn is_lossy_metadata_category(category: &str) -> bool {
         "image_name"
             | "layer_name"
             | "section_names"
+            | "compatibility_issues"
             | "encoding"
             | "file_attributes"
             | "dropped_categories"

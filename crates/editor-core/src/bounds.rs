@@ -198,7 +198,7 @@ fn geometry_bounds<'a>(
         SemanticGeometry::Region { contours } => {
             let mut result = None;
             for contour in contours {
-                let canonical = canonical_region_contour(contour)?;
+                let canonical = derived_region_contour(contour)?;
                 if let Some(bounds) = combine(canonical.edges.iter().map(|edge| match edge {
                     RegionEdge::Line { start, end } => BoundsMm::points(*start, *end),
                     RegionEdge::Arc(arc) => arc_bounds(*arc),

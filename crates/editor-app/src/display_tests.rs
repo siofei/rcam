@@ -42,6 +42,45 @@ fn fixture(name: &str) -> (RenderSnapshot, Vec<LayerInfo>) {
 }
 
 #[test]
+#[ignore = "requires RCAM_COMPAT_ART08 local sample"]
+fn real_compat_region_scene_remains_displayable() {
+    let path = std::path::PathBuf::from(std::env::var("RCAM_COMPAT_ART08").unwrap());
+    let mut model = Model::default();
+    model.open(&path).unwrap();
+    let id = &model.view.info.as_ref().unwrap().document_id;
+    let snapshot = model.service.render_snapshot(id).unwrap();
+    let scene = Scene::build(&snapshot, &model.view.layers, MmPoint::new(0., 0.), 100., 1)
+        .expect("compat Region with fuzzy Hole arc must display");
+    assert!(!scene.objects.is_empty());
+    println!(
+        "objects={} primitives={} points={}",
+        scene.objects.len(),
+        scene.primitives.len(),
+        scene.points.len()
+    );
+}
+
+#[test]
+#[ignore = "requires RCAM_LARGE_GERBER local sample and substantial memory"]
+fn real_large_gerber_scene_remains_displayable() {
+    let path = std::path::PathBuf::from(std::env::var("RCAM_LARGE_GERBER").unwrap());
+    let mut model = Model::default();
+    model.open(&path).unwrap();
+    let id = &model.view.info.as_ref().unwrap().document_id;
+    let snapshot = model.service.render_snapshot(id).unwrap();
+    assert_eq!(snapshot.layers[0].objects.len(), 803_226);
+    let scene = Scene::build(&snapshot, &model.view.layers, MmPoint::new(0., 0.), 10., 1)
+        .expect("803k object sample must fit display budgets");
+    assert_eq!(scene.objects.len(), 803_226);
+    println!(
+        "objects={} primitives={} points={}",
+        scene.objects.len(),
+        scene.primitives.len(),
+        scene.points.len()
+    );
+}
+
+#[test]
 fn dense_rectangular_flash_scene_has_room_for_real_stencil_scale() {
     let path = std::env::temp_dir().join(format!("rcam-dense-display-{}.gbr", std::process::id()));
     std::fs::write(

@@ -367,7 +367,7 @@ Flash、Line、轴向 RectangularSweep、Arc 和完整 Region 可平移，光圈
 零偏移 Duplicate 仍创建新对象；零 Move／f64 舍入后所有几何未变的 Move 返回 INVALID_ARGUMENT。
 空集、重复／未知 ID、锁定层、非法坐标、数量／历史预算超限均原子拒绝，Redo 仅被成功的新编辑清空。
 max_edit_objects=10000（max_move_objects 保留同值）；100 条／64 MiB 历史预算继续适用，
-插入还检查文档 500000 对象／2000000 Region 边上限。字节预算含前后 ID 顺序守卫与暂存合并数组。
+插入还检查文档 1000000 对象／2000000 Region 边上限。字节预算含前后 ID 顺序守卫与暂存合并数组。
 
 ObjectInfo.object 的 source_command 替换为 origin：
 `{"kind":"imported","command_index":123}` 或 `{"kind":"generated","operation_id":"..."}`。

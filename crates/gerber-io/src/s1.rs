@@ -15,21 +15,41 @@ use gerber_parser::gerber_types::{
     MCode, MacroBoolean, MacroContent, MacroDecimal, Operation, Polarity, QuadrantMode, Unit,
 };
 use gerber_parser::{GerberDoc, parse};
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Cursor, Read};
 use std::path::{Path, PathBuf};
 
-pub const S1_MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
-pub const S1_MAX_COMMANDS: usize = 2_000_000;
+pub const S1_MAX_SOURCE_BYTES: usize = 64 * 1024 * 1024;
+pub const S1_MAX_COMMANDS: usize = 4_000_000;
 pub const S1_MAX_OBJECTS: usize = editor_core::edit::MAX_EDIT_DOCUMENT_OBJECTS;
 pub const S1_MAX_AM_EXPANSIONS: usize = 1_000_000;
 pub const S1_MAX_AM_EXPRESSION_TOKENS: usize = 100_000;
 pub const S1_MAX_AM_EXPRESSION_DEPTH: usize = 256;
 pub const S1_MAX_REGION_EDGES: usize = editor_core::edit::MAX_EDIT_REGION_EDGES;
-pub const S1_MAX_WRITER_BYTES: usize = 32 * 1024 * 1024;
-pub const S1_MAX_VALIDATION_BYTES: usize = 32 * 1024 * 1024;
+pub const S1_MAX_WRITER_BYTES: usize = 64 * 1024 * 1024;
+pub const S1_MAX_VALIDATION_BYTES: usize = 64 * 1024 * 1024;
 const S1_ROUNDTRIP_TOLERANCE_MM: f64 = 0.500001e-6;
+
+#[derive(Default)]
+struct Compatibility {
+    enabled: bool,
+    issues: BTreeMap<&'static str, usize>,
+}
+
+impl Compatibility {
+    fn note(&mut self, issue: &'static str) {
+        *self.issues.entry(issue).or_default() += 1;
+    }
+
+    fn diagnostics(&self) -> Vec<String> {
+        self.issues
+            .iter()
+            .map(|(issue, count)| format!("兼容导入：{issue}（{count} 处）"))
+            .collect()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct S1Budget {
@@ -136,6 +156,21 @@ pub fn parse_s1_with_budget(
     document_id: &str,
     budget: S1Budget,
 ) -> Result<S1Scene, S1Error> {
+    parse_s1_mode(bytes, document_id, budget, false)
+}
+
+/// Import legacy geometry with explicit diagnostics. Syntax, state, bounds and
+/// resource limits remain subject to the same checks as strict parsing.
+pub fn parse_s1_compat(bytes: &[u8], document_id: &str) -> Result<S1Scene, S1Error> {
+    parse_s1_mode(bytes, document_id, S1Budget::default(), true)
+}
+
+fn parse_s1_mode(
+    bytes: &[u8],
+    document_id: &str,
+    budget: S1Budget,
+    compatibility: bool,
+) -> Result<S1Scene, S1Error> {
     if bytes.len() > budget.max_source_bytes {
         return Err(S1Error::ResourceLimit {
             resource: "source_bytes",
@@ -143,12 +178,37 @@ pub fn parse_s1_with_budget(
             actual: bytes.len(),
         });
     }
-    let source = std::str::from_utf8(bytes).map_err(|_| S1Error::InvalidUtf8)?;
+    let (source, non_utf8_text) = match std::str::from_utf8(bytes) {
+        Ok(source) => (Cow::Borrowed(source), false),
+        Err(_) if compatibility => (String::from_utf8_lossy(bytes), true),
+        Err(_) => return Err(S1Error::InvalidUtf8),
+    };
     if source.trim().is_empty() {
         return Err(S1Error::Empty);
     }
-    let (parser_source, metadata, token_count, io_offset) =
-        prepare_source(source, budget.max_commands)?;
+    let source_text = if compatibility {
+        source.trim_end_matches(|character: char| {
+            character.is_ascii_whitespace() || character == '\u{1a}'
+        })
+    } else {
+        source.as_ref()
+    };
+    let dos_eof_removed = compatibility
+        && source
+            .trim_end_matches(|character: char| character.is_ascii_whitespace())
+            .ends_with('\u{1a}');
+    let (parser_source, mut metadata, token_count, io_offset) =
+        prepare_source(source_text, budget.max_commands, compatibility)?;
+    if dos_eof_removed {
+        metadata
+            .compatibility_issues
+            .push("兼容导入：已移除文件尾部 DOS EOF 标记".into());
+    }
+    if non_utf8_text {
+        metadata
+            .compatibility_issues
+            .push("兼容导入：非 UTF-8 文本已替换不可解码字符".into());
+    }
     if token_count > budget.max_commands {
         return Err(S1Error::ResourceLimit {
             resource: "parser_commands",
@@ -177,12 +237,13 @@ pub fn parse_s1_with_budget(
             actual: parsed_commands,
         });
     }
-    interpret_s1(doc, document_id, metadata, io_offset, budget)
+    interpret_s1(doc, document_id, metadata, io_offset, budget, compatibility)
 }
 
 fn prepare_source(
     source: &str,
     max_commands: usize,
+    compatibility: bool,
 ) -> Result<(String, SourceMetadata, usize, MmPoint), S1Error> {
     let mut parser_lines = Vec::new();
     let mut metadata = SourceMetadata::default();
@@ -196,6 +257,24 @@ fn prepare_source(
     let mut explicit_unit: Option<Unit> = None;
     let mut legacy_unit: Option<Unit> = None;
     let tokens = tokenize_source(source, max_commands)?;
+    let widened_fs_integer = if compatibility {
+        let declared = tokens
+            .iter()
+            .find(|(line, _)| line.starts_with("%FSL"))
+            .and_then(|(line, _)| parse_coordinate_spec(line));
+        declared.and_then(|spec| {
+            let max_digits = tokens
+                .iter()
+                .filter(|(line, _)| !line.starts_with('%') && !line.starts_with("G04"))
+                .flat_map(|(line, _)| coordinate_field_widths(line))
+                .max()
+                .unwrap_or(0);
+            let needed = max_digits.saturating_sub(spec.decimal);
+            (needed > spec.integer && needed <= 6).then_some(needed)
+        })
+    } else {
+        None
+    };
     let has_legacy_coordinate_commands = tokens
         .iter()
         .any(|(line, _)| matches!(line.as_str(), "G90*" | "G91*"));
@@ -219,7 +298,48 @@ fn prepare_source(
             // the third-party parser.
             continue;
         }
+        if compatibility && line == "%AD*%" {
+            metadata
+                .compatibility_issues
+                .push("兼容导入：空 AD 占位声明已忽略".into());
+            continue;
+        }
         let mut parser_line = line.to_string();
+        if compatibility
+            && line.starts_with("G04")
+            && line.contains("TF.CreationDate")
+            && line.contains("--")
+        {
+            parser_line = "G04 RCam ignored malformed CreationDate metadata*".into();
+            let issue = "兼容导入：忽略不规范的 CreationDate 元数据";
+            if !metadata
+                .compatibility_issues
+                .iter()
+                .any(|item| item == issue)
+            {
+                metadata.compatibility_issues.push(issue.into());
+            }
+        }
+        if compatibility && line.starts_with("G04 #@! TD.AperFunction*") {
+            parser_line = "G04 RCam ignored legacy aperture-attribute deletion*".into();
+            let issue = "兼容导入：忽略旧式光圈属性删除记录";
+            if !metadata
+                .compatibility_issues
+                .iter()
+                .any(|item| item == issue)
+            {
+                metadata.compatibility_issues.push(issue.into());
+            }
+        }
+        if compatibility && line.starts_with("%AM") {
+            let (normalized, count) = normalize_lower_left_macro(&parser_line);
+            if count > 0 {
+                parser_line = normalized;
+                metadata.compatibility_issues.push(format!(
+                    "兼容导入：AM primitive 22 下左角矩形转换为中心矩形（{count} 处）"
+                ));
+            }
+        }
         // Pre-2020 legacy files used G1/G2/G3 spelling. Normalize only the
         // three plot modes, never G36/G37 or an arbitrary unknown G command.
         if line.starts_with('G')
@@ -258,19 +378,42 @@ fn prepare_source(
             parser_line.replace_range(3..4, "L");
         }
         if line.starts_with("%FS") && line.ends_with("*%") {
+            if metadata.coordinate_format.is_some() {
+                if compatibility
+                    && !seen_image_data
+                    && parse_coordinate_spec(line).is_some_and(|next| {
+                        coordinate_spec.is_some_and(|current| next.decimal == current.decimal)
+                    })
+                {
+                    metadata
+                        .compatibility_issues
+                        .push("兼容导入：绘图前重复 FS 且小数位相同，沿用首个声明".into());
+                    continue;
+                }
+                return Err(S1Error::Semantic {
+                    line: line_no,
+                    message: "FS may be declared only once".into(),
+                });
+            }
             if seen_data {
                 return Err(S1Error::Semantic {
                     line: line_no,
                     message: "FS must precede image data".into(),
                 });
             }
-            coordinate_spec = parse_coordinate_spec(line);
-            if metadata.coordinate_format.is_some() {
-                return Err(S1Error::Semantic {
-                    line: line_no,
-                    message: "FS may be declared only once".into(),
-                });
+            if let Some(integer) = widened_fs_integer {
+                let bytes = parser_line.as_bytes();
+                let x = bytes.iter().position(|byte| *byte == b'X').unwrap_or(0);
+                let y = bytes.iter().position(|byte| *byte == b'Y').unwrap_or(0);
+                if x > 0 && y > x && y + 1 < bytes.len() {
+                    parser_line.replace_range(y + 1..y + 2, &integer.to_string());
+                    parser_line.replace_range(x + 1..x + 2, &integer.to_string());
+                    metadata.compatibility_issues.push(format!(
+                        "兼容导入：FS 整数位扩展到 {integer} 位，以容纳源文件坐标"
+                    ));
+                }
             }
+            coordinate_spec = parse_coordinate_spec(&parser_line);
             metadata.coordinate_format = Some(line.to_string());
             source_coordinate_mode = Some(
                 pending_coordinate_mode
@@ -446,6 +589,41 @@ fn prepare_source(
     Ok((parser_lines.join("\n"), metadata, token_count, io_offset))
 }
 
+fn normalize_lower_left_macro(source: &str) -> (String, usize) {
+    let mut output = String::with_capacity(source.len());
+    let mut count = 0;
+    for segment in source.split_inclusive('*') {
+        let content = segment.trim().trim_end_matches('*');
+        let fields: Vec<_> = content.split(',').collect();
+        if fields.len() == 7 && fields[0] == "22" {
+            let values = fields[1..]
+                .iter()
+                .map(|field| field.trim().parse::<f64>())
+                .collect::<Result<Vec<_>, _>>();
+            if let Ok(values) = values
+                && values.iter().all(|value| value.is_finite())
+                && values[1] >= 0.0
+                && values[2] >= 0.0
+                && (values[0] == 0.0 || values[0] == 1.0)
+            {
+                output.push_str(&format!(
+                    "21,{},{},{},{},{},{}*",
+                    fields[1],
+                    fields[2],
+                    fields[3],
+                    values[3] + values[1] / 2.0,
+                    values[4] + values[2] / 2.0,
+                    fields[6]
+                ));
+                count += 1;
+                continue;
+            }
+        }
+        output.push_str(segment);
+    }
+    (output, count)
+}
+
 fn is_image_data_line(line: &str) -> bool {
     if line.starts_with('%') || line.starts_with("G04") {
         return false;
@@ -493,6 +671,30 @@ struct CoordinateSpec {
     omission: u8,
     integer: usize,
     decimal: usize,
+}
+
+fn coordinate_field_widths(line: &str) -> Vec<usize> {
+    let bytes = line.as_bytes();
+    let mut widths = Vec::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if !matches!(bytes[cursor], b'X' | b'Y' | b'I' | b'J') {
+            cursor += 1;
+            continue;
+        }
+        cursor += 1;
+        if matches!(bytes.get(cursor), Some(b'+' | b'-')) {
+            cursor += 1;
+        }
+        let start = cursor;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            cursor += 1;
+        }
+        if cursor > start {
+            widths.push(cursor - start);
+        }
+    }
+    widths
 }
 
 fn parse_coordinate_spec(line: &str) -> Option<CoordinateSpec> {
@@ -884,6 +1086,7 @@ fn interpret_s1(
     mut metadata: SourceMetadata,
     io_offset_raw: MmPoint,
     budget: S1Budget,
+    compatibility: bool,
 ) -> Result<S1Scene, S1Error> {
     let format = doc.format_specification.ok_or_else(|| S1Error::Semantic {
         line: 0,
@@ -912,6 +1115,10 @@ fn interpret_s1(
             gerber_parser::gerber_types::ZeroOmission::Leading
         ),
         absolute: true,
+    };
+    let mut compat = Compatibility {
+        enabled: compatibility,
+        ..Compatibility::default()
     };
     let mut macro_defs = HashMap::new();
     let mut macro_expansions = 0usize;
@@ -944,18 +1151,33 @@ fn interpret_s1(
     }
     for (name, definition) in &macro_defs {
         let Some(formal_count) = macro_formal_counts.get(name).copied() else {
-            let has_unbound = validate_macro_definition(definition, 0, true, budget)?;
-            validate_known_macro_geometry(definition, unit_scale, name, budget)?;
+            let has_unbound =
+                validate_macro_definition(definition, 0, true, budget, compatibility)?;
+            validate_known_macro_geometry(definition, unit_scale, name, budget, compatibility)?;
             if !has_unbound {
-                let primitives = expand_macro(definition, &[], 1.0, budget, &mut macro_expansions)?;
+                let primitives = expand_macro(
+                    definition,
+                    &[],
+                    1.0,
+                    budget,
+                    &mut macro_expansions,
+                    &mut compat,
+                )?;
                 validate_macro_shape(primitives, name)?;
             }
             continue;
         };
-        validate_macro_definition(definition, formal_count, false, budget)?;
-        validate_known_macro_geometry(definition, unit_scale, name, budget)?;
+        validate_macro_definition(definition, formal_count, false, budget, compatibility)?;
+        validate_known_macro_geometry(definition, unit_scale, name, budget, compatibility)?;
         if formal_count == 0 {
-            let primitives = expand_macro(definition, &[], 1.0, budget, &mut macro_expansions)?;
+            let primitives = expand_macro(
+                definition,
+                &[],
+                1.0,
+                budget,
+                &mut macro_expansions,
+                &mut compat,
+            )?;
             validate_macro_shape(primitives, name)?;
         }
     }
@@ -973,6 +1195,7 @@ fn interpret_s1(
             &macro_defs,
             budget,
             &mut macro_expansions,
+            &mut compat,
         )?;
         apertures.push(ApertureDefinition {
             id: aperture_id(code),
@@ -1001,12 +1224,17 @@ fn interpret_s1(
     interpret_commands(
         &doc,
         &mut document,
-        unit_scale,
         unit,
         input_coordinate_mode,
         io_offset,
         budget,
+        &mut compat,
     )?;
+    let mut diagnostics = vec!["S1 normalized semantic model".into()];
+    diagnostics.extend(metadata.compatibility_issues.iter().cloned());
+    diagnostics.extend(compat.diagnostics());
+    metadata.compatibility_issues.extend(compat.diagnostics());
+    document.source = metadata.clone();
     document.validate().map_err(|error| {
         semantic(
             0,
@@ -1016,7 +1244,7 @@ fn interpret_s1(
     Ok(S1Scene {
         document,
         metadata,
-        diagnostics: vec!["S1 normalized semantic model".into()],
+        diagnostics,
         budget,
     })
 }
@@ -1031,10 +1259,19 @@ fn convert_aperture(
     macros: &HashMap<String, gerber_parser::gerber_types::ApertureMacro>,
     budget: S1Budget,
     macro_expansions: &mut usize,
+    compat: &mut Compatibility,
 ) -> Result<ApertureShape, S1Error> {
     let shape = match aperture {
         Aperture::Circle(circle) => ApertureShape::Circle {
-            diameter_mm: checked_value(circle.diameter, scale, "circle diameter")?,
+            diameter_mm: if compat.enabled
+                && circle.diameter == 0.0
+                && circle.hole_diameter.is_none()
+            {
+                compat.note("零直径圆光圈以 2 µm 可编辑占位替代");
+                0.000002
+            } else {
+                checked_value(circle.diameter, scale, "circle diameter")?
+            },
             hole_diameter_mm: circle
                 .hole_diameter
                 .map(|value| checked_value(value, scale, "circle hole"))
@@ -1077,6 +1314,7 @@ fn convert_aperture(
                     scale,
                     budget,
                     macro_expansions,
+                    compat,
                 )?,
             }
         }
@@ -1208,6 +1446,7 @@ fn validate_macro_definition(
     formal_count: usize,
     allow_unbound: bool,
     budget: S1Budget,
+    compatibility: bool,
 ) -> Result<bool, S1Error> {
     let mut defined = HashSet::new();
     let mut has_unbound = false;
@@ -1329,11 +1568,48 @@ fn validate_macro_definition(
                 )?;
             }
             MacroContent::Comment(_) => {}
-            MacroContent::VectorLine(_) => {
-                return Err(S1Error::Unsupported {
-                    line: 0,
-                    feature: "AM primitive 20".into(),
-                });
+            MacroContent::VectorLine(line) => {
+                has_unbound |= validate_macro_boolean(
+                    &line.exposure,
+                    &defined,
+                    formal_count,
+                    allow_unbound,
+                    budget,
+                )?;
+                for value in [
+                    &line.width,
+                    &line.start.0,
+                    &line.start.1,
+                    &line.end.0,
+                    &line.end.1,
+                    &line.angle,
+                ] {
+                    has_unbound |= validate_macro_decimal(
+                        value,
+                        &defined,
+                        formal_count,
+                        allow_unbound,
+                        budget,
+                    )?;
+                }
+            }
+            MacroContent::Thermal(thermal) if compatibility => {
+                for value in [
+                    &thermal.center.0,
+                    &thermal.center.1,
+                    &thermal.outer_diameter,
+                    &thermal.inner_diameter,
+                    &thermal.gap,
+                    &thermal.angle,
+                ] {
+                    has_unbound |= validate_macro_decimal(
+                        value,
+                        &defined,
+                        formal_count,
+                        allow_unbound,
+                        budget,
+                    )?;
+                }
             }
             MacroContent::Polygon(_) | MacroContent::Moire(_) | MacroContent::Thermal(_) => {
                 return Err(S1Error::Unsupported {
@@ -1351,6 +1627,7 @@ fn validate_known_macro_geometry(
     scale: f64,
     name: &str,
     budget: S1Budget,
+    compatibility: bool,
 ) -> Result<(), S1Error> {
     let mut known = HashMap::new();
     for content in &definition.content {
@@ -1415,6 +1692,9 @@ fn validate_known_macro_geometry(
                     continue;
                 }
                 check_macro_outline_budget(points.len(), budget)?;
+                if compatibility {
+                    repair_near_duplicate_macro_points(&mut points);
+                }
                 if points.len() < 4
                     || points.first() != points.last()
                     || !points.iter().all(|point| point.is_finite())
@@ -1426,8 +1706,20 @@ fn validate_known_macro_geometry(
                     ));
                 }
             }
+            MacroContent::VectorLine(line) => {
+                if let Some(width) = known_macro_decimal(&line.width, &known)?
+                    && !finite_positive(width * scale)
+                {
+                    return Err(semantic(
+                        0,
+                        format!("invalid constant vector line in aperture macro {name}"),
+                    ));
+                }
+                if let Some(angle) = known_macro_decimal(&line.angle, &known)? {
+                    checked_angle(angle)?;
+                }
+            }
             MacroContent::Comment(_)
-            | MacroContent::VectorLine(_)
             | MacroContent::Polygon(_)
             | MacroContent::Moire(_)
             | MacroContent::Thermal(_) => {}
@@ -1466,6 +1758,38 @@ fn check_macro_outline_budget(points: usize, budget: S1Budget) -> Result<(), S1E
         });
     }
     Ok(())
+}
+
+fn repair_near_duplicate_macro_points(points: &mut Vec<MmPoint>) -> usize {
+    if points.len() < 4 || points.first() != points.last() {
+        return 0;
+    }
+    let original = points.len();
+    let first = points[0];
+    let mut repaired = vec![first];
+    for point in &points[1..points.len() - 1] {
+        if repaired
+            .last()
+            .is_some_and(|previous| previous.distance_mm(*point) <= 2.0 * editor_core::EPSILON_MM)
+        {
+            continue;
+        }
+        repaired.push(*point);
+    }
+    if repaired
+        .last()
+        .is_some_and(|previous| previous.distance_mm(first) <= 2.0 * editor_core::EPSILON_MM)
+    {
+        repaired.pop();
+    }
+    repaired.push(first);
+    let removed = original.saturating_sub(repaired.len());
+    if removed > 0 && repaired.len() >= 4 {
+        *points = repaired;
+        removed
+    } else {
+        0
+    }
 }
 
 fn macro_outline_is_simple(points: &[MmPoint]) -> bool {
@@ -1693,6 +2017,7 @@ fn expand_macro(
     scale: f64,
     budget: S1Budget,
     macro_expansions: &mut usize,
+    compat: &mut Compatibility,
 ) -> Result<Vec<MacroPrimitive>, S1Error> {
     let mut variables = HashMap::new();
     for (index, argument) in args.iter().enumerate() {
@@ -1770,6 +2095,9 @@ fn expand_macro(
                         rotation,
                     )?);
                 }
+                if compat.enabled && repair_near_duplicate_macro_points(&mut points) > 0 {
+                    compat.note("AM 轮廓源精度内的重复顶点已合并");
+                }
                 primitives.push(MacroPrimitive::Outline {
                     exposure: eval_exposure(&outline.exposure, &variables)?,
                     points,
@@ -1777,11 +2105,100 @@ fn expand_macro(
                 });
             }
             MacroContent::Comment(_) => {}
-            MacroContent::VectorLine(_) => {
-                return Err(S1Error::Unsupported {
-                    line: 0,
-                    feature: "AM primitive 20".into(),
+            MacroContent::VectorLine(line) => {
+                consume_macro_expansion(macro_expansions, budget)?;
+                reserve_macro_expansions(macro_expansions, 5, budget)?;
+                let width = checked_value(
+                    eval_decimal(&line.width, &variables)?,
+                    scale,
+                    "macro vector width",
+                )?;
+                let (x0, y0) = (
+                    eval_decimal(&line.start.0, &variables)?,
+                    eval_decimal(&line.start.1, &variables)?,
+                );
+                let (x1, y1) = (
+                    eval_decimal(&line.end.0, &variables)?,
+                    eval_decimal(&line.end.1, &variables)?,
+                );
+                let length = (x1 - x0).hypot(y1 - y0);
+                if !finite_positive(width) || !finite_positive(length * scale) {
+                    return Err(semantic(0, "macro vector line has zero width or length"));
+                }
+                let half = width / (2.0 * scale * length);
+                let (ox, oy) = (-(y1 - y0) * half, (x1 - x0) * half);
+                let corners = [
+                    (x0 + ox, y0 + oy),
+                    (x1 + ox, y1 + oy),
+                    (x1 - ox, y1 - oy),
+                    (x0 - ox, y0 - oy),
+                    (x0 + ox, y0 + oy),
+                ];
+                let rotation = eval_decimal(&line.angle, &variables)?;
+                let points = corners
+                    .into_iter()
+                    .map(|(x, y)| scaled_point(x, y, scale, rotation))
+                    .collect::<Result<Vec<_>, _>>()?;
+                primitives.push(MacroPrimitive::Outline {
+                    exposure: eval_exposure(&line.exposure, &variables)?,
+                    points,
+                    rotation_deg: rotation,
                 });
+            }
+            MacroContent::Thermal(thermal) if compat.enabled => {
+                let outer = checked_value(
+                    eval_decimal(&thermal.outer_diameter, &variables)?,
+                    scale,
+                    "thermal outer diameter",
+                )?;
+                let inner = eval_decimal(&thermal.inner_diameter, &variables)? * scale;
+                let gap = eval_decimal(&thermal.gap, &variables)? * scale;
+                if !inner.is_finite()
+                    || inner < 0.0
+                    || inner >= outer
+                    || !gap.is_finite()
+                    || gap < 0.0
+                    || gap * std::f64::consts::SQRT_2 >= outer
+                    || (inner > 0.0 && !finite_positive(inner))
+                    || (gap > 0.0 && !finite_positive(gap))
+                {
+                    return Err(semantic(0, "invalid thermal aperture macro dimensions"));
+                }
+                let rotation = checked_angle(eval_decimal(&thermal.angle, &variables)?)?;
+                let center = scaled_point(
+                    eval_decimal(&thermal.center.0, &variables)?,
+                    eval_decimal(&thermal.center.1, &variables)?,
+                    scale,
+                    rotation,
+                )?;
+                let count = 1 + usize::from(inner > 0.0) + if gap > 0.0 { 2 } else { 0 };
+                reserve_macro_expansions(macro_expansions, count, budget)?;
+                primitives.push(MacroPrimitive::Circle {
+                    exposure: Exposure::Dark,
+                    diameter_mm: outer,
+                    center,
+                    rotation_deg: rotation,
+                });
+                if inner > 0.0 {
+                    primitives.push(MacroPrimitive::Circle {
+                        exposure: Exposure::Clear,
+                        diameter_mm: inner,
+                        center,
+                        rotation_deg: rotation,
+                    });
+                }
+                if gap > 0.0 {
+                    for (width_mm, height_mm) in [(outer, gap), (gap, outer)] {
+                        primitives.push(MacroPrimitive::CenterLine {
+                            exposure: Exposure::Clear,
+                            width_mm,
+                            height_mm,
+                            center,
+                            rotation_deg: rotation,
+                        });
+                    }
+                }
+                compat.note("Thermal 宏已拆解为局部 Dark/Clear 基本图元");
             }
             MacroContent::Polygon(_) | MacroContent::Moire(_) | MacroContent::Thermal(_) => {
                 return Err(S1Error::Unsupported {
@@ -2235,12 +2652,16 @@ struct RegionState {
 fn interpret_commands(
     doc: &GerberDoc,
     document: &mut SemanticDocument,
-    unit_scale: f64,
     declared_unit: Unit,
     input_coordinate_mode: CoordinateMode,
     io_offset: MmPoint,
     budget: S1Budget,
+    compat: &mut Compatibility,
 ) -> Result<(), S1Error> {
+    let unit_scale = match declared_unit {
+        Unit::Millimeters => 1.0,
+        Unit::Inches => 25.4,
+    };
     let source_decimal = document
         .source
         .coordinate_format
@@ -2268,6 +2689,7 @@ fn interpret_commands(
     let mut has_drawing = false;
     let mut sr_open = false;
     let mut identity_commands_seen = HashSet::new();
+    let mut image_mirroring = gerber_parser::gerber_types::ImageMirroring::None;
     let mut object_count = 0usize;
     let mut edge_count = 0usize;
     let aperture_shapes: HashMap<String, ApertureShape> = document
@@ -2381,7 +2803,11 @@ fn interpret_commands(
                 }
                 identity_commands_seen.insert("MI");
                 if !matches!(value, gerber_parser::gerber_types::ImageMirroring::None) {
-                    return Err(command_unsupported(command_index, "non-identity MI"));
+                    if !compat.enabled {
+                        return Err(command_unsupported(command_index, "non-identity MI"));
+                    }
+                    image_mirroring = *value;
+                    compat.note("旧式 MI 镜像已应用到坐标（光圈形状保持不变）");
                 }
             }
             Command::ExtendedCode(ExtendedCode::OffsetImage(value)) => {
@@ -2482,10 +2908,27 @@ fn interpret_commands(
                         .ok_or_else(|| command_semantic(command_index, "G37 without G36"))?;
                     let mut contours = state.contours;
                     if !state.edges.is_empty() {
-                        contours.push(close_contour(state.edges, state.start)?);
+                        contours.push(close_contour(
+                            state.edges,
+                            state.start,
+                            source_resolution,
+                            compat,
+                        )?);
                     }
                     if contours.is_empty() {
+                        if compat.enabled {
+                            compat.note("空 Region 无曝光，已忽略");
+                            continue;
+                        }
                         return Err(command_semantic(command_index, "empty region"));
+                    }
+                    if compat.enabled {
+                        for contour in &mut contours {
+                            if editor_core::validate_region_contour(contour).is_err() {
+                                contour.role = RegionRole::CompatibilitySolid;
+                                compat.note("Region 非规范轮廓采用确定性绕组解释");
+                            }
+                        }
                     }
                     push_object(
                         document,
@@ -2533,6 +2976,8 @@ fn interpret_commands(
                                 state.contours.push(close_contour(
                                     std::mem::take(&mut state.edges),
                                     state.start.take(),
+                                    source_resolution,
+                                    compat,
                                 )?);
                             }
                             state.start = Some(next);
@@ -2585,6 +3030,10 @@ fn interpret_commands(
                             io_offset,
                         )?;
                         if let Some(state) = region.as_mut() {
+                            if state.start.is_none() && compat.enabled {
+                                state.start = Some(start);
+                                compat.note("Region 缺少起点 D02，沿用当前坐标");
+                            }
                             let edge = interpolation_edge(
                                 start,
                                 end,
@@ -2594,8 +3043,16 @@ fn interpret_commands(
                                 unit_scale,
                                 source_resolution,
                                 command_index,
+                                compat,
                             )?;
-                            state.edges.push(edge);
+                            if !compat.enabled
+                                || edge_start(&edge) != edge_end(&edge)
+                                || matches!(&edge, RegionEdge::Arc(arc) if arc.full_circle)
+                            {
+                                state.edges.push(edge);
+                            } else {
+                                compat.note("Region 零长度边已移除");
+                            }
                             edge_count = edge_count.saturating_add(1);
                             check_resource("region_edges", budget.max_region_edges, edge_count)?;
                             state.current = Some(end);
@@ -2619,6 +3076,7 @@ fn interpret_commands(
                             transform,
                             shape,
                             command_index,
+                            compat,
                         )?;
                         push_object(
                             document,
@@ -2650,9 +3108,70 @@ fn interpret_commands(
             "G36 is not closed by G37",
         ));
     }
+    if !matches!(
+        image_mirroring,
+        gerber_parser::gerber_types::ImageMirroring::None
+    ) {
+        reflect_image_coordinates(document, image_mirroring);
+    }
     // A fully validated empty image is valid after Delete All. Syntax, state,
     // references and unsupported commands above are still checked in full.
     Ok(())
+}
+
+fn reflect_image_coordinates(
+    document: &mut SemanticDocument,
+    mirroring: gerber_parser::gerber_types::ImageMirroring,
+) {
+    use gerber_parser::gerber_types::ImageMirroring;
+    let flip_x = matches!(mirroring, ImageMirroring::A | ImageMirroring::AB);
+    let flip_y = matches!(mirroring, ImageMirroring::B | ImageMirroring::AB);
+    let reflect = |point: &mut MmPoint| {
+        if flip_x {
+            point.x_mm = -point.x_mm;
+        }
+        if flip_y {
+            point.y_mm = -point.y_mm;
+        }
+    };
+    let reflect_arc = |arc: &mut ArcGeometry| {
+        reflect(&mut arc.start);
+        reflect(&mut arc.end);
+        reflect(&mut arc.center);
+        if flip_x != flip_y {
+            arc.direction = match arc.direction {
+                ArcDirection::Clockwise => ArcDirection::CounterClockwise,
+                ArcDirection::CounterClockwise => ArcDirection::Clockwise,
+            };
+        }
+    };
+    for object in &mut document.layers[0].objects {
+        match &mut object.geometry {
+            SemanticGeometry::Flash { center, .. } => reflect(center),
+            SemanticGeometry::Line { start, end, .. }
+            | SemanticGeometry::RectangularSweep { start, end, .. } => {
+                reflect(start);
+                reflect(end);
+            }
+            SemanticGeometry::Arc { path, .. } => reflect_arc(path),
+            SemanticGeometry::Region { contours } => {
+                for contour in contours {
+                    for edge in &mut contour.edges {
+                        match edge {
+                            RegionEdge::Line { start, end } => {
+                                reflect(start);
+                                reflect(end);
+                            }
+                            RegionEdge::Arc(path) => reflect_arc(path),
+                        }
+                    }
+                }
+            }
+            SemanticGeometry::BlockInstance { .. } => {
+                unreachable!("Gerber parser creates no blocks")
+            }
+        }
+    }
 }
 
 fn push_object(
@@ -2766,7 +3285,12 @@ fn check_writer_output(output: &str, budget: S1Budget) -> Result<(), S1Error> {
     check_resource("writer_bytes", budget.max_writer_bytes, output.len())
 }
 
-fn close_contour(edges: Vec<RegionEdge>, start: Option<MmPoint>) -> Result<RegionContour, S1Error> {
+fn close_contour(
+    mut edges: Vec<RegionEdge>,
+    start: Option<MmPoint>,
+    source_resolution: f64,
+    compat: &mut Compatibility,
+) -> Result<RegionContour, S1Error> {
     let start = start.ok_or_else(|| semantic(0, "region contour has no start"))?;
     let end = edges
         .last()
@@ -2775,7 +3299,23 @@ fn close_contour(edges: Vec<RegionEdge>, start: Option<MmPoint>) -> Result<Regio
     // Gerber regions are closed by the quantized endpoint itself.  Accepting a
     // geometric tolerance here would turn a near miss into manufacturing data.
     if end != start {
-        return Err(semantic(0, "region contour is not closed"));
+        if !compat.enabled {
+            return Err(semantic(0, "region contour is not closed"));
+        }
+        if end.distance_mm(start) <= source_resolution.min(2.0 * editor_core::EPSILON_MM) {
+            match edges.last_mut() {
+                Some(RegionEdge::Line { end, .. }) => *end = start,
+                Some(RegionEdge::Arc(arc)) => arc.end = start,
+                None => unreachable!(),
+            }
+            compat.note("Region 端点未精确闭合，已按源精度调整终点");
+        } else {
+            edges.push(RegionEdge::Line {
+                start: end,
+                end: start,
+            });
+            compat.note("Region 端点未精确闭合，已插入闭合线段");
+        }
     }
     if edges.is_empty()
         || (edges.len() == 1
@@ -2811,6 +3351,7 @@ fn interpolation_edge(
     unit_scale: f64,
     source_resolution: f64,
     command_index: usize,
+    compat: &mut Compatibility,
 ) -> Result<RegionEdge, S1Error> {
     match interpolation {
         InterpolationMode::Linear => Ok(RegionEdge::Line { start, end }),
@@ -2828,6 +3369,7 @@ fn interpolation_edge(
                 unit_scale,
                 source_resolution,
                 command_index,
+                compat,
             )?))
         }
     }
@@ -2845,6 +3387,7 @@ fn interpolation_geometry(
     transform: LocalTransform,
     aperture: &ApertureShape,
     command_index: usize,
+    compat: &mut Compatibility,
 ) -> Result<SemanticGeometry, S1Error> {
     if !matches!(
         transform,
@@ -2881,6 +3424,14 @@ fn interpolation_geometry(
                     height_mm: *height_mm,
                 })
             }
+            ApertureShape::Rectangle {
+                width_mm,
+                height_mm,
+                hole_diameter_mm: None,
+            } if compat.enabled => {
+                compat.note("斜向矩形光圈线已转换为精确凸 Region");
+                Ok(rectangular_sweep_region(start, end, *width_mm, *height_mm))
+            }
             _ => Err(unsupported(
                 command_index,
                 "linear interpolation requires an unholed circle or axis-aligned R aperture",
@@ -2913,10 +3464,66 @@ fn interpolation_geometry(
                     unit_scale,
                     source_resolution,
                     command_index,
+                    compat,
                 )?,
                 width_mm,
             })
         }
+    }
+}
+
+fn rectangular_sweep_region(
+    start: MmPoint,
+    end: MmPoint,
+    width_mm: f64,
+    height_mm: f64,
+) -> SemanticGeometry {
+    let mut points = Vec::with_capacity(8);
+    for center in [start, end] {
+        for x in [-width_mm / 2.0, width_mm / 2.0] {
+            for y in [-height_mm / 2.0, height_mm / 2.0] {
+                points.push(MmPoint::new(center.x_mm + x, center.y_mm + y));
+            }
+        }
+    }
+    points.sort_by(|left, right| {
+        left.x_mm
+            .total_cmp(&right.x_mm)
+            .then_with(|| left.y_mm.total_cmp(&right.y_mm))
+    });
+    points.dedup();
+    let cross = |a: MmPoint, b: MmPoint, c: MmPoint| {
+        (b.x_mm - a.x_mm) * (c.y_mm - a.y_mm) - (b.y_mm - a.y_mm) * (c.x_mm - a.x_mm)
+    };
+    let mut hull = Vec::with_capacity(points.len() * 2);
+    for point in &points {
+        while hull.len() >= 2 && cross(hull[hull.len() - 2], hull[hull.len() - 1], *point) <= 0.0 {
+            hull.pop();
+        }
+        hull.push(*point);
+    }
+    let lower_len = hull.len();
+    for point in points.iter().rev().skip(1) {
+        while hull.len() > lower_len
+            && cross(hull[hull.len() - 2], hull[hull.len() - 1], *point) <= 0.0
+        {
+            hull.pop();
+        }
+        hull.push(*point);
+    }
+    hull.pop();
+    let edges = hull
+        .iter()
+        .copied()
+        .zip(hull.iter().copied().cycle().skip(1))
+        .take(hull.len())
+        .map(|(start, end)| RegionEdge::Line { start, end })
+        .collect();
+    SemanticGeometry::Region {
+        contours: vec![RegionContour {
+            edges,
+            role: RegionRole::Solid,
+        }],
     }
 }
 
@@ -2930,6 +3537,7 @@ fn arc_from_command(
     unit_scale: f64,
     source_resolution: f64,
     command_index: usize,
+    compat: &mut Compatibility,
 ) -> Result<ArcGeometry, S1Error> {
     let offset = offset
         .ok_or_else(|| command_semantic(command_index, "circular interpolation needs I or J"))?;
@@ -2996,19 +3604,50 @@ fn arc_from_command(
                     single_quadrant: matches!(quadrant, QuadrantMode::Single),
                 }),
             };
-            if path.is_valid()
-                && path.sweep_radians().is_some_and(|sweep| {
-                    sweep > 0.0 && sweep <= std::f64::consts::FRAC_PI_2 + path.angular_uncertainty()
+            let mut accepted = path;
+            if !accepted.is_valid() && compat.enabled {
+                let mut widened = path;
+                widened.source = Some(ArcSource {
+                    resolution_mm: source_resolution,
+                    single_quadrant: false,
+                });
+                if widened.is_valid()
+                    && widened.sweep_radians().is_some_and(|sweep| {
+                        sweep
+                            <= std::f64::consts::FRAC_PI_2
+                                + 2.0 * source_resolution
+                                    / widened.radius().min(widened.end_radius())
+                    })
+                {
+                    accepted = widened;
+                }
+            }
+            if accepted.is_valid()
+                && accepted.sweep_radians().is_some_and(|sweep| {
+                    sweep > 0.0
+                        && sweep
+                            <= std::f64::consts::FRAC_PI_2
+                                + if compat.enabled {
+                                    2.0 * source_resolution
+                                        / accepted.radius().min(accepted.end_radius())
+                                } else {
+                                    accepted.angular_uncertainty()
+                                }
                 })
                 && !candidates
                     .iter()
                     .any(|candidate: &ArcGeometry| candidate.center == center)
             {
-                candidates.push(path);
+                candidates.push(accepted);
             }
         }
     }
-    candidates.sort_by(|a, b| a.arc_deviation().total_cmp(&b.arc_deviation()));
+    candidates.sort_by(|a, b| {
+        a.arc_deviation()
+            .total_cmp(&b.arc_deviation())
+            .then(a.center.x_mm.total_cmp(&b.center.x_mm))
+            .then(a.center.y_mm.total_cmp(&b.center.y_mm))
+    });
     let Some(best) = candidates.first().copied() else {
         return Err(command_semantic(
             command_index,
@@ -3017,12 +3656,18 @@ fn arc_from_command(
     };
     if let Some(next) = candidates.get(1) {
         let uncertainty = best.numeric_tolerance().max(next.numeric_tolerance());
-        if (next.arc_deviation() - best.arc_deviation()).abs() <= uncertainty {
+        if (next.arc_deviation() - best.arc_deviation()).abs() <= uncertainty && !compat.enabled {
             return Err(command_semantic(
                 command_index,
                 "G74 least-deviation center is indeterminate",
             ));
         }
+        if (next.arc_deviation() - best.arc_deviation()).abs() <= uncertainty {
+            compat.note("G74 圆心等偏差，已按坐标稳定选择");
+        }
+    }
+    if best.source.is_some_and(|source| !source.single_quadrant) {
+        compat.note("G74 象限角度受源坐标量化影响，已按 G75 几何解释");
     }
     Ok(best)
 }
@@ -3272,7 +3917,7 @@ pub fn write_s1_with_budget(
                     }
                     out.push_str("G36*\n");
                     for contour in contours {
-                        if !matches!(contour.role, RegionRole::Solid) {
+                        if matches!(contour.role, RegionRole::Hole) {
                             return Err(unsupported(
                                 0,
                                 "writer cannot encode unverified region hole",
@@ -3336,7 +3981,11 @@ pub fn verify_roundtrip_with_budget(
     }
     let mut validation_budget = budget;
     validation_budget.max_source_bytes = budget.max_validation_bytes;
-    let actual = parse_s1_with_budget(bytes, &expected.id, validation_budget)?;
+    let actual = if expected.source.compatibility_issues.is_empty() {
+        parse_s1_with_budget(bytes, &expected.id, validation_budget)?
+    } else {
+        parse_s1_mode(bytes, &expected.id, validation_budget, true)?
+    };
     let validation = actual.document.validate().map_err(core_error)?;
     if !documents_semantically_equal(expected, &actual.document) {
         return Err(semantic(0, "writer round-trip changed semantic geometry"));
@@ -3493,7 +4142,9 @@ fn geometry_semantically_equal(
         ) => {
             left.len() == right.len()
                 && left.iter().zip(right).all(|(left, right)| {
-                    left.role == right.role
+                    (left.role == right.role
+                        || (left.role == RegionRole::CompatibilitySolid
+                            && right.role == RegionRole::Solid))
                         && left.edges.len() == right.edges.len()
                         && left
                             .edges

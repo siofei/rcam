@@ -342,7 +342,7 @@ impl Scene {
             }
             SemanticGeometry::Region { contours } => {
                 for contour in contours {
-                    let contour = canonical_region_contour(contour)
+                    let contour = derived_region_contour(contour)
                         .map_err(|e| format!("VALIDATION_FAILED: {e}"))?;
                     let mut points = Vec::new();
                     for edge in &contour.edges {

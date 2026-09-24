@@ -1987,3 +1987,25 @@ fn multiline_stroke_undo_redo_then_chinese_remains_renderable() {
             .unwrap();
     eprintln!("multiline display work {}", prepared.stats.estimated_work);
 }
+
+#[test]
+fn compatibility_open_shows_warning_and_keeps_canvas_editable() {
+    let path = std::env::temp_dir().join(format!("rcam-compat-ui-{}.gbr", std::process::id()));
+    std::fs::write(
+        &path,
+        b"%FSLAX26Y26*%%MOMM*%G36*X0Y0D02*X1000000Y0D01*X1000000Y1000000D01*X0Y1000000D01*X0Y10D01*G37*M02*",
+    )
+    .unwrap();
+    let mut model = Model::default();
+    model.open(&path).unwrap();
+    assert!(model.view.scene.is_some());
+    assert!(model.view.blocked.is_none());
+    assert!(model.view.message.contains("⚠"));
+    assert!(
+        model.view.layers[0]
+            .import_diagnostics
+            .iter()
+            .any(|line| line.starts_with("兼容导入："))
+    );
+    std::fs::remove_file(path).unwrap();
+}

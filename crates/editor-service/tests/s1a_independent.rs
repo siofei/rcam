@@ -62,7 +62,60 @@ fn public_truth_opens_or_rejects_and_normalizes_without_source_writes() {
         let before = std::fs::read(&path).unwrap();
         let response = call(&mut service, "document.open", None, json!({"path":path}));
         if !case["accept"].as_bool().unwrap() {
-            if response["status"] == "completed" {
+            let compatibility_case = matches!(
+                name,
+                "region_bowtie"
+                    | "region_not_closed"
+                    | "fs_width_overflow"
+                    | "g75_region_deviation_unsafe"
+            );
+            if compatibility_case {
+                if response["status"] != "completed" {
+                    failures.push(format!("{name}: compatibility open failed {response}"));
+                    continue;
+                }
+                assert!(
+                    response["result"]["diagnostics"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|line| line
+                            .as_str()
+                            .is_some_and(|line| line.starts_with("兼容导入：")))
+                );
+                let id = response["result"]["document_id"].as_str().unwrap();
+                let layer = response["result"]["layer_ids"][0].as_str().unwrap();
+                let target = out.join(format!("{name}-compat.gbr"));
+                let pending = call(
+                    &mut service,
+                    "gerber.export_layer",
+                    Some(id),
+                    json!({"layer_id":layer,"path":target,"overwrite":{"mode":"deny"},
+                        "metadata_policy":{"mode":"require_confirmation"}}),
+                );
+                assert_eq!(
+                    pending["status"], "confirmation_required",
+                    "{name}: {pending}"
+                );
+                let categories = pending["error"]["details"]["categories"].clone();
+                let exported = call(
+                    &mut service,
+                    "gerber.export_layer",
+                    Some(id),
+                    json!({"layer_id":layer,"path":target,"overwrite":{"mode":"deny"},
+                        "metadata_policy":{"mode":"drop_listed","categories":categories}}),
+                );
+                if exported["status"] != "completed" {
+                    failures.push(format!("{name}: compatibility export failed {exported}"));
+                } else {
+                    successful(call(
+                        &mut service,
+                        "document.open",
+                        None,
+                        json!({"path":target}),
+                    ));
+                }
+            } else if response["status"] == "completed" {
                 failures.push(format!("{name}: invalid input accepted"));
             }
             assert_eq!(std::fs::read(&path).unwrap(), before);

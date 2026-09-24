@@ -706,7 +706,21 @@ impl ApplicationService {
             .ok_or_else(|| ServiceError::permission(Path::new(path), "read"))?;
         let (canonical, bytes) = access.read_path(path)?;
         let sha256 = sha256_hex(&bytes);
-        let scene = parse_s1(&bytes, document_id).map_err(map_s1_error)?;
+        let scene = match parse_s1(&bytes, document_id) {
+            Ok(scene) => scene,
+            Err(
+                strict_error @ (gerber_io::S1Error::Semantic { .. }
+                | gerber_io::S1Error::Syntax { .. }),
+            ) => {
+                let mut scene =
+                    gerber_io::parse_s1_compat(&bytes, document_id).map_err(map_s1_error)?;
+                scene
+                    .diagnostics
+                    .insert(1, format!("标准导入失败：{strict_error}"));
+                scene
+            }
+            Err(error) => return Err(map_s1_error(error)),
+        };
         let file_name = canonical
             .file_name()
             .unwrap_or_default()

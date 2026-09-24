@@ -14,7 +14,7 @@ pub enum MirrorAxis {
 pub const MAX_MOVE_OBJECTS: usize = 10_000;
 pub const MAX_HISTORY_ENTRIES: usize = 100;
 pub const MAX_HISTORY_BYTES: usize = 64 * 1024 * 1024;
-pub const MAX_EDIT_DOCUMENT_OBJECTS: usize = 500_000;
+pub const MAX_EDIT_DOCUMENT_OBJECTS: usize = 1_000_000;
 pub const MAX_EDIT_REGION_EDGES: usize = 2_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

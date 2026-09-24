@@ -210,7 +210,7 @@ fn geometry_edges(
             let mut edges = Vec::new();
             for c in contours {
                 budget.charge(c.edges.len())?;
-                edges.extend(canonical_region_contour(c)?.edges);
+                edges.extend(derived_region_contour(c)?.edges);
             }
             edges
         }

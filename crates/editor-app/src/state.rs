@@ -360,6 +360,21 @@ impl Model {
         if let Some(old) = old_view.info {
             self.service.close(&old.document_id, &old.revision, false)?;
         }
+        let warnings = self
+            .view
+            .layers
+            .iter()
+            .filter(|layer| {
+                layer
+                    .import_diagnostics
+                    .iter()
+                    .any(|line| line.starts_with("兼容导入："))
+            })
+            .count();
+        if warnings > 0 {
+            self.view.message =
+                format!("文件已打开；⚠ {warnings} 个图层含兼容解释，请查看图层设置");
+        }
         Ok(())
     }
     pub fn open_project(&mut self, path: &Path, discard: bool) -> Result<(), ServiceError> {
@@ -494,7 +509,22 @@ impl Model {
             ImportGerberLayersParams { paths: names },
         )?;
         let diagnostics: usize = result.layers.iter().map(|l| l.diagnostics.len()).sum();
-        self.view.message = if diagnostics == 0 {
+        let compatibility_layers = result
+            .layers
+            .iter()
+            .filter(|layer| {
+                layer
+                    .diagnostics
+                    .iter()
+                    .any(|line| line.starts_with("兼容导入："))
+            })
+            .count();
+        self.view.message = if compatibility_layers > 0 {
+            format!(
+                "已导入 {} 个图层；⚠ {compatibility_layers} 个含兼容几何，请查看图层设置与导出确认",
+                result.layers.len()
+            )
+        } else if diagnostics == 0 {
             format!("已导入 {} 个图层（可整体撤销）", result.layers.len())
         } else {
             format!(

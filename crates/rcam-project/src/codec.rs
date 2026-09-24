@@ -43,7 +43,7 @@ impl Default for Budget {
             max_entry_bytes: 128 * 1024 * 1024,
             max_path_len: 512,
             max_layers: 4_000,
-            max_objects_per_layer: 500_000,
+            max_objects_per_layer: 1_000_000,
             max_block_definitions: 20_000,
             max_objects_per_block: 200_000,
             max_string_len: 1_000_000,
