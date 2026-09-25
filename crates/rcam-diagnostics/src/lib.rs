@@ -15,6 +15,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+pub mod context;
+pub use context::*;
+
 const MAX_EVENT: usize = 4096;
 const RING_COUNT: usize = 1000;
 static GLOBAL: OnceLock<Arc<Runtime>> = OnceLock::new();
@@ -76,6 +79,10 @@ pub struct Event {
     pub operation_id: u64,
     #[serde(default)]
     pub document_id_hash: Option<String>,
+    #[serde(default)]
+    pub content_sha256_prefix: Option<String>,
+    #[serde(default)]
+    pub layer_id_hash: Option<String>,
     pub command_id: String,
     pub source: Source,
     pub phase: String,
@@ -148,7 +155,9 @@ impl Runtime {
                         }
                         Ok(Message::Snapshot(ack)) => {
                             let snapshot = runtime_log.snapshot().and_then(|first| {
-                                operations.snapshot().map(|second| vec![first, second])
+                                operations
+                                    .snapshot()
+                                    .map(|second| first.into_iter().chain(second).collect())
                             });
                             let _ = ack.send(snapshot);
                             Ok(())
@@ -204,6 +213,11 @@ impl Runtime {
     }
     pub fn set_level(&self, level: Level) {
         self.level.store(level.rank(), Ordering::Relaxed);
+        if level != Level::Off {
+            let mut event = self.event("logging.level", "Info", 0);
+            event.metrics.insert("level_rank".into(), level.rank());
+            self.emit(false, event);
+        }
     }
     pub fn directory(&self) -> &Path {
         &self.dir
@@ -212,9 +226,9 @@ impl Runtime {
         if !operation
             && !event.metrics.is_empty()
             && let Ok(mut summaries) = self.summaries.lock()
-            && (summaries.contains_key(&event.command_id) || summaries.len() < 32)
+            && (summaries.contains_key(&summary_key(&event)) || summaries.len() < 512)
         {
-            summaries.insert(event.command_id.clone(), event.clone());
+            summaries.insert(summary_key(&event), event.clone());
         }
         if operation && let Ok(mut ring) = self.ring.lock() {
             if ring.len() == RING_COUNT {
@@ -241,6 +255,8 @@ impl Runtime {
             commit: self.commit.clone(),
             operation_id: id,
             document_id_hash: None,
+            content_sha256_prefix: None,
+            layer_id_hash: None,
             command_id: token(command),
             source: SOURCE.get(),
             phase: token(phase),
@@ -268,6 +284,15 @@ impl Runtime {
             && rx.recv_timeout(Duration::from_secs(2)).is_ok()
     }
     pub fn export(&self, path: &Path) -> io::Result<()> {
+        self.export_with_context(path, DiagnosticContext::default())
+    }
+    pub fn export_with_context(
+        &self,
+        path: &Path,
+        mut context: DiagnosticContext,
+    ) -> io::Result<()> {
+        context.layers.truncated |= context.layers.layers.len() > 256;
+        context.layers.layers.truncate(256);
         if !self.flush() {
             return Err(io::Error::other("diagnostic flush timed out"));
         }
@@ -287,16 +312,34 @@ impl Runtime {
             ),
         ];
         let summary = self.summaries.lock().map(|s| s.clone()).unwrap_or_default();
-        for (name, prefix) in [
-            ("project_summary.json", "project."),
-            ("compatibility_summary.json", "gerber."),
-            ("performance_summary.json", ""),
+        files.push((
+            "project_summary.json".into(),
+            serde_json::to_vec(&json!({"schema_version": 1, "project": context.project}))?,
+        ));
+        files.push((
+            "layer_summary.json".into(),
+            serde_json::to_vec(&context.layers)?,
+        ));
+        for (name, compatibility) in [
+            ("compatibility_summary.json", true),
+            ("performance_summary.json", false),
         ] {
             let selected: Vec<_> = summary
                 .values()
-                .filter(|e| e.command_id.starts_with(prefix))
+                .filter(|e| {
+                    if compatibility {
+                        e.command_id == "gerber.compatibility.categories"
+                    } else {
+                        performance_command(&e.command_id)
+                    }
+                })
                 .collect();
-            files.push((name.into(), serde_json::to_vec(&selected)?));
+            files.push((
+                name.into(),
+                serde_json::to_vec(
+                    &json!({"schema_version":1,"events": selected,"max_events":512}),
+                )?,
+            ));
         }
         let (tx, rx) = mpsc::channel();
         self.tx
@@ -328,7 +371,26 @@ impl Runtime {
                 serde_json::to_vec(&report)?,
             ));
         }
-        files.push(("manifest.json".into(), serde_json::to_vec(&json!({"app_version": self.version, "commit": self.commit, "session_id": self.session, "created_at_ms": now(), "redaction_mode": "typed-summary-only", "included_files": files.iter().map(|(n,_)| n).chain(std::iter::once(&"manifest.json".to_string())).collect::<Vec<_>>()}))?));
+        const MAX_CONTENT: usize = 100 * 1024 * 1024;
+        let mut used = files
+            .iter()
+            .filter(|(name, _)| !name.ends_with(".log"))
+            .map(|(_, b)| b.len())
+            .sum::<usize>();
+        let mut truncated_logs = false;
+        files.retain(|(name, bytes)| {
+            if !name.ends_with(".log") {
+                return true;
+            }
+            if used.saturating_add(bytes.len()) > MAX_CONTENT - 64 * 1024 {
+                truncated_logs = true;
+                false
+            } else {
+                used += bytes.len();
+                true
+            }
+        });
+        files.push(("manifest.json".into(), serde_json::to_vec(&json!({"app_version": self.version, "commit": self.commit, "session_id": self.session, "created_at_ms": now(), "redaction_mode": "typed-summary-only", "max_content_bytes": MAX_CONTENT, "truncated_logs": truncated_logs, "included_files": files.iter().map(|(n,_)| n).chain(std::iter::once(&"manifest.json".to_string())).collect::<Vec<_>>()}))?));
         let entries: Vec<_> = files
             .iter()
             .map(|(name, bytes)| rcam_project::zip_codec::ZipEntry {
@@ -336,6 +398,9 @@ impl Runtime {
                 data: bytes,
             })
             .collect();
+        if entries.iter().map(|e| e.data.len()).sum::<usize>() > MAX_CONTENT {
+            return Err(io::Error::other("diagnostic content budget exceeded"));
+        }
         let bytes = rcam_project::zip_codec::write_zip(&entries);
         let mut output = OpenOptions::new().write(true).create_new(true).open(path)?;
         if let Err(error) = output.write_all(&bytes).and_then(|_| output.sync_all()) {
@@ -435,12 +500,46 @@ impl Drop for Guard {
         }
     }
 }
+fn summary_key(event: &Event) -> String {
+    format!(
+        "{}:{}:{}",
+        event.command_id,
+        event.content_sha256_prefix.as_deref().unwrap_or_default(),
+        event.layer_id_hash.as_deref().unwrap_or_default()
+    )
+}
+fn performance_command(command: &str) -> bool {
+    [
+        "project.open.",
+        "project.save.",
+        "gerber.import.",
+        "gerber.export.",
+        "snap.query.",
+    ]
+    .iter()
+    .any(|prefix| command.starts_with(prefix))
+        || command == "render_index.build"
+}
 pub fn measurements(level: Level, command: &'static str, fields: &[(&'static str, u64)]) {
+    identified_measurements(level, command, None, None, fields)
+}
+/// Identities are hex-only, bounded hashes; arbitrary paths/text cannot enter events.
+pub fn identified_measurements(
+    level: Level,
+    command: &'static str,
+    content_hash: Option<&str>,
+    layer_id: Option<&str>,
+    fields: &[(&'static str, u64)],
+) {
     if let Some(runtime) = global() {
         if level == Level::Off || level.rank() > runtime.level.load(Ordering::Relaxed) {
             return;
         }
         let mut event = runtime.event(command, &format!("{level:?}"), 0);
+        event.content_sha256_prefix = content_hash
+            .filter(|h| h.len() >= 16 && h.bytes().all(|c| c.is_ascii_hexdigit()))
+            .map(|h| h[..16].to_ascii_lowercase());
+        event.layer_id_hash = layer_id.map(hash_identity);
         event.metrics = fields
             .iter()
             .take(24)
@@ -448,6 +547,25 @@ pub fn measurements(level: Level, command: &'static str, fields: &[(&'static str
             .collect();
         runtime.emit(false, event);
     }
+}
+#[derive(Clone, Copy)]
+pub enum RenderException {
+    DisplayPrepareFailed,
+    LastGoodFrameFallback,
+    ResourceLimit,
+    SurfaceError,
+    DeviceLost,
+}
+pub fn render_exception(kind: RenderException) {
+    static LAST: [AtomicU64; 5] = [const { AtomicU64::new(0) }; 5];
+    let (index, command) = match kind {
+        RenderException::DisplayPrepareFailed => (0, "render.display_prepare_failed"),
+        RenderException::LastGoodFrameFallback => (1, "render.last_good_frame_fallback"),
+        RenderException::ResourceLimit => (2, "render.resource_limit"),
+        RenderException::SurfaceError => (3, "render.surface_error"),
+        RenderException::DeviceLost => (4, "render.device_lost"),
+    };
+    rate_limited(&LAST[index], Level::Warn, command, &[("window_ms", 1000)]);
 }
 /// Monotonic, aggregate stage timing; never includes user strings.
 pub struct Timing {
@@ -587,14 +705,29 @@ impl Rolling {
             file: Some(io::BufWriter::new(file)),
         })
     }
-    fn snapshot(&mut self) -> io::Result<(String, Vec<u8>)> {
+    fn snapshot(&mut self) -> io::Result<LogSnapshot> {
         self.flush()?;
-        let path = self.path(0);
-        let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_file() || metadata.len() > self.limit {
-            return Err(io::Error::other("invalid diagnostic log"));
+        let mut files = Vec::new();
+        for n in 0..=1 {
+            let path = self.path(n);
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(m) => m,
+                Err(e) if n > 0 && e.kind() == io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e),
+            };
+            if !metadata.is_file() || metadata.len() > self.limit {
+                return Err(io::Error::other("invalid diagnostic log"));
+            }
+            files.push((
+                if n == 0 {
+                    format!("{}.log", self.name)
+                } else {
+                    format!("{}.{n}.log", self.name)
+                },
+                fs::read(path)?,
+            ));
         }
-        Ok((format!("{}.log", self.name), fs::read(path)?))
+        Ok(files)
     }
     fn path(&self, n: usize) -> PathBuf {
         self.dir.join(if n == 0 {
@@ -656,6 +789,28 @@ mod tests {
         path
     }
     #[test]
+    fn performance_summary_is_an_explicit_allowlist() {
+        for name in [
+            "project.open.read",
+            "project.save.codec",
+            "gerber.import.summary",
+            "gerber.export.summary",
+            "render_index.build",
+            "snap.query.slow_or_high_pairs",
+        ] {
+            assert!(performance_command(name));
+        }
+        for name in [
+            "logging.level",
+            "future.metrics",
+            "gerber.compatibility.categories",
+            "project.unrelated",
+            "snap.acquire",
+        ] {
+            assert!(!performance_command(name));
+        }
+    }
+    #[test]
     fn rotation_and_retention() {
         let dir = dir();
         let mut log = Rolling::new(&dir, "test", 16, 3).unwrap();
@@ -667,6 +822,7 @@ mod tests {
         for f in fs::read_dir(&dir).unwrap() {
             assert!(f.unwrap().metadata().unwrap().len() <= 16);
         }
+        assert_eq!(log.snapshot().unwrap().len(), 2);
         drop(log);
         fs::remove_dir_all(dir).unwrap();
     }

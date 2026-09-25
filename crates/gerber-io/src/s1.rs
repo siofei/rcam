@@ -3803,6 +3803,7 @@ pub fn write_s1_with_budget(
     document: &SemanticDocument,
     budget: S1Budget,
 ) -> Result<Vec<u8>, S1Error> {
+    let writer_timer = crate::export_timings::Timer::new("writer_us");
     let validation = document.validate().map_err(core_error)?;
     if validation.region_edge_count > budget.max_region_edges {
         return Err(S1Error::ResourceLimit {
@@ -4008,6 +4009,7 @@ pub fn write_s1_with_budget(
         });
     }
     let bytes = out.into_bytes();
+    drop(writer_timer);
     verify_roundtrip_with_budget(document, &bytes, budget)?;
     Ok(bytes)
 }
@@ -4037,11 +4039,14 @@ pub fn verify_roundtrip_with_budget(
     }
     let mut validation_budget = budget;
     validation_budget.max_source_bytes = budget.max_validation_bytes;
+    let reparse_timer = crate::export_timings::Timer::new("reparse_us");
     let actual = if expected.source.compatibility_issues.is_empty() {
         parse_s1_with_budget(bytes, &expected.id, validation_budget)?
     } else {
         parse_s1_mode(bytes, &expected.id, validation_budget, true)?
     };
+    drop(reparse_timer);
+    let _compare_timer = crate::export_timings::Timer::new("semantic_compare_us");
     let validation = actual.document.validate().map_err(core_error)?;
     if !documents_semantically_equal(expected, &actual.document) {
         return Err(semantic(0, "writer round-trip changed semantic geometry"));
@@ -4435,7 +4440,9 @@ pub fn export_s1_new_path(
             .map_err(|error| io_error(&temporary, error))?;
         file.sync_all()
             .map_err(|error| io_error(&temporary, error))?;
+        let readback_timer = crate::export_timings::Timer::new("readback_us");
         let persisted = read_bounded_file(&temporary, S1_MAX_VALIDATION_BYTES)?;
+        drop(readback_timer);
         verify_roundtrip(document, &persisted)?;
         if path.exists() {
             return Err(S1Error::TargetExists(path.to_path_buf()));

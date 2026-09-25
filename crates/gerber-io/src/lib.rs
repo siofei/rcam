@@ -4,6 +4,8 @@
 //! We therefore scan the source before and after parsing and fail closed for
 //! every command outside the S0 circle-flash subset.
 
+pub mod export_timings;
+
 use editor_core::{CircleAperture, Document, DrawObject, Exposure, Geometry, Layer, MmPoint};
 use gerber_parser::gerber_types::{
     Aperture, Command, DCode, ExtendedCode, FunctionCode, GCode, MCode, Operation, Polarity, Unit,

@@ -282,6 +282,8 @@ mod tests {
             recent_colors: Vec::new(),
             prefs: crate::preferences::AppPreferences::default(),
             recovery_candidate: None,
+            recovery_prompt_reported: None,
+            recovery_attempted_identity: None,
             recovery_ignore_confirm: false,
             last_dirty_identity: String::new(),
             dirty_since: std::time::Instant::now(),

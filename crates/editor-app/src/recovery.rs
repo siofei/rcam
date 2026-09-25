@@ -9,6 +9,19 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+pub(crate) fn event(command: &'static str) {
+    rcam_diagnostics::with_source(rcam_diagnostics::Source::Recovery, || {
+        rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info, command)
+    });
+}
+pub(crate) fn scheduled(retry: bool) {
+    event(if retry {
+        "recovery.write_retry"
+    } else {
+        "recovery.write_scheduled"
+    });
+}
+
 const MAX_METADATA: u64 = 16 * 1024;
 const MAX_SNAPSHOT: u64 = 512 * 1024 * 1024;
 
@@ -63,6 +76,11 @@ pub(crate) fn write(
             info.revision.parse().ok(),
             result.as_ref().err().map(|_| "RECOVERY_WRITE_FAILED"),
         );
+        event(if result.is_ok() {
+            "recovery.write_success"
+        } else {
+            "recovery.write_failed"
+        });
         result
     })
 }
@@ -146,6 +164,9 @@ pub(crate) fn discover(dir: &Path) -> Vec<RecoveryMetadata> {
             found.push(meta);
         }
     }
+    if !found.is_empty() {
+        event("recovery.discovered");
+    }
     found.sort_by_key(|m| std::cmp::Reverse(m.autosave_unix_seconds));
     found
 }
@@ -185,6 +206,9 @@ fn reset_after_save(
 ) -> bool {
     if info.project_dirty {
         return false;
+    }
+    if !last_dirty.is_empty() || !last_recovered.is_empty() {
+        event("recovery.cleaned_after_save");
     }
     last_dirty.clear();
     last_recovered.clear();
@@ -236,6 +260,8 @@ impl EditorApp {
             return;
         }
         if let Some(dir) = directory() {
+            scheduled(self.recovery_attempted_identity.as_ref() == Some(&identity));
+            self.recovery_attempted_identity = Some(identity.clone());
             self.send(Action::RecoveryWrite(dir));
             if self.busy {
                 self.last_recovery_at = now;
@@ -248,18 +274,26 @@ impl EditorApp {
         let Some(candidate) = self.recovery_candidate.clone() else {
             return;
         };
+        if self.recovery_prompt_reported.as_ref() != Some(&candidate.snapshot_hash) {
+            event("recovery.prompt_shown");
+            self.recovery_prompt_reported = Some(candidate.snapshot_hash.clone());
+        }
         egui::Modal::new(egui::Id::new("project-recovery")).show(ctx, |ui| {
             ui.set_width(crate::ui::tokens::modal_width(ctx, 440., 180.));
             ui.heading("检测到未恢复的工程");
             ui.label("可将恢复副本作为未保存的工程打开，原工程不会被覆盖。");
             ui.horizontal(|ui| {
                 if crate::ui::buttons::primary(ui, "打开恢复副本", !self.busy).clicked() {
+                    event("recovery.restore_requested");
                     match directory().and_then(|dir| load(&dir, &candidate).ok()) {
                         Some(bytes) => {
                             self.recovery_candidate = None;
                             self.send(Action::RestoreProject(bytes));
                         }
-                        None => self.ui_error = Some("恢复快照损坏或无法读取".into()),
+                        None => {
+                            event("recovery.restore_failed");
+                            self.ui_error = Some("恢复快照损坏或无法读取".into());
+                        }
                     }
                 }
                 if crate::ui::buttons::secondary_enabled(ui, "忽略", !self.busy).clicked() {
@@ -277,6 +311,7 @@ impl EditorApp {
                     self.recovery_ignore_confirm = false;
                 }
                 if delete {
+                    event("recovery.dismissed");
                     if let Some(dir) = directory() {
                         remove(&dir, &candidate.project_id);
                         self.recovery_candidate = discover(&dir).into_iter().next();
@@ -316,6 +351,10 @@ mod tests {
     #[test]
     fn dirty_snapshot_is_discovered_and_restored_without_touching_project() {
         use editor_service::{ApplicationService, CreateEmptyLayerParams, FileAccessPolicy};
+        let log_dir =
+            std::env::temp_dir().join(format!("rcam-recovery-events-{}", std::process::id()));
+        let guard = rcam_diagnostics::Runtime::start(log_dir.clone(), "test", "test").unwrap();
+        assert!(guard.install_sink());
         let dir = std::env::temp_dir().join(format!("rcam-recovery-flow-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let root = dir.canonicalize().unwrap();
@@ -355,6 +394,7 @@ mod tests {
         );
         let recovery_dir = root.join("cache");
         pending = Some(identity(&info));
+        scheduled(true);
         write(&recovery_dir, &info, &bytes).unwrap();
         complete_write(&mut pending, &mut last_recovered, true, Some(&info));
         assert_eq!(last_recovered, identity(&info));
@@ -381,6 +421,17 @@ mod tests {
         assert_eq!(fs::read(&saved_path).unwrap(), current_saved);
         remove(&recovery_dir, &info.project_id);
         assert!(discover(&recovery_dir).is_empty());
+        assert!(guard.runtime().flush());
+        let events = fs::read_to_string(log_dir.join("rcam.log")).unwrap();
+        let failed = events.find("recovery.write_failed").unwrap();
+        let retry = events.find("recovery.write_retry").unwrap();
+        let success = events.find("recovery.write_success").unwrap();
+        assert!(failed < retry && retry < success);
+        println!(
+            "recovery failure -> retry -> success; failed write unmarked; original unchanged; restored dirty"
+        );
+        drop(guard);
+        fs::remove_dir_all(log_dir).unwrap();
         fs::remove_dir_all(dir).unwrap();
     }
 }

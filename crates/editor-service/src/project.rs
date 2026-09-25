@@ -273,6 +273,7 @@ impl ApplicationService {
     }
 
     fn project_open_observed(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
+        let _total_timing = rcam_diagnostics::Timing::start("project.open.total");
         require_rcam(Path::new(path))?;
         let access = self
             .file_access
@@ -501,6 +502,7 @@ impl ApplicationService {
         allow_replace: bool,
         camera: Option<rcam_project::CameraState>,
     ) -> Result<DocumentInfo, ServiceError> {
+        let _total_timing = rcam_diagnostics::Timing::start("project.save.total");
         let record = self
             .documents
             .get(document_id)

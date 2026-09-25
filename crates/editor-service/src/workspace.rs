@@ -733,9 +733,11 @@ impl ApplicationService {
             }
             Err(error) => return Err(map_s1_error(error)),
         };
-        rcam_diagnostics::measurements(
+        rcam_diagnostics::identified_measurements(
             rcam_diagnostics::Level::Info,
             "gerber.import.summary",
+            Some(&sha256),
+            None,
             &[
                 ("source_bytes", bytes.len() as u64),
                 (
@@ -787,9 +789,11 @@ impl ApplicationService {
                 (*code, count)
             })
             .collect();
-        rcam_diagnostics::measurements(
+        rcam_diagnostics::identified_measurements(
             rcam_diagnostics::Level::Info,
             "gerber.compatibility.categories",
+            Some(&sha256),
+            None,
             &counts,
         );
         let file_name = canonical
@@ -1550,6 +1554,8 @@ pub(crate) fn layer_rows(record: &S1DocumentRecord) -> Vec<LayerInfo> {
                 z_index,
                 source_id: source.and_then(|s| s.source_id.clone()),
                 provenance: source.and_then(|s| s.provenance.clone()),
+                compatibility_issue_count: source
+                    .map_or(0, |s| s.metadata.compatibility_issues.len()),
                 import_diagnostics: source.map(|s| s.diagnostics.clone()).unwrap_or_default(),
             })
         })

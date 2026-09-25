@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发边界为 Mac-first S4-C1 Full Object Snap closeout PASS（Global Units、S4-B1、S4-B2、S4-B3 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准；下一阶段固定为 INFRA1 Runtime Diagnostics Foundation，但尚未启动。
+当前开发边界为 Mac-first S4-C1 Full Object Snap closeout PASS（Global Units、S4-B1、S4-B2、S4-B3 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准；下一阶段固定为 INFRA1 Runtime Diagnostics Foundation，现已进入 final closeout。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证

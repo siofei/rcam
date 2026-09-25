@@ -105,6 +105,8 @@ struct EditorApp {
     recent_colors: Vec<String>,
     prefs: preferences::AppPreferences,
     recovery_candidate: Option<recovery::RecoveryMetadata>,
+    recovery_prompt_reported: Option<String>,
+    recovery_attempted_identity: Option<String>,
     recovery_ignore_confirm: bool,
     last_dirty_identity: String,
     dirty_since: Instant,
@@ -206,6 +208,11 @@ impl EditorApp {
             .wgpu_render_state
             .as_ref()
             .expect("eframe wgpu renderer required");
+        gpu.device.set_device_lost_callback(|reason, _message| {
+            if reason != eframe::wgpu::DeviceLostReason::Destroyed {
+                rcam_diagnostics::render_exception(rcam_diagnostics::RenderException::DeviceLost);
+            }
+        });
         let adapter_info = gpu.adapter.get_info();
         if let Some(runtime) = rcam_diagnostics::global() {
             runtime.set_gpu(&adapter_info.name, &format!("{:?}", adapter_info.backend));
@@ -260,6 +267,8 @@ impl EditorApp {
             recent_colors: prefs.recent_colors.clone(),
             prefs,
             recovery_candidate,
+            recovery_prompt_reported: None,
+            recovery_attempted_identity: None,
             recovery_ignore_confirm: false,
             last_dirty_identity: String::new(),
             dirty_since: Instant::now(),
@@ -679,11 +688,18 @@ impl CommandDispatcher for EditorApp {
             command_ids::SNAP_TOGGLE => {
                 self.object_snap.enabled = !self.object_snap.enabled;
                 rcam_diagnostics::with_source(self.operation_source, || {
+                    let revision = self
+                        .view
+                        .info
+                        .as_ref()
+                        .and_then(|i| i.revision.parse().ok());
+                    let op = rcam_diagnostics::Operation::begin("snap.toggle", revision);
                     rcam_diagnostics::measurements(
                         rcam_diagnostics::Level::Info,
                         "snap.toggle",
                         &[("enabled", u64::from(self.object_snap.enabled))],
                     );
+                    op.end(revision, None);
                 });
                 self.object_snap_runtime.reset();
                 self.persist_project_view();
@@ -814,12 +830,6 @@ impl eframe::App for EditorApp {
                 }
             }
             self.accept_text_reply();
-            if self.view.display_transient.is_some() {
-                rcam_diagnostics::runtime_event(
-                    rcam_diagnostics::Level::Warn,
-                    "render.last_good_frame_fallback",
-                );
-            }
             if let Some(generation) = self.text.pending_apply.take()
                 && generation == self.text.generation
             {
@@ -1358,9 +1368,20 @@ impl eframe::App for EditorApp {
                             match platform::choose_diagnostics() {
                                 Ok(Some(path)) => {
                                     let runtime = runtime.clone();
+                                    let info = self.view.info.clone();
+                                    let layers = self.view.layers.clone();
+                                    let snapshot = self.view.snap_snapshot.clone();
+                                    let unit = self.display_unit;
                                     let (tx, rx) = std::sync::mpsc::channel();
                                     self.diagnostic_export = Some(rx);
-                                    std::thread::spawn(move || { let _ = tx.send(runtime.export(&path).map_err(|_| "诊断包导出失败：请使用新文件名并检查写入权限".to_string())); });
+                                    std::thread::spawn(move || { rcam_diagnostics::with_source(rcam_diagnostics::Source::Menu, || {
+                                        let context = info.as_ref().map(|info| editor_service::diagnostic_context(info, &layers, snapshot.as_deref(), unit)).unwrap_or_default();
+                                        let revision = info.as_ref().and_then(|i| i.revision.parse().ok());
+                                        // The exported ring contains the request; success is recorded after durable publication.
+                                        let op = rcam_diagnostics::Operation::begin("diagnostics.export", revision);
+                                        let result = runtime.export_with_context(&path, context);
+                                        op.end(revision, result.as_ref().err().map(|_| "DIAGNOSTIC_EXPORT_FAILED"));
+                                        let _ = tx.send(result.map_err(|_| "诊断包导出失败：请使用新文件名并检查写入权限".to_string())); }); });
                                 }
                                 Ok(None) => {},
                                 Err(error) => self.ui_error = Some(error),
@@ -1778,8 +1799,11 @@ impl eframe::App for EditorApp {
                             Ok(resolution) => {
                                 measure_hover = Some((resolution.point, resolution.kind));
                                 if r.clicked_by(egui::PointerButton::Primary) {
-                                    self.measure
-                                        .click_snapped(resolution.point, resolution.kind);
+                                    self.measure.click_snapped(resolution.point, resolution.kind);
+                                    rcam_diagnostics::with_source(rcam_diagnostics::Source::Canvas, || {
+                                        let revision = self.view.info.as_ref().and_then(|i| i.revision.parse().ok());
+                                        rcam_diagnostics::Operation::begin("measure.point", revision).end(revision,None);
+                                    });
                                 }
                             }
                             Err(e) => self.ui_error = Some(e),
@@ -1934,7 +1958,8 @@ impl eframe::App for EditorApp {
                         }
                         Err(e) => {
                             if self.display_error.as_ref() != Some(&e) {
-                                rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Warn, "render.display_prepare_failed");
+                                rcam_diagnostics::render_exception(rcam_diagnostics::RenderException::DisplayPrepareFailed);
+                                if e.starts_with("RESOURCE_LIMIT:") { rcam_diagnostics::render_exception(rcam_diagnostics::RenderException::ResourceLimit); }
                             }
                             self.display_error = Some(e);
                             self.drag = None;
@@ -1946,6 +1971,7 @@ impl eframe::App for EditorApp {
                     self.last_good = None;
                 }
                 if let Some(last) = &self.last_good {
+                    if !rendered { rcam_diagnostics::render_exception(rcam_diagnostics::RenderException::LastGoodFrameFallback); }
                     painter.add(egui_wgpu::Callback::new_paint_callback(
                         rect,
                         gpu::Callback {
@@ -2305,10 +2331,17 @@ fn main() -> eframe::Result {
         }
     }
 
+    let mut wgpu_options = eframe::egui_wgpu::WgpuConfiguration::default();
+    let default_surface_error = wgpu_options.on_surface_error.clone();
+    wgpu_options.on_surface_error = std::sync::Arc::new(move |error| {
+        rcam_diagnostics::render_exception(rcam_diagnostics::RenderException::SurfaceError);
+        default_surface_error(error)
+    });
     let result = eframe::run_native(
         "RCam",
         eframe::NativeOptions {
             renderer: eframe::Renderer::Wgpu,
+            wgpu_options,
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([1280., 800.])
                 .with_min_inner_size(

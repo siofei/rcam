@@ -39,6 +39,7 @@ def main():
         ['cargo', 'clippy', '--workspace', '--all-targets', '--locked', '--', '-D', 'warnings'],
         ['cargo', 'test', '--workspace', '--locked', '--no-fail-fast'],
         ['cargo', 'test', '--locked', '-p', 'editor-service', '--test', 'automation_contract', '--test', 'headless_workflow', '--test', 'runtime_diagnostics'],
+        ['cargo', 'test', '--locked', '-p', 'rcam-diagnostics'],
         ['cargo', 'tree', '--locked', '-p', 'editor-service', '-e', 'normal'],
         ['cargo', 'build', '--release', '--locked', '-p', 'editor-app'],
         ['python3', 'scripts/source_manifest.py', '--check'],

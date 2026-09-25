@@ -300,6 +300,8 @@ pub struct LayerInfo {
     /// Parser diagnostics of the import that created this layer.
     #[serde(default)]
     pub import_diagnostics: Vec<String>,
+    #[serde(default)]
+    pub compatibility_issue_count: usize,
 }
 
 fn default_true() -> bool {
@@ -331,6 +333,7 @@ impl Default for LayerInfo {
             source_id: None,
             provenance: None,
             import_diagnostics: Vec::new(),
+            compatibility_issue_count: 0,
         }
     }
 }
@@ -2430,9 +2433,12 @@ impl ApplicationService {
         // governs former block geometry exactly like top-level geometry
         // (S4-B2 Final Closeout B0) instead of whatever precision was active
         // when the block definition was captured.
-        let normalize_timing = rcam_diagnostics::Timing::start("gerber.export.normalize");
+        let export_started = std::time::Instant::now();
+        let flatten_started = std::time::Instant::now();
         let flattened =
             gerber_io::flatten_block_instances_for_export(&snapshot).map_err(map_s1_error)?;
+        let flatten_us = flatten_started.elapsed().as_micros() as u64;
+        let normalize_started = std::time::Instant::now();
         let project_precision = record.manufacturing_precision;
         let project_result = gerber_io::normalize_manufacturing(&flattened, project_precision);
         let document = match project_result {
@@ -2484,7 +2490,7 @@ impl ApplicationService {
                 ));
             }
         };
-        drop(normalize_timing);
+        let normalize_us = normalize_started.elapsed().as_micros() as u64;
         let temp = temporary_output_path(&target)?;
         if temp.exists() {
             return Err(ServiceError {
@@ -2493,9 +2499,14 @@ impl ApplicationService {
                 details: serde_json::json!({"path": temp.to_string_lossy()}),
             });
         }
+        gerber_io::export_timings::take();
         export_s1_new_path(&document, &temp).map_err(map_s1_error)?;
+        let mut stages = gerber_io::export_timings::take();
         let _temp_guard = TemporaryOutput::new(temp.clone());
+        let readback_started = std::time::Instant::now();
         let bytes = read_bounded_file(&temp, gerber_io::S1_MAX_WRITER_BYTES)?;
+        *stages.entry("readback_us").or_default() += readback_started.elapsed().as_micros() as u64;
+        let publish_started = std::time::Instant::now();
         if let Err(error) = fs::hard_link(&temp, &target) {
             if error.kind() == io::ErrorKind::AlreadyExists {
                 return Err(ServiceError {
@@ -2510,6 +2521,51 @@ impl ApplicationService {
                 error,
             ));
         }
+        stages.extend([
+            ("flatten_us", flatten_us),
+            ("normalize_us", normalize_us),
+            ("publish_us", publish_started.elapsed().as_micros() as u64),
+            ("total_us", export_started.elapsed().as_micros() as u64),
+            ("output_bytes", bytes.len() as u64),
+            (
+                "object_count",
+                document.layers.iter().map(|l| l.objects.len() as u64).sum(),
+            ),
+            (
+                "project_precision_nm",
+                (project_precision.resolution_mm * 1_000_000.).round() as u64,
+            ),
+            (
+                "compatibility_override_used",
+                u64::from(params.compatibility_precision_override_mm.is_some()),
+            ),
+            (
+                "compatibility_warning_count",
+                snapshot.source.compatibility_issues.len() as u64,
+            ),
+            (
+                "block_flatten_count",
+                snapshot
+                    .layers
+                    .iter()
+                    .flat_map(|l| &l.objects)
+                    .filter(|o| {
+                        matches!(
+                            o.geometry,
+                            editor_core::SemanticGeometry::BlockInstance { .. }
+                        )
+                    })
+                    .count() as u64,
+            ),
+            ("success", 1),
+        ]);
+        rcam_diagnostics::identified_measurements(
+            rcam_diagnostics::Level::Info,
+            "gerber.export.summary",
+            None,
+            Some(&params.layer_id),
+            &stages.into_iter().collect::<Vec<_>>(),
+        );
         let result = ExportResult {
             api_version: API_VERSION,
             document_id: document_id.into(),
@@ -4283,5 +4339,70 @@ mod s1b_guards {
         );
         assert_eq!(service.document_get(&id).unwrap(), info);
         assert_eq!(service.documents[&id].document, geometry);
+    }
+}
+
+/// Builds a geometry-free diagnostic DTO from a consistent read-only service snapshot.
+pub fn diagnostic_context(
+    info: &DocumentInfo,
+    layers: &[LayerInfo],
+    snapshot: Option<&RenderSnapshot>,
+    unit: editor_core::units::DisplayUnit,
+) -> rcam_diagnostics::DiagnosticContext {
+    use rcam_diagnostics::{
+        DiagnosticContext, LayerDiagnostic, LayerSummary, ProjectSummary, hash_identity,
+    };
+    let compatibility_count = |layer: &LayerInfo| layer.compatibility_issue_count;
+    DiagnosticContext {
+        project: Some(ProjectSummary {
+            document_id_hash: hash_identity(&info.document_id),
+            project_id_hash: hash_identity(&info.project_id),
+            manufacturing_revision: info.revision.parse().unwrap_or_default(),
+            workspace_revision: info.workspace_revision.parse().unwrap_or_default(),
+            project_dirty: info.project_dirty,
+            layer_count: layers.len(),
+            object_count: layers.iter().map(|l| l.object_count).sum(),
+            block_definition_count: snapshot.map_or(0, |s| s.block_definitions.len()),
+            block_instance_count: snapshot.map_or(0, |s| {
+                s.layers
+                    .iter()
+                    .flat_map(|l| &l.objects)
+                    .filter(|o| {
+                        matches!(
+                            o.geometry,
+                            editor_core::SemanticGeometry::BlockInstance { .. }
+                        )
+                    })
+                    .count()
+            }),
+            manufacturing_precision_nm: (info.manufacturing_precision.resolution_mm * 1_000_000.)
+                .round() as u64,
+            display_unit: unit,
+            compatibility_layer_count: layers.iter().filter(|l| compatibility_count(l) > 0).count(),
+        }),
+        layers: LayerSummary {
+            schema_version: 1,
+            actual_count: layers.len(),
+            truncated: layers.len() > 256,
+            layers: layers
+                .iter()
+                .take(256)
+                .map(|l| LayerDiagnostic {
+                    layer_id_hash: hash_identity(&l.layer_id),
+                    name_hash: hash_identity(&l.display_name),
+                    kind: l.kind,
+                    object_count: l.object_count,
+                    visible: l.visible,
+                    selectable: l.selectable,
+                    locked: l.locked,
+                    display_mode: l.display_mode,
+                    compatibility_issue_count: compatibility_count(l),
+                    source_content_hash_prefix: l
+                        .provenance
+                        .as_ref()
+                        .map(|p| p.imported_sha256.chars().take(16).collect()),
+                })
+                .collect(),
+        },
     }
 }

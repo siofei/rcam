@@ -659,12 +659,23 @@ impl Model {
                 self.view.render_viewport = self.viewport.map(|(_, b)| b);
             }
             Err(e) if e.starts_with("DISPLAY_PRECISION:") => {
+                rcam_diagnostics::render_exception(
+                    rcam_diagnostics::RenderException::DisplayPrepareFailed,
+                );
                 self.view.display_transient = Some(e);
                 if let Some(scene) = &self.view.scene {
                     self.view.render_ppm = scene.ppm;
                 }
             }
             Err(e) => {
+                rcam_diagnostics::render_exception(
+                    rcam_diagnostics::RenderException::DisplayPrepareFailed,
+                );
+                if e.starts_with("RESOURCE_LIMIT:") {
+                    rcam_diagnostics::render_exception(
+                        rcam_diagnostics::RenderException::ResourceLimit,
+                    );
+                }
                 self.view.scene = None;
                 self.view.blocked = Some(e);
             }
@@ -1055,7 +1066,15 @@ impl Model {
                 self.service.project_set_workspace(&id, settings)?;
                 self.refresh(false)
             }
-            Action::RestoreProject(bytes) => self.restore_project(&bytes),
+            Action::RestoreProject(bytes) => {
+                let result = self.restore_project(&bytes);
+                crate::recovery::event(if result.is_ok() {
+                    "recovery.restore_success"
+                } else {
+                    "recovery.restore_failed"
+                });
+                result
+            }
             Action::RecoveryWrite(dir) => {
                 let d = self.info()?;
                 if d.project_dirty {

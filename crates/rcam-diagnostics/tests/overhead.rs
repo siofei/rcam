@@ -34,12 +34,41 @@ fn bounded_overhead_and_snap_rate_limit() {
             std::thread::yield_now();
         }
     }
+    for _ in 0..1000 {
+        rcam_diagnostics::render_exception(
+            rcam_diagnostics::RenderException::LastGoodFrameFallback,
+        );
+    }
+    for kind in [
+        rcam_diagnostics::RenderException::DisplayPrepareFailed,
+        rcam_diagnostics::RenderException::ResourceLimit,
+        rcam_diagnostics::RenderException::SurfaceError,
+        rcam_diagnostics::RenderException::DeviceLost,
+    ] {
+        rcam_diagnostics::render_exception(kind);
+    }
+    assert!(runtime.flush());
     let events = std::fs::read_to_string(dir.join("rcam.log")).unwrap();
     let snap: Vec<_> = events
         .lines()
         .filter(|line| line.contains("snap.acquire"))
         .collect();
     assert_eq!(snap.len(), 1);
+    for name in [
+        "display_prepare_failed",
+        "last_good_frame_fallback",
+        "resource_limit",
+        "surface_error",
+        "device_lost",
+    ] {
+        assert_eq!(
+            events
+                .lines()
+                .filter(|line| line.contains(&format!("render.{name}")))
+                .count(),
+            1
+        );
+    }
     assert!(snap[0].contains("Debug"));
     println!(
         "{}",

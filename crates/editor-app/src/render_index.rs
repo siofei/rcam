@@ -23,6 +23,7 @@ pub struct ViewportRenderSet {
     pub cell_references_visited: usize,
 }
 fn limit(resource: &str, limit: usize, actual: usize) -> String {
+    rcam_diagnostics::render_exception(rcam_diagnostics::RenderException::ResourceLimit);
     format!("RESOURCE_LIMIT: resource={resource} limit={limit} actual={actual}")
 }
 impl RenderIndex {

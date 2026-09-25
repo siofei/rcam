@@ -105,7 +105,101 @@ fn service_operations_record_real_revisions_and_failures_without_payloads() {
     ] {
         let _ = find(command, "begin");
     }
-    runtime.export(&dir.join("diagnostics.zip")).unwrap();
+    let export = call(
+        &mut service,
+        "gerber.export_layer",
+        "4",
+        json!({"layer_id":layer,"path":dir.join("export.gbr"),"overwrite":{"mode":"deny"},"metadata_policy":{"mode":"drop_listed","categories":["layer_name"]}}),
+    );
+    assert_eq!(export["status"], "completed", "{export}");
+    let current = service.document_get(doc).unwrap();
+    let layers = service.layers_list(doc).unwrap();
+    let snapshot = service.render_snapshot(doc).unwrap();
+    let context = editor_service::diagnostic_context(
+        &current,
+        &layers,
+        Some(&snapshot),
+        editor_core::units::DisplayUnit::Millimeter,
+    );
+    assert_eq!(context.project.as_ref().unwrap().manufacturing_revision, 4);
+    assert_eq!(
+        context.project.as_ref().unwrap().object_count,
+        layers.iter().map(|l| l.object_count).sum::<usize>()
+    );
+    assert_eq!(
+        context.layers.layers[0]
+            .source_content_hash_prefix
+            .as_deref(),
+        Some(&info.source_sha256[..16])
+    );
+    let many = vec![layers[0].clone(); 300];
+    let bounded = editor_service::diagnostic_context(
+        &current,
+        &many,
+        Some(&snapshot),
+        editor_core::units::DisplayUnit::Inch,
+    );
+    assert_eq!(bounded.layers.layers.len(), 256);
+    assert_eq!(bounded.layers.actual_count, 300);
+    assert!(bounded.layers.truncated);
+    runtime
+        .export_with_context(&dir.join("diagnostics.zip"), context)
+        .unwrap();
+    let entries = rcam_project::zip_codec::read_zip(
+        &std::fs::read(dir.join("diagnostics.zip")).unwrap(),
+        &rcam_project::zip_codec::ReadPolicy {
+            max_entries: 32,
+            max_uncompressed_bytes: 100 * 1024 * 1024,
+            max_entry_bytes: 30 * 1024 * 1024,
+            max_path_len: 128,
+        },
+    )
+    .unwrap();
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_slice(&entries.iter().find(|e| e.path == name).unwrap().data).unwrap()
+    };
+    assert_eq!(
+        read("project_summary.json")["project"]["manufacturing_revision"],
+        4
+    );
+    assert_eq!(read("layer_summary.json")["actual_count"], layers.len());
+    let performance = read("performance_summary.json");
+    let exported = performance["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["command_id"] == "gerber.export.summary")
+        .unwrap();
+    for key in [
+        "flatten_us",
+        "normalize_us",
+        "writer_us",
+        "reparse_us",
+        "semantic_compare_us",
+        "readback_us",
+        "publish_us",
+        "output_bytes",
+        "success",
+    ] {
+        assert!(exported["metrics"][key].is_u64(), "{key}");
+    }
+    for entry in entries {
+        let text = String::from_utf8_lossy(&entry.data);
+        for forbidden in [
+            "PRIVATE-TEXT",
+            "private-project",
+            root.to_str().unwrap(),
+            "object_ids",
+            "vertices",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "{} leaked {forbidden}",
+                entry.path
+            );
+        }
+    }
+
     assert!(runtime.flush());
     for name in ["rcam.log", "operations.log"] {
         let log = std::fs::read_to_string(dir.join(name)).unwrap();
