@@ -849,7 +849,24 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(entries.len(), 8);
+        let names: std::collections::BTreeSet<_> =
+            entries.iter().map(|entry| entry.path.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "environment.json",
+                "diagnostic.json",
+                "project_summary.json",
+                "layer_summary.json",
+                "compatibility_summary.json",
+                "performance_summary.json",
+                "rcam.log",
+                "operations.log",
+                "manifest.json"
+            ]
+            .into_iter()
+            .collect()
+        );
         for e in entries {
             assert!(!String::from_utf8_lossy(&e.data).contains("PRIVATE"));
         }
