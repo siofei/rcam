@@ -31,3 +31,5 @@ Apple M1 / macOS arm64 / Metal / Retina：真实 release 完成 Import → F3 �
 预验收原始记录：`evidence/infra1-closeout-bea0a32/`（原生链、Recovery、日志等级、大型工程、Metal），`evidence/infra1-closeout-51e16f9/`（干净完整门禁、第二次原生链及 fresh source 验证）。开发中因新增 layer_summary 导致旧 8 文件断言失败，已改为完整 9 文件白名单；失败日志保留，不冒充最终通过。最终提交再次执行完整门禁和原生链，证据另存，不覆盖这些记录。
 
 剩余边界：Windows 未执行；没有硬件故障注入/长时间 soak 结论；未统一捕获任意第三方 tracing；不自动上传。S4-C2 必须另行立项。
+
+补充回归发现并修正了旧压缩验收断言：历史工程缺少 S4-C1 两个既定 view defaults（manufacturing_boundary=true、original_path=false），模型重新编码会物化它们。测试同时验证原始 ZIP codec 所有条目逐字节保持、所有制造图层/Block 条目逐字节保持、project.json 仅允许这两个缺省字段补齐，以及 manifest 仅相应更新已验证工程条目的大小/哈希；完整解码模型、确定性输出、压缩门槛和原件不变断言全部保留。不是放宽制造数据门槛。历史失败原始日志仅本机保留，公开证据移除其中原始字节数组。
