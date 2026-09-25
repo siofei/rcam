@@ -268,7 +268,13 @@ impl ApplicationService {
     pub fn project_open(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
         let operation = rcam_diagnostics::Operation::begin("project.open", None);
         let result = self.project_open_observed(path);
-        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        operation.end(
+            result
+                .as_ref()
+                .ok()
+                .and_then(|info| info.revision.parse().ok()),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
         result
     }
 
@@ -307,7 +313,13 @@ impl ApplicationService {
     pub fn project_restore(&mut self, bytes: &[u8]) -> Result<DocumentInfo, ServiceError> {
         let operation = rcam_diagnostics::Operation::begin("project.restore", None);
         let result = self.project_restore_observed(bytes);
-        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        operation.end(
+            result
+                .as_ref()
+                .ok()
+                .and_then(|info| info.revision.parse().ok()),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
         result
     }
 

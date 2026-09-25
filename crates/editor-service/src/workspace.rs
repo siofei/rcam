@@ -695,7 +695,13 @@ impl ApplicationService {
     pub fn document_new(&mut self) -> Result<DocumentInfo, ServiceError> {
         let operation = rcam_diagnostics::Operation::begin("document.new", None);
         let result = self.document_new_observed();
-        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        operation.end(
+            result
+                .as_ref()
+                .ok()
+                .and_then(|info| info.revision.parse().ok()),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
         result
     }
 
@@ -822,7 +828,13 @@ impl ApplicationService {
     pub fn open(&mut self, path: &str) -> Result<DocumentInfo, ServiceError> {
         let operation = rcam_diagnostics::Operation::begin("document.open", None);
         let result = self.open_observed(path);
-        operation.end(None, result.as_ref().err().map(|error| error.code.as_str()));
+        operation.end(
+            result
+                .as_ref()
+                .ok()
+                .and_then(|info| info.revision.parse().ok()),
+            result.as_ref().err().map(|error| error.code.as_str()),
+        );
         result
     }
 

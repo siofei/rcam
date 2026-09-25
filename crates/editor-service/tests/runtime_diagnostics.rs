@@ -92,6 +92,8 @@ fn service_operations_record_real_revisions_and_failures_without_payloads() {
             .find(|event| event.command_id == command && event.phase == phase)
             .unwrap()
     };
+    assert_eq!(find("document.open", "ok").revision_after, Some(0));
+    assert_eq!(find("project.open", "ok").revision_after, Some(0));
     assert_eq!(find("objects.move", "ok").revision_before, Some(0));
     assert_eq!(find("objects.move", "ok").revision_after, Some(1));
     assert_eq!(find("objects.rotate", "error").revision_after, Some(1));
