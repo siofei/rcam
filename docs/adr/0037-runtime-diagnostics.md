@@ -1,6 +1,6 @@
 # ADR 0037：本地运行诊断
 
-- 状态：已接受 / INFRA1 PASS（Mac-first bounded）；Windows deferred。
+- 状态：已接受 / INFRA1 Panic hook closeout；Windows deferred。
 - 日期：2026-09-25
 - 关联：S4 基础设施；R16/R17/R18/R19/R20/R21/R22；AT-063/066/069/077/082/083/086/090/097。
 
@@ -25,3 +25,5 @@ Final closeout 补充：typed ProjectSummary/LayerSummary 仅含计数、版本�
 计时口径：stage 是单调时钟 elapsed µs，可能包含子阶段，不可简单相加（例如 container_build 包含 Deflate；atomic_publish 包含临时写入/同步/最终复读）。Gerber reparse/semantic_compare 汇总本次 writer 自检与磁盘复读自检；readback 包含两次必要读取。日志对象数为语义对象数，不是 renderer primitives。Layer compatibility_issue_count 是已有元数据条目数，不是每个原始命令出现次数。
 
 来源哈希字段只接受 64 位十六进制 SHA-256，输出前 16 位；工程中畸形 provenance 不能将路径或任意文字送入摘要。
+
+Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](../INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。

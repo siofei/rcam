@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发边界为 Mac-first S4-C1 Full Object Snap closeout PASS（Global Units、S4-B1、S4-B2、S4-B3 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准；下一阶段固定为 INFRA1 Runtime Diagnostics Foundation，已完成 Mac-first bounded 诊断收口。
+当前开发边界为 Mac-first S4-C1 Full Object Snap closeout PASS（Global Units、S4-B1、S4-B2、S4-B3 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准；下一阶段固定为 INFRA1 Runtime Diagnostics Foundation，进入 Mac-first bounded panic hook 最终收口。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -260,6 +260,8 @@ S4-B3 预冻结修正：mm/inch/mil/µm 四种 DisplayUnit 均一一持久化；
 GUI 派生显示上限现为 2000000 primitive + point，RenderIndex 最多 1000000 对象，原 1000000 引用／16384 单格候选／采样工作预算仍生效。指定 230409 矩形 Flash 的 `.GPT` 在 Mac 原生窗口可导入和显示；`0727SMT` 批量兼容结果见 [验收记录](GERBER_COMPAT_20260924_REVIEW.md)。百万对象预算只表示资源界限，不证明完整 CORE10、P100K、Windows 或 V1。
 
 
-### INFRA1 Runtime Diagnostics（PASS · Mac-first bounded）
+### INFRA1 Runtime Diagnostics（Panic hook closeout）
 
-本地日志/诊断基础设施已按 Mac-first bounded 收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
+本地日志/诊断基础设施进入 Mac-first bounded panic hook 最终收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
+
+Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。

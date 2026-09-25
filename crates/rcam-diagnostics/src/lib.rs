@@ -462,7 +462,8 @@ impl Guard {
         if GLOBAL.set(self.runtime.clone()).is_err() {
             return false;
         }
-        std::panic::set_hook(Box::new(|info| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
             if let Some(runtime) = GLOBAL.get() {
                 let location = info.location().map(|l| {
                     (
@@ -480,6 +481,8 @@ impl Guard {
                     .map(|s| editor_core::hash::sha256_hex(&s.as_bytes()[..s.len().min(4096)]));
                 let _ = runtime.write_crash_details(location, hash);
             }
+            // Preserve the standard panic/backtrace path even when reporting fails.
+            previous(info);
         }));
         true
     }

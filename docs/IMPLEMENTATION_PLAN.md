@@ -211,13 +211,15 @@ S4-B1 Multi-Layer Workspace + reservations
 | S4-B2 | BlockDefinition/BlockInstance core（无 nested，仅 translation/rotation/reflection，display + Export flatten）；`.rcam` Native Project Model / schema v1；Workspace state 与 Snap settings 持久化——**PASS（Mac-first）** | S4-B1 审查通过；同一 clean commit 完成 Metal/GUI/codec/package closeout |
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects——**PASS（Mac-first）**；Gerber 仍只 Import/Export | S4-B2；双平台 V1 另验 |
 | S4-C1 | Full Object Snap（制造边界、Intersection/Nearest、Layer/Class filter、Grid resolver、Drag/Text/Measure/Base Point、project settings）——**PASS（Mac-first bounded）** | S4-B3；Windows 后补 |
-| INFRA1 | Runtime Diagnostics Foundation——**PASS（Mac-first bounded）** | S4-C1 独立复审通过；S4-C2 前置 |
+| INFRA1 | Runtime Diagnostics Foundation——**Panic hook closeout，最终状态见交付** | S4-C1 独立复审通过；S4-C2 前置 |
 | S4-C2+ | Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | INFRA1 完成后另行立项 |
 
 每个阶段启动前先写任务书、需求/验收/ADR；架构方向见 DESIGN_V1 第 22 章与 ADR 0029/0030，长期约束见 AGENTS.md。
 Windows、完整 V1、P100K、完整 CORE10 release 的门槛不因上述路线改变。
 
 
-### INFRA1 Runtime Diagnostics（PASS · Mac-first bounded）
+### INFRA1 Runtime Diagnostics（Panic hook closeout）
 
-本地日志/诊断基础设施已按 Mac-first bounded 收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
+本地日志/诊断基础设施进入 Mac-first bounded panic hook 最终收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
+
+Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。

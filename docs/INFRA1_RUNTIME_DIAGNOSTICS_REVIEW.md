@@ -1,6 +1,6 @@
 # INFRA1 Runtime Diagnostics Review
 
-状态：**PASS（Mac-first bounded）**。Windows deferred / not executed；不是双平台 V1、完整 CORE10 或 P100K 性能通过。不启动 S4-C2。
+状态：上一轮 `85ad528` 经复审为 **ALMOST PASS**（未保留 Rust previous/default panic hook）。本轮 panic hook 修复的最终 PASS 以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 及绑定的最终门禁为准。Windows deferred / not executed；不是双平台 V1、完整 CORE10 或 P100K 性能通过。不启动 S4-C2。
 
 范围：S4 基础设施；R16/R17/R18/R19/R20/R21/R22；AT-063/066/069/077/082/083/086/090/097。96 个正式用例及平台要求不变。仅修改诊断、只读摘要、数值计时、UI 观测与验收支持，不修改制造几何、Undo 或 Snap resolver。
 
@@ -33,3 +33,11 @@ Apple M1 / macOS arm64 / Metal / Retina：真实 release 完成 Import → F3 �
 剩余边界：Windows 未执行；没有硬件故障注入/长时间 soak 结论；未统一捕获任意第三方 tracing；不自动上传。S4-C2 必须另行立项。
 
 补充回归发现并修正了旧压缩验收断言：历史工程缺少 S4-C1 两个既定 view defaults（manufacturing_boundary=true、original_path=false），模型重新编码会物化它们。测试同时验证原始 ZIP codec 所有条目逐字节保持、所有制造图层/Block 条目逐字节保持、project.json 仅允许这两个缺省字段补齐，以及 manifest 仅相应更新已验证工程条目的大小/哈希；完整解码模型、确定性输出、压缩门槛和原件不变断言全部保留。不是放宽制造数据门槛。历史失败原始日志仅本机保留，公开证据移除其中原始字节数组。
+
+## Panic hook closeout
+
+本轮仍属 S4 / INFRA1，关联 R18/R19/R20、AT-077/082/083；允许修改 rcam-diagnostics hook、独立子进程测试、诊断说明与源码清单，不修改业务模型。安装成功后仅 take_hook 一次；脱敏报告 best-effort 完成或 I/O 失败后均调用 previous(info)。GLOBAL 设置失败则直接返回 false，不再 take/replace hook。正式 editor-app main 继续 guard.install()。
+
+子进程以 output() 捕获 stderr，验证正常目录恰好一份脱敏报告及 test.pending BEGIN、不可写报告路径仍执行 previous、第二次安装返回 false 且 previous 仅调用一次。RUST_BACKTRACE=1 的 backtrace 仅记录观察布尔值；公开证据不复制原始 stderr。Rust 原有 stderr 保留标准行为，不能误称其包含的原始 panic 文本已经脱敏；隐私白名单约束作用于 RCam crash JSON 和公开诊断包。
+
+最终提交重跑完整门禁、Gerber 产品样本回归、Object Snap、压缩与工程生命周期；原生仅重验正常启动/退出和 session.end.clean。本轮不重复上一轮完整人工链，其历史证据保留明确的 85ad528 绑定。新完整 Source/Public Evidence ZIP 及 fresh extract 报告以本轮交付目录为准。
