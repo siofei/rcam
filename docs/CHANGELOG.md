@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-09-25 · S4-C2 Grip Editing v1 启动（实施中）
+
+用户在 S4-C1 与 INFRA1 panic hook Mac-first bounded closeout 后明确启动 S4-C2。新增 `S4_C2_PLAN.md`、`S4_C2_REVIEW.md`、`S4_C2_ACCEPTANCE_ADDENDUM.md` 与 ADR 0038；冻结单对象 Grip、标准 C/R/O/P 写时复制、局部轴 resize、Line/RectangularSweep 端点、受约束 Arc、line-only Region、纯预览/一次事务、S4-C1 Snap 复用及 Mac 原生/打包门禁。此处仅记录启动，尚无 S4-C2 PASS；Windows deferred，既有 96 个正式用例与双平台 V1 门槛不变。
+
 ## 2026-09-25 · S4-C1 Runtime Hysteresis Closeout（PASS，Mac-first bounded）
 
 纠正 `28e5f50` runtime 仍在 8 px feature generation 截断的问题：候选查询扩至 11 physical px，resolver 保持 8 px acquire / 11 px release，并补齐 static、Nearest、线线/线弧 Intersection、双候选、Retina 与无 previous 9 px 拒绝回归。F3 统一经 Command/Keymap/Dispatcher；Mac 原生完成 Vertex→Center Measure（µm/mm）和 Pick Base Point Center→preview→一次 commit。另修复 `.rcam` 重开后 generated ID allocator 从 0 重启导致文字预览冲突。下一阶段为 INFRA1，但本轮不启动 INFRA1 或 S4-C2；Windows deferred。

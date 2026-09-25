@@ -208,3 +208,6 @@ Windows、完整 V1、P100K、完整 CORE10 均未宣称。
 本地日志/诊断基础设施进入 Mac-first bounded panic hook 最终收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
 
 Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。
+
+S4-C2 Grip Editing 已启动：单选标准 Flash 尺寸、线端点、受约束圆弧和直线 Region 顶点可经统一服务编辑。
+当前处于实现与验收中，尚不声明 S4-C2 PASS；状态和限制见 [S4_C2_REVIEW](docs/S4_C2_REVIEW.md)。

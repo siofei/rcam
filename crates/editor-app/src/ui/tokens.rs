@@ -37,3 +37,10 @@ pub fn selection_highlight() -> Color32 {
 pub fn destructive() -> Color32 {
     Color32::from_rgb(255, 120, 110)
 }
+
+/// Grip sizes are physical pixels; divide by pixels_per_point when painting.
+pub const GRIP_MARKER_PX: f32 = 8.;
+pub const GRIP_HIT_PX: f32 = 10.;
+pub const GRIP_NORMAL: Color32 = Color32::LIGHT_BLUE;
+pub const GRIP_HOVER: Color32 = Color32::WHITE;
+pub const GRIP_ACTIVE: Color32 = Color32::LIGHT_GREEN;

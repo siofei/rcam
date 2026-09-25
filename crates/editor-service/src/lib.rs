@@ -3,7 +3,9 @@
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+mod grip;
 mod metrics;
+pub use grip::GripEditParams;
 mod project;
 mod text;
 mod workspace;
@@ -1021,6 +1023,8 @@ impl ApplicationService {
                 "objects.duplicate".into(),
                 "objects.delete".into(),
                 "objects.set_properties".into(),
+                "objects.grips".into(),
+                "objects.grip_edit".into(),
                 "edit.batch".into(),
                 "text.create".into(),
                 "text.preview".into(),
@@ -2879,6 +2883,19 @@ impl ApplicationService {
                 serde_json::to_value(self.objects_query(document_id, params)?)
                     .map_err(serialize_error)?
             }
+            "objects.grips" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid_field(
+                        "expected_revision",
+                        "read-only operation does not accept expected_revision",
+                    ));
+                }
+                serde_json::to_value(self.objects_grips(
+                    required_document_id(request)?,
+                    parse_params(&request.params)?,
+                )?)
+                .map_err(serialize_error)?
+            }
             "objects.get" => {
                 if request.expected_revision.is_some() {
                     return Err(ServiceError::invalid_field(
@@ -2906,6 +2923,7 @@ impl ApplicationService {
             | "objects.duplicate"
             | "objects.delete"
             | "objects.set_properties"
+            | "objects.grip_edit"
             | "blocks.create_definition_from_objects"
             | "blocks.create_instance"
             | "blocks.update_instance_transform"
@@ -3001,6 +3019,12 @@ impl ApplicationService {
                     )?)
                     .map_err(serialize_error)?,
                     "objects.delete" => serde_json::to_value(self.objects_delete(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.grip_edit" => serde_json::to_value(self.objects_grip_edit(
                         id,
                         revision,
                         parse_params(&request.params)?,

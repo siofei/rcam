@@ -308,6 +308,7 @@ mod tests {
             display_error: None,
             display_pending: false,
             drag: None,
+            grip: None,
             bench: None,
             probe: None,
             row_probes: Default::default(),

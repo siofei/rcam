@@ -40,6 +40,7 @@ pub mod ids {
     pub const TOOL_SELECT: CommandId = CommandId("tool.select");
     pub const TOOL_MEASURE: CommandId = CommandId("tool.measure");
     pub const TOOL_TEXT: CommandId = CommandId("tool.text");
+    pub const GRIP_CANCEL: CommandId = CommandId("grip.cancel");
     pub const SNAP_TOGGLE: CommandId = CommandId("snap.toggle");
 }
 
@@ -333,6 +334,13 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
             C::Tool,
             Some(Shortcut::new(Modifiers::NONE, ch('t'))),
             X::Canvas,
+        ),
+        d(
+            ids::GRIP_CANCEL,
+            "取消控制点编辑",
+            C::Tool,
+            Some(Shortcut::new(Modifiers::NONE, Key::Escape)),
+            X::ObjectEdit,
         ),
         d(
             ids::SNAP_TOGGLE,

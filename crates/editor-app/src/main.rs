@@ -8,6 +8,7 @@ mod display_tests;
 mod drag;
 mod font_catalog;
 mod gpu;
+mod grip;
 mod layer_panel;
 #[cfg(test)]
 mod layer_tests;
@@ -133,6 +134,7 @@ struct EditorApp {
     display_error: Option<String>,
     display_pending: bool,
     drag: Option<drag::Gesture>,
+    grip: Option<grip::Session>,
     bench: Option<native_bench::NativeBench>,
     /// Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR`); observation only.
     probe: Option<native_probe::Probe>,
@@ -293,6 +295,7 @@ impl EditorApp {
             display_error: None,
             display_pending: false,
             drag: None,
+            grip: None,
             bench: native_bench::NativeBench::from_env(gpu.device.clone()),
             probe: native_probe::Probe::from_env(),
             row_probes: Default::default(),
@@ -685,6 +688,15 @@ impl CommandDispatcher for EditorApp {
 
     fn dispatch(&mut self, command: CommandId) -> Self::Outcome {
         match command {
+            command_ids::GRIP_CANCEL => {
+                if self.grip.take().is_some() {
+                    rcam_diagnostics::runtime_event(
+                        rcam_diagnostics::Level::Info,
+                        "grip.cancel.esc",
+                    );
+                }
+                true
+            }
             command_ids::SNAP_TOGGLE => {
                 self.object_snap.enabled = !self.object_snap.enabled;
                 rcam_diagnostics::with_source(self.operation_source, || {
@@ -872,6 +884,9 @@ impl eframe::App for EditorApp {
                 self.last_good = None;
                 self.modal = None;
                 self.text.cancel();
+                if self.grip.is_some() {
+                    self.dispatch(command_ids::GRIP_CANCEL);
+                }
                 self.measure.clear();
                 self.drag = None;
                 self.fit = self.view.info.is_some();
@@ -1018,6 +1033,31 @@ impl eframe::App for EditorApp {
         }
         if cancel_drag || modal_open || self.display_error.is_some() {
             self.drag = None;
+        }
+        if self.grip.is_some()
+            && (cancel_drag
+                || modal_open
+                || self.display_error.is_some()
+                || self.tool != tools::ActiveTool::Select
+                || self.grip.as_ref().is_some_and(|g| !g.valid(&self.view)))
+        {
+            self.grip = None;
+            let reason = if modal_open {
+                "grip.cancel.modal"
+            } else if self.tool != tools::ActiveTool::Select {
+                "grip.cancel.tool_change"
+            } else if !ctx.input(|i| i.focused) {
+                "grip.cancel.blur"
+            } else if ctx.input(|i| {
+                i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::PointerGone))
+            }) {
+                "grip.cancel.pointer_gone"
+            } else {
+                "grip.cancel.state_change"
+            };
+            rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info, reason);
         }
         if drag::shortcuts_allowed(
             text_focus,
@@ -1684,6 +1724,7 @@ impl eframe::App for EditorApp {
                 let rect = r.rect;
                 if self.canvas_rect != rect || self.fit {
                     self.drag = None;
+                    self.grip = None;
                 }
                 self.canvas_rect = rect;
                 if self.fit {
@@ -1691,7 +1732,7 @@ impl eframe::App for EditorApp {
                     self.fit = false;
                 }
                 if !modal_open
-                    && self.drag.is_none()
+                    && self.drag.is_none() && self.grip.is_none()
                     && (r.dragged_by(egui::PointerButton::Middle)
                         || r.drag_stopped_by(egui::PointerButton::Middle))
                 {
@@ -1707,7 +1748,7 @@ impl eframe::App for EditorApp {
                             .any(|event| matches!(event, egui::Event::Zoom(_))),
                     )
                 });
-                if !modal_open && !text_focus && self.drag.is_none() {
+                if !modal_open && !text_focus && self.drag.is_none() && self.grip.is_none() {
                     if r.hovered() {
                         self.camera.pan(scroll);
                     }
@@ -1826,6 +1867,13 @@ impl eframe::App for EditorApp {
                         && !modal_open
                         && rect.contains(press)
                     {
+                        let feature = grip::features(&self.view).ok().and_then(|features| grip::hit(&features, press, self.camera, rect, ctx.pixels_per_point()));
+                        if let Some(id) = feature {
+                            self.grip = grip::Session::arm(&self.view, id);
+                            if let Some(session) = &mut self.grip { session.pressed = Some(press); }
+                            self.drag = None;
+                            self.object_snap_runtime.reset();
+                        } else {
                         self.drag = Some(drag::Gesture::arm(
                             &self.view,
                             press,
@@ -1840,6 +1888,33 @@ impl eframe::App for EditorApp {
                                 self.camera.tolerance(ctx.pixels_per_point()),
                             ));
                         }
+                        }
+                    }
+                }
+                if let Some(grip) = &mut self.grip {
+                    if let Some(position) = ctx.input(|i| i.pointer.interact_pos())
+                        && (grip.moved || grip.pressed.is_some_and(|p| p.distance(position)*ctx.pixels_per_point() >= 2.)) {
+                        let raw = self.camera.world(position, rect);
+                        match self.object_snap_runtime.resolve(raw, &self.object_snap, self.grid, self.camera,
+                            ctx.pixels_per_point(), self.view.snap_snapshot.as_deref(), &self.view.snap_index,
+                            &self.view.layers, Some(&grip.excluded), ctx.input(|i| i.modifiers.alt)) {
+                            Ok(resolution) => grip.update(resolution.point),
+                            Err(error) => grip.preview = Err(error),
+                        }
+                    }
+                    cursor_label = Some(format!("Grip {:?} · X {}  Y {} · Snap {:?}", grip.id,
+                        self.display_unit.format_length(grip.target.x_mm, self.view.info.as_ref().map_or(0.0001, |d| d.manufacturing_precision.resolution_mm)),
+                        self.display_unit.format_length(grip.target.y_mm, self.view.info.as_ref().map_or(0.0001, |d| d.manufacturing_precision.resolution_mm)),
+                        self.object_snap_runtime.current.as_ref().and_then(|r| r.kind)));
+                    if let Err(error) = &grip.preview && grip.moved { self.ui_error = Some(error.clone()); }
+                    if ctx.input(|i| i.pointer.primary_released()) {
+                        let session = self.grip.take().unwrap();
+                        if let Some(action) = session.release() {
+                            let snap = self.object_snap_runtime.current.as_ref();
+                            rcam_diagnostics::measurements(rcam_diagnostics::Level::Info,"grip.commit_target",&[("grid",u64::from(snap.is_some_and(|s|s.from_grid))),("object_snap",u64::from(snap.is_some_and(|s|s.kind.is_some())))]);
+                            self.send(action);
+                        }
+                        else { rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info, "grip.cancel"); }
                     }
                 }
                 let drag_update = self.drag.as_ref().and_then(|drag| {
@@ -1983,6 +2058,16 @@ impl eframe::App for EditorApp {
                             format: self.format,
                         },
                     ));
+                }
+                if self.tool == tools::ActiveTool::Select && !modal_open {
+                    match self.grip.as_ref().map_or_else(|| grip::features(&self.view), grip::Session::features) {
+                        Ok(features) => {
+                            let hover = ctx.input(|i| i.pointer.hover_pos()).and_then(|p| grip::hit(&features,p,self.camera,rect,ctx.pixels_per_point()));
+                            grip::paint_features(&painter,&features,hover,self.grip.as_ref().map(|g|g.id),self.camera,rect,ctx.pixels_per_point());
+                        }
+                        Err(error) => self.ui_error = Some(error),
+                    }
+                    if let Some(grip) = &self.grip { grip.paint(&painter,self.camera,rect,ctx.pixels_per_point()); }
                 }
                 self.invalidate_text_overlay();
                 if self.tool == tools::ActiveTool::Text {

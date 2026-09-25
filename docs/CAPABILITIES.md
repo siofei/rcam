@@ -265,3 +265,11 @@ GUI 派生显示上限现为 2000000 primitive + point，RenderIndex 最多 1000
 本地日志/诊断基础设施进入 Mac-first bounded panic hook 最终收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
 
 Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。
+
+### S4-C2 Grip Editing（实现中，尚未阶段验收）
+
+新增 `objects.grips` / `objects.grip_edit`。单选可编辑 C/R/O/P Flash 尺寸（COW）、
+Line/合法轴向 RectangularSweep 端点、Arc 投影端点/半径、line-only standard Region 顶点。
+Flash 局部 rotation/mirror/scale 保持；拖动预览不修改文档，release 一个事务；取消不提交。
+Macro、含弧 Region、CompatibilitySolid、GeneratedText、Block 内部、多对象 node edit 不支持。
+专用 Grip 数值弹窗 deferred；Windows deferred。专项/原生/交付门禁见 S4_C2_REVIEW。

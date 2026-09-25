@@ -152,6 +152,7 @@ pub fn action_text(a: &Action) -> String {
             pt.x_mm, pt.y_mm
         ),
         Action::SelectRect(..) => "SelectRect".into(),
+        Action::GripEdit(grip) => format!("GripEdit {:?}", grip.id),
         Action::DragMove(drag) => format!(
             "DragMove objects={} delta=({:.6},{:.6})",
             drag.objects.len(),
@@ -361,6 +362,15 @@ impl EditorApp {
             "service_error": self.view.error.as_ref().map(|e| format!("{}: {}", e.code, e.message)),
             "busy": self.busy,
             "dropped_file_batches": self.probe.as_ref().map_or(0, |p| p.drops),
+        });
+        observation["grip"] = json!({
+            "features": crate::grip::features(&self.view).ok().map(|features| features.into_iter().map(|f| {
+                let p = self.camera.screen(f.position_mm, self.canvas_rect);
+                json!({"id": f.id, "screen": [p.x,p.y]})
+            }).collect::<Vec<_>>()),
+            "active": self.grip.as_ref().map(|g| json!({"id": g.id, "valid_preview":g.preview.is_ok(), "moved":g.moved})),
+            "marker_physical_px": crate::grip::MARKER_PX,
+            "hit_physical_px": crate::grip::HIT_PX,
         });
         observation["display_unit"] = json!(self.display_unit.suffix());
         observation["grid_visible"] = json!(self.grid.visible);

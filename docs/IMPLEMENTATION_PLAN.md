@@ -203,7 +203,8 @@ S4-B1 Multi-Layer Workspace + reservations
 → S4-B3 Project lifecycle
 → S4-C1 Full Object Snap
 → INFRA1 Runtime Diagnostics Foundation
-→ S4-C2+ Grip/Block/PnP/RefDes（需另行立项）
+→ S4-C2 Grip Editing v1（已获授权，实施中）
+→ S4-C2+ Block/PnP/RefDes 等（需另行立项）
 ```
 
 | 阶段 | 内容 | 前置/约束 |
@@ -212,7 +213,8 @@ S4-B1 Multi-Layer Workspace + reservations
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects——**PASS（Mac-first）**；Gerber 仍只 Import/Export | S4-B2；双平台 V1 另验 |
 | S4-C1 | Full Object Snap（制造边界、Intersection/Nearest、Layer/Class filter、Grid resolver、Drag/Text/Measure/Base Point、project settings）——**PASS（Mac-first bounded）** | S4-B3；Windows 后补 |
 | INFRA1 | Runtime Diagnostics Foundation——**Panic hook closeout，最终状态见交付** | S4-C1 独立复审通过；S4-C2 前置 |
-| S4-C2+ | Grip、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | INFRA1 完成后另行立项 |
+| S4-C2 | 单对象 Grip Editing v1——**已启动，未验收**；标准 C/R/O/P、Line/RectangularSweep、受约束 Arc、line-only Region，复用 S4-C1 Snap | INFRA1 panic hook closeout；见 S4_C2_PLAN/ADR 0038/专项 addendum |
+| S4-C2+ 后续 | Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette | S4-C2 完成复审后另行立项 |
 
 每个阶段启动前先写任务书、需求/验收/ADR；架构方向见 DESIGN_V1 第 22 章与 ADR 0029/0030，长期约束见 AGENTS.md。
 Windows、完整 V1、P100K、完整 CORE10 release 的门槛不因上述路线改变。
@@ -223,3 +225,7 @@ Windows、完整 V1、P100K、完整 CORE10 release 的门槛不因上述路线�
 本地日志/诊断基础设施进入 Mac-first bounded panic hook 最终收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
 
 Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。
+
+## 2026-09-25 S4-C2 Grip Editing v1（已启动，未验收）
+
+用户已明确授权本阶段。前置 INFRA1 panic hook closeout 的最终交付见 `exports/INFRA1_PANIC_c65bee0/REVIEW.md`。需求 R04/R07–R11/R13–R22 的局部映射、允许模块、测试和原生门禁详见 [S4_C2_PLAN](S4_C2_PLAN.md)、[S4_C2_ACCEPTANCE_ADDENDUM](S4_C2_ACCEPTANCE_ADDENDUM.md)、[ADR 0038](adr/0038-grip-editing.md)，当前结果见 [S4_C2_REVIEW](S4_C2_REVIEW.md)。本轮只做单对象 Grip v1；完成后停止提交复审，不自动开始 Block Editor、Alignment、Array 或 PnP/RefDes。Windows deferred。

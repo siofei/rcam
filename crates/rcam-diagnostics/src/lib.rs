@@ -670,6 +670,13 @@ impl Operation {
             start: Instant::now(),
         }
     }
+    /// Fixed numeric categories only; never accept manufacturing payloads.
+    pub fn grip_metadata(&mut self, geometry_kind: u64, grip_kind: u64) {
+        if let Some(event) = &mut self.event {
+            event.metrics.insert("geometry_kind".into(), geometry_kind);
+            event.metrics.insert("grip_kind".into(), grip_kind);
+        }
+    }
     pub fn selection_count(&mut self, count: usize) {
         if let Some(event) = &mut self.event {
             event.metrics.insert("selection_count".into(), count as u64);

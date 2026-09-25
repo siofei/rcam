@@ -94,10 +94,10 @@ cargo build --release --locked -p editor-app
 
 验收结果按运行 ID 另存，不覆盖历史。B0 几何／数据安全失败立即阻止输出生产文件。只有全部适用必测通过、双平台证据齐全、CORE10 达到 10/10 且 B0/B1 清零，才可标记“双平台 V1 通过”。
 
-**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）；**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 docs/S4_B2_REVIEW.md）；**S4-B3 `.rcam` Project Lifecycle = PASS（Mac-first）**（见 docs/S4_B3_PLAN.md、docs/S4_B3_REVIEW.md、ADR 0033 / 0034）。S4-C1 Full Object Snap 已按用户指示启动，状态见 docs/S4_C1_PLAN.md、docs/S4_C1_REVIEW.md 与 ADR 0036。
+**S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）；**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 docs/S4_B2_REVIEW.md）；**S4-B3 `.rcam` Project Lifecycle = PASS（Mac-first）**（见 docs/S4_B3_PLAN.md、docs/S4_B3_REVIEW.md、ADR 0033 / 0034）。**S4-C1 Full Object Snap = PASS（Mac-first bounded）**（见 docs/S4_C1_REVIEW.md）；INFRA1 panic hook closeout = PASS（Mac-first bounded，见 exports/INFRA1_PANIC_c65bee0/REVIEW.md）。
 Global Units & Manufacturing Precision Foundation 按 Mac-first 范围收口（见 GLOBAL_UNITS_PRECISION_REVIEW）；
 不声称 Windows、完整 V1、P100K 或完整 CORE10。
-S4-C1 完成后停止并提交审查：**不自动开始 S4-C2 / Grip Editing**。没有 Mac 原生 Object Snap、Retina、性能与 ZIP 打包证据时，不得声称“S4-C1 PASS”。
+S4-C1 已按 `docs/S4_C1_REVIEW.md` 完成 Mac-first bounded 复审。用户现已明确授权启动 **S4-C2 Grip Editing v1**；范围、允许模块和退出门禁见 `docs/S4_C2_PLAN.md`、`docs/S4_C2_ACCEPTANCE_ADDENDUM.md`、ADR 0038，实际状态见 `docs/S4_C2_REVIEW.md`。S4-C2 未经验收不得声称 PASS；完成后停止并提交复审，不自动开始 Block Editor、Alignment、Array 或 PnP/RefDes。
 Windows deferred / not executed，最终双平台 V1 门槛保持不变。
 
 ## Forward Architecture Reservations（长期约束，S4-B1 合并）
@@ -115,8 +115,8 @@ Windows deferred / not executed，最终双平台 V1 门槛保持不变。
    translation/rotation/mirror（`BlockTransform`），第一版禁止 nested block（`BlockObjectGeometry` 类型层面
    不可表示实例，不是运行时检查）；Definition 修改（含 revision）更新全部 instance，Instance 编辑只改自己的
    transform；Gerber Export flatten；RCam Block ≠ Gerber `%AB`。完整 GUI Block Editor 仍属 S4-C。
-6. **Object Snap**：统一 SnapFeatureProvider / SnapQuery / SnapCandidate / SnapFeatureId / SnapResolver；以 Manufacturing Boundary 为真值，
-   不得从 GPU/tessellation/像素反推；Grip 不等于 Object Snap，现阶段只预留稳定 feature identity。
+6. **Object Snap / Grip**：统一 SnapFeatureProvider / SnapQuery / SnapCandidate / SnapFeatureId / SnapResolver；以 Manufacturing Boundary 为真值，
+   不得从 GPU/tessellation/像素反推。S4-C2 Grip v1 另用稳定 GripFeatureId 表示可编辑制造参数/节点，单对象纯预览，释放时经 ApplicationService 一次事务；尺寸 Grip 对共享光圈写时复制，目标捕捉复用 S4-C1 Resolver。
 7. **Shortcut Architecture**：CommandId/Registry + Keymap + ShortcutContext（IME/TextInput > Modal > Tool > Canvas > Global）；
    Menu/Toolbar/Context Menu/Shortcut 共用 Command；逻辑修饰键 Primary/Secondary/Shift/Alt；用户 keymap 属于 AppPreferences；Automation 仍调用 ApplicationService，不模拟快捷键。
 8. **Layer View State**：颜色、Visible、Selectable、Locked、Z-order、Filled/Outline/ZeroWidth、category styles、面板宽度均不得改变 Gerber Writer 输出，也不产生制造 revision。
@@ -148,11 +148,13 @@ Category color/filter/lock、New Empty Layer、Import Gerber、Delete + Undo。S
 S4-B1 Multi-Layer Workspace + reservations — PASS（Mac-first）
 → S4-B2 Block Core + .rcam schema v1 — PASS（Mac-first）
 → S4-B3 Project lifecycle — PASS（Mac-first）
-→ S4-C1 Full Object Snap — 当前实施切片
-→ S4-C2+ Grip/Block/PnP/RefDes（必须另行立项）
+→ S4-C1 Full Object Snap — PASS（Mac-first bounded）
+→ INFRA1 Runtime Diagnostics — PASS（Mac-first bounded，panic hook closeout）
+→ S4-C2 Grip Editing v1 — 当前实施切片，未验收
+→ S4-C2+ Block/PnP/RefDes 等 — 必须另行立项
 ```
 
 
-### INFRA1 Runtime Diagnostics（实施中）
+### INFRA1 Runtime Diagnostics（Mac-first bounded closeout）
 
-本地日志/诊断基础设施已启动，状态与缺口见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`；尚未达到 INFRA1 PASS。不自动开始 S4-C2；Windows deferred。
+INFRA1 panic hook closeout 最终为 PASS（Mac-first bounded），证据见 `exports/INFRA1_PANIC_c65bee0/REVIEW.md`；Windows deferred。S4-C2 已另获明确授权启动，但还没有实现/原生/打包验收结论。

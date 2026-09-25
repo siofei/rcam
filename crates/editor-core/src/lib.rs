@@ -3,6 +3,7 @@
 
 mod bounds;
 pub mod grid;
+pub mod grip;
 pub mod hash;
 pub mod hit_test;
 pub mod metrics;

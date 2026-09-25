@@ -167,6 +167,7 @@ pub enum Action {
     Mirror(MirrorDirection),
     ProbeDrag(MmPoint, f64),
     DragMove(Box<crate::drag::Drag>),
+    GripEdit(Box<crate::grip::Session>),
     Duplicate,
     Delete,
     History(bool),
@@ -1290,6 +1291,21 @@ impl Model {
                         .any(|id| self.view.selected.contains(&layer_id, id));
                 }
                 Ok(())
+            }
+            Action::GripEdit(grip) => {
+                self.editable()?;
+                self.service.objects_grip_edit(
+                    &grip.document,
+                    &grip.revision,
+                    GripEditParams {
+                        layer_id: grip.layer,
+                        object_id: grip.object.object_id,
+                        grip_id: grip.id,
+                        target_mm: grip.target,
+                    },
+                )?;
+                self.view.message = "已编辑控制点".into();
+                self.refresh(true)
             }
             Action::DragMove(drag) => {
                 self.editable()?;

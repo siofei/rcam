@@ -995,12 +995,12 @@ S4-B2 起 `BlockDefinition` 存在 `SemanticDocument.block_definitions`，`Block
 `blocks.create_definition_from_objects`/`create_instance`/`update_instance_transform`/`rename_definition`/
 `explode_instance`/`delete_definition` 是新增的 Service API。完整 GUI Block Editor 仍属 S4-C。
 
-### 22.6 Object Snap 与 Grip（S4-C1 Object Snap 已实施，ADR 0036）
+### 22.6 Object Snap 与 Grip（S4-C1 已验收；S4-C2 Grip v1 实施中，ADR 0036/0038）
 
 统一 `SnapKind/SnapFeature/SnapFeatureId/SnapQuery/SnapCandidate/SnapFeatureProvider/SnapResolver`，目标支持 Endpoint/Vertex、Midpoint、
 Center、Quadrant、Intersection、Nearest，后续 Tangent/Perpendicular。Region/AM/Block 从**制造边界**提供 snap，不是 GPU/显示几何。
 采用 “screen-radius → 附近对象空间查询 → lazy feature generation”，**禁止全局预生成所有 snap 点**。Grid/Object Snap 由同一 Resolver 处理。
-Grip 不等于 Object Snap：现在只预留稳定 feature identity（`SnapFeatureId`/`GripFeatureId`）。
+Grip 不等于 Object Snap：`SnapFeatureId` 标识吸附目标，`GripFeatureId` 标识可编辑制造参数/节点，二者独立。S4-C2 Grip v1 只对单选且可编辑对象生成稳定 Grip；制造模型和光圈定义是唯一几何来源。逐帧纯预览不改 revision/dirty/Undo；释放时复用 `ApplicationService` 一次提交/一次 Undo。标准 C/R/O/P Flash 尺寸编辑必须写时复制；旋转/镜像 R/O 的侧边与角在 aperture 局部轴计算，不能按 world AABB resize。Arc 端点仅沿原圆改角、半径保持方向及 full-circle 身份；实际修改后清除已失效 `ArcSource`。Region v1 仅标准 line-only 轮廓的共享顶点。详见 [S4-C2 计划](S4_C2_PLAN.md)、[专项验收](S4_C2_ACCEPTANCE_ADDENDUM.md) 和 [ADR 0038](adr/0038-grip-editing.md)。
 
 S4-C1 的产品规则为：Manufacturing Boundary 默认开启、Original Path 为高级选项；标准 aperture hole 暂不提供 boundary snap，Region hole/归一化 AM/CompatibilitySolid 仍按解析边界处理。默认半径 8 physical px（可设 4–20），以 `pixels_per_point` 换算；8 px 捕获、11 px 释放。只有 effective visible/selectable 对象进入候选，locked selectable 仍可捕捉。Object 在半径内高于 Grid；Alt 临时关闭两者，F3 通过 Command/Keymap 切换。当前 candidate/hysteresis 不持久化。
 
@@ -1018,7 +1018,8 @@ CommandId。Context 优先级：IME/TextInput > Modal > Tool > Canvas > Global�
 | S4-B2 | Block Core、`.rcam` Native Project Model/schema v1、Workspace state 持久化、Snap settings 持久化 |
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects |
 | S4-C1 | 完整 Object Snap：解析制造边界、Intersection/Nearest、过滤、Grid resolver、Drag/Text/Measure/Base Point、project settings |
-| S4-C2+ | Grip Editing、Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette |
+| S4-C2 | Grip Editing v1（单对象；标准 Flash、Line/RectangularSweep、受约束 Arc、line-only Region；复用 Object/Grid Snap）——实施中 |
+| S4-C2+ 后续 | Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette；另行立项 |
 
 ### 22.9 基本不变量
 
@@ -1191,3 +1192,7 @@ Save/Save As 为 `.rcam` 保留。View state（颜色/可见/可选/锁定/层�
 ### INFRA1 本地诊断基础设施
 
 依据 ADR 0037，制造与交互结果不变；日志通过独立有界后台管线记录白名单摘要，默认本地 INFO。服务入口记录修改结果，不采集制造 payload。诊断 ZIP 仅显式导出，不遥测或自动上传。具体范围与剩余验收见 INFRA1_RUNTIME_DIAGNOSTICS_PLAN/REVIEW。
+
+### S4-C2 Grip Editing v1（2026-09-25 启动）
+
+依据 S4_C2_PLAN、S4_C2_ACCEPTANCE_ADDENDUM 与 ADR 0038，先完成单对象制造 Grip 的 query→纯预览→Service 原子提交闭环，再按 Mac 原生、Retina、COW、Snap、项目/导出往返、诊断和固定包门禁复审。当前状态“实施中/未验收”，Windows deferred；不启动完整 Block Editor 或其他 S4-C2+ 功能。

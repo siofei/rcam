@@ -676,3 +676,20 @@ Gerber compatibility export extension: `gerber.export_layer` first normalizes wi
 ### INFRA1 diagnostic read-only addition
 
 `layers.list` 的 `LayerInfo.compatibility_issue_count`（默认 0）为该图层导入元数据的 compatibility issue 条目数。它仅供诊断，不改变 revision、制造语义、确认政策或能力声明。诊断 Project/Layer summaries 不构成新的可变业务 API。
+
+### S4-C2 Grip Editing（实施中）
+
+`objects.grips` 为只读查询，params 为 `{layer_id, object_id}`，返回
+`[{id: {kind, ...}, position_mm: {x_mm, y_mm}}]`。不接受 expected_revision。
+`objects.grip_edit` 复用现有 envelope、字符串 expected_revision、EditResult，params 为
+`{layer_id, object_id, grip_id: {kind, ...}, target_mm: {x_mm, y_mm}}`。
+kind 是 start/end/radius/left/right/top/bottom/corner/vertex；corner 附 index（0–3），
+vertex 附 contour/vertex（制造轮廓的稳定索引）。未知字段拒绝。
+
+仅单对象、当前活动图层、effective visible/selectable/unlocked 可以编辑。
+锁定/隐藏目标的查询返回空数组；未知实体返回 NOT_FOUND；旧修订返回现有
+REVISION_CONFLICT。C/R/O/P Flash 尺寸沿 aperture 局部轴，R/O 对侧锚定；
+光圈写时复制与中心变化同一事务。Line/RectangularSweep 为端点，Arc 为投影端点/半径，
+line-only standard Region 为连接顶点；完整拓扑提交前验证。
+无 GUI/GPU 依赖；Automation 不模拟鼠标，不接受 GPU mesh 或任意 geometry patch。
+专用数值 Grip 输入暂缓，现有数值属性编辑保留。阶段门禁见 S4_C2_REVIEW.md。

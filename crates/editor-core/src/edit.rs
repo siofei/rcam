@@ -591,6 +591,20 @@ impl EditHistory {
         width_mm: f64,
         height_mm: Option<f64>,
     ) -> Result<Vec<String>, EditError> {
+        self.resize_flash(document, layer_id, object_ids, width_mm, height_mm, None)
+    }
+
+    // Both numeric properties and grips use this same aperture COW transaction.
+    #[allow(clippy::too_many_arguments)]
+    fn resize_flash(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        width_mm: f64,
+        height_mm: Option<f64>,
+        new_center: Option<MmPoint>,
+    ) -> Result<Vec<String>, EditError> {
         let (layer_index, selected) = self.targets(document, layer_id, object_ids)?;
         let layer = &document.layers[layer_index];
         let aperture_id = selected
@@ -614,10 +628,11 @@ impl EditHistory {
             })?;
         let shape = resized_shape(&old.shape, width_mm, height_mm)?;
         super::validate_aperture_shape(&shape).map_err(EditError::InvalidGeometry)?;
-        if shape == old.shape {
+        if shape == old.shape && new_center.is_none() {
             return Err(EditError::InvalidArgument);
         }
         let generated = self.next_generated_aperture_id;
+        let next_generated = generated.checked_add(1).ok_or(EditError::ResourceLimit)?;
         let definition = ApertureDefinition {
             id: format!("{}-generated-aperture-{generated}", document.id),
             source_dcode: document
@@ -641,9 +656,17 @@ impl EditHistory {
         for &index in &selected {
             let object = &layer.objects[index];
             let mut after = object.geometry.clone();
-            let SemanticGeometry::Flash { aperture_id, .. } = &mut after else {
+            let SemanticGeometry::Flash {
+                aperture_id,
+                center,
+                ..
+            } = &mut after
+            else {
                 unreachable!()
             };
+            if let Some(value) = new_center {
+                *center = value;
+            }
             *aperture_id = definition.id.clone();
             changes.push(Change {
                 object_id: object.object_id.clone(),
@@ -682,9 +705,59 @@ impl EditHistory {
                 bytes,
             },
         );
-        self.next_generated_aperture_id =
-            generated.checked_add(1).ok_or(EditError::ResourceLimit)?;
+        self.next_generated_aperture_id = next_generated;
         Ok(ids)
+    }
+
+    pub fn grip_edit(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_id: &str,
+        grip_id: crate::grip::GripFeatureId,
+        target: MmPoint,
+    ) -> Result<Vec<String>, EditError> {
+        let ids = vec![object_id.to_owned()];
+        let (layer, selected) = self.targets(document, layer_id, &ids)?;
+        let object = &document.layers[layer].objects[selected[0]];
+        let aperture = match &object.geometry {
+            SemanticGeometry::Flash { aperture_id, .. } => document
+                .apertures
+                .iter()
+                .find(|a| &a.id == aperture_id)
+                .map(|a| &a.shape),
+            _ => None,
+        };
+        let preview = crate::grip::preview_grip_edit(object, aperture, grip_id, target)?;
+        if preview.geometry == object.geometry && preview.aperture_shape.as_ref() == aperture {
+            return Err(EditError::InvalidArgument);
+        }
+        if let Some(shape) = preview.aperture_shape {
+            let (width, height) = match shape {
+                ApertureShape::Circle { diameter_mm, .. }
+                | ApertureShape::Polygon { diameter_mm, .. } => (diameter_mm, None),
+                ApertureShape::Rectangle {
+                    width_mm,
+                    height_mm,
+                    ..
+                }
+                | ApertureShape::Obround {
+                    width_mm,
+                    height_mm,
+                    ..
+                } => (width_mm, Some(height_mm)),
+                _ => return Err(EditError::UnsupportedTransform),
+            };
+            let SemanticGeometry::Flash { center, .. } = preview.geometry else {
+                unreachable!()
+            };
+            self.resize_flash(document, layer_id, &ids, width, height, Some(center))
+        } else {
+            self.modify_objects(document, layer_id, &ids, |geometry| {
+                *geometry = preview.geometry.clone();
+                Ok(())
+            })
+        }
     }
 
     /// `blocks.create_definition_from_objects`: capture `object_ids` on
@@ -2349,7 +2422,7 @@ fn remove_entries(objects: &mut Vec<SemanticObject>, entries: &[IndexedObject]) 
     });
 }
 
-fn resized_shape(
+pub(crate) fn resized_shape(
     shape: &ApertureShape,
     width_mm: f64,
     height_mm: Option<f64>,
