@@ -4400,7 +4400,11 @@ pub fn diagnostic_context(
                     source_content_hash_prefix: l
                         .provenance
                         .as_ref()
-                        .map(|p| p.imported_sha256.chars().take(16).collect()),
+                        .filter(|p| {
+                            p.imported_sha256.len() == 64
+                                && p.imported_sha256.bytes().all(|c| c.is_ascii_hexdigit())
+                        })
+                        .map(|p| p.imported_sha256[..16].to_ascii_lowercase()),
                 })
                 .collect(),
         },

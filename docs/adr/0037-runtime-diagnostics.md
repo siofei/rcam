@@ -1,6 +1,6 @@
 # ADR 0037：本地运行诊断
 
-- 状态：实施中（INFRA1，Mac-first）；未达到阶段 PASS。
+- 状态：已接受 / INFRA1 PASS（Mac-first bounded）；Windows deferred。
 - 日期：2026-09-25
 - 关联：S4 基础设施；R16/R17/R18/R19/R20/R21/R22；AT-063/066/069/077/082/083/086/090/097。
 
@@ -23,3 +23,5 @@ Windows、S4-C2、Grip/Block Editor、快捷键设置、Command Palette 均不�
 Final closeout 补充：typed ProjectSummary/LayerSummary 仅含计数、版本、单位、状态与哈希，最多 256 层并报告 actual_count/truncated。performance_summary 只纳入 project.open/save、gerber.import/export、render_index.build 和 snap.query 前缀；compatibility_summary 只含类别计数和来源哈希。Gerber writer 内部采用纯数值线程局部计时，不引入 diagnostics 依赖。Renderer 异常各类型每秒至多一次；device-lost 忽略正常 Destroyed，surface error 保留框架默认处理。Recovery 写失败不改变 recovered identity，后续重试成功才更新。
 
 计时口径：stage 是单调时钟 elapsed µs，可能包含子阶段，不可简单相加（例如 container_build 包含 Deflate；atomic_publish 包含临时写入/同步/最终复读）。Gerber reparse/semantic_compare 汇总本次 writer 自检与磁盘复读自检；readback 包含两次必要读取。日志对象数为语义对象数，不是 renderer primitives。Layer compatibility_issue_count 是已有元数据条目数，不是每个原始命令出现次数。
+
+来源哈希字段只接受 64 位十六进制 SHA-256，输出前 16 位；工程中畸形 provenance 不能将路径或任意文字送入摘要。

@@ -134,6 +134,20 @@ fn service_operations_record_real_revisions_and_failures_without_payloads() {
             .as_deref(),
         Some(&info.source_sha256[..16])
     );
+    let mut malformed = layers.clone();
+    malformed[0].provenance.as_mut().unwrap().imported_sha256 =
+        "/private/customer/PRIVATE-TEXT".into();
+    let redacted = editor_service::diagnostic_context(
+        &current,
+        &malformed,
+        Some(&snapshot),
+        editor_core::units::DisplayUnit::Millimeter,
+    );
+    assert!(
+        redacted.layers.layers[0]
+            .source_content_hash_prefix
+            .is_none()
+    );
     let many = vec![layers[0].clone(); 300];
     let bounded = editor_service::diagnostic_context(
         &current,
