@@ -1891,6 +1891,13 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                // Tool/menu input above can change context in this same frame.
+                // Recheck before release, rather than waiting for the next frame.
+                if self.grip.is_some() && (self.tool != tools::ActiveTool::Select
+                    || self.modal.is_some() || self.layer_dialog.is_some() || self.close_prompt) {
+                    self.grip = None;
+                    rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info,"grip.cancel.tool_change");
+                }
                 if let Some(grip) = &mut self.grip {
                     if let Some(position) = ctx.input(|i| i.pointer.interact_pos())
                         && (grip.moved || grip.pressed.is_some_and(|p| p.distance(position)*ctx.pixels_per_point() >= 2.)) {
