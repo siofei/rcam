@@ -376,16 +376,24 @@ fn fixture_flash_instances(view: &View) -> Value {
         snapshot
             .layers
             .iter()
-            .flat_map(|layer| layer.objects.iter().filter_map(move |object| {
-                (matches!(object.origin, editor_core::ObjectOrigin::Imported { .. })
-                    && matches!(object.geometry, editor_core::SemanticGeometry::Flash { .. }))
-                .then(|| {
-                    json!({
-                        "layer_id": layer.id,
-                        "object": geometry_json(object, &snapshot.apertures, None),
+            .flat_map(|layer| {
+                layer
+                    .objects
+                    .iter()
+                    .filter(|object| {
+                        matches!(object.origin, editor_core::ObjectOrigin::Imported { .. })
+                            && matches!(
+                                object.geometry,
+                                editor_core::SemanticGeometry::Flash { .. }
+                            )
                     })
-                })
-            }))
+                    .map(move |object| {
+                        json!({
+                            "layer_id": layer.id,
+                            "object": geometry_json(object, &snapshot.apertures, None),
+                        })
+                    })
+            })
             .collect::<Vec<_>>()
     )
 }
@@ -463,94 +471,6 @@ fn synthetic_grip_observation(
         "fixture_flash_instances": fixture_flash_instances(view),
         "active": active_json,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-
-    #[test]
-    fn synthetic_grip_observation_requires_explicit_fixture_provenance() {
-        let hash = fixture_sha256();
-        let file_name = "grips.gbr";
-        assert!(synthetic_fixture_gate(
-            Some(&hash),
-            &hash,
-            file_name,
-            &hash,
-            1,
-        ));
-        assert!(!synthetic_fixture_gate(None, &hash, file_name, &hash, 1));
-        assert!(!synthetic_fixture_gate(
-            Some("wrong"),
-            &hash,
-            file_name,
-            &hash,
-            1
-        ));
-        assert!(!synthetic_fixture_gate(
-            Some(&hash),
-            &hash,
-            "customer.gbr",
-            &hash,
-            1,
-        ));
-        assert!(!synthetic_fixture_gate(
-            Some(&hash),
-            &hash,
-            file_name,
-            "different-layer-hash",
-            1,
-        ));
-        assert!(!synthetic_fixture_gate(
-            Some(&hash),
-            &hash,
-            file_name,
-            &hash,
-            2,
-        ));
-    }
-
-    #[test]
-    fn model_import_of_embedded_grip_fixture_enables_observation_log() {
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/synthetic/s4c2/grips.gbr");
-        let mut model = crate::state::Model::default();
-        model.import_gerbers(&[fixture]).unwrap();
-
-        let layer = &model.view.layers[0];
-        let provenance = layer.provenance.as_ref().unwrap();
-        assert_eq!(provenance.original_file_name, S4C2_GRIP_FIXTURE_NAME);
-        assert_eq!(provenance.imported_sha256, fixture_sha256());
-        assert!(model.view.info.as_ref().unwrap().source_path.is_empty());
-
-        let dir = std::env::temp_dir().join(format!(
-            "rcam-native-probe-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut probe = Probe {
-            dir: dir.clone(),
-            started: Instant::now(),
-            last: String::new(),
-            pending_shot: None,
-            polled: Instant::now(),
-            fixture_sha256: fixture_sha256(),
-            synthetic_grip_opt_in: true,
-            drops: 0,
-        };
-        let synthetic = probe
-            .synthetic_grip_observation(&model.view, None, None, None)
-            .expect("GUI-style fixture import should enable synthetic observations");
-        probe.observe(json!({"synthetic_grip": synthetic}));
-        let log = std::fs::read_to_string(dir.join("native_observations.jsonl")).unwrap();
-        assert!(log.contains("\"synthetic_grip\""));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
 }
 
 /// Short, stable description of the action sent to the service.
@@ -871,5 +791,93 @@ impl EditorApp {
             probe.observe(observation);
             probe.screenshots(ctx);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn synthetic_grip_observation_requires_explicit_fixture_provenance() {
+        let hash = fixture_sha256();
+        let file_name = "grips.gbr";
+        assert!(synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            file_name,
+            &hash,
+            1,
+        ));
+        assert!(!synthetic_fixture_gate(None, &hash, file_name, &hash, 1));
+        assert!(!synthetic_fixture_gate(
+            Some("wrong"),
+            &hash,
+            file_name,
+            &hash,
+            1
+        ));
+        assert!(!synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            "customer.gbr",
+            &hash,
+            1,
+        ));
+        assert!(!synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            file_name,
+            "different-layer-hash",
+            1,
+        ));
+        assert!(!synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            file_name,
+            &hash,
+            2,
+        ));
+    }
+
+    #[test]
+    fn model_import_of_embedded_grip_fixture_enables_observation_log() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/s4c2/grips.gbr");
+        let mut model = crate::state::Model::default();
+        model.import_gerbers(&[fixture]).unwrap();
+
+        let layer = &model.view.layers[0];
+        let provenance = layer.provenance.as_ref().unwrap();
+        assert_eq!(provenance.original_file_name, S4C2_GRIP_FIXTURE_NAME);
+        assert_eq!(provenance.imported_sha256, fixture_sha256());
+        assert!(model.view.info.as_ref().unwrap().source_path.is_empty());
+
+        let dir = std::env::temp_dir().join(format!(
+            "rcam-native-probe-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut probe = Probe {
+            dir: dir.clone(),
+            started: Instant::now(),
+            last: String::new(),
+            pending_shot: None,
+            polled: Instant::now(),
+            fixture_sha256: fixture_sha256(),
+            synthetic_grip_opt_in: true,
+            drops: 0,
+        };
+        let synthetic = probe
+            .synthetic_grip_observation(&model.view, None, None, None)
+            .expect("GUI-style fixture import should enable synthetic observations");
+        probe.observe(json!({"synthetic_grip": synthetic}));
+        let log = std::fs::read_to_string(dir.join("native_observations.jsonl")).unwrap();
+        assert!(log.contains("\"synthetic_grip\""));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
