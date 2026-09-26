@@ -119,3 +119,104 @@ impl ApplicationService {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use editor_core::{
+        Exposure, ObjectOrigin, RegionContour, RegionEdge, RegionRole, SemanticFormat,
+        SemanticGeometry, SemanticLayer, SemanticObject, SourceMetadata,
+        workspace::{Color, LayerKind, LayerWorkspaceState},
+    };
+
+    #[test]
+    fn objects_grips_returns_empty_for_solid_region_with_line_hole() {
+        let point = editor_core::MmPoint::new;
+        let contour = |role, vertices: [editor_core::MmPoint; 5]| RegionContour {
+            role,
+            edges: vertices
+                .windows(2)
+                .map(|pair| RegionEdge::Line {
+                    start: pair[0],
+                    end: pair[1],
+                })
+                .collect(),
+        };
+        let region = SemanticGeometry::Region {
+            contours: vec![
+                contour(
+                    RegionRole::Solid,
+                    [
+                        point(0., 0.),
+                        point(4., 0.),
+                        point(4., 4.),
+                        point(0., 4.),
+                        point(0., 0.),
+                    ],
+                ),
+                contour(
+                    RegionRole::Hole,
+                    [
+                        point(1., 1.),
+                        point(1., 3.),
+                        point(3., 3.),
+                        point(3., 1.),
+                        point(1., 1.),
+                    ],
+                ),
+            ],
+        };
+        let document = SemanticDocument {
+            id: "hole-grip-test".into(),
+            unit: "mm".into(),
+            format: SemanticFormat {
+                integer: 4,
+                decimal: 6,
+                leading_zero_omission: true,
+                absolute: true,
+            },
+            layers: vec![SemanticLayer {
+                id: "layer-hole".into(),
+                objects: vec![SemanticObject {
+                    object_id: "region-hole".into(),
+                    geometry: region,
+                    exposure: Exposure::Dark,
+                    origin: ObjectOrigin::Imported { command_index: 0 },
+                }],
+            }],
+            apertures: vec![],
+            source: SourceMetadata::default(),
+            block_definitions: vec![],
+        };
+
+        let mut service = ApplicationService::new();
+        let mut record = service.new_record(document).unwrap();
+        record.active_layer_id = Some("layer-hole".into());
+        record.workspace.insert(
+            "layer-hole".into(),
+            LayerWorkspaceState::new(
+                LayerKind::Gerber,
+                "Hole test",
+                Color::from_hex("#ffffff").unwrap(),
+            ),
+        );
+        service.documents.insert("hole-grip-test".into(), record);
+
+        let response = service.execute_json(
+            &serde_json::json!({
+                "api_version": 1,
+                "request_id": "hole-grips",
+                "op": "objects.grips",
+                "document_id": "hole-grip-test",
+                "expected_revision": null,
+                "params": {
+                    "layer_id": "layer-hole",
+                    "object_id": "region-hole"
+                }
+            })
+            .to_string(),
+        );
+        assert_eq!(response["status"], "completed", "{response}");
+        assert_eq!(response["result"], serde_json::json!([]), "{response}");
+    }
+}

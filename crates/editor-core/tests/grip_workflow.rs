@@ -494,6 +494,40 @@ fn unsupported_generated_text_compatibility_and_arc_region_have_no_grips() {
 }
 
 #[test]
+fn solid_outer_with_line_hole_has_no_editable_region_grips() {
+    let mut contours = match square() {
+        SemanticGeometry::Region { contours } => contours,
+        _ => unreachable!(),
+    };
+    let vertices = [p(1., 1.), p(1., 3.), p(3., 3.), p(3., 1.), p(1., 1.)];
+    contours.push(RegionContour {
+        role: RegionRole::Hole,
+        edges: vertices
+            .windows(2)
+            .map(|pair| RegionEdge::Line {
+                start: pair[0],
+                end: pair[1],
+            })
+            .collect(),
+    });
+    let region = object("solid-with-hole", SemanticGeometry::Region { contours });
+
+    assert!(grip_features(&region, None).unwrap().is_empty());
+    assert!(matches!(
+        preview_grip_edit(
+            &region,
+            None,
+            Grip::Vertex {
+                contour: 0,
+                vertex: 0,
+            },
+            p(-1., 0.)
+        ),
+        Err(editor_core::edit::EditError::UnsupportedTransform)
+    ));
+}
+
+#[test]
 fn shared_flash_aperture_uses_cow_and_exact_undo_redo() {
     let shape = ApertureShape::Circle {
         diameter_mm: 4.,

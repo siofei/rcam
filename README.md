@@ -3,7 +3,7 @@
 S4-B3 将已有 `.rcam` v1 格式接入 File → New/Open/Save/Save As；Gerber 仍只 Import/Export。工程保存使用受控路径、同目录临时文件、完整解码校验和原子发布；项目 dirty、关闭确认、最近工程和本机恢复副本见 [S4-B3 plan](docs/S4_B3_PLAN.md) 与 [review](docs/S4_B3_REVIEW.md)。当前阶段验收以 review 中的实测门禁为准，Windows 与完整 V1 尚未完成。
 S4-B3 预冻结修正使 mm/inch/mil/µm 四种显示单位均能随 `.rcam` 保存、重开；Recovery 写失败后会按原间隔重试。
 
-S4-C1 已完成 Mac-first bounded closeout：候选生成覆盖 11 physical px，resolver 仍以 8 px acquire、11 px release 判定；F3 统一走 Command/Keymap/Dispatcher，Direct Drag、文字浮动放置、测距和 Pick Base Point 共用同一制造几何 resolver。范围见 [S4-C1 plan](docs/S4_C1_PLAN.md)，实际状态只以 [review](docs/S4_C1_REVIEW.md) 为准。下一阶段固定为 INFRA1 Runtime Diagnostics Foundation，进入 Mac-first bounded panic hook 最终收口；Grip Editing / S4-C2、Windows 与完整 V1 均未开始。
+S4-C1 已完成 Mac-first bounded closeout：候选生成覆盖 11 physical px，resolver 仍以 8 px acquire、11 px release 判定；F3 统一走 Command/Keymap/Dispatcher，Direct Drag、文字浮动放置、测距和 Pick Base Point 共用同一制造几何 resolver。范围见 [S4-C1 plan](docs/S4_C1_PLAN.md)，实际状态只以 [review](docs/S4_C1_REVIEW.md) 为准。INFRA1 panic hook closeout 已完成，S4-C2 Grip Editing 正在原生验收收口；Windows 与完整 V1 尚未完成。
 
 S3-FINAL 正式收口基础编辑：GUI 制造修改统一走 `ApplicationService`；补齐标准 C/R/O/P
 Flash 尺寸写时复制、单事务 `edit.batch`、完整事务边界的 Undo 预算淘汰、对象端点/中心优先
@@ -209,5 +209,5 @@ Windows、完整 V1、P100K、完整 CORE10 均未宣称。
 
 Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。
 
-S4-C2 Grip Editing 已启动：单选标准 Flash 尺寸、线端点、受约束圆弧和直线 Region 顶点可经统一服务编辑。
+S4-C2 Grip Editing 已启动：单选标准 Flash 尺寸、线端点、受约束圆弧和 all-Solid 全 line-only Region 顶点可经统一服务编辑。Hole contour（包括全 Line 的 Solid outer + Hole inner）不提供 Grip，仍 deferred。
 当前处于实现与验收中，尚不声明 S4-C2 PASS；状态和限制见 [S4_C2_REVIEW](docs/S4_C2_REVIEW.md)。

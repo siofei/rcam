@@ -1899,7 +1899,10 @@ impl eframe::App for EditorApp {
                     rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info,"grip.cancel.tool_change");
                 }
                 if let Some(grip) = &mut self.grip {
-                    if let Some(position) = ctx.input(|i| i.pointer.interact_pos())
+                    let pointer_position = ctx.input(|i| i.pointer.interact_pos());
+                    let release_raw_target =
+                        pointer_position.map(|position| self.camera.world(position, rect));
+                    if let Some(position) = pointer_position
                         && (grip.moved || grip.pressed.is_some_and(|p| p.distance(position)*ctx.pixels_per_point() >= 2.)) {
                         let raw = self.camera.world(position, rect);
                         match self.object_snap_runtime.resolve(raw, &self.object_snap, self.grid, self.camera,
@@ -1916,6 +1919,14 @@ impl eframe::App for EditorApp {
                     if let Err(error) = &grip.preview && grip.moved { self.ui_error = Some(error.clone()); }
                     if ctx.input(|i| i.pointer.primary_released()) {
                         let session = self.grip.take().unwrap();
+                        if let Some(probe) = &mut self.probe {
+                            probe.record_grip_release(
+                                &self.view,
+                                &session,
+                                release_raw_target,
+                                self.object_snap_runtime.current.as_ref(),
+                            );
+                        }
                         if let Some(action) = session.release() {
                             let snap = self.object_snap_runtime.current.as_ref();
                             rcam_diagnostics::measurements(rcam_diagnostics::Level::Info,"grip.commit_target",&[("grid",u64::from(snap.is_some_and(|s|s.from_grid))),("object_snap",u64::from(snap.is_some_and(|s|s.kind.is_some())))]);

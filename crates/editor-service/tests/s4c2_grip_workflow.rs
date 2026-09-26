@@ -145,6 +145,77 @@ impl Run {
     }
 }
 
+#[test]
+fn public_s4c2_fixture_parses_obround_polygon_sweep_and_full_circle_arc() {
+    let scene = gerber_io::parse_s1(
+        include_bytes!("../../../fixtures/synthetic/s4c2/grips.gbr"),
+        "s4c2-grips",
+    )
+    .unwrap();
+    let document = scene.document;
+    let objects = &document.layers[0].objects;
+    assert_eq!(objects.len(), 12);
+    let has_flash = |center, accepts: fn(&ApertureShape) -> bool| {
+        objects.iter().any(|object| {
+            let SemanticGeometry::Flash {
+                center: actual,
+                aperture_id,
+                ..
+            } = &object.geometry
+            else {
+                return false;
+            };
+            *actual == center
+                && document
+                    .apertures
+                    .iter()
+                    .find(|aperture| aperture.id == *aperture_id)
+                    .is_some_and(|aperture| accepts(&aperture.shape))
+        })
+    };
+    assert!(has_flash(MmPoint::new(10., 3.), |shape| matches!(
+        shape,
+        ApertureShape::Obround { .. }
+    )));
+    assert!(has_flash(MmPoint::new(14., 3.), |shape| matches!(
+        shape,
+        ApertureShape::Polygon { .. }
+    )));
+    assert!(objects.iter().any(|object| matches!(
+        &object.geometry,
+        SemanticGeometry::RectangularSweep { start, end, .. }
+            if *start == MmPoint::new(10., 8.) && *end == MmPoint::new(14., 8.)
+    )));
+    assert!(objects.iter().any(|object| matches!(
+        &object.geometry,
+        SemanticGeometry::Arc { path, .. }
+            if path.full_circle
+                && path.center == MmPoint::new(17., 8.)
+                && (path.radius() - 1.).abs() < 1e-9
+    )));
+    let rectangle = objects
+        .iter()
+        .find(|object| matches!(&object.geometry, SemanticGeometry::Region { contours } if contours.len() == 1 && contours[0].edges.len() == 4))
+        .expect("fixture must include a four-edge Region");
+    let SemanticGeometry::Region { contours } = &rectangle.geometry else {
+        unreachable!();
+    };
+    assert_eq!(contours[0].role, editor_core::RegionRole::Solid);
+    let expected_edges = [
+        (MmPoint::new(10., 18.), MmPoint::new(14., 18.)),
+        (MmPoint::new(14., 18.), MmPoint::new(14., 22.)),
+        (MmPoint::new(14., 22.), MmPoint::new(10., 22.)),
+        (MmPoint::new(10., 22.), MmPoint::new(10., 18.)),
+    ];
+    for (edge, (expected_start, expected_end)) in contours[0].edges.iter().zip(expected_edges) {
+        assert!(matches!(
+            edge,
+            editor_core::RegionEdge::Line { start, end }
+                if *start == expected_start && *end == expected_end
+        ));
+    }
+}
+
 fn exported(run: &mut Run) -> editor_core::SemanticDocument {
     let output = run.dir.join("geometry.gbr");
     run.service

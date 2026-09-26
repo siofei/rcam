@@ -1,5 +1,9 @@
 # Gerber 编辑器：Codex 开发规则
 
+## 本项目子任务分工
+
+仅对本 RCam 项目生效：执行任务时，将可独立拆分的简单子任务交给 Luna 子代理，使用 `model="gpt-6-luna"`、`reasoning_effort="max"`。主代理负责规划、复杂问题、整合与独立验收。指定模型时使用 `fork_turns="none"` 或正整数，并提供所需上下文及明确的允许修改范围。避免多个代理同时修改同一文件；仅在实际启动子代理后才能声称已委派。该规则不改变主代理模型，不适用于其他项目。
+
 ## 项目定位与必读文件
 
 这是仅面向 Windows／macOS 的本地 Gerber 图形编辑器，技术基线为 Rust + gerber-parser／gerber-types + 自有语义模型 + egui／eframe + wgpu。

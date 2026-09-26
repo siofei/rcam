@@ -690,6 +690,6 @@ vertex 附 contour/vertex（制造轮廓的稳定索引）。未知字段拒绝�
 锁定/隐藏目标的查询返回空数组；未知实体返回 NOT_FOUND；旧修订返回现有
 REVISION_CONFLICT。C/R/O/P Flash 尺寸沿 aperture 局部轴，R/O 对侧锚定；
 光圈写时复制与中心变化同一事务。Line/RectangularSweep 为端点，Arc 为投影端点/半径，
-line-only standard Region 为连接顶点；完整拓扑提交前验证。
+Region 仅在所有 contour 均为 `Solid` 且所有 edge 均为 `Line` 时提供连接顶点；Solid outer + Hole inner 即使全为 Line 也返回空 Grip，Hole contour deferred。完整拓扑提交前验证。
 无 GUI/GPU 依赖；Automation 不模拟鼠标，不接受 GPU mesh 或任意 geometry patch。
 专用数值 Grip 输入暂缓，现有数值属性编辑保留。阶段门禁见 S4_C2_REVIEW.md。

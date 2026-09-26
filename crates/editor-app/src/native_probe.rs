@@ -1,4 +1,6 @@
 //! Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR=<dir>`).
+//! S4-C2 geometry observation additionally requires `RCAM_NATIVE_SYNTHETIC_GRIP_SHA256`
+//! to equal the embedded public fixture hash and matching import provenance.
 //!
 //! It only *observes*: every frame whose observable state changed appends one JSON
 //! line to `native_observations.jsonl` (layers, revisions, dialogs, the exact screen
@@ -6,7 +8,10 @@
 //! action sent to the service is appended to `native_actions.log`, and a screenshot
 //! is written as `screens/<label>.ppm` when a `shot.request` file containing the label
 //! appears in the directory. Nothing here changes application or manufacturing state.
-use crate::{EditorApp, state::Action};
+use crate::{
+    EditorApp, grip,
+    state::{Action, View},
+};
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
@@ -15,12 +20,34 @@ use std::{
     time::{Duration, Instant},
 };
 
+const S4C2_GRIP_FIXTURE: &[u8] = include_bytes!("../../../fixtures/synthetic/s4c2/grips.gbr");
+const S4C2_GRIP_FIXTURE_NAME: &str = "grips.gbr";
+
+fn fixture_sha256() -> String {
+    editor_core::hash::sha256_hex(S4C2_GRIP_FIXTURE)
+}
+
+fn synthetic_fixture_gate(
+    opt_in_sha256: Option<&str>,
+    expected_sha256: &str,
+    original_file_name: &str,
+    layer_sha256: &str,
+    layer_count: usize,
+) -> bool {
+    opt_in_sha256 == Some(expected_sha256)
+        && original_file_name == S4C2_GRIP_FIXTURE_NAME
+        && layer_sha256 == expected_sha256
+        && layer_count == 1
+}
+
 pub struct Probe {
     dir: PathBuf,
     started: Instant,
     last: String,
     pending_shot: Option<String>,
     polled: Instant,
+    fixture_sha256: String,
+    synthetic_grip_opt_in: bool,
     pub drops: u32,
 }
 
@@ -28,12 +55,17 @@ impl Probe {
     pub fn from_env() -> Option<Self> {
         let dir = PathBuf::from(std::env::var_os("RCAM_NATIVE_PROBE_DIR")?);
         std::fs::create_dir_all(dir.join("screens")).ok()?;
+        let fixture_sha256 = fixture_sha256();
+        let synthetic_grip_opt_in = std::env::var("RCAM_NATIVE_SYNTHETIC_GRIP_SHA256")
+            .is_ok_and(|value| value == fixture_sha256);
         let probe = Self {
             dir,
             started: Instant::now(),
             last: String::new(),
             pending_shot: None,
             polled: Instant::now(),
+            fixture_sha256,
+            synthetic_grip_opt_in,
             drops: 0,
         };
         probe.action("PROBE_START");
@@ -70,6 +102,91 @@ impl Probe {
         }
     }
 
+    fn allows_synthetic_grip(&self, view: &View) -> bool {
+        if !self.synthetic_grip_opt_in {
+            return false;
+        }
+        let (Some(info), Some(layer), Some(snapshot)) = (
+            view.info.as_ref(),
+            view.layers.first(),
+            view.snap_snapshot.as_deref(),
+        ) else {
+            return false;
+        };
+        let provenance = layer.provenance.as_ref();
+        synthetic_fixture_gate(
+            Some(&self.fixture_sha256),
+            &self.fixture_sha256,
+            provenance.map_or("", |p| p.original_file_name.as_str()),
+            provenance.map_or("", |p| p.imported_sha256.as_str()),
+            view.layers.len(),
+        ) && snapshot.document_id == info.document_id
+            && snapshot.revision == info.revision
+            && snapshot.layers.len() == 1
+            && snapshot.layers[0].id == layer.layer_id
+    }
+
+    pub(crate) fn synthetic_grip_observation(
+        &self,
+        view: &View,
+        active: Option<&grip::Session>,
+        raw_target: Option<editor_core::MmPoint>,
+        snap: Option<&editor_core::snap::SnapResolution>,
+    ) -> Option<Value> {
+        self.allows_synthetic_grip(view).then(|| {
+            synthetic_grip_observation(view, active, raw_target, snap, &self.fixture_sha256)
+        })
+    }
+
+    pub(crate) fn record_grip_release(
+        &mut self,
+        view: &View,
+        session: &grip::Session,
+        raw_target: Option<editor_core::MmPoint>,
+        snap: Option<&editor_core::snap::SnapResolution>,
+    ) {
+        let Some(mut observation) =
+            self.synthetic_grip_observation(view, Some(session), raw_target, snap)
+        else {
+            return;
+        };
+        let Some(info) = view.info.as_ref() else {
+            return;
+        };
+        if session.document != info.document_id
+            || !matches!(
+                session.object.origin,
+                editor_core::ObjectOrigin::Imported { .. }
+            )
+        {
+            return;
+        }
+        let submit_eligible = session.moved && session.preview.is_ok();
+        let revision_after_expected = submit_eligible
+            .then(|| {
+                info.revision
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|revision| revision.checked_add(1))
+                    .map(|revision| revision.to_string())
+            })
+            .flatten();
+        let event = json!({
+            "schema_version": 2,
+            "event": "grip_pointer_release",
+            "fixture_sha256": self.fixture_sha256,
+            "document_id": info.document_id,
+            "revision_before": info.revision,
+            "submit_eligible": submit_eligible,
+            "revision_after_expected": revision_after_expected,
+            "state_before": state_json(info),
+            "grip": observation["active"].take(),
+            "selected_geometry_before": selected_geometry(view),
+            "fixture_flash_instances_before": fixture_flash_instances(view),
+        });
+        self.observe(event);
+    }
+
     /// Screenshot requests / results. Returns true while the probe wants repaints.
     fn screenshots(&mut self, ctx: &egui::Context) {
         let events = ctx.input(|i| i.events.clone());
@@ -104,6 +221,335 @@ impl Probe {
             }
         }
         ctx.request_repaint_after(Duration::from_millis(200));
+    }
+}
+
+fn point_json(point: editor_core::MmPoint) -> Value {
+    json!([point.x_mm, point.y_mm])
+}
+
+fn state_json(info: &editor_service::DocumentInfo) -> Value {
+    json!({
+        "revision": info.revision,
+        "workspace_revision": info.workspace_revision,
+        "dirty": info.dirty,
+        "undo_entries": info.undo_entries,
+        "redo_entries": info.redo_entries,
+    })
+}
+
+fn aperture_shape_json(shape: &editor_core::ApertureShape) -> Value {
+    use editor_core::ApertureShape;
+    match shape {
+        ApertureShape::Circle {
+            diameter_mm,
+            hole_diameter_mm,
+        } => json!({
+            "kind": "circle", "diameter_mm": diameter_mm, "hole_diameter_mm": hole_diameter_mm,
+        }),
+        ApertureShape::Rectangle {
+            width_mm,
+            height_mm,
+            hole_diameter_mm,
+        } => json!({
+            "kind": "rectangle", "width_mm": width_mm, "height_mm": height_mm,
+            "hole_diameter_mm": hole_diameter_mm,
+        }),
+        ApertureShape::Obround {
+            width_mm,
+            height_mm,
+            hole_diameter_mm,
+        } => json!({
+            "kind": "obround", "width_mm": width_mm, "height_mm": height_mm,
+            "hole_diameter_mm": hole_diameter_mm,
+        }),
+        ApertureShape::Polygon {
+            diameter_mm,
+            vertices,
+            rotation_deg,
+            hole_diameter_mm,
+        } => json!({
+            "kind": "polygon", "diameter_mm": diameter_mm, "vertices": vertices,
+            "rotation_deg": rotation_deg, "hole_diameter_mm": hole_diameter_mm,
+        }),
+        ApertureShape::Macro { primitives } => json!({
+            "kind": "macro", "primitive_count": primitives.len(),
+        }),
+    }
+}
+
+fn geometry_json(
+    object: &editor_core::SemanticObject,
+    apertures: &[editor_core::ApertureDefinition],
+    aperture_override: Option<&editor_core::ApertureShape>,
+) -> Value {
+    use editor_core::{RegionEdge, SemanticGeometry};
+    let geometry = match &object.geometry {
+        SemanticGeometry::Flash {
+            center,
+            aperture_id,
+            transform,
+        } => {
+            let shape = aperture_override.or_else(|| {
+                apertures
+                    .iter()
+                    .find(|aperture| aperture.id == *aperture_id)
+                    .map(|a| &a.shape)
+            });
+            json!({
+                "kind": "flash", "center_mm": point_json(*center), "aperture_id": aperture_id,
+                "transform": {"mirror": format!("{:?}", transform.mirror),
+                    "rotation_deg": transform.rotation_deg, "scale": transform.scale},
+                "aperture": shape.map(aperture_shape_json),
+            })
+        }
+        SemanticGeometry::Line {
+            start,
+            end,
+            width_mm,
+        } => json!({
+            "kind": "line", "start_mm": point_json(*start), "end_mm": point_json(*end),
+            "width_mm": width_mm,
+        }),
+        SemanticGeometry::RectangularSweep {
+            start,
+            end,
+            width_mm,
+            height_mm,
+        } => json!({
+            "kind": "rectangular_sweep", "start_mm": point_json(*start), "end_mm": point_json(*end),
+            "width_mm": width_mm, "height_mm": height_mm,
+        }),
+        SemanticGeometry::Arc { path, width_mm } => json!({
+            "kind": "arc", "start_mm": point_json(path.start), "end_mm": point_json(path.end),
+            "center_mm": point_json(path.center), "radius_mm": path.radius(),
+            "direction": format!("{:?}", path.direction), "full_circle": path.full_circle,
+            "arc_source": path.source.map(|source| json!({
+                "resolution_mm": source.resolution_mm, "single_quadrant": source.single_quadrant,
+            })),
+            "width_mm": width_mm,
+        }),
+        SemanticGeometry::Region { contours } => json!({
+            "kind": "region",
+            "contours": contours.iter().map(|contour| json!({
+                "role": format!("{:?}", contour.role),
+                "line_edges": contour.edges.iter().filter_map(|edge| match edge {
+                    RegionEdge::Line { start, end } => Some(json!({
+                        "start_mm": point_json(*start), "end_mm": point_json(*end),
+                    })),
+                    RegionEdge::Arc(_) => None,
+                }).collect::<Vec<_>>(),
+                "arc_edge_count": contour.edges.iter().filter(|edge| matches!(edge, RegionEdge::Arc(_))).count(),
+            })).collect::<Vec<_>>(),
+        }),
+        SemanticGeometry::BlockInstance { .. } => json!({"kind": "block_instance"}),
+    };
+    json!({
+        "object_id": object.object_id,
+        "exposure": format!("{:?}", object.exposure),
+        "geometry": geometry,
+    })
+}
+
+fn selected_geometry(view: &View) -> Value {
+    let (Some(selected), Some(snapshot)) = (view.selected.primary(), view.snap_snapshot.as_ref())
+    else {
+        return Value::Null;
+    };
+    if !matches!(
+        selected.object.origin,
+        editor_core::ObjectOrigin::Imported { .. }
+    ) {
+        return Value::Null;
+    }
+    json!({
+        "layer_id": selected.layer_id,
+        "object": geometry_json(&selected.object, &snapshot.apertures, None),
+    })
+}
+
+fn fixture_flash_instances(view: &View) -> Value {
+    let Some(snapshot) = view.snap_snapshot.as_ref() else {
+        return Value::Null;
+    };
+    json!(
+        snapshot
+            .layers
+            .iter()
+            .flat_map(|layer| layer.objects.iter().filter_map(move |object| {
+                (matches!(object.origin, editor_core::ObjectOrigin::Imported { .. })
+                    && matches!(object.geometry, editor_core::SemanticGeometry::Flash { .. }))
+                .then(|| {
+                    json!({
+                        "layer_id": layer.id,
+                        "object": geometry_json(object, &snapshot.apertures, None),
+                    })
+                })
+            }))
+            .collect::<Vec<_>>()
+    )
+}
+
+fn snap_json(snap: Option<&editor_core::snap::SnapResolution>) -> Value {
+    let Some(snap) = snap else { return Value::Null };
+    json!({
+        "resolved_mm": point_json(snap.point),
+        "kind": snap.kind.map(|kind| format!("{:?}", kind)),
+        "feature": snap.feature.as_ref().map(|feature| format!("{:?}", feature)),
+        "source": snap.source.map(|source| format!("{:?}", source)),
+        "candidate": snap.candidate.as_ref().map(|candidate| json!({
+            "layer_id": candidate.layer_id, "object_id": candidate.object_id,
+            "related_object_id": candidate.related_object_id,
+            "feature_id": format!("{:?}", candidate.feature_id),
+        })),
+        "distance_px": snap.distance_px,
+        "from_grid": snap.from_grid,
+    })
+}
+
+fn synthetic_grip_observation(
+    view: &View,
+    active: Option<&grip::Session>,
+    raw_target: Option<editor_core::MmPoint>,
+    snap: Option<&editor_core::snap::SnapResolution>,
+    fixture_sha256: &str,
+) -> Value {
+    let Some(info) = view.info.as_ref() else {
+        return Value::Null;
+    };
+    let active = active.filter(|session| {
+        session.document == info.document_id
+            && matches!(
+                session.object.origin,
+                editor_core::ObjectOrigin::Imported { .. }
+            )
+    });
+    let active_json = active.map(|session| {
+        let original = geometry_json(&session.object, &view.apertures, None);
+        let preview = session.preview.as_ref().ok().map(|preview| {
+            let object = editor_core::SemanticObject {
+                geometry: preview.geometry.clone(),
+                ..session.object.clone()
+            };
+            geometry_json(&object, &view.apertures, preview.aperture_shape.as_ref())
+        });
+        let mut excluded: Vec<_> = session.excluded.iter().cloned().collect();
+        excluded.sort();
+        json!({
+            "id": format!("{:?}", session.id),
+            "layer_id": session.layer,
+            "object_id": session.object.object_id,
+            "aperture_id_before": match &session.object.geometry {
+                editor_core::SemanticGeometry::Flash { aperture_id, .. } => Some(aperture_id),
+                _ => None,
+            },
+            "raw_target_mm": raw_target.map(point_json),
+            "resolved_target_mm": point_json(session.target),
+            "snap": snap_json(snap),
+            "excluded_object_ids": excluded,
+            "moved": session.moved,
+            "preview_valid": session.preview.is_ok(),
+            "preview_error": session.preview.as_ref().err(),
+            "geometry_before": original,
+            "geometry_preview": preview,
+        })
+    });
+    json!({
+        "fixture_sha256": fixture_sha256,
+        "document_id": info.document_id,
+        "revision": info.revision,
+        "state": state_json(info),
+        "selected_geometry": selected_geometry(view),
+        "fixture_flash_instances": fixture_flash_instances(view),
+        "active": active_json,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn synthetic_grip_observation_requires_explicit_fixture_provenance() {
+        let hash = fixture_sha256();
+        let file_name = "grips.gbr";
+        assert!(synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            file_name,
+            &hash,
+            1,
+        ));
+        assert!(!synthetic_fixture_gate(None, &hash, file_name, &hash, 1));
+        assert!(!synthetic_fixture_gate(
+            Some("wrong"),
+            &hash,
+            file_name,
+            &hash,
+            1
+        ));
+        assert!(!synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            "customer.gbr",
+            &hash,
+            1,
+        ));
+        assert!(!synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            file_name,
+            "different-layer-hash",
+            1,
+        ));
+        assert!(!synthetic_fixture_gate(
+            Some(&hash),
+            &hash,
+            file_name,
+            &hash,
+            2,
+        ));
+    }
+
+    #[test]
+    fn model_import_of_embedded_grip_fixture_enables_observation_log() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/s4c2/grips.gbr");
+        let mut model = crate::state::Model::default();
+        model.import_gerbers(&[fixture]).unwrap();
+
+        let layer = &model.view.layers[0];
+        let provenance = layer.provenance.as_ref().unwrap();
+        assert_eq!(provenance.original_file_name, S4C2_GRIP_FIXTURE_NAME);
+        assert_eq!(provenance.imported_sha256, fixture_sha256());
+        assert!(model.view.info.as_ref().unwrap().source_path.is_empty());
+
+        let dir = std::env::temp_dir().join(format!(
+            "rcam-native-probe-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut probe = Probe {
+            dir: dir.clone(),
+            started: Instant::now(),
+            last: String::new(),
+            pending_shot: None,
+            polled: Instant::now(),
+            fixture_sha256: fixture_sha256(),
+            synthetic_grip_opt_in: true,
+            drops: 0,
+        };
+        let synthetic = probe
+            .synthetic_grip_observation(&model.view, None, None, None)
+            .expect("GUI-style fixture import should enable synthetic observations");
+        probe.observe(json!({"synthetic_grip": synthetic}));
+        let log = std::fs::read_to_string(dir.join("native_observations.jsonl")).unwrap();
+        assert!(log.contains("\"synthetic_grip\""));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
 
@@ -406,6 +852,21 @@ impl EditorApp {
             self.display_unit,
             info.map_or(0.0001, |i| i.manufacturing_precision.resolution_mm),
         ));
+        let raw_grip_target = self
+            .grip
+            .as_ref()
+            .and_then(|_| ctx.input(|input| input.pointer.interact_pos()))
+            .map(|position| self.camera.world(position, self.canvas_rect));
+        if let Some(synthetic) = self.probe.as_ref().and_then(|probe| {
+            probe.synthetic_grip_observation(
+                &self.view,
+                self.grip.as_ref(),
+                raw_grip_target,
+                self.object_snap_runtime.current.as_ref(),
+            )
+        }) {
+            observation["synthetic_grip"] = synthetic;
+        }
         if let Some(probe) = self.probe.as_mut() {
             probe.observe(observation);
             probe.screenshots(ctx);

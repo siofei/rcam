@@ -6,7 +6,7 @@
 
 - 阶段：S4-C2，单对象 Grip Editing v1。关联 R04/R07/R08/R09/R10/R11/R13/R14/R15/R16/R17/R18/R19/R20/R21/R22；局部映射 AT-025/030/032/037/039/040/041/043/044/054/055/058/062/074/075/086/087/088/090/091/092/093/095。专项案例见 [S4_C2_ACCEPTANCE_ADDENDUM](S4_C2_ACCEPTANCE_ADDENDUM.md)；原 96 个有效用例、schema_version=2、阈值与平台要求不变。
 - 允许修改 `crates/editor-core` 的制造 Grip 特征、纯预览和原子编辑，`crates/editor-service` 的 `objects.grips` / `objects.grip_edit` DTO 与修订/权限校验，`crates/editor-app` 的选中对象 Grip、输入状态、标记/状态栏、现有 SnapResolver 接线，必要的 `rcam-project` 往返兼容修正及 `rcam-diagnostics` 白名单接线，以及对应测试、公开 synthetic fixture、文档和证据。`gerber-io` 只允许为合法导出/重开修正必要 writer 问题，不扩展输入语法。
-- 不做 Macro primitive、含 Arc 边 Region、CompatibilitySolid、GeneratedText glyph 或 BlockDefinition 的节点编辑；不做多对象 Grip、Stroke width Grip、完整 Block Editor、Array/Panelization、Alignment、PnP/RefDes、Shortcut Settings、Command Palette、Tangent/Perpendicular Snap 或 Windows 实施。数值 Grip 输入若当前输入框不能安全复用，明确 deferred；鼠标 Grip 是硬门禁。
+- 不做 Macro primitive、含 Hole contour 或 Arc 边 Region、CompatibilitySolid、GeneratedText glyph 或 BlockDefinition 的节点编辑；Region Grip v1 仅支持 all-Solid、全 line-only contours。Solid outer + Hole inner 即使全为 Line 也没有 editable Grip；Hole contour deferred。不做多对象 Grip、Stroke width Grip、完整 Block Editor、Array/Panelization、Alignment、PnP/RefDes、Shortcut Settings、Command Palette、Tangent/Perpendicular Snap 或 Windows 实施。数值 Grip 输入若当前输入框不能安全复用，明确 deferred；鼠标 Grip 是硬门禁。
 
 ## 可运行闭环
 
@@ -25,7 +25,7 @@ Grip target 复用 S4-C1 Resolver：Object 优先于 Grid、Alt 临时禁用、8
 | 标准 C/R/O/P Flash | C 外径保持中心及孔；R/O 侧边/角以相对边/角锚定，同时原子更新中心和尺寸；P 仅直径，保持顶点数、旋转与孔。尺寸均走现有 aperture 写时复制语义，其他 Flash 不变。R/O 在 aperture 局部轴计算，world target 先逆旋转/镜像，禁止按 world AABB 改尺寸。孔与外形冲突时预览无效、提交拒绝。 |
 | Line / RectangularSweep | Start/End 直接改路径端点；宽度、高度、曝光与 origin 不变。零长度 Line 可转非零，Undo 精确恢复。 |
 | Arc | Start/End 投影到原圆，仅改对应角；Radius 保持圆心/角/方向并重算端点；full circle 仅 Radius（Center 仍可用 Direct Move）。拒绝零半径/非法 sweep。任一实际 Grip 改动清除旧 `ArcSource`，保留当前解析方向、圆心及 full_circle 身份；具体规则见 ADR 0038。 |
-| 标准 line-only Region | `Vertex(contour, vertex)` 同时更新相邻两条 line 边；闭合点同步首尾，提交时完整拓扑验证。含 Arc 边 Region 无可编辑节点 Grip。 |
+| all-Solid、全 line-only Region | `Vertex(contour, vertex)` 同时更新相邻两条 line 边；闭合点同步首尾，提交时完整拓扑验证。含 Hole contour 或 Arc 边 Region 无可编辑节点 Grip。 |
 
 所有修改使用 f64 mm，预览帧不提前量化；导出仍用当前 ManufacturingPrecision 快照。显示单位 mm/in/mil/µm 仅影响格式。共享光圈只改目标实例；Undo 移除/恢复生成定义，Redo 保持同一生成 ID。导入 Gerber 源文件保持只读。
 

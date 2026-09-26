@@ -1,6 +1,6 @@
 # 能力与实施状态
 
-当前开发边界为 Mac-first S4-C1 Full Object Snap closeout PASS（Global Units、S4-B1、S4-B2、S4-B3 已按各自 review 收口），尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准；下一阶段固定为 INFRA1 Runtime Diagnostics Foundation，进入 Mac-first bounded panic hook 最终收口。
+当前开发边界为 Mac-first S4-C1 Full Object Snap closeout PASS、INFRA1 panic hook closeout PASS，S4-C2 Grip Editing 正在原生验收收口；尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
 以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
 
 ## S0 历史技术验证
@@ -269,7 +269,7 @@ Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/de
 ### S4-C2 Grip Editing（实现中，尚未阶段验收）
 
 新增 `objects.grips` / `objects.grip_edit`。单选可编辑 C/R/O/P Flash 尺寸（COW）、
-Line/合法轴向 RectangularSweep 端点、Arc 投影端点/半径、line-only standard Region 顶点。
+Line/合法轴向 RectangularSweep 端点、Arc 投影端点/半径、all-Solid 全 line-only Region 顶点。
 Flash 局部 rotation/mirror/scale 保持；拖动预览不修改文档，release 一个事务；取消不提交。
-Macro、含弧 Region、CompatibilitySolid、GeneratedText、Block 内部、多对象 node edit 不支持。
+Macro、含 Hole contour 或弧边 Region、CompatibilitySolid、GeneratedText、Block 内部、多对象 node edit 不支持；Hole contour deferred，包括全 Line 的 Solid outer + Hole inner。
 专用 Grip 数值弹窗 deferred；Windows deferred。专项/原生/交付门禁见 S4_C2_REVIEW。

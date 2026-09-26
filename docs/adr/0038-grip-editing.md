@@ -15,7 +15,7 @@ S4-C1 的 SnapFeature 标识制造几何上可吸附的位置；它不说明哪�
 3. Flash 尺寸编辑复用/抽取 `set_flash_size` 的 aperture Copy-On-Write 核心。R/O 的 side/corner 在 aperture 局部轴解析 target，逆 `LocalTransform` 后锚定对边/对角；中心位移和光圈尺寸在同一事务。禁止 world AABB resize。孔洞参数保持，原外形不容纳孔洞时拒绝。C 与 P 仅尺寸；Macro 不提供尺寸 Grip。
 4. Line/RectangularSweep 仅可改 Start/End。Arc Start/End target 投影到当前圆，只改变角度；Radius 保持圆心、起止角、方向和 full_circle 身份，并重算端点。full circle 不显示角端点。零/非法 radius、退化 sweep 拒绝。
 5. `ArcSource` 记录导入时的分辨率和 `single_quadrant` 来源声明，不是当前制造几何的通用约束。任一**实际改变** Arc 几何的 Grip 提交都令该 Arc 的 `source=None`，不延用旧 G74/G75 或分辨率声明；未改变的 target 视为 no-op，不新增历史且保留原来源。当前几何仍须通过完整 Arc 验证，保留 `direction` 和 `full_circle`，导出由 writer 重新选取合法模式。若现有验证/Writer 不能安全表达修改后的 Arc，拒绝提交，不伪造 `ArcSource`。
-6. 仅标准、全 line-only Region 公开 Vertex Grip。移动共享顶点时同时更新相邻边；闭合点同步首尾；提交需完整制造拓扑验证。含 Arc 边 Region、CompatibilitySolid、GeneratedText glyph、BlockDefinition 内部节点和多选不暴露节点 Grip。
+6. S4-C2 Region Grip v1 仅对 all-Solid、全 line-only Region 公开 Vertex Grip：每个 contour 的角色必须是 `Solid`，每条边必须是 `Line`。Solid outer + Hole inner 即使两条轮廓全为 Line，也返回空 Grip；Hole contour deferred，不在 closeout 中扩大拓扑范围。移动共享顶点时同时更新相邻边；闭合点同步首尾；提交需完整制造拓扑验证。含 Arc 边 Region、CompatibilitySolid、GeneratedText glyph、BlockDefinition 内部节点和多选不暴露节点 Grip。
 7. 目标点调用 S4-C1 SnapResolver，Object > Grid、Alt 临时禁用、8 px acquire / 11 px retain；默认排除活动对象。标记与命中半径用 physical px。`grip.begin/cancel` 和 `objects.grip_edit` 只记录 INFRA1 白名单摘要，正常逐帧不写 INFO、诊断不含制造 payload/客户路径。
 
 ## 后果与边界
