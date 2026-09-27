@@ -1,6 +1,7 @@
 # INFRA1 Runtime Diagnostics Review
 
-状态：上一轮 `85ad528` 经复审为 **ALMOST PASS**（未保留 Rust previous/default panic hook）。本轮 panic hook 修复的最终 PASS 以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 及绑定的最终门禁为准。Windows deferred / not executed；不是双平台 V1、完整 CORE10 或 P100K 性能通过。不启动 S4-C2。
+**最终状态：PASS（Mac-first bounded）。** Panic hook 修复及最终门禁已固定在 [`exports/INFRA1_PANIC_c65bee0/REVIEW.md`](../exports/INFRA1_PANIC_c65bee0/REVIEW.md)，final commit `c65bee0b5a051900c7c422e048e4eaa15a0994e2`。Windows deferred / not executed；不代表双平台 V1、完整 CORE10 或 P100K 性能通过。
+历史说明：上一轮 `85ad528` 曾为 ALMOST PASS，原因是未保留 Rust previous/default panic hook；该问题已在 `c65bee0` 修复。下文旧的待修复/待验收措辞描述的是最终 closeout 前状态，不改变其历史含义。
 
 范围：S4 基础设施；R16/R17/R18/R19/R20/R21/R22；AT-063/066/069/077/082/083/086/090/097。96 个正式用例及平台要求不变。仅修改诊断、只读摘要、数值计时、UI 观测与验收支持，不修改制造几何、Undo 或 Snap resolver。
 

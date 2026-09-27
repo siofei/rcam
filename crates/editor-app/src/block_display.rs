@@ -22,7 +22,6 @@ pub struct BlockDisplayCache {
 }
 
 impl BlockDisplayCache {
-    #[cfg(test)]
     pub fn stats(&self) -> (usize, usize) {
         (
             self.entries.len(),

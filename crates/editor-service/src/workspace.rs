@@ -343,6 +343,45 @@ pub(crate) fn check_workspace_edit(
     }
 }
 
+/// Block workflow enforces visibility/selectability as well as locks, including
+/// the class of a newly inserted instance. Headless callers cannot bypass it.
+pub(crate) fn check_block_edit(
+    record: &S1DocumentRecord,
+    layer_id: &str,
+    object_ids: &[String],
+    inserting: bool,
+) -> Result<(), ServiceError> {
+    check_workspace_edit(record, layer_id, object_ids)?;
+    let state = &record.workspace[layer_id];
+    if !effective_layer_visible(record, layer_id, state) || !state.selectable {
+        return Err(ServiceError::invalid("Block 操作要求可见、可选的图层"));
+    }
+    let shapes = aperture_shape_map(&record.document.apertures);
+    let layer = record
+        .document
+        .layers
+        .iter()
+        .find(|l| l.id == layer_id)
+        .ok_or_else(|| ServiceError::not_found("layer", layer_id))?;
+    for id in object_ids {
+        let object = layer
+            .objects
+            .iter()
+            .find(|o| &o.object_id == id)
+            .ok_or_else(|| ServiceError::not_found("object", id))?;
+        if !state.effective_selectable(classify_object(object, &shapes)) {
+            return Err(ServiceError::invalid("Block 操作包含隐藏或不可选对象"));
+        }
+    }
+    if inserting {
+        check_new_object_class(record, layer_id, DisplayClass::BlockInstance)?;
+        if !state.effective_selectable(DisplayClass::BlockInstance) {
+            return Err(ServiceError::invalid("Block 类别隐藏或不可选"));
+        }
+    }
+    Ok(())
+}
+
 /// Lock check for objects that do not exist yet (generated text).
 pub(crate) fn check_new_object_class(
     record: &S1DocumentRecord,

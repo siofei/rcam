@@ -89,12 +89,18 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
         [std::env::temp_dir()],
     ));
     let capabilities = service.capabilities();
+    assert_eq!(
+        capabilities.stage,
+        "S4-C4 Alignment / Distribution (Mac-first bounded)"
+    );
     for operation in [
         "system.capabilities",
         "document.open",
         "document.get",
         "document.close",
         "objects.move",
+        "objects.align",
+        "objects.distribute",
         "objects.rotate",
         "objects.mirror",
         "text.preview",

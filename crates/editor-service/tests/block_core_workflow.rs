@@ -508,8 +508,34 @@ fn locked_layer_rejects_block_mutations() {
 
 #[test]
 fn capabilities_advertise_every_block_op_as_dispatchable() {
-    let w = W::new("caps");
+    let mut w = W::new("caps");
+    let response = w.svc.execute_json(
+        &serde_json::json!({
+            "api_version": 1, "request_id": "caps", "op": "system.capabilities", "params": {}
+        })
+        .to_string(),
+    );
+    assert_eq!(response["status"], "completed");
+    assert_eq!(
+        response["result"]["stage"],
+        "S4-C4 Alignment / Distribution (Mac-first bounded)"
+    );
     let caps = w.svc.capabilities();
+    assert_eq!(serde_json::to_value(&caps).unwrap(), response["result"]);
+    println!("CAPABILITY_OUTPUT={}", response["result"]);
+    for op in ["objects.grips", "objects.grip_edit"] {
+        assert!(caps.supported_operations.iter().any(|s| s == op));
+        assert!(!caps.unsupported_operations.iter().any(|s| s == op));
+    }
+    for op in [
+        "drill.import",
+        "components.search",
+        "snap.resolve",
+        "layers.merge",
+    ] {
+        assert!(caps.unsupported_operations.iter().any(|s| s == op));
+        assert!(!caps.supported_operations.iter().any(|s| s == op));
+    }
     for op in [
         "blocks.list_definitions",
         "blocks.get_definition",
@@ -532,6 +558,134 @@ fn capabilities_advertise_every_block_op_as_dispatchable() {
         caps.supported_operations
             .iter()
             .any(|s| s == "project.save")
+    );
+
+    // Successful JSON requests exercise the public dispatcher, not only the table
+    // or Rust methods. Read-only requests omit expected_revision.
+    fn call(w: &mut W, op: &str, params: serde_json::Value, edit: bool) -> serde_json::Value {
+        let before = w.rev();
+        let mut request = serde_json::json!({
+            "api_version": 1, "request_id": op, "op": op,
+            "document_id": w.doc, "params": params
+        });
+        if edit {
+            request["expected_revision"] = serde_json::json!(before);
+        }
+        let response = w.svc.execute_json(&request.to_string());
+        assert_eq!(response["request_id"], op);
+        assert_eq!(response["status"], "completed", "{op}: {response}");
+        if edit {
+            assert_eq!(
+                w.rev().parse::<u64>().unwrap(),
+                before.parse::<u64>().unwrap() + 1
+            );
+        } else {
+            assert_eq!(w.rev(), before);
+        }
+        response["result"].clone()
+    }
+    let (layer, ids) = w.seed_square();
+    let created = call(
+        &mut w,
+        "blocks.create_definition_from_objects",
+        serde_json::json!({
+            "layer_id": layer, "object_ids": ids, "local_origin_mm": {"x_mm": 0.5, "y_mm": 0.5},
+            "name": "JSON block"
+        }),
+        true,
+    );
+    let definition = created["definition_id"].clone();
+    let original = created["instance_object_id"].clone();
+    assert_eq!(w.objects(&layer).len(), 1);
+    let list = call(
+        &mut w,
+        "blocks.list_definitions",
+        serde_json::json!({}),
+        false,
+    );
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["id"], definition);
+    let detail = call(
+        &mut w,
+        "blocks.get_definition",
+        serde_json::json!({"definition_id": definition}),
+        false,
+    );
+    assert_eq!(detail["objects"].as_array().unwrap().len(), 4);
+    let transform = serde_json::json!({
+        "translation_mm": {"x_mm": 5.0, "y_mm": 6.0}, "rotation_deg": 90.0, "mirror": true
+    });
+    let placed = call(
+        &mut w,
+        "blocks.create_instance",
+        serde_json::json!({
+            "layer_id": layer, "definition_id": definition, "transform": transform
+        }),
+        true,
+    );
+    assert_eq!(w.objects(&layer).len(), 2);
+    call(
+        &mut w,
+        "blocks.update_instance_transform",
+        serde_json::json!({
+            "layer_id": layer, "object_id": original, "transform": transform
+        }),
+        true,
+    );
+    for object in w.objects(&layer) {
+        let SemanticGeometry::BlockInstance { transform, .. } = object.geometry else {
+            panic!("expected instance")
+        };
+        assert_eq!(transform.translation.x_mm, 5.0);
+        assert_eq!(transform.translation.y_mm, 6.0);
+        assert_eq!(transform.rotation_deg, 90.0);
+        assert!(transform.mirror);
+    }
+    call(
+        &mut w,
+        "blocks.rename_definition",
+        serde_json::json!({
+            "definition_id": definition, "name": "重命名 JSON"
+        }),
+        true,
+    );
+    let detail = call(
+        &mut w,
+        "blocks.get_definition",
+        serde_json::json!({"definition_id": definition}),
+        false,
+    );
+    assert_eq!(detail["name"], "重命名 JSON");
+    for object_id in [original, placed["object_id"].clone()] {
+        call(
+            &mut w,
+            "blocks.explode_instance",
+            serde_json::json!({
+                "layer_id": layer, "object_id": object_id
+            }),
+            true,
+        );
+    }
+    assert_eq!(w.objects(&layer).len(), 8);
+    assert!(
+        w.objects(&layer)
+            .iter()
+            .all(|o| !matches!(o.geometry, SemanticGeometry::BlockInstance { .. }))
+    );
+    call(
+        &mut w,
+        "blocks.delete_definition",
+        serde_json::json!({"definition_id": definition}),
+        true,
+    );
+    assert_eq!(
+        call(
+            &mut w,
+            "blocks.list_definitions",
+            serde_json::json!({}),
+            false
+        ),
+        serde_json::json!([])
     );
 }
 
@@ -768,4 +922,131 @@ fn block_export_fails_closed_when_precision_collapses_definition_geometry() {
         before_export,
         "working project must be untouched by a failed export"
     );
+}
+
+#[test]
+fn c3_service_rejects_hidden_nonselectable_and_block_class_targets_without_mutation() {
+    use editor_core::workspace::DisplayClass;
+    for policy in [
+        "hidden",
+        "nonselectable",
+        "class_hidden",
+        "class_locked",
+        "class_nonselectable",
+    ] {
+        let mut w = W::new(policy);
+        let (layer, ids) = w.seed_square();
+        let created = w.create_definition(&layer, ids, (0., 0.), "test");
+        let mut patch = LayerUpdateParams {
+            layer_id: layer.clone(),
+            expected_workspace_revision: w.wrev(),
+            ..Default::default()
+        };
+        match policy {
+            "hidden" => patch.visible = Some(false),
+            "nonselectable" => patch.selectable = Some(false),
+            _ => patch.classes.push(ClassStyleUpdate {
+                class: Some(DisplayClass::BlockInstance),
+                visible: (policy == "class_hidden").then_some(false),
+                selectable: (policy == "class_nonselectable").then_some(false),
+                locked: (policy == "class_locked").then_some(true),
+                ..Default::default()
+            }),
+        }
+        w.svc.layer_update(&w.doc, &w.rev(), patch).unwrap();
+        let before = w.svc.document_get(&w.doc).unwrap();
+        let snapshot = w.svc.project_snapshot(&w.doc).unwrap();
+        assert!(
+            w.svc
+                .blocks_create_instance(
+                    &w.doc,
+                    &w.rev(),
+                    CreateBlockInstanceParams {
+                        layer_id: layer.clone(),
+                        definition_id: created.definition_id.clone(),
+                        transform: BlockTransformParams {
+                            translation_mm: PivotMm { x_mm: 2., y_mm: 3. },
+                            rotation_deg: 0.,
+                            mirror: false
+                        }
+                    }
+                )
+                .is_err(),
+            "{policy}"
+        );
+        assert!(
+            w.svc
+                .blocks_explode_instance(
+                    &w.doc,
+                    &w.rev(),
+                    ExplodeBlockInstanceParams {
+                        layer_id: layer,
+                        object_id: created.instance_object_id
+                    }
+                )
+                .is_err(),
+            "{policy}"
+        );
+        assert_eq!(w.svc.document_get(&w.doc).unwrap(), before, "{policy}");
+        assert_eq!(
+            w.svc.project_snapshot(&w.doc).unwrap(),
+            snapshot,
+            "{policy}"
+        );
+    }
+}
+
+#[test]
+fn c3_create_checks_ordinary_selection_visibility_and_revision() {
+    for policy in ["hidden", "nonselectable", "stale", "empty", "nested"] {
+        let mut w = W::new(policy);
+        let (layer, mut ids) = w.seed_square();
+        let original_revision = w.rev();
+        if policy == "nested" {
+            let created = w.create_definition(&layer, ids, (0., 0.), "one");
+            ids = vec![created.instance_object_id];
+        }
+        if policy == "empty" {
+            ids.clear();
+        }
+        if policy == "hidden" || policy == "nonselectable" {
+            w.svc
+                .layer_update(
+                    &w.doc,
+                    &w.rev(),
+                    LayerUpdateParams {
+                        layer_id: layer.clone(),
+                        expected_workspace_revision: w.wrev(),
+                        visible: (policy == "hidden").then_some(false),
+                        selectable: (policy == "nonselectable").then_some(false),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        let rev = if policy == "stale" {
+            "0".into()
+        } else {
+            w.rev()
+        };
+        let before = w.svc.document_get(&w.doc).unwrap();
+        let err = w
+            .svc
+            .blocks_create_definition_from_objects(
+                &w.doc,
+                &rev,
+                CreateBlockDefinitionParams {
+                    layer_id: layer,
+                    object_ids: ids,
+                    local_origin_mm: PivotMm { x_mm: 0., y_mm: 0. },
+                    name: "test".into(),
+                },
+            )
+            .unwrap_err();
+        assert_eq!(
+            w.svc.document_get(&w.doc).unwrap(),
+            before,
+            "{policy}: {err:?}, original={original_revision}"
+        );
+    }
 }

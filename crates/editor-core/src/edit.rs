@@ -3,6 +3,8 @@ use super::*;
 use std::collections::{BTreeMap, HashSet};
 use std::mem::size_of;
 
+pub use crate::alignment::{AlignmentMode, DistributionAxis};
+
 /// World axes: horizontal y=coordinate_mm, vertical x=coordinate_mm.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -478,6 +480,135 @@ impl EditHistory {
         })
     }
 
+    /// Align selected logical objects to the explicit anchor's analytic world
+    /// manufacturing bounds. GeneratedText glyph groups move as one unit.
+    pub fn align_objects(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        anchor_id: &str,
+        mode: AlignmentMode,
+    ) -> Result<Vec<String>, EditError> {
+        let (layer_index, selected) = self.targets(document, layer_id, object_ids)?;
+        let logical = crate::alignment::selected_object_bounds(document, layer_index, &selected)?;
+        let deltas = crate::alignment::compute_alignment_deltas(&logical, anchor_id, mode)?;
+        self.translate_by_deltas(document, layer_id, layer_index, &selected, &deltas)
+    }
+
+    /// Distribute selected logical objects by equal gaps between their world
+    /// manufacturing AABB edges. GeneratedText glyph groups move atomically.
+    pub fn distribute_objects(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        axis: DistributionAxis,
+    ) -> Result<Vec<String>, EditError> {
+        let (layer_index, selected) = self.targets(document, layer_id, object_ids)?;
+        let logical = crate::alignment::selected_object_bounds(document, layer_index, &selected)?;
+        let deltas = crate::alignment::compute_distribution_deltas(&logical, axis)?;
+        self.translate_by_deltas(document, layer_id, layer_index, &selected, &deltas)
+    }
+
+    pub(crate) fn translate_by_deltas(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        layer_index: usize,
+        selected: &[usize],
+        deltas: &[crate::alignment::ObjectDelta],
+    ) -> Result<Vec<String>, EditError> {
+        let mut delta_by_id = std::collections::HashMap::with_capacity(selected.len());
+        for delta in deltas {
+            for object_id in &delta.object_ids {
+                if delta_by_id
+                    .insert(object_id.as_str(), (delta.dx_mm, delta.dy_mm))
+                    .is_some()
+                {
+                    return Err(EditError::InvalidArgument);
+                }
+            }
+        }
+        let layer = document
+            .layers
+            .get(layer_index)
+            .ok_or(EditError::InvalidArgument)?;
+        let changes_needed = selected
+            .iter()
+            .filter(|&&index| {
+                layer.objects.get(index).is_some_and(|object| {
+                    delta_by_id
+                        .get(object.object_id.as_str())
+                        .is_some_and(|(dx, dy)| *dx != 0.0 || *dy != 0.0)
+                })
+            })
+            .count();
+        if changes_needed == 0 {
+            return Ok(Vec::new());
+        }
+        let bytes = size_of::<Transaction>()
+            + 256
+            + layer_id.len()
+            + selected
+                .iter()
+                .filter_map(|&index| {
+                    let object = layer.objects.get(index)?;
+                    delta_by_id
+                        .get(object.object_id.as_str())
+                        .filter(|(dx, dy)| *dx != 0.0 || *dy != 0.0)
+                        .map(|_| {
+                            size_of::<Change>()
+                                + 256
+                                + 3 * object.object_id.len()
+                                + 3 * geometry_heap_bytes(&object.geometry)
+                        })
+                })
+                .sum::<usize>();
+        self.budget(bytes)?;
+
+        let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
+        let block_definition_ids = block_definition_ids(document);
+        let mut changes = Vec::with_capacity(changes_needed);
+        for &index in selected {
+            let object = layer.objects.get(index).ok_or(EditError::InvalidArgument)?;
+            let Some(&(dx_mm, dy_mm)) = delta_by_id.get(object.object_id.as_str()) else {
+                return Err(EditError::InvalidArgument);
+            };
+            if dx_mm == 0.0 && dy_mm == 0.0 {
+                continue;
+            }
+            let mut after = object.geometry.clone();
+            translate(&mut after, dx_mm, dy_mm)?;
+            validate_geometry(&after, &aperture_ids, &block_definition_ids)
+                .map_err(EditError::InvalidGeometry)?;
+            validate_block_resolution(document, &after)?;
+            if after == object.geometry {
+                continue;
+            }
+            changes.push(Change {
+                object_id: object.object_id.clone(),
+                index,
+                before: object.geometry.clone(),
+                after,
+            });
+        }
+        if changes.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(self.commit(
+            document,
+            Transaction {
+                layer_id: layer_id.into(),
+                layer: layer_index,
+                operation: Operation::Modify(changes),
+                before_order: vec![],
+                after_order: vec![],
+                bytes,
+            },
+        ))
+    }
+
     pub fn rotate_objects(
         &mut self,
         document: &mut SemanticDocument,
@@ -537,6 +668,7 @@ impl EditHistory {
             modify(&mut after)?;
             validate_geometry(&after, &aperture_ids, &block_definition_ids)
                 .map_err(EditError::InvalidGeometry)?;
+            validate_block_resolution(document, &after)?;
             changes.push(Change {
                 object_id: object.object_id.clone(),
                 index,
@@ -774,11 +906,17 @@ impl EditHistory {
         local_origin: MmPoint,
         name: String,
     ) -> Result<(crate::block::BlockDefinitionId, String), EditError> {
-        if !local_origin.is_valid_geometry() || name.trim().is_empty() {
+        let name = name.trim().to_owned();
+        if !local_origin.is_valid_geometry() || name.is_empty() || name.chars().count() > 128 {
             return Err(EditError::InvalidArgument);
         }
         let (layer_index, selected) = self.targets(document, layer_id, object_ids)?;
         let layer = &document.layers[layer_index];
+        // A single instance occupies one exposure slot. Grouping across an
+        // unselected object would reorder Dark/Clear compositing.
+        if selected.windows(2).any(|pair| pair[1] != pair[0] + 1) {
+            return Err(EditError::UnsupportedTransform);
+        }
         let mut block_objects = Vec::with_capacity(selected.len());
         for &index in &selected {
             let source = &layer.objects[index];
@@ -858,8 +996,7 @@ impl EditHistory {
             + geometry_heap_bytes(&inserted[0].object.geometry)
             + inserted[0].object.object_id.len()
             + 256
-            + definition.name.len()
-            + definition.objects.len() * 256;
+            + block_definition_bytes(&definition);
         self.budget(bytes)?;
         let before_order: Vec<_> = layer.objects.iter().map(|o| o.object_id.clone()).collect();
         let removed_indices: HashSet<usize> = removed.iter().map(|e| e.index).collect();
@@ -1009,7 +1146,8 @@ impl EditHistory {
         definition_id: &crate::block::BlockDefinitionId,
         new_name: String,
     ) -> Result<(), EditError> {
-        if new_name.trim().is_empty() {
+        let new_name = new_name.trim().to_owned();
+        if new_name.is_empty() || new_name.chars().count() > 128 {
             return Err(EditError::InvalidArgument);
         }
         let index = document
@@ -1071,7 +1209,7 @@ impl EditHistory {
             return Err(EditError::BlockDefinitionReferenced);
         }
         let definition = document.block_definitions[index].clone();
-        let bytes = size_of::<Transaction>() + 256 + definition.objects.len() * 256;
+        let bytes = size_of::<Transaction>() + 256 + block_definition_bytes(&definition);
         self.budget(bytes)?;
         let layer_id = document
             .layers
@@ -1108,6 +1246,15 @@ impl EditHistory {
             .is_some_and(|id| id != document.id)
         {
             return Err(EditError::InvalidArgument);
+        }
+        if document
+            .layers
+            .iter()
+            .map(|l| l.objects.len())
+            .sum::<usize>()
+            >= MAX_EDIT_DOCUMENT_OBJECTS
+        {
+            return Err(EditError::ResourceLimit);
         }
         let layer_index = document
             .layers
@@ -1353,6 +1500,7 @@ impl EditHistory {
         for (index, after) in working {
             validate_geometry(&after, &aperture_ids, &block_definition_ids)
                 .map_err(EditError::InvalidGeometry)?;
+            validate_block_resolution(document, &after)?;
             let object = &document.layers[layer_index].objects[index];
             if object.geometry != after {
                 changes.push(Change {
@@ -1655,6 +1803,7 @@ impl EditHistory {
                 translate(&mut object.geometry, dx, dy)?;
                 validate_geometry(&object.geometry, &aperture_ids, &block_definition_ids)
                     .map_err(EditError::InvalidGeometry)?;
+                validate_block_resolution(document, &object.geometry)?;
                 index + n + 1
             } else {
                 index
@@ -2496,6 +2645,52 @@ fn region_edges(geometry: &SemanticGeometry) -> usize {
         SemanticGeometry::Region { contours } => contours.iter().map(|c| c.edges.len()).sum(),
         _ => 0,
     }
+}
+
+// Validate resolved manufacturing geometry before committing any delta edit.
+// A syntactically valid rigid transform may be unrepresentable by a child
+// RectangularSweep, or may move a child outside the geometry coordinate budget.
+fn validate_block_resolution(
+    document: &SemanticDocument,
+    geometry: &SemanticGeometry,
+) -> Result<(), EditError> {
+    if let SemanticGeometry::BlockInstance {
+        definition_id,
+        transform,
+    } = geometry
+    {
+        let definition = document
+            .block_definition(definition_id)
+            .ok_or(EditError::InvalidArgument)?;
+        crate::block::resolve_instance(definition, transform)
+            .map_err(|_| EditError::UnsupportedTransform)?;
+    }
+    Ok(())
+}
+
+fn block_definition_bytes(definition: &crate::block::BlockDefinition) -> usize {
+    use crate::block::BlockObjectGeometry;
+    size_of::<crate::block::BlockDefinition>()
+        + definition.id.0.len()
+        + definition.name.len()
+        + definition
+            .objects
+            .iter()
+            .map(|object| {
+                size_of::<crate::block::BlockObject>()
+                    + match &object.geometry {
+                        BlockObjectGeometry::Flash { aperture_id, .. } => aperture_id.len() + 64,
+                        BlockObjectGeometry::Region { contours } => {
+                            contours.len() * (size_of::<RegionContour>() + 64)
+                                + contours
+                                    .iter()
+                                    .map(|c| c.edges.len() * size_of::<RegionEdge>() + 64)
+                                    .sum::<usize>()
+                        }
+                        _ => 0,
+                    }
+            })
+            .sum::<usize>()
 }
 
 fn geometry_heap_bytes(geometry: &SemanticGeometry) -> usize {

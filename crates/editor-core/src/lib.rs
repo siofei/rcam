@@ -1,6 +1,7 @@
 //! UI-free f64 manufacturing geometry, validation and bounded atomic editing.
 //! The original S0 display model remains separate from the S1 semantic model.
 
+pub mod alignment;
 mod bounds;
 pub mod grid;
 pub mod grip;
@@ -8,7 +9,14 @@ pub mod hash;
 pub mod hit_test;
 pub mod metrics;
 pub mod units;
-pub use bounds::{BoundsMm, geometries_bounds, geometries_bounds_with_blocks};
+pub use alignment::{
+    AlignmentMode, DistributionAxis, ObjectBoundsMm, ObjectDelta, compute_alignment_deltas,
+    compute_distribution_deltas,
+};
+pub use bounds::{
+    BoundsMm, geometries_bounds, geometries_bounds_with_blocks,
+    individual_geometries_bounds_with_blocks,
+};
 pub mod block;
 pub mod board;
 pub mod command;

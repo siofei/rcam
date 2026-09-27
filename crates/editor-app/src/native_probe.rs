@@ -23,9 +23,159 @@ use std::{
 
 const S4C2_GRIP_FIXTURE: &[u8] = include_bytes!("../../../fixtures/synthetic/s4c2/grips.gbr");
 const S4C2_GRIP_FIXTURE_NAME: &str = "grips.gbr";
+const S4C4_ARRANGEMENT_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/synthetic/s4c4/arrangements.gbr");
+const S4C4_ARRANGEMENT_FIXTURE_NAME: &str = "arrangements.gbr";
+const S4C4_NEGATIVE_GAP_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/synthetic/s4c4/negative-gap.gbr");
+const S4C4_GRID_FIXTURE: &[u8] = include_bytes!("../../../fixtures/synthetic/s4c4/grid-1000.gbr");
 
 fn fixture_sha256() -> String {
     editor_core::hash::sha256_hex(S4C2_GRIP_FIXTURE)
+}
+
+fn s4c4_fixture_identity(name: &str) -> Option<String> {
+    let bytes = match name {
+        S4C4_ARRANGEMENT_FIXTURE_NAME => S4C4_ARRANGEMENT_FIXTURE,
+        "negative-gap.gbr" => S4C4_NEGATIVE_GAP_FIXTURE,
+        "grid-1000.gbr" => S4C4_GRID_FIXTURE,
+        _ => return None,
+    };
+    Some(editor_core::hash::sha256_hex(bytes))
+}
+
+fn arrangement_observation_key(view: &View) -> Option<String> {
+    let (Some(info), Some(snapshot), Some(layer)) = (
+        view.info.as_ref(),
+        view.snap_snapshot.as_ref(),
+        view.layers.first(),
+    ) else {
+        return None;
+    };
+    let provenance = layer.provenance.as_ref()?;
+    let expected_sha256 = s4c4_fixture_identity(&provenance.original_file_name)?;
+    if provenance.imported_sha256 != expected_sha256
+        || view.layers.len() != 1
+        || snapshot.document_id != info.document_id
+        || snapshot.revision != info.revision
+        || snapshot.layers.len() != 1
+        || snapshot.layers[0].id != layer.layer_id
+        || snapshot.layers[0].objects.len() > 10_000
+    {
+        return None;
+    }
+    let ordered_selection = view
+        .selected
+        .ordered
+        .iter()
+        .map(|selected| selected.object.object_id.as_str())
+        .collect::<Vec<_>>()
+        .join("\0");
+    Some(format!(
+        "{}:{}:{}:{}:{}:{}:{}",
+        info.document_id,
+        info.revision,
+        info.workspace_revision,
+        layer.layer_id,
+        provenance.original_file_name,
+        provenance.imported_sha256,
+        ordered_selection
+    ))
+}
+
+fn compute_arrangement_observation(view: &View) -> Option<Value> {
+    arrangement_observation_key(view)?;
+    let info = view.info.as_ref()?;
+    let snapshot = view.snap_snapshot.as_ref()?;
+    let provenance = view.layers.first()?.provenance.as_ref()?;
+    let layer = &snapshot.layers[0];
+    let bounds = editor_core::individual_geometries_bounds_with_blocks(
+        layer.objects.iter().map(|object| &object.geometry),
+        &snapshot.apertures,
+        &snapshot.block_definitions,
+    )
+    .ok()?;
+    let object_bounds: Vec<_> = layer
+        .objects
+        .iter()
+        .zip(bounds)
+        .enumerate()
+        .map(|(index, (object, bounds))| {
+            let bounds = bounds.map(bounds_array);
+            let geometry_sha256 = serde_json::to_vec(&object.geometry)
+                .ok()
+                .map(|bytes| editor_core::hash::sha256_hex(&bytes));
+            json!({
+                "index": index,
+                "object_id": object.object_id,
+                "exposure": format!("{:?}", object.exposure),
+                "bounds_mm": bounds,
+                "geometry_sha256": geometry_sha256,
+            })
+        })
+        .collect();
+    let bounds_by_id: std::collections::HashMap<_, _> = layer
+        .objects
+        .iter()
+        .zip(&object_bounds)
+        .filter_map(|(object, observed)| {
+            let values = observed["bounds_mm"].as_array()?;
+            Some((
+                object.object_id.as_str(),
+                editor_core::BoundsMm {
+                    min_x_mm: values.first()?.as_f64()?,
+                    min_y_mm: values.get(1)?.as_f64()?,
+                    max_x_mm: values.get(2)?.as_f64()?,
+                    max_y_mm: values.get(3)?.as_f64()?,
+                },
+            ))
+        })
+        .collect();
+    let anchor = view.selected.primary().map(|selected| {
+        let object_ids: Vec<_> = match &selected.object.origin {
+            editor_core::ObjectOrigin::GeneratedText { operation_id } => layer
+                .objects
+                .iter()
+                .filter(|object| {
+                    matches!(&object.origin, editor_core::ObjectOrigin::GeneratedText { operation_id: id } if id == operation_id)
+                })
+                .map(|object| object.object_id.as_str())
+                .collect(),
+            _ => vec![selected.object.object_id.as_str()],
+        };
+        let bounds = object_ids
+            .iter()
+            .filter_map(|id| bounds_by_id.get(id).copied())
+            .reduce(editor_core::BoundsMm::union)
+            .map(bounds_array);
+        json!({"object_id": selected.object.object_id, "bounds_mm": bounds})
+    });
+    let objects_bytes = serde_json::to_vec(&layer.objects).ok()?;
+    let block_definitions_bytes = serde_json::to_vec(&snapshot.block_definitions).ok()?;
+    Some(json!({
+        "document_id": info.document_id,
+        "revision": info.revision,
+        "workspace_revision": info.workspace_revision,
+        "selected_object_ids": view.selected.ids(),
+        "undo_entries": info.undo_entries,
+        "redo_entries": info.redo_entries,
+        "dirty": info.dirty,
+        "fixture_sha256": provenance.imported_sha256,
+        "object_bounds": object_bounds,
+        "semantic_objects_sha256": editor_core::hash::sha256_hex(&objects_bytes),
+        "block_definitions_sha256": editor_core::hash::sha256_hex(&block_definitions_bytes),
+        "anchor": anchor,
+        "anchor_policy": "last_selected",
+    }))
+}
+
+fn bounds_array(bounds: editor_core::BoundsMm) -> [f64; 4] {
+    [
+        bounds.min_x_mm,
+        bounds.min_y_mm,
+        bounds.max_x_mm,
+        bounds.max_y_mm,
+    ]
 }
 
 fn synthetic_fixture_gate(
@@ -54,6 +204,7 @@ pub struct Probe {
     frames_left: u32,
     label: String,
     context_transition: Option<String>,
+    arrangement_cache: Option<String>,
 }
 
 impl Probe {
@@ -76,6 +227,7 @@ impl Probe {
             frames_left: 0,
             label: String::new(),
             context_transition: None,
+            arrangement_cache: None,
         };
         probe.action("PROBE_START");
         Some(probe)
@@ -83,6 +235,19 @@ impl Probe {
 
     fn elapsed_ms(&self) -> u128 {
         self.started.elapsed().as_millis()
+    }
+
+    fn arrangement_observation_update(&mut self, view: &View) -> Option<Value> {
+        let Some(key) = arrangement_observation_key(view) else {
+            self.arrangement_cache = None;
+            return None;
+        };
+        if self.arrangement_cache.as_ref() == Some(&key) {
+            return None;
+        }
+        let observation = compute_arrangement_observation(view);
+        self.arrangement_cache = observation.as_ref().map(|_| key);
+        observation
     }
 
     pub fn action(&self, text: &str) {
@@ -491,6 +656,17 @@ pub fn action_text(a: &Action) -> String {
             .into_owned()
     };
     match a {
+        Action::BlockEdit(request) => match &request.edit {
+            crate::block_ui::Edit::Create(_) => "BlockCreate",
+            crate::block_ui::Edit::Place(_) => "BlockPlace",
+            crate::block_ui::Edit::Transform(_) => "BlockTransform",
+            crate::block_ui::Edit::Rename(_) => "BlockRename",
+            crate::block_ui::Edit::Explode(_) => "BlockExplode",
+            crate::block_ui::Edit::Delete(_) => "BlockDelete",
+        }
+        .into(),
+        Action::BlockPreview(..) => "BlockPreview".into(),
+        Action::BlockSelect(..) => "BlockSelectInstances".into(),
         Action::Open(p) => format!("Open {}", basename(p)),
         Action::OpenProject(p, _) => format!("OpenProject {}", basename(p)),
         Action::SaveProject(path, replace, _) => format!(
@@ -535,6 +711,8 @@ pub fn action_text(a: &Action) -> String {
             drag.delta.y_mm
         ),
         Action::Move(dx, dy) => format!("Move {dx} {dy}"),
+        Action::Align(mode) => format!("objects.align mode={mode:?}"),
+        Action::Distribute(axis) => format!("objects.distribute axis={axis:?}"),
         Action::Rotate(..) => "Rotate".into(),
         Action::Mirror(_) => "Mirror".into(),
         Action::Duplicate => "Duplicate".into(),
@@ -667,6 +845,11 @@ impl EditorApp {
             })
             .collect();
         let info = self.view.info.as_ref();
+        if let Some(probe) = &mut self.probe
+            && let Some(observation) = probe.arrangement_observation_update(&self.view)
+        {
+            probe.observe(json!({"s4c4_alignment_observation": observation}));
+        }
         let raw_focus = ctx.input(|i| i.viewport().focused);
         let block_zero_width = self.view.layers.iter().any(|layer| {
             layer.display_name == "block-fixture"
@@ -750,6 +933,7 @@ impl EditorApp {
                     crate::tools::ActiveTool::Select => "Select",
                     crate::tools::ActiveTool::Measure => "Measure",
                     crate::tools::ActiveTool::Text => "Text",
+                    crate::tools::ActiveTool::Block => "Block",
                 },
                 "alt_down": ctx.input(|i| i.modifiers.alt),
                 "focused": ctx.input(|i| i.focused),
@@ -769,6 +953,14 @@ impl EditorApp {
             "active": self.grip.as_ref().map(|g| json!({"id": g.id, "valid_preview":g.preview.is_ok(), "moved":g.moved})),
             "marker_physical_px": crate::grip::MARKER_PX,
             "hit_physical_px": crate::grip::HIT_PX,
+        });
+        observation["block"] = json!({
+            "cache_entries": self.view.block_cache_stats.0,
+            "cached_local_primitives": self.view.block_cache_stats.1,
+            "library_open": self.block.library,
+            "definition_count": self.view.block_definitions.len(),
+            "instance_count": self.view.block_counts.values().sum::<usize>(),
+            "session": self.block.session.as_ref().map(|s| json!({"kind": if matches!(s.kind, crate::block_ui::SessionKind::Create { .. }) {"create"} else {"place"}, "preview_paths":s.preview.as_ref().map(|p|p.paths.len()), "preview_build_us":s.preview.as_ref().map(|p|p.build_us),"preview_ppm":s.preview.as_ref().map(|p|p.ppm)})),
         });
         observation["display_unit"] = json!(self.display_unit.suffix());
         observation["grid_visible"] = json!(self.grid.visible);
@@ -1067,6 +1259,7 @@ mod tests {
             frames_left: 0,
             label: String::new(),
             context_transition: None,
+            arrangement_cache: None,
         };
         let synthetic = probe
             .synthetic_grip_observation(&model.view, None, None, None)
@@ -1075,5 +1268,54 @@ mod tests {
         let log = std::fs::read_to_string(dir.join("native_observations.jsonl")).unwrap();
         assert!(log.contains("\"synthetic_grip\""));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn arrangement_observation_is_limited_to_public_s4c4_fixtures() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/s4c4/arrangements.gbr");
+        let mut model = crate::state::Model::default();
+        model.import_gerbers(&[fixture]).unwrap();
+        let snapshot = model.view.snap_snapshot.as_ref().unwrap();
+        model.view.selected.ordered = snapshot.layers[0]
+            .objects
+            .iter()
+            .take(2)
+            .cloned()
+            .map(|object| editor_service::ObjectInfo {
+                layer_id: snapshot.layers[0].id.clone(),
+                object,
+            })
+            .collect();
+
+        let observed = compute_arrangement_observation(&model.view).unwrap();
+        assert_eq!(
+            observed["fixture_sha256"],
+            s4c4_fixture_identity(S4C4_ARRANGEMENT_FIXTURE_NAME).unwrap()
+        );
+        assert_eq!(observed["anchor_policy"], "last_selected");
+        assert_eq!(
+            observed["anchor"]["object_id"],
+            model.view.selected.primary().unwrap().object.object_id
+        );
+        assert_eq!(observed["object_bounds"].as_array().unwrap().len(), 3);
+        assert!(observed["anchor"]["bounds_mm"].is_array());
+
+        let mut changed = model.view.clone();
+        changed.layers[0]
+            .provenance
+            .as_mut()
+            .unwrap()
+            .imported_sha256 = "private".into();
+        assert!(compute_arrangement_observation(&changed).is_none());
+
+        for name in ["negative-gap.gbr", "grid-1000.gbr"] {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s4c4")
+                .join(name);
+            let mut fixture_model = crate::state::Model::default();
+            fixture_model.import_gerbers(&[path]).unwrap();
+            assert!(compute_arrangement_observation(&fixture_model.view).is_some());
+        }
     }
 }

@@ -1345,6 +1345,58 @@ fn native_metal_reference_production_pixel_parity() {
 /// selection {0, 1, all} internally, covering the "selected/unselected"
 /// requirement without a separate loop.
 #[test]
+#[ignore = "requires native Metal; S4-C3 creation invariance with identical render inputs"]
+fn native_metal_c3_create_invariance() {
+    use crate::block_ui::{Context, Edit, Request};
+    use crate::state::{Action, Model};
+    let mut model = Model::default();
+    model
+        .open(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s4c3/blocks.gbr"),
+        )
+        .unwrap();
+    let before = model.view.scene.clone().unwrap();
+    let snapshot = model.view.snap_snapshot.clone().unwrap();
+    let context = Context::capture(&model.view).unwrap();
+    model.run(Action::BlockEdit(Box::new(Request {
+        context,
+        edit: Edit::Create(editor_service::CreateBlockDefinitionParams {
+            layer_id: snapshot.layers[0].id.clone(),
+            object_ids: snapshot.layers[0]
+                .objects
+                .iter()
+                .map(|o| o.object_id.clone())
+                .collect(),
+            local_origin_mm: editor_service::PivotMm { x_mm: 6., y_mm: 0. },
+            name: "C3 parity".into(),
+        }),
+    })));
+    assert!(model.view.error.is_none(), "{:?}", model.view.error);
+    let after = model.view.scene.as_ref().unwrap();
+    // Object IDs are intentionally different, while the actual unselected shader
+    // input is byte-identical. Use the same camera and no selection to isolate
+    // the manufacturing appearance from the newly-selected instance highlight.
+    assert_eq!(
+        bytemuck::cast_slice::<_, u8>(&before.objects),
+        bytemuck::cast_slice::<_, u8>(&after.objects)
+    );
+    assert_eq!(
+        bytemuck::cast_slice::<_, u8>(&before.primitives),
+        bytemuck::cast_slice::<_, u8>(&after.primitives)
+    );
+    assert_eq!(before.points, after.points);
+    let rig = parity_rig();
+    assert_parity(&rig, &before, "c3-before-create");
+    assert_parity(&rig, after, "c3-after-create");
+    println!(
+        "S4C3_CREATE identical_unselected_shader_geometry=true before_primitives={} after_primitives={}",
+        before.primitives.len(),
+        after.primitives.len()
+    );
+}
+
+#[test]
 #[ignore = "requires native Metal; exact RGBA parity of BlockInstance display"]
 fn native_metal_block_instance_parity() {
     let (snapshot, layers, _instance_ids) = block_fixture();

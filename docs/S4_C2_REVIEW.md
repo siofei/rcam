@@ -1,6 +1,7 @@
 # S4-C2 Grip Editing v1 复审记录（Mac-first）
 
-**状态：实现完成。038440c 基线为 ALMOST PASS；最终收口结论以版本化 `exports/S4C2_<shortsha>/REVIEW.md` 与 `acceptance_summary.json` 的固定提交实测结果为准。下述未验收记录属于历史基线，不覆盖最终运行结果。**
+**最终状态：PASS（Mac-first bounded）。固定最终评审为 [`exports/S4C2_f1293f2/REVIEW.md`](../exports/S4C2_f1293f2/REVIEW.md)，final commit `f1293f2abc9dceb0e3069bf8b0fa4d44cae56fa4`。Windows deferred / not executed；不代表双平台 V1、CORE10 10/10 或 P100K 通过。**
+下文在 “FINAL NATIVE INTERACTION CLOSEOUT” 之前记录的 038440c 候选状态、ALMOST PASS 与未执行项均为最终 closeout 前的历史记录；最终原生/自动化结论以固定评审为准，历史事实保留供审计。
 范围为 R04/R07/R08/R09/R10/R11/R13/R14/R15/R16/R17/R18/R19/R20/R21/R22；AT 局部映射见
 [S4_C2_ACCEPTANCE_ADDENDUM](S4_C2_ACCEPTANCE_ADDENDUM.md)，设计见 ADR 0038。
 冻结的 ACCEPTANCE_V1.md / acceptance_cases.json 未修改。

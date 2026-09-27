@@ -139,6 +139,7 @@ pub enum ActiveTool {
     Select,
     Measure,
     Text,
+    Block,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Measurement {

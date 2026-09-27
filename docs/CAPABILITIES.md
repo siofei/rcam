@@ -1,7 +1,7 @@
 # 能力与实施状态
 
-当前开发边界为 Mac-first S4-C1 Full Object Snap closeout PASS、INFRA1 panic hook closeout PASS，S4-C2 Grip Editing 正在原生验收收口；尚不是双平台 V1 编辑器。完整要求继续以 DESIGN_V1 第4节为准。
-以下段落按阶段保留历史实施状态；最新边界见文末及 `S2_C2_REVIEW.md`。
+当前阶段状态：S4-C1 Full Object Snap、INFRA1 Runtime Diagnostics、S4-C2 Grip Editing v1、S4-C3 Block Editor v1 均为 **PASS（Mac-first bounded）**。S4-C4 Alignment / Distribution 已按 Mac-first bounded 完成验收。本项目仍不是双平台 V1 编辑器；Windows deferred / not executed，完整 V1、CORE10 10/10 与 P100K 均未通过。完整产品边界继续以 DESIGN_V1 第4节为准。
+以下段落按阶段保留历史实施状态；本节末列出当前阶段能力与限制。
 
 ## S0 历史技术验证
 
@@ -229,7 +229,7 @@ Windows deferred / not executed；不宣称完整 V1、P100K 或完整 CORE10 re
 | `.rcam` 不持久化 | Solo、Selection、Undo 历史、AppPreferences（快捷键/面板宽度/最近颜色/主题）——schema 本身没有对应字段，不是运行时过滤 |
 | 未做 | `File → Open/Save .rcam`（S4-B3）；完整 GUI Block Editor；任意角 scale/shear；Drill 持久化；PnP/RefDes；Windows；P100K |
 
-`system.capabilities` 的 `stage` = "S4-B2 Block Core + .rcam schema v1 (Mac-first bounded)"；`blocks.*` 8 个操作已移入
+S4-B2 结项时，`system.capabilities.stage` 为 "S4-B2 Block Core + .rcam schema v1 (Mac-first bounded)"；当时 `blocks.*` 8 个操作已移入
 `supported_operations`（对应测试全部通过后才移入，见 `block_core_workflow.rs` 的
 `capabilities_advertise_every_block_op_as_dispatchable`）；`project.open (.rcam)`/`project.save (.rcam)` 继续留在
 `unsupported_operations`。同一 clean commit 的格式/检查/clippy/workspace tests、Block/codec gates、release build、
@@ -260,16 +260,24 @@ S4-B3 预冻结修正：mm/inch/mil/µm 四种 DisplayUnit 均一一持久化；
 GUI 派生显示上限现为 2000000 primitive + point，RenderIndex 最多 1000000 对象，原 1000000 引用／16384 单格候选／采样工作预算仍生效。指定 230409 矩形 Flash 的 `.GPT` 在 Mac 原生窗口可导入和显示；`0727SMT` 批量兼容结果见 [验收记录](GERBER_COMPAT_20260924_REVIEW.md)。百万对象预算只表示资源界限，不证明完整 CORE10、P100K、Windows 或 V1。
 
 
-### INFRA1 Runtime Diagnostics（Panic hook closeout）
+### INFRA1 Runtime Diagnostics（PASS，Mac-first bounded）
 
-本地日志/诊断基础设施进入 Mac-first bounded panic hook 最终收口，范围、证据与限制见 `docs/INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md`，最终提交/二进制/Source ZIP 绑定见 exports 内交付报告。不自动开始 S4-C2；Windows deferred。
+本地日志/诊断基础设施和 panic hook closeout 已完成 Mac-first bounded 验收。固定评审为 [`c65bee0`](../exports/INFRA1_PANIC_c65bee0/REVIEW.md)；Windows deferred / not executed。
 
-Panic hook 复审补充：`85ad528` 为 ALMOST PASS；需保留 Rust previous/default hook。修复后的最终状态以 `exports/INFRA1_PANIC_<shortsha>/REVIEW.md` 的最终门禁与绑定为准；详见 [INFRA1 review](INFRA1_RUNTIME_DIAGNOSTICS_REVIEW.md)。
+历史复审曾记录 `85ad528` 为 ALMOST PASS；最终修复保留并调用 Rust previous/default hook，状态以 `c65bee0` fixed review 为准。
 
-### S4-C2 Grip Editing（实现中，尚未阶段验收）
+### S4-C2 Grip Editing v1（PASS，Mac-first bounded）
 
 新增 `objects.grips` / `objects.grip_edit`。单选可编辑 C/R/O/P Flash 尺寸（COW）、
 Line/合法轴向 RectangularSweep 端点、Arc 投影端点/半径、all-Solid 全 line-only Region 顶点。
 Flash 局部 rotation/mirror/scale 保持；拖动预览不修改文档，release 一个事务；取消不提交。
-Macro、含 Hole contour 或弧边 Region、CompatibilitySolid、GeneratedText、Block 内部、多对象 node edit 不支持；Hole contour deferred，包括全 Line 的 Solid outer + Hole inner。
-专用 Grip 数值弹窗 deferred；Windows deferred。专项/原生/交付门禁见 S4_C2_REVIEW。
+Macro、含 Hole contour 或弧边 Region、CompatibilitySolid、GeneratedText、Block 内部、多对象 node edit 不支持；Hole contour deferred，包括全 Line 的 Solid outer + Hole inner；Arc-edged Region node Grip、Macro Grip、多对象 Grip、专用 Grip 数值弹窗及 Windows deferred。PASS 的自动化、原生与交付证据见 [`S4-C2 final review`](../exports/S4C2_f1293f2/REVIEW.md)。
+
+
+### S4-C3 Block Editor v1（PASS，Mac-first bounded；2026-09-27）
+
+C3 收口时的 `system.capabilities.stage` 为 `S4-C3 Block Editor v1 (Mac-first bounded)`。`objects.grips`、`objects.grip_edit` 与 `blocks.list_definitions`、`blocks.get_definition`、`blocks.create_definition_from_objects`、`blocks.create_instance`、`blocks.update_instance_transform`、`blocks.rename_definition`、`blocks.explode_instance`、`blocks.delete_definition` 均属于 supported operations；Block Library、Create/Base Point、Place、实例 Transform、Rename/Delete、Select Instances、Explode、Project persistence、Gerber flatten export 与 Diagnostics 均在本阶段验收范围内，制造修改仍经既有 ApplicationService。`drill.import`、`components.search`、headless `snap.resolve` 与 `layers.merge` 保持 unsupported；UI Object Snap 不代表 headless snap query 已实现。内部 Definition 编辑、Array、Alignment、PnP/RefDes 与 Windows deferred。最终验收及新交付身份见 [S4-C3 review](S4_C3_REVIEW.md)。不代表双平台 V1、CORE10 10/10 或 P100K 通过；C3 收口时 C4 为下一阶段；本次 C4 状态见下节。
+
+### S4-C4 closeout (2026-09-27)
+
+S4-C4 Alignment / Distribution = **PASS（Mac-first bounded）**。六种制造 world-AABB 对齐与双轴等边缘间距分布已实现，使用最后选中对象作固定 Anchor；同层原子事务、Undo/Redo、BlockInstance、完整文字组、项目/恢复/导出、诊断和资源限制已验收。语义见 ADR 0040，范围及证据见 S4_C4_PLAN、S4_C4_ACCEPTANCE_ADDENDUM、S4_C4_REVIEW；最终干净提交、原生二进制及包校验身份以 versioned exports/S4C4_*/REVIEW.md 为准。Windows deferred/not executed；不代表完整 V1、CORE10 10/10 或 P100K 通过。C4 后停止，Array/Panelization 未启动。

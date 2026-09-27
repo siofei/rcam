@@ -1949,8 +1949,10 @@ fn capabilities_are_consistent_with_the_supported_operations() {
         [std::env::temp_dir()],
     ));
     let caps = service.capabilities();
-    assert!(!caps.stage.contains("S4-A2"), "{}", caps.stage);
-    assert!(caps.stage.contains("S4-B3"));
+    assert_eq!(
+        caps.stage,
+        "S4-C4 Alignment / Distribution (Mac-first bounded)"
+    );
     for op in [
         "document.new",
         "document.import_gerber_layers",

@@ -3,6 +3,8 @@
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+mod alignment;
+pub use alignment::{AlignParams, AlignmentMode, DistributeParams, DistributionAxis};
 mod grip;
 mod metrics;
 pub use grip::GripEditParams;
@@ -1006,7 +1008,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-B3 .rcam Project Lifecycle (Mac-first bounded)".into(),
+            stage: "S4-C4 Alignment / Distribution (Mac-first bounded)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -1025,6 +1027,8 @@ impl ApplicationService {
                 "objects.set_properties".into(),
                 "objects.grips".into(),
                 "objects.grip_edit".into(),
+                "objects.align".into(),
+                "objects.distribute".into(),
                 "edit.batch".into(),
                 "text.create".into(),
                 "text.preview".into(),
@@ -1793,12 +1797,47 @@ impl ApplicationService {
     }
 
     /// `blocks.create_definition_from_objects`.
+    fn record_block_summary(
+        &self,
+        command: &'static str,
+        document_id: &str,
+        definition_id: Option<&str>,
+        layer_id: Option<&str>,
+    ) {
+        let Some(record) = self.documents.get(document_id) else {
+            return;
+        };
+        let definition = definition_id.and_then(|id| {
+            record
+                .document
+                .block_definitions
+                .iter()
+                .find(|d| d.id.0 == id)
+        });
+        let instances = record.document.layers.iter().flat_map(|l| &l.objects).filter(|o| matches!(&o.geometry, SemanticGeometry::BlockInstance {definition_id:id, ..} if Some(id.0.as_str()) == definition_id)).count();
+        let hash = definition_id.map(|id| editor_core::hash::sha256_hex(id.as_bytes()));
+        rcam_diagnostics::identified_measurements(
+            rcam_diagnostics::Level::Info,
+            command,
+            hash.as_deref(),
+            layer_id,
+            &[
+                (
+                    "object_count",
+                    definition.map_or(0, |d| d.objects.len()) as u64,
+                ),
+                ("instance_count", instances as u64),
+            ],
+        );
+    }
+
     pub fn blocks_create_definition_from_objects(
         &mut self,
         document_id: &str,
         expected_revision: &str,
         params: CreateBlockDefinitionParams,
     ) -> Result<CreateBlockDefinitionResult, ServiceError> {
+        let summary_layer = Some(params.layer_id.clone());
         let operation = rcam_diagnostics::Operation::begin_document(
             "blocks.create_definition_from_objects",
             document_id,
@@ -1817,6 +1856,13 @@ impl ApplicationService {
                 .map(|record| record.revision),
             result.as_ref().err().map(|error| error.code.as_str()),
         );
+        let summary_definition = result.as_ref().ok().map(|r| r.definition_id.clone());
+        self.record_block_summary(
+            "blocks.create_definition_from_objects",
+            document_id,
+            summary_definition.as_deref(),
+            summary_layer.as_deref(),
+        );
         result
     }
 
@@ -1827,7 +1873,7 @@ impl ApplicationService {
         params: CreateBlockDefinitionParams,
     ) -> Result<CreateBlockDefinitionResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
+        workspace::check_block_edit(record, &params.layer_id, &params.object_ids, true)?;
         let (definition_id, instance_id) = record
             .history
             .create_block_definition(
@@ -1858,6 +1904,8 @@ impl ApplicationService {
         expected_revision: &str,
         params: CreateBlockInstanceParams,
     ) -> Result<BlockInstanceResult, ServiceError> {
+        let summary_layer = Some(params.layer_id.clone());
+        let summary_definition = Some(params.definition_id.clone());
         let operation = rcam_diagnostics::Operation::begin_document(
             "blocks.create_instance",
             document_id,
@@ -1872,6 +1920,12 @@ impl ApplicationService {
                 .map(|record| record.revision),
             result.as_ref().err().map(|error| error.code.as_str()),
         );
+        self.record_block_summary(
+            "blocks.create_instance",
+            document_id,
+            summary_definition.as_deref(),
+            summary_layer.as_deref(),
+        );
         result
     }
 
@@ -1882,7 +1936,7 @@ impl ApplicationService {
         params: CreateBlockInstanceParams,
     ) -> Result<BlockInstanceResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(record, &params.layer_id, &[])?;
+        workspace::check_block_edit(record, &params.layer_id, &[], true)?;
         let object_id = record
             .history
             .create_block_instance(
@@ -1907,6 +1961,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: UpdateBlockInstanceTransformParams,
     ) -> Result<EditResult, ServiceError> {
+        let summary_layer = Some(params.layer_id.clone());
+        let summary_definition = self
+            .documents
+            .get(document_id)
+            .and_then(|record| {
+                record
+                    .document
+                    .layers
+                    .iter()
+                    .find(|l| l.id == params.layer_id)
+            })
+            .and_then(|layer| {
+                layer
+                    .objects
+                    .iter()
+                    .find(|o| o.object_id == params.object_id)
+            })
+            .and_then(|object| match &object.geometry {
+                SemanticGeometry::BlockInstance { definition_id, .. } => {
+                    Some(definition_id.0.clone())
+                }
+                _ => None,
+            });
         let operation = rcam_diagnostics::Operation::begin_document(
             "blocks.update_instance_transform",
             document_id,
@@ -1922,6 +1999,12 @@ impl ApplicationService {
                 .map(|record| record.revision),
             result.as_ref().err().map(|error| error.code.as_str()),
         );
+        self.record_block_summary(
+            "blocks.update_instance_transform",
+            document_id,
+            summary_definition.as_deref(),
+            summary_layer.as_deref(),
+        );
         result
     }
 
@@ -1932,10 +2015,11 @@ impl ApplicationService {
         params: UpdateBlockInstanceTransformParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(
+        workspace::check_block_edit(
             record,
             &params.layer_id,
             std::slice::from_ref(&params.object_id),
+            false,
         )?;
         let ids = record
             .history
@@ -1957,6 +2041,8 @@ impl ApplicationService {
         expected_revision: &str,
         params: RenameBlockDefinitionParams,
     ) -> Result<EditResult, ServiceError> {
+        let summary_layer: Option<String> = None;
+        let summary_definition = Some(params.definition_id.clone());
         let operation = rcam_diagnostics::Operation::begin_document(
             "blocks.rename_definition",
             document_id,
@@ -1970,6 +2056,12 @@ impl ApplicationService {
                 .get(document_id)
                 .map(|record| record.revision),
             result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        self.record_block_summary(
+            "blocks.rename_definition",
+            document_id,
+            summary_definition.as_deref(),
+            summary_layer.as_deref(),
         );
         result
     }
@@ -2001,6 +2093,29 @@ impl ApplicationService {
         expected_revision: &str,
         params: ExplodeBlockInstanceParams,
     ) -> Result<EditResult, ServiceError> {
+        let summary_layer = Some(params.layer_id.clone());
+        let summary_definition = self
+            .documents
+            .get(document_id)
+            .and_then(|record| {
+                record
+                    .document
+                    .layers
+                    .iter()
+                    .find(|l| l.id == params.layer_id)
+            })
+            .and_then(|layer| {
+                layer
+                    .objects
+                    .iter()
+                    .find(|o| o.object_id == params.object_id)
+            })
+            .and_then(|object| match &object.geometry {
+                SemanticGeometry::BlockInstance { definition_id, .. } => {
+                    Some(definition_id.0.clone())
+                }
+                _ => None,
+            });
         let operation = rcam_diagnostics::Operation::begin_document(
             "blocks.explode_instance",
             document_id,
@@ -2015,6 +2130,12 @@ impl ApplicationService {
                 .map(|record| record.revision),
             result.as_ref().err().map(|error| error.code.as_str()),
         );
+        self.record_block_summary(
+            "blocks.explode_instance",
+            document_id,
+            summary_definition.as_deref(),
+            summary_layer.as_deref(),
+        );
         result
     }
 
@@ -2025,10 +2146,11 @@ impl ApplicationService {
         params: ExplodeBlockInstanceParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
-        check_workspace_edit(
+        workspace::check_block_edit(
             record,
             &params.layer_id,
             std::slice::from_ref(&params.object_id),
+            false,
         )?;
         let ids = record
             .history
@@ -2048,6 +2170,8 @@ impl ApplicationService {
         expected_revision: &str,
         params: BlockDefinitionIdParams,
     ) -> Result<EditResult, ServiceError> {
+        let summary_layer: Option<String> = None;
+        let summary_definition = Some(params.definition_id.clone());
         let operation = rcam_diagnostics::Operation::begin_document(
             "blocks.delete_definition",
             document_id,
@@ -2061,6 +2185,12 @@ impl ApplicationService {
                 .get(document_id)
                 .map(|record| record.revision),
             result.as_ref().err().map(|error| error.code.as_str()),
+        );
+        self.record_block_summary(
+            "blocks.delete_definition",
+            document_id,
+            summary_definition.as_deref(),
+            summary_layer.as_deref(),
         );
         result
     }
@@ -2918,6 +3048,8 @@ impl ApplicationService {
             | "layers.update_many"
             | "layers.reset_colors"
             | "objects.move"
+            | "objects.align"
+            | "objects.distribute"
             | "objects.rotate"
             | "objects.mirror"
             | "objects.duplicate"
@@ -2995,6 +3127,18 @@ impl ApplicationService {
                     )?)
                     .map_err(serialize_error)?,
                     "objects.move" => serde_json::to_value(self.objects_move(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.align" => serde_json::to_value(self.objects_align(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.distribute" => serde_json::to_value(self.objects_distribute(
                         id,
                         revision,
                         parse_params(&request.params)?,

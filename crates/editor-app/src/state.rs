@@ -16,6 +16,9 @@ pub struct View {
     pub info: Option<DocumentInfo>,
     pub layers: Vec<LayerInfo>,
     pub apertures: Vec<editor_core::ApertureDefinition>,
+    pub block_cache_stats: (usize, usize),
+    pub block_preview: Option<Arc<crate::block_ui::Preview>>,
+    pub block_counts: std::collections::HashMap<String, usize>,
     pub block_definitions: Vec<editor_core::block::BlockDefinition>,
     /// Immutable manufacturing snapshot plus its object envelope index. Object
     /// Snap queries these lazily around the cursor; no global point list exists.
@@ -99,6 +102,85 @@ pub fn text_target_ok(layer: &LayerInfo) -> bool {
             .is_none_or(|c| c.visible && !c.locked)
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ArrangementEligibility {
+    pub align: bool,
+    pub distribute: bool,
+    pub logical_count: usize,
+}
+
+/// Menu gating only inspects the current selection and workspace policy. Bounds
+/// remain the service's single manufacturing calculation when a command runs.
+pub fn arrangement_eligibility(view: &View) -> ArrangementEligibility {
+    let count = view.selected.ordered.len();
+    if count < 2 || view.blocked.is_some() || view.scene.is_none() {
+        return ArrangementEligibility::default();
+    }
+    let Some(primary) = view.selected.primary() else {
+        return ArrangementEligibility::default();
+    };
+    let classifier = Classifier::new(&view.layers, &view.apertures);
+    if !view.selected.ordered.iter().all(|object| {
+        object.layer_id == primary.layer_id
+            && classifier.selectable(object)
+            && classifier.edit_refusal(object).is_none()
+    }) {
+        return ArrangementEligibility::default();
+    }
+    let mut selected_ids = std::collections::HashSet::with_capacity(count);
+    let mut selected_text_counts = std::collections::HashMap::new();
+    let mut selected_text_ops = std::collections::HashSet::new();
+    for object in &view.selected.ordered {
+        selected_ids.insert(object.object.object_id.as_str());
+        if let editor_core::ObjectOrigin::GeneratedText { operation_id } = &object.object.origin {
+            selected_text_ops.insert(operation_id.as_str());
+            *selected_text_counts
+                .entry(operation_id.as_str())
+                .or_insert(0_usize) += 1;
+        }
+    }
+    if selected_ids.len() != count {
+        return ArrangementEligibility::default();
+    }
+    if !selected_text_ops.is_empty() {
+        let Some(layer) = view.snap_snapshot.as_ref().and_then(|snapshot| {
+            snapshot
+                .layers
+                .iter()
+                .find(|layer| layer.id == primary.layer_id)
+        }) else {
+            return ArrangementEligibility::default();
+        };
+        let mut group_totals = std::collections::HashMap::new();
+        let mut selected_group_totals = std::collections::HashMap::new();
+        for object in &layer.objects {
+            if let editor_core::ObjectOrigin::GeneratedText { operation_id } = &object.origin
+                && selected_text_ops.contains(operation_id.as_str())
+            {
+                *group_totals.entry(operation_id.as_str()).or_insert(0_usize) += 1;
+                if selected_ids.contains(object.object_id.as_str()) {
+                    *selected_group_totals
+                        .entry(operation_id.as_str())
+                        .or_insert(0_usize) += 1;
+                }
+            }
+        }
+        if selected_text_ops.iter().any(|operation_id| {
+            group_totals.get(operation_id) != selected_text_counts.get(operation_id)
+                || group_totals.get(operation_id) != selected_group_totals.get(operation_id)
+        }) {
+            return ArrangementEligibility::default();
+        }
+    }
+    let text_member_count: usize = selected_text_counts.values().sum();
+    let logical_count = count - text_member_count + selected_text_ops.len();
+    ArrangementEligibility {
+        align: logical_count >= 2,
+        distribute: logical_count >= 3,
+        logical_count,
+    }
+}
+
 fn operation_id(origin: &editor_core::ObjectOrigin) -> Option<&str> {
     match origin {
         editor_core::ObjectOrigin::Generated { operation_id }
@@ -115,7 +197,7 @@ pub struct Model {
     viewport: Option<(MmPoint, BoundsMm)>,
     serial: u64,
     pub ppm: f64,
-    block_display_cache: crate::block_display::BlockDisplayCache,
+    pub(crate) block_display_cache: crate::block_display::BlockDisplayCache,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PivotInput {
@@ -129,6 +211,9 @@ pub enum MirrorDirection {
     Vertical,
 }
 pub enum Action {
+    BlockEdit(Box<crate::block_ui::Request>),
+    BlockPreview(crate::block_ui::Context, String, f64),
+    BlockSelect(String),
     Precision(ManufacturingPrecision),
     Open(PathBuf),
     OpenProject(PathBuf, bool),
@@ -162,6 +247,8 @@ pub enum Action {
     Select(MmPoint, f64, crate::selection::SelectionMode),
     SelectRect(BoundsMm, editor_core::hit_test::SelectRectMode),
     Move(String, String),
+    Align(AlignmentMode),
+    Distribute(DistributionAxis),
     SetFlashSize(String, Option<String>),
     Rotate(String, PivotInput),
     Mirror(MirrorDirection),
@@ -588,16 +675,32 @@ impl Model {
         call(&mut self.service, &document_id, &revision, workspace)?;
         self.refresh(geometry)
     }
-    fn refresh(&mut self, geometry: bool) -> Result<(), ServiceError> {
+    pub(crate) fn refresh(&mut self, geometry: bool) -> Result<(), ServiceError> {
         let id = self.info()?.document_id;
         self.view.info = Some(self.service.document_get(&id)?);
         self.view.project_workspace = Some(self.service.project_workspace(&id)?);
         self.view.layers = self.service.layers_list(&id)?;
         self.view.bounds = self.service.visible_bounds(&id)?.bounds;
         if geometry {
+            if self.snapshot.as_ref().is_none_or(|s| s.document_id != id) {
+                self.block_display_cache = Default::default();
+                self.view.block_preview = None;
+            }
             let snapshot = Arc::new(self.service.render_snapshot(&id)?);
             self.view.apertures = snapshot.apertures.clone();
             self.view.block_definitions = snapshot.block_definitions.clone();
+            self.view.block_counts.clear();
+            for object in snapshot.layers.iter().flat_map(|l| &l.objects) {
+                if let editor_core::SemanticGeometry::BlockInstance { definition_id, .. } =
+                    &object.geometry
+                {
+                    *self
+                        .view
+                        .block_counts
+                        .entry(definition_id.0.clone())
+                        .or_default() += 1;
+                }
+            }
             self.world_index = crate::world_index::WorldIndex::build(&snapshot)
                 .map_err(|e| error("VALIDATION_FAILED", &e))?;
             self.view.snap_index = Arc::new(self.world_index.clone());
@@ -653,6 +756,7 @@ impl Model {
             &mut self.block_display_cache,
         ) {
             Ok(scene) => {
+                self.view.block_cache_stats = self.block_display_cache.stats();
                 self.view.scene = Some(Arc::new(scene));
                 self.view.blocked = None;
                 self.view.display_transient = None;
@@ -862,6 +966,76 @@ impl Model {
         self.view.message = "已移动所选对象".into();
         self.refresh(true)
     }
+    fn arrangement_targets(
+        &self,
+        minimum: usize,
+    ) -> Result<(String, Vec<String>, String), ServiceError> {
+        if self.view.selected.ordered.len() < minimum {
+            return Err(error("INVALID_ARGUMENT", "所选对象数量不足"));
+        }
+        let anchor = self
+            .view
+            .selected
+            .primary()
+            .ok_or_else(|| error("INVALID_ARGUMENT", "请先选择对象"))?;
+        Ok((
+            anchor.layer_id.clone(),
+            self.view
+                .selected
+                .ordered
+                .iter()
+                .map(|object| object.object.object_id.clone())
+                .collect(),
+            anchor.object.object_id.clone(),
+        ))
+    }
+    pub fn align_selection(&mut self, mode: AlignmentMode) -> Result<(), ServiceError> {
+        self.editable()?;
+        let document = self.info()?;
+        let (layer_id, object_ids, anchor_object_id) = self.arrangement_targets(2)?;
+        let result = self.service.objects_align(
+            &document.document_id,
+            &document.revision,
+            AlignParams {
+                layer_id,
+                object_ids,
+                anchor_object_id,
+                mode,
+            },
+        )?;
+        if result.changed_object_ids.is_empty() {
+            self.view.message = "对象已对齐；没有位置变化".into();
+            return Ok(());
+        }
+        self.view.message = format!(
+            "已对齐 {} 个对象（锚点保持不动）",
+            result.changed_object_ids.len()
+        );
+        self.refresh(true)
+    }
+    pub fn distribute_selection(&mut self, axis: DistributionAxis) -> Result<(), ServiceError> {
+        self.editable()?;
+        if self.view.selected.ordered.len() < 3 {
+            return Err(error("INVALID_ARGUMENT", "等距分布至少需要 3 个对象"));
+        }
+        let document = self.info()?;
+        let (layer_id, object_ids, _) = self.arrangement_targets(3)?;
+        let result = self.service.objects_distribute(
+            &document.document_id,
+            &document.revision,
+            DistributeParams {
+                layer_id,
+                object_ids,
+                axis,
+            },
+        )?;
+        if result.changed_object_ids.is_empty() {
+            self.view.message = "对象已经等距；没有位置变化".into();
+            return Ok(());
+        }
+        self.view.message = format!("已等距分布 {} 个对象", result.changed_object_ids.len());
+        self.refresh(true)
+    }
     pub fn numeric_rotate(&mut self, angle: &str, pivot: PivotInput) -> Result<(), ServiceError> {
         self.editable()?;
         let angle_deg = finite(angle, "旋转角度")?;
@@ -1056,6 +1230,9 @@ impl Model {
         self.view.removed = None;
         self.view.focus_bounds = None;
         let result = (|| match action {
+            Action::BlockEdit(request) => self.block_edit(*request),
+            Action::BlockPreview(context, id, ppm) => self.block_preview(context, id, ppm),
+            Action::BlockSelect(id) => self.block_select(&id),
             Action::Open(path) => self.open(&path),
             Action::OpenProject(path, discard) => self.open_project(&path, discard),
             Action::SaveProject(path, replace, camera) => {
@@ -1252,6 +1429,8 @@ impl Model {
             Action::Select(p, t, mode) => self.select(p, t, mode),
             Action::SelectRect(r, m) => self.select_rect(r, m),
             Action::Move(dx, dy) => self.numeric_move(&dx, &dy),
+            Action::Align(mode) => self.align_selection(mode),
+            Action::Distribute(axis) => self.distribute_selection(axis),
             Action::SetFlashSize(width, height) => self.set_flash_size(&width, height.as_deref()),
             Action::Rotate(angle, pivot) => self.numeric_rotate(&angle, pivot),
             Action::Mirror(direction) => self.mirror_selection(direction),

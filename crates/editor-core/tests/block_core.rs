@@ -460,3 +460,207 @@ fn hit_test_returns_whole_instance_identity() {
     let hits = doc.hit_test("l1", MmPoint::new(0.5, 0.0), 0.15).unwrap();
     assert_eq!(hits, vec![instance_id]);
 }
+
+#[test]
+fn c3_capture_never_reorders_noncontiguous_exposures_and_names_are_bounded() {
+    let mut doc = empty_doc();
+    seed_four_lines(&mut doc);
+    doc.layers[0].objects[1].exposure = Exposure::Clear;
+    let before = doc.clone();
+    let mut history = EditHistory::default();
+    assert!(
+        history
+            .create_block_definition(
+                &mut doc,
+                "l1",
+                &["o1".into(), "o3".into()],
+                MmPoint::new(0., 0.),
+                "bad".into()
+            )
+            .is_err()
+    );
+    assert_eq!(doc, before);
+    assert!(
+        history
+            .create_block_definition(
+                &mut doc,
+                "l1",
+                &["o1".into()],
+                MmPoint::new(0., 0.),
+                "中".repeat(129)
+            )
+            .is_err()
+    );
+    assert_eq!(doc, before);
+    let (id, _) = history
+        .create_block_definition(
+            &mut doc,
+            "l1",
+            &["o1".into()],
+            MmPoint::new(0., 0.),
+            " 中文 μ Block ".into(),
+        )
+        .unwrap();
+    assert_eq!(doc.block_definitions[0].name, "中文 μ Block");
+    let created = doc.clone();
+    assert!(
+        history
+            .rename_block_definition(&mut doc, &id, " ".into())
+            .is_err()
+    );
+    assert!(
+        history
+            .rename_block_definition(&mut doc, &id, "中".repeat(129))
+            .is_err()
+    );
+    assert_eq!(doc, created);
+    history
+        .rename_block_definition(&mut doc, &id, " 名称 ".into())
+        .unwrap();
+    assert_eq!(doc.block_definitions[0].name, "名称");
+    assert_eq!(doc.block_definitions[0].revision, 0);
+}
+
+#[test]
+fn c3_definition_region_history_budget_counts_edges_before_delete_or_capture() {
+    use editor_core::block::{
+        BlockDefinition, BlockDefinitionId, BlockObject, BlockObjectGeometry,
+    };
+    let mut doc = empty_doc();
+    // Long valid rectangular contour with collinear segments, much larger than
+    // the former per-object 256-byte estimate.
+    let points: Vec<_> = (0..100)
+        .map(|i| MmPoint::new(i as f64, 0.))
+        .chain((0..100).map(|i| MmPoint::new(100., i as f64)))
+        .chain((0..100).rev().map(|i| MmPoint::new(i as f64, 100.)))
+        .chain((1..100).rev().map(|i| MmPoint::new(0., i as f64)))
+        .collect();
+    let edges = points
+        .iter()
+        .copied()
+        .zip(points.iter().copied().cycle().skip(1))
+        .take(points.len())
+        .map(|(start, end)| RegionEdge::Line { start, end })
+        .collect();
+    let contours = vec![RegionContour {
+        role: RegionRole::Solid,
+        edges,
+    }];
+    let id = BlockDefinitionId("big-region".into());
+    doc.block_definitions.push(BlockDefinition {
+        id: id.clone(),
+        name: "large".into(),
+        local_origin: MmPoint::new(0., 0.),
+        objects: vec![BlockObject {
+            geometry: BlockObjectGeometry::Region {
+                contours: contours.clone(),
+            },
+            exposure: Exposure::Dark,
+        }],
+        revision: 0,
+    });
+    let before = doc.clone();
+    let mut history = EditHistory::with_limits(10, 4096).unwrap();
+    assert_eq!(
+        history.delete_block_definition(&mut doc, &id).unwrap_err(),
+        editor_core::edit::EditError::ResourceLimit
+    );
+    assert_eq!(doc, before);
+    doc.layers[0].objects.push(SemanticObject {
+        object_id: "region".into(),
+        geometry: SemanticGeometry::Region { contours },
+        exposure: Exposure::Dark,
+        origin: ObjectOrigin::Imported { command_index: 0 },
+    });
+    let before = doc.clone();
+    assert_eq!(
+        history
+            .create_block_definition(
+                &mut doc,
+                "l1",
+                &["region".into()],
+                MmPoint::new(0., 0.),
+                "new".into()
+            )
+            .unwrap_err(),
+        editor_core::edit::EditError::ResourceLimit
+    );
+    assert_eq!(doc, before);
+}
+
+#[test]
+fn c3_generic_and_batch_transforms_reject_unrepresentable_block_before_commit() {
+    use editor_core::edit::{BatchEdit, EditError};
+    let mut doc = empty_doc();
+    doc.layers[0].objects = vec![SemanticObject {
+        object_id: "rect".into(),
+        geometry: SemanticGeometry::RectangularSweep {
+            start: MmPoint::new(0., 0.),
+            end: MmPoint::new(5., 0.),
+            width_mm: 2.,
+            height_mm: 1.,
+        },
+        exposure: Exposure::Dark,
+        origin: ObjectOrigin::Imported { command_index: 0 },
+    }];
+    let mut history = EditHistory::default();
+    let (_, instance) = history
+        .create_block_definition(
+            &mut doc,
+            "l1",
+            &["rect".into()],
+            MmPoint::new(0., 0.),
+            "rectangle".into(),
+        )
+        .unwrap();
+    let before = doc.clone();
+    let history_before = (history.undo_len(), history.redo_len());
+    assert_eq!(
+        history
+            .rotate_objects(
+                &mut doc,
+                "l1",
+                std::slice::from_ref(&instance),
+                37.,
+                MmPoint::new(0., 0.)
+            )
+            .unwrap_err(),
+        EditError::UnsupportedTransform
+    );
+    assert_eq!(doc, before);
+    assert_eq!((history.undo_len(), history.redo_len()), history_before);
+    assert_eq!(
+        history
+            .edit_batch(
+                &mut doc,
+                "l1",
+                &[
+                    BatchEdit::Move {
+                        object_ids: vec![instance.clone()],
+                        dx_mm: 2.,
+                        dy_mm: 0.
+                    },
+                    BatchEdit::Rotate {
+                        object_ids: vec![instance.clone()],
+                        angle_deg: 37.,
+                        pivot: MmPoint::new(0., 0.)
+                    }
+                ]
+            )
+            .unwrap_err(),
+        EditError::UnsupportedTransform
+    );
+    assert_eq!(doc, before);
+    assert_eq!((history.undo_len(), history.redo_len()), history_before);
+    history
+        .rotate_objects(
+            &mut doc,
+            "l1",
+            std::slice::from_ref(&instance),
+            90.,
+            MmPoint::new(0., 0.),
+        )
+        .unwrap();
+    history.undo(&mut doc).unwrap();
+    assert_eq!(doc, before);
+}

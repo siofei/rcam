@@ -993,13 +993,13 @@ Instance；修改 Instance 只改 transform。Gerber Export 时 flatten；不要
 S4-B2 起 `BlockDefinition` 存在 `SemanticDocument.block_definitions`，`BlockInstance` 是
 `SemanticGeometry::BlockInstance` 变体；Move/Rotate/Mirror/Duplicate 复用既有 `objects.*` 服务，
 `blocks.create_definition_from_objects`/`create_instance`/`update_instance_transform`/`rename_definition`/
-`explode_instance`/`delete_definition` 是新增的 Service API。完整 GUI Block Editor 仍属 S4-C。
+`explode_instance`/`delete_definition` 是新增的 Service API。S4-B2 时完整 GUI Block Editor 仍属 S4-C；S4-C3 后续完成了 Mac-first bounded Block Editor v1，当前证据见 [S4-C3 review](S4_C3_REVIEW.md)。
 
-### 22.6 Object Snap 与 Grip（S4-C1 已验收；S4-C2 Grip v1 实施中，ADR 0036/0038）
+### 22.6 Object Snap 与 Grip（S4-C1、S4-C2 已验收；ADR 0036/0038）
 
 统一 `SnapKind/SnapFeature/SnapFeatureId/SnapQuery/SnapCandidate/SnapFeatureProvider/SnapResolver`，目标支持 Endpoint/Vertex、Midpoint、
 Center、Quadrant、Intersection、Nearest，后续 Tangent/Perpendicular。Region/AM/Block 从**制造边界**提供 snap，不是 GPU/显示几何。
-采用 “screen-radius → 附近对象空间查询 → lazy feature generation”，**禁止全局预生成所有 snap 点**。Grid/Object Snap 由同一 Resolver 处理。
+采用 “screen-radius → 附近对象空间查询 → lazy feature generation”，**禁止全局预生成所有 snap 点**。Grid/Object Snap 由同一 Resolver 处理。S4-C1 Full Object Snap 与 S4-C2 Grip Editing v1 均为 PASS（Mac-first bounded）；C2 限制仍包括 Hole/Arc-edged Region nodes、Macro Grip、多对象 Grip 与 Windows，详见 [C1 review](S4_C1_REVIEW.md) 和 `exports/S4C2_f1293f2/REVIEW.md`。
 Grip 不等于 Object Snap：`SnapFeatureId` 标识吸附目标，`GripFeatureId` 标识可编辑制造参数/节点，二者独立。S4-C2 Grip v1 只对单选且可编辑对象生成稳定 Grip；制造模型和光圈定义是唯一几何来源。逐帧纯预览不改 revision/dirty/Undo；释放时复用 `ApplicationService` 一次提交/一次 Undo。标准 C/R/O/P Flash 尺寸编辑必须写时复制；旋转/镜像 R/O 的侧边与角在 aperture 局部轴计算，不能按 world AABB resize。Arc 端点仅沿原圆改角、半径保持方向及 full-circle 身份；实际修改后清除已失效 `ArcSource`。Region v1 仅 all-Solid、全 line-only contours 提供共享顶点 Grip；Hole contour（包括 line-only Solid outer + Hole inner）无 Grip。详见 [S4-C2 计划](S4_C2_PLAN.md)、[专项验收](S4_C2_ACCEPTANCE_ADDENDUM.md) 和 [ADR 0038](adr/0038-grip-editing.md)。
 
 S4-C1 的产品规则为：Manufacturing Boundary 默认开启、Original Path 为高级选项；标准 aperture hole 暂不提供 boundary snap，Region hole/归一化 AM/CompatibilitySolid 仍按解析边界处理。默认半径 8 physical px（可设 4–20），以 `pixels_per_point` 换算；8 px 捕获、11 px 释放。只有 effective visible/selectable 对象进入候选，locked selectable 仍可捕捉。Object 在半径内高于 Grid；Alt 临时关闭两者，F3 通过 Command/Keymap 切换。当前 candidate/hysteresis 不持久化。
@@ -1018,8 +1018,10 @@ CommandId。Context 优先级：IME/TextInput > Modal > Tool > Canvas > Global�
 | S4-B2 | Block Core、`.rcam` Native Project Model/schema v1、Workspace state 持久化、Snap settings 持久化 |
 | S4-B3 | `.rcam` New/Open/Save/Save As、Migration、Recovery、Recent Projects |
 | S4-C1 | 完整 Object Snap：解析制造边界、Intersection/Nearest、过滤、Grid resolver、Drag/Text/Measure/Base Point、project settings |
-| S4-C2 | Grip Editing v1（单对象；标准 Flash、Line/RectangularSweep、受约束 Arc、all-Solid line-only Region；复用 Object/Grid Snap）——实施中 |
-| S4-C2+ 后续 | Block Editor、Explode、Array/Panelization、Alignment、PnP/RefDes、Component Search、Shortcut Settings/Command Palette；另行立项 |
+| S4-C2 | Grip Editing v1（单对象；标准 Flash、Line/RectangularSweep、受约束 Arc、all-Solid line-only Region；复用 Object/Grid Snap）——PASS（Mac-first bounded） |
+| S4-C3 | Block Editor v1（Library、Create/Base Point、Place、Transform、Rename/Delete、Select Instances、Explode、Project、Gerber flatten、Diagnostics）——PASS（Mac-first bounded）；内部 Definition 编辑、Array、PnP/RefDes、Windows deferred |
+| S4-C4 | Alignment / Distribution——下一阶段，当前未启动 |
+| 后续另行立项 | Array/Panelization、PnP/RefDes、Component Search、Shortcut Settings/Command Palette |
 
 ### 22.9 基本不变量
 
@@ -1189,14 +1191,23 @@ Save/Save As 为 `.rcam` 保留。View state（颜色/可见/可选/锁定/层�
 新读取器兼容旧工程；解压不改变制造 f64 数据，预算/校验/原子保存保持。范围 R15/R16/R20/R21/R22，
 局部关联 AT-058/059/064/086/090/093，不扩展 S4-C 或双平台验收声明。
 
-### INFRA1 本地诊断基础设施
+### INFRA1 本地诊断基础设施（PASS，Mac-first bounded）
 
-依据 ADR 0037，制造与交互结果不变；日志通过独立有界后台管线记录白名单摘要，默认本地 INFO。服务入口记录修改结果，不采集制造 payload。诊断 ZIP 仅显式导出，不遥测或自动上传。具体范围与剩余验收见 INFRA1_RUNTIME_DIAGNOSTICS_PLAN/REVIEW。
+依据 ADR 0037，制造与交互结果不变；日志通过独立有界后台管线记录白名单摘要，默认本地 INFO。服务入口记录修改结果，不采集制造 payload。诊断 ZIP 仅显式导出，不遥测或自动上传。INFRA1 Runtime Diagnostics / panic hook closeout 已 PASS（Mac-first bounded），最终证据见 `exports/INFRA1_PANIC_c65bee0/REVIEW.md`；Windows deferred / not executed。
 
-### S4-C2 Grip Editing v1（2026-09-25 启动）
+### S4-C2 Grip Editing v1（2026-09-25，PASS Mac-first bounded）
 
-依据 S4_C2_PLAN、S4_C2_ACCEPTANCE_ADDENDUM 与 ADR 0038，先完成单对象制造 Grip 的 query→纯预览→Service 原子提交闭环，再按 Mac 原生、Retina、COW、Snap、项目/导出往返、诊断和固定包门禁复审。当前状态“实施中/未验收”，Windows deferred；不启动完整 Block Editor 或其他 S4-C2+ 功能。
+依据 S4_C2_PLAN、S4_C2_ACCEPTANCE_ADDENDUM 与 ADR 0038，单对象制造 Grip 的 query→纯预览→Service 原子提交闭环已通过 Mac-first bounded 验收。支持范围为标准 Flash、Line/RectangularSweep、受约束 Arc、all-Solid line-only Region；Hole/Arc-edged Region nodes、Macro Grip、多对象 Grip、数值 Grip dialog 与 Windows deferred。最终证据见 `exports/S4C2_f1293f2/REVIEW.md`。
 
 ### S4-C2 final interaction closeout — selection inspection
 
 依据 final native interaction closeout 任务，visible 对象在 layer/category selectable 变为 false 时保留已选身份以便检查；不得重新拾取，不提供 editable Grip，app 统一编辑目标校验拒绝制造操作。恢复 selectable 后已选对象的 Grip 返回。隐藏仍清除选择；锁定仍保留选择且禁止编辑。此规则不改变制造数据、服务 API 或历史事务语义。对应新增 app 回归和 C2-GRIP-01 原生补证；原冻结验收 expected 保持不变。
+
+
+### S4-C3 Block Editor v1（2026-09-27）
+
+S4-C3 Block Editor v1 = PASS（Mac-first bounded）。支持 Block Library、Create/Base Point、Place、instance Transform、Rename/Delete、Select Instances、Explode、Project persistence、Gerber flatten export 与 Diagnostics；内部 Definition edit、Array、Alignment、PnP/RefDes 与 Windows deferred。最终评审及 package identity 见 [S4-C3 review](S4_C3_REVIEW.md)。C3 收口时 C4 尚未启动；本次 C4 状态见下节；不声称双平台 V1、CORE10 10/10 或 P100K。
+
+### S4-C4 Alignment / Distribution closeout scope (2026-09-27)
+
+The user has started S4-C4. ADR 0040 freezes manufacturing world-AABB alignment, existing last-selected primary anchor, same-layer atomic translation, and deterministic equal-edge-gap distribution with fixed endpoints and allowed negative gaps. No Snap, new model tolerance or schema change. Acceptance is tracked in S4_C4_ACCEPTANCE_ADDENDUM and S4_C4_REVIEW; S4-C4 is PASS (Mac-first bounded), with final source/native/package identity in the versioned exports review. Windows remains deferred; stop before Array/Panelization.

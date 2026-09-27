@@ -693,3 +693,22 @@ REVISION_CONFLICT。C/R/O/P Flash 尺寸沿 aperture 局部轴，R/O 对侧锚�
 Region 仅在所有 contour 均为 `Solid` 且所有 edge 均为 `Line` 时提供连接顶点；Solid outer + Hole inner 即使全为 Line 也返回空 Grip，Hole contour deferred。完整拓扑提交前验证。
 无 GUI/GPU 依赖；Automation 不模拟鼠标，不接受 GPU mesh 或任意 geometry patch。
 专用数值 Grip 输入暂缓，现有数值属性编辑保留。阶段门禁见 S4_C2_REVIEW.md。
+
+
+### S4-C3 Block workflow（2026-09-27）
+
+用户已授权 S4-C3；前置 C2 的最终状态见 `exports/S4C2_f1293f2/REVIEW.md`。C3 已按 Mac-first bounded 完成验收，见 docs/S4_C3_PLAN.md、docs/S4_C3_ACCEPTANCE_ADDENDUM.md、docs/S4_C3_REVIEW.md、ADR 0039（docs 内链接去掉 docs/ 前缀）。Block Library 与创建/基点/放置/实例变换/Rename/Delete/Explode 共用既有服务；无内部 Definition 编辑、Array、Alignment、PnP/RefDes。Windows deferred，最终 V1/CORE10 门槛不变。
+
+S4-C3 安全补充：Block 创建/放置/实例变换/拆解在服务端检查 layer/class visible、selectable、locked 与 Solo 有效可见性；创建和放置也检查输出 BlockInstance 类别。Create/Rename trim 后名称为 1–128 Unicode scalars，允许重名，Definition ID 为身份。非连续曝光选择安全拒绝，避免合并重排 Dark/Clear；空、nested、未知 ID、旧 expected_revision 继续失败且零修改。未增加业务 DTO 或改变 .rcam schema。GUI 弹窗与临时工具额外绑定 document/revision/workspace_revision，选择或环境改变后取消。
+
+### S4-C4 arrangement contract (Mac-first bounded)
+
+`objects.align` params: `{layer_id, object_ids, anchor_object_id, mode}` with `mode=left|right|top|bottom|h_center|v_center`. `objects.distribute` params: `{layer_id, object_ids, axis}` with `axis=horizontal|vertical`. Both require `document_id` and `expected_revision`, reject unknown fields, and return the existing EditResult; `changed_object_ids.length` is the changed-object count. No-op returns an empty list and zero undo_entries_added without advancing revision or dirty baseline.
+
+Align requires >=2 unique IDs with explicit member anchor; distribute >=3, sorted by world manufacturing AABB edges, first/last fixed and negative gaps permitted. Same-layer only; IDs resolving to another layer return CROSS_LAYER_EDIT_UNSUPPORTED. Current visibility/selectability/lock/category/Solo rules are revalidated inside the synchronous exclusive commit, including no-op requests. No pointer snapping or GUI selection dependencies. Limits remain 10,000 edit objects and existing history budget.
+
+Diagnostics end events use numeric mode 1=left, 2=right, 3=top, 4=bottom, 5=h_center, 6=v_center; axis 1=horizontal, 2=vertical. Metrics include selection_count/object_count, moved_count/changed_objects and (align only) anchor_hash, the first 64 bits of SHA256 represented as u64. Revision, phase/result and duration are the standard Operation fields. No geometry, raw IDs, object lists or file paths are recorded.
+
+GeneratedText is stored as several semantic objects sharing a text operation identity. Arrangement treats the complete text group as one logical unit: union its manufacturing bounds and translate every member by the same delta. An anchor ID belonging to text fixes the entire group. A request omitting any group member is rejected with INVALID_ARGUMENT, rather than moving/splitting glyphs. Minimum 2/3 counts refer to logical units; the 10,000-object budget still counts physical semantic objects. Ordinary non-text objects and BlockInstances each count as one unit.
+
+S4-C4 focused core/service/app tests have passed; `objects.align` and `objects.distribute` are now published in supported_operations. The closeout stage is `S4-C4 Alignment / Distribution (Mac-first bounded)`; final gate and package identity are recorded in S4_C4_REVIEW.md and the versioned exports review.

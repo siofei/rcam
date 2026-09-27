@@ -100,11 +100,10 @@ pub fn geometries_bounds<'a>(
 }
 
 /// Same as [`geometries_bounds`], additionally resolving
-/// [`SemanticGeometry::BlockInstance`] leaves against `blocks`. Definition
-/// local bounds are computed once per call and reused for every instance
-/// sharing that definition (see `docs/adr/0032-block-core.md`); a caller that
-/// queries bounds repeatedly (the service layer) should cache across calls
-/// too, keyed by `(definition_id, revision)`.
+/// [`SemanticGeometry::BlockInstance`] leaves against `blocks`. Block bounds
+/// use the actual transformed child geometries, not a transformed local AABB.
+/// The resolved manufacturing envelope is cached by definition revision and
+/// orientation for the duration of the query.
 pub fn geometries_bounds_with_blocks<'a>(
     geometries: impl IntoIterator<Item = &'a SemanticGeometry>,
     apertures: &[ApertureDefinition],
@@ -115,32 +114,43 @@ pub fn geometries_bounds_with_blocks<'a>(
         .map(|aperture| (aperture.id.as_str(), &aperture.shape))
         .collect();
     let blocks: HashMap<_, _> = blocks.iter().map(|def| (def.id.0.as_str(), def)).collect();
-    let mut local_cache: HashMap<(&str, u64), Option<BoundsMm>> = HashMap::new();
+    let mut block_cache = HashMap::new();
     let mut result = None;
     for geometry in geometries {
-        if let Some(bounds) = geometry_bounds(geometry, &apertures, &blocks, &mut local_cache)? {
+        if let Some(bounds) = geometry_bounds(geometry, &apertures, &blocks, &mut block_cache)? {
             result = Some(result.map_or(bounds, |previous: BoundsMm| previous.union(bounds)));
         }
     }
     Ok(result)
 }
 
-fn transform_bounds(bounds: BoundsMm, transform: &board::CoordinateTransform2D) -> BoundsMm {
-    let corners = [
-        MmPoint::new(bounds.min_x_mm, bounds.min_y_mm),
-        MmPoint::new(bounds.max_x_mm, bounds.min_y_mm),
-        MmPoint::new(bounds.max_x_mm, bounds.max_y_mm),
-        MmPoint::new(bounds.min_x_mm, bounds.max_y_mm),
-    ]
-    .map(|p| transform.apply(p));
-    combine(corners.into_iter().map(|p| BoundsMm::points(p, p))).expect("four corners")
+/// Return one analytic world manufacturing bound per input geometry, sharing
+/// aperture, block-definition and resolved-orientation lookup caches across
+/// the whole batch. This keeps ordered object selections linear in their size
+/// while using the same per-geometry bound implementation as the document
+/// union API.
+pub fn individual_geometries_bounds_with_blocks<'a>(
+    geometries: impl IntoIterator<Item = &'a SemanticGeometry>,
+    apertures: &[ApertureDefinition],
+    blocks: &[crate::block::BlockDefinition],
+) -> Result<Vec<Option<BoundsMm>>, SemanticError> {
+    let apertures: HashMap<_, _> = apertures
+        .iter()
+        .map(|aperture| (aperture.id.as_str(), &aperture.shape))
+        .collect();
+    let blocks: HashMap<_, _> = blocks.iter().map(|def| (def.id.0.as_str(), def)).collect();
+    let mut block_cache = HashMap::new();
+    geometries
+        .into_iter()
+        .map(|geometry| geometry_bounds(geometry, &apertures, &blocks, &mut block_cache))
+        .collect()
 }
 
 fn geometry_bounds<'a>(
     geometry: &SemanticGeometry,
     apertures: &HashMap<&str, &ApertureShape>,
     blocks: &HashMap<&str, &'a crate::block::BlockDefinition>,
-    local_cache: &mut HashMap<(&'a str, u64), Option<BoundsMm>>,
+    block_cache: &mut HashMap<(&'a str, u64, u64, bool), Option<BoundsMm>>,
 ) -> Result<Option<BoundsMm>, SemanticError> {
     let bounds = match geometry {
         SemanticGeometry::Flash {
@@ -216,19 +226,43 @@ fn geometry_bounds<'a>(
             let definition = *blocks.get(definition_id.0.as_str()).ok_or_else(|| {
                 SemanticError::Invalid(format!("unknown block definition {}", definition_id.0))
             })?;
-            let key = (definition.id.0.as_str(), definition.revision);
-            if !local_cache.contains_key(&key) {
-                let mut local_result = None;
-                for local in crate::block::local_geometries(definition) {
-                    if let Some(bounds) = geometry_bounds(&local, apertures, blocks, local_cache)? {
-                        local_result =
-                            Some(local_result.map_or(bounds, |p: BoundsMm| p.union(bounds)));
+            let rotation = transform.rotation_deg.rem_euclid(360.0);
+            let rotation_deg = if rotation == 0.0 { 0.0 } else { rotation };
+            let key = (
+                definition.id.0.as_str(),
+                definition.revision,
+                rotation_deg.to_bits(),
+                transform.mirror,
+            );
+            if !block_cache.contains_key(&key) {
+                let orientation = crate::block::BlockTransform {
+                    translation: MmPoint::new(0.0, 0.0),
+                    rotation_deg,
+                    mirror: transform.mirror,
+                };
+                let resolved =
+                    crate::block::resolve_instance(definition, &orientation).map_err(|error| {
+                        SemanticError::Invalid(format!(
+                            "block {} cannot be resolved for bounds: {error:?}",
+                            definition.id.0
+                        ))
+                    })?;
+                let mut oriented = None;
+                for object in resolved {
+                    if let Some(bounds) =
+                        geometry_bounds(&object.geometry, apertures, blocks, block_cache)?
+                    {
+                        oriented = Some(oriented.map_or(bounds, |p: BoundsMm| p.union(bounds)));
                     }
                 }
-                local_cache.insert(key, local_result);
+                block_cache.insert(key, oriented);
             }
-            local_cache[&key]
-                .map(|bounds| transform_bounds(bounds, &transform.to_coordinate_transform()))
+            block_cache[&key].map(|bounds| BoundsMm {
+                min_x_mm: bounds.min_x_mm + transform.translation.x_mm,
+                min_y_mm: bounds.min_y_mm + transform.translation.y_mm,
+                max_x_mm: bounds.max_x_mm + transform.translation.x_mm,
+                max_y_mm: bounds.max_y_mm + transform.translation.y_mm,
+            })
         }
     };
     bounds.map(BoundsMm::checked).transpose()

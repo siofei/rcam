@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-09-27 · S4-C3 Block Editor v1（PASS，Mac-first bounded）
+
+完成 Block Library、Create/Base Point、Place、实例 Transform、Rename/Delete、Select Instances、Explode，以及 Project persistence、Gerber flatten export、Diagnostics 的 Mac-first bounded 验收。Mac 原生 CUA 覆盖 Block Library、创建/拾取基点、放置、实例变换、Explode、Rename/Delete、项目保存/重开、Gerber Export/Reimport 与诊断导出；Release 性能使用公开合成的 400×100 工程、120 帧测量，preview build 为 152 µs，egui CPU preview-frame build P50 0.027208 ms / P95 0.068125 ms / max 0.798917 ms。该指标不含 GPU 呈现或鼠标输入延迟，不外推为真实大板或 P100K 性能。制造语义继续遵循既有 ApplicationService、f64 mm、曝光顺序与 fail-closed 校验；未扩展到内部 Definition 编辑、Array、Alignment 或 PnP/RefDes。最终证据和交付身份见 [S4-C3 review](S4_C3_REVIEW.md)。Windows deferred / not executed；不代表双平台 V1、CORE10 10/10 或 P100K 通过。C3 收口时下一阶段为 C4；本次 C4 状态见对应条目。
+
 ## 2026-09-25 · S4-C2 Grip Editing v1 启动（实施中）
 
 用户在 S4-C1 与 INFRA1 panic hook Mac-first bounded closeout 后明确启动 S4-C2。新增 `S4_C2_PLAN.md`、`S4_C2_REVIEW.md`、`S4_C2_ACCEPTANCE_ADDENDUM.md` 与 ADR 0038；冻结单对象 Grip、标准 C/R/O/P 写时复制、局部轴 resize、Line/RectangularSweep 端点、受约束 Arc、line-only Region、纯预览/一次事务、S4-C1 Snap 复用及 Mac 原生/打包门禁。此处仅记录启动，尚无 S4-C2 PASS；Windows deferred，既有 96 个正式用例与双平台 V1 门槛不变。
@@ -274,3 +278,12 @@ generated-insertion preflight and explicit precision/atomicity tests. Repair
 S4-A1 dependency/README state. ADR 0025 records the unchanged total error
 threshold and retained thin-slab rejection. No new dependency or acceptance
 identity/platform changes. GUI/IME/outline offset remain open.
+
+
+### 2026-09-27 S4-C3 started
+
+新增 Block Editor v1 计划、专项验收和 ADR 0039；接入已有 Block Core GUI 工作流，修正非连续曝光重排和 Block 服务权限检查。验收结果单独记录，冻结 V1 用例不变。
+
+### S4-C4 closeout (2026-09-27)
+
+S4-C4 Alignment / Distribution = **PASS（Mac-first bounded）**。六种制造 world-AABB 对齐与双轴等边缘间距分布已实现，使用最后选中对象作固定 Anchor；同层原子事务、Undo/Redo、BlockInstance、完整文字组、项目/恢复/导出、诊断和资源限制已验收。语义见 ADR 0040，范围及证据见 S4_C4_PLAN、S4_C4_ACCEPTANCE_ADDENDUM、S4_C4_REVIEW；最终干净提交、原生二进制及包校验身份以 versioned exports/S4C4_*/REVIEW.md 为准。Windows deferred/not executed；不代表完整 V1、CORE10 10/10 或 P100K 通过。C4 后停止，Array/Panelization 未启动。

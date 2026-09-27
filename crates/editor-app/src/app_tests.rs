@@ -2137,3 +2137,441 @@ fn compatibility_open_shows_warning_and_keeps_canvas_editable() {
     );
     std::fs::remove_file(path).unwrap();
 }
+
+fn c3_edit(m: &mut Model, edit: crate::block_ui::Edit) {
+    let context = crate::block_ui::Context::capture(&m.view).unwrap();
+    m.run(Action::BlockEdit(Box::new(crate::block_ui::Request {
+        context,
+        edit,
+    })));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+}
+fn c3_create(m: &mut Model) -> (String, String, String) {
+    select_all(m);
+    let (layer, ids) = crate::block_ui::create_targets(&m.view).unwrap();
+    c3_edit(
+        m,
+        crate::block_ui::Edit::Create(editor_service::CreateBlockDefinitionParams {
+            layer_id: layer.clone(),
+            object_ids: ids,
+            local_origin_mm: editor_service::PivotMm {
+                x_mm: 10.,
+                y_mm: 20.,
+            },
+            name: "中文 Block".into(),
+        }),
+    );
+    (
+        layer,
+        m.view.block_definitions[0].id.0.clone(),
+        m.view.selected.primary().unwrap().object.object_id.clone(),
+    )
+}
+#[test]
+fn c3_create_preview_cancel_place_transform_rename_explode_and_delete_workflow() {
+    use crate::block_ui::{Context, Edit, Session, SessionKind};
+    use editor_service::*;
+    let (mut m, dir) = setup();
+    let before = m.view.snap_snapshot.clone().unwrap();
+    let original = m.view.info.clone().unwrap();
+    let (layer, id, instance) = c3_create(&mut m);
+    assert_eq!(
+        m.view.info.as_ref().unwrap().undo_entries,
+        original.undo_entries + 1
+    );
+    assert_eq!(m.view.apertures, before.apertures);
+    assert_eq!(m.view.block_counts[&id], 1);
+    let created = m.view.snap_snapshot.clone().unwrap();
+    m.run(Action::History(false));
+    assert_eq!(m.view.snap_snapshot.as_ref().unwrap().layers, before.layers);
+    assert!(m.view.block_definitions.is_empty());
+    m.run(Action::History(true));
+    assert_eq!(
+        m.view.snap_snapshot.as_ref().unwrap().layers,
+        created.layers
+    );
+    assert_eq!(m.view.block_definitions, created.block_definitions);
+    let context = Context::capture(&m.view).unwrap();
+    let pre = m.view.info.clone();
+    m.run(Action::BlockPreview(context.clone(), id.clone(), 100.));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    let preview = m.view.block_preview.clone().unwrap();
+    assert!(!preview.paths.is_empty());
+    let mut session = Session {
+        context: context.clone(),
+        layer: layer.clone(),
+        kind: SessionKind::Place {
+            definition: id.clone(),
+        },
+        point: None,
+        preview: Some(preview.clone()),
+    };
+    for i in 0..100 {
+        session.point = Some(MmPoint::new(i as f64, 8.));
+        assert!(session.valid(&m.view));
+    }
+    drop(session);
+    assert_eq!(m.view.info, pre);
+    assert!(std::sync::Arc::ptr_eq(
+        &preview,
+        m.view.block_preview.as_ref().unwrap()
+    ));
+    for x in [30., 40., 50.] {
+        c3_edit(
+            &mut m,
+            Edit::Place(CreateBlockInstanceParams {
+                layer_id: layer.clone(),
+                definition_id: id.clone(),
+                transform: BlockTransformParams {
+                    translation_mm: PivotMm { x_mm: x, y_mm: 20. },
+                    rotation_deg: 0.,
+                    mirror: false,
+                },
+            }),
+        );
+    }
+    assert_eq!(m.view.block_counts[&id], 4);
+    assert_eq!(m.view.block_definitions[0], created.block_definitions[0]);
+    c3_edit(
+        &mut m,
+        Edit::Rename(RenameBlockDefinitionParams {
+            definition_id: id.clone(),
+            name: "重命名 μ".into(),
+        }),
+    );
+    let transform = BlockTransformParams {
+        translation_mm: PivotMm { x_mm: 5., y_mm: 6. },
+        rotation_deg: 37.,
+        mirror: true,
+    };
+    c3_edit(
+        &mut m,
+        Edit::Transform(UpdateBlockInstanceTransformParams {
+            layer_id: layer.clone(),
+            object_id: instance.clone(),
+            transform,
+        }),
+    );
+    let project = dir.join("blocks.rcam");
+    m.run(Action::SaveProject(Some(project.clone()), false, None));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    let saved = m.view.snap_snapshot.clone().unwrap();
+    m.run(Action::OpenProject(project, true));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    assert_eq!(m.view.snap_snapshot.as_ref().unwrap().layers, saved.layers);
+    assert_eq!(m.view.block_definitions, saved.block_definitions);
+    let ctx = Context::capture(&m.view).unwrap();
+    let info = m.view.info.clone();
+    m.run(Action::BlockEdit(Box::new(crate::block_ui::Request {
+        context: ctx,
+        edit: Edit::Delete(BlockDefinitionIdParams {
+            definition_id: id.clone(),
+        }),
+    })));
+    assert_eq!(
+        m.view.error.as_ref().unwrap().code,
+        "BLOCK_DEFINITION_REFERENCED"
+    );
+    assert_eq!(m.view.info, info);
+    m.run(Action::BlockSelect(id.clone()));
+    assert_eq!(m.view.selected.ordered.len(), 4);
+    let targets: Vec<_> = m
+        .view
+        .selected
+        .ordered
+        .iter()
+        .map(|o| o.object.object_id.clone())
+        .collect();
+    for object_id in targets {
+        c3_edit(
+            &mut m,
+            Edit::Explode(ExplodeBlockInstanceParams {
+                layer_id: layer.clone(),
+                object_id,
+            }),
+        );
+    }
+    assert_eq!(m.view.block_counts.get(&id), None);
+    assert_eq!(
+        m.view.snap_snapshot.as_ref().unwrap().layers[0]
+            .objects
+            .len(),
+        8
+    );
+    c3_edit(
+        &mut m,
+        Edit::Delete(BlockDefinitionIdParams {
+            definition_id: id.clone(),
+        }),
+    );
+    assert!(m.view.block_definitions.is_empty());
+    m.run(Action::History(false));
+    assert_eq!(m.view.block_definitions[0].id.0, id);
+}
+#[test]
+fn c3_session_rejects_stale_context_and_nested_selection() {
+    use crate::block_ui::{Context, Edit, Request, Session, SessionKind};
+    let (mut m, _) = setup();
+    let (layer, id, _) = c3_create(&mut m);
+    assert!(
+        crate::block_ui::create_targets(&m.view)
+            .unwrap_err()
+            .contains("嵌套")
+    );
+    let context = Context::capture(&m.view).unwrap();
+    let session = Session {
+        context: context.clone(),
+        layer,
+        kind: SessionKind::Place {
+            definition: id.clone(),
+        },
+        point: Some(MmPoint::new(0., 0.)),
+        preview: None,
+    };
+    assert!(session.valid(&m.view));
+    m.run(Action::History(false));
+    assert!(!session.valid(&m.view));
+    let before = m.view.info.clone();
+    m.run(Action::BlockEdit(Box::new(Request {
+        context,
+        edit: Edit::Delete(editor_service::BlockDefinitionIdParams { definition_id: id }),
+    })));
+    assert!(m.view.error.is_some());
+    assert_eq!(m.view.info, before);
+}
+
+#[test]
+fn c3_mixed_capture_keeps_identical_render_input_and_recovery_export_geometry() {
+    let (mut m, dir) = setup_source("blocks.gbr", &fixture("s4c3/blocks.gbr"));
+    let before = m.view.snap_snapshot.clone().unwrap();
+    let scene_before = m.view.scene.clone().unwrap();
+    let bounds = m.view.bounds;
+    let (layer, _, _) = c3_create(&mut m);
+    assert_eq!(m.view.bounds, bounds);
+    let after = m.view.scene.as_ref().unwrap();
+    assert_eq!(
+        bytemuck::cast_slice::<_, u8>(&scene_before.objects),
+        bytemuck::cast_slice::<_, u8>(&after.objects)
+    );
+    assert_eq!(
+        bytemuck::cast_slice::<_, u8>(&scene_before.primitives),
+        bytemuck::cast_slice::<_, u8>(&after.primitives)
+    );
+    assert_eq!(scene_before.points, after.points);
+    let d = m.view.info.clone().unwrap();
+    let bytes = m.service.project_recovery_bytes(&d.document_id).unwrap();
+    let project = rcam_project::decode(&bytes).unwrap();
+    assert_eq!(project.block_definitions, m.view.block_definitions);
+    let file = dir.join("flatten.gbr");
+    m.run(Action::Save(file.clone(), layer, None));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(!text.contains("%AB"));
+    let reopened = gerber_io::parse_s1(&std::fs::read(&file).unwrap(), "reopened")
+        .unwrap()
+        .document;
+    assert_eq!(
+        reopened.layers[0].objects.len(),
+        before.layers[0].objects.len()
+    );
+    assert_eq!(reopened.manufacturing_bounds(None).unwrap(), bounds);
+    // Independent world probes: two known Flash centers, line midspan and Region interior.
+    for point in [
+        MmPoint::new(0., 0.),
+        MmPoint::new(6., 0.),
+        MmPoint::new(3., 4.),
+        MmPoint::new(11., 2.),
+    ] {
+        assert!(
+            !reopened
+                .hit_test(&reopened.layers[0].id, point, 0.)
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let snap = m.view.snap_snapshot.clone().unwrap();
+    m.run(Action::RestoreProject(bytes));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    assert_eq!(m.view.snap_snapshot.as_ref().unwrap().layers, snap.layers);
+    assert_eq!(m.view.block_definitions, snap.block_definitions);
+}
+
+fn selected_flash_center(m: &Model, object_id: &str) -> MmPoint {
+    let object = m
+        .view
+        .selected
+        .ordered
+        .iter()
+        .find(|item| item.object.object_id == object_id)
+        .unwrap();
+    match object.object.geometry {
+        SemanticGeometry::Flash { center, .. } => center,
+        _ => panic!("fixture object should be a Flash"),
+    }
+}
+
+#[test]
+fn arrangement_command_dispatch_aligns_one_transaction_and_undo_redoes_anchor_geometry() {
+    use editor_core::command::ids;
+    use editor_service::AlignmentMode;
+
+    let (mut m, _) = setup();
+    select_all(&mut m);
+    let ordered: Vec<_> = m
+        .view
+        .selected
+        .ordered
+        .iter()
+        .map(|item| item.object.object_id.clone())
+        .collect();
+    let anchor = m.view.selected.primary().unwrap().object.object_id.clone();
+    let before = m.view.info.clone().unwrap();
+
+    let action = crate::arrangement_action(ids::OBJECT_ALIGN_LEFT).unwrap();
+    assert!(matches!(action, Action::Align(AlignmentMode::Left)));
+    m.run(action);
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    assert_eq!(
+        m.view.info.as_ref().unwrap().undo_entries,
+        before.undo_entries + 1
+    );
+    assert_eq!(m.view.info.as_ref().unwrap().revision, "1");
+    assert_eq!(selected_flash_center(&m, &anchor), MmPoint::new(20., 20.));
+    assert_eq!(
+        selected_flash_center(&m, &ordered[0]),
+        MmPoint::new(19., 20.)
+    );
+
+    let after_align = m.view.info.clone();
+    m.run(Action::History(false));
+    assert_eq!(
+        selected_flash_center(&m, &ordered[0]),
+        MmPoint::new(10., 20.)
+    );
+    assert_eq!(selected_flash_center(&m, &anchor), MmPoint::new(20., 20.));
+    m.run(Action::History(true));
+    assert_eq!(
+        selected_flash_center(&m, &ordered[0]),
+        MmPoint::new(19., 20.)
+    );
+    assert_eq!(selected_flash_center(&m, &anchor), MmPoint::new(20., 20.));
+
+    let before_noop = m.view.info.clone();
+    m.run(crate::arrangement_action(ids::OBJECT_ALIGN_LEFT).unwrap());
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    assert_eq!(m.view.info, before_noop);
+    assert_ne!(after_align, before_noop);
+}
+
+#[test]
+fn arrangement_anchor_follows_selection_order_and_menu_gates_use_logical_text_groups() {
+    let (mut m, _) = setup();
+    select_all(&mut m);
+    let original_anchor = m.view.selected.primary().unwrap().object.object_id.clone();
+    let (anchor, moving) = {
+        let selected = &mut m.view.selected.ordered;
+        selected.reverse();
+        (
+            selected[1].object.object_id.clone(),
+            selected[0].object.object_id.clone(),
+        )
+    };
+    assert_ne!(anchor, original_anchor);
+    assert_eq!(m.view.selected.primary().unwrap().object.object_id, anchor);
+    let eligibility = crate::state::arrangement_eligibility(&m.view);
+    assert!(eligibility.align);
+    assert!(!eligibility.distribute);
+    assert_eq!(eligibility.logical_count, 2);
+    m.run(crate::arrangement_action(editor_core::command::ids::OBJECT_ALIGN_LEFT).unwrap());
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    assert_eq!(selected_flash_center(&m, &anchor), MmPoint::new(10., 20.));
+    assert_eq!(selected_flash_center(&m, &moving), MmPoint::new(11., 20.));
+
+    let mut text_model = setup().0;
+    select_all(&mut text_model);
+    let operation = "synthetic-text-operation";
+    let snapshot = std::sync::Arc::make_mut(text_model.view.snap_snapshot.as_mut().unwrap());
+    for object in &mut snapshot.layers[0].objects {
+        object.origin = editor_core::ObjectOrigin::GeneratedText {
+            operation_id: operation.into(),
+        };
+    }
+    for selected in &mut text_model.view.selected.ordered {
+        selected.object.origin = editor_core::ObjectOrigin::GeneratedText {
+            operation_id: operation.into(),
+        };
+    }
+    let one_text_group = crate::state::arrangement_eligibility(&text_model.view);
+    assert_eq!(one_text_group.logical_count, 1);
+    assert!(!one_text_group.align);
+
+    let mut extra = text_model.view.selected.ordered[0].clone();
+    extra.object.object_id = "synthetic-extra-object".into();
+    extra.object.origin = editor_core::ObjectOrigin::Imported { command_index: 0 };
+    text_model.view.selected.ordered.push(extra.clone());
+    let two_units = crate::state::arrangement_eligibility(&text_model.view);
+    assert_eq!(two_units.logical_count, 2);
+    assert!(two_units.align);
+    assert!(!two_units.distribute);
+    extra.object.object_id = "synthetic-extra-object-2".into();
+    text_model.view.selected.ordered.push(extra);
+    assert!(crate::state::arrangement_eligibility(&text_model.view).distribute);
+
+    text_model.view.selected.ordered.pop();
+    text_model.view.selected.ordered.pop();
+    text_model.view.selected.ordered.pop();
+    let incomplete_text_group = crate::state::arrangement_eligibility(&text_model.view);
+    assert_eq!(incomplete_text_group.logical_count, 0);
+    assert!(!incomplete_text_group.align);
+}
+
+#[test]
+fn arrangement_menu_disables_locked_hidden_and_cross_layer_selections() {
+    let (mut m, _) = setup();
+    select_all(&mut m);
+    assert!(crate::state::arrangement_eligibility(&m.view).align);
+
+    patch(&mut m, None, Some(true), None);
+    assert!(!crate::state::arrangement_eligibility(&m.view).align);
+
+    let (mut hidden, _) = setup();
+    select_all(&mut hidden);
+    patch(&mut hidden, Some(false), None, None);
+    assert!(!crate::state::arrangement_eligibility(&hidden.view).align);
+
+    let (mut cross_layer, _) = setup();
+    select_all(&mut cross_layer);
+    cross_layer.view.selected.ordered[1].layer_id = "another-layer".into();
+    assert!(!crate::state::arrangement_eligibility(&cross_layer.view).align);
+}
+
+#[test]
+fn all_arrangement_command_ids_dispatch_to_their_typed_actions() {
+    use editor_core::command::ids;
+    use editor_service::{AlignmentMode as A, DistributionAxis as D};
+
+    for (command, expected) in [
+        (ids::OBJECT_ALIGN_LEFT, "left"),
+        (ids::OBJECT_ALIGN_RIGHT, "right"),
+        (ids::OBJECT_ALIGN_TOP, "top"),
+        (ids::OBJECT_ALIGN_BOTTOM, "bottom"),
+        (ids::OBJECT_ALIGN_HCENTER, "hcenter"),
+        (ids::OBJECT_ALIGN_VCENTER, "vcenter"),
+        (ids::OBJECT_DISTRIBUTE_HORIZONTAL, "horizontal"),
+        (ids::OBJECT_DISTRIBUTE_VERTICAL, "vertical"),
+    ] {
+        let action = crate::arrangement_action(command).unwrap();
+        let actual = match action {
+            Action::Align(A::Left) => "left",
+            Action::Align(A::Right) => "right",
+            Action::Align(A::Top) => "top",
+            Action::Align(A::Bottom) => "bottom",
+            Action::Align(A::HCenter) => "hcenter",
+            Action::Align(A::VCenter) => "vcenter",
+            Action::Distribute(D::Horizontal) => "horizontal",
+            Action::Distribute(D::Vertical) => "vertical",
+            _ => panic!("command did not map to an arrangement action"),
+        };
+        assert_eq!(actual, expected, "wrong mapping for {}", command.0);
+    }
+}

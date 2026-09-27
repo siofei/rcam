@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod app_tests;
 mod block_display;
+mod block_ui;
 mod camera;
 mod display;
 #[cfg(test)]
@@ -41,6 +42,7 @@ use editor_core::command::{
     CommandDispatcher, CommandId, Key, Keymap, Modifiers, Resolution, Shortcut, ShortcutContext,
     ShortcutResolver, ids as command_ids,
 };
+use editor_service::{AlignmentMode, DistributionAxis};
 use eframe::egui::{self, Color32, RichText, Vec2};
 use state::{Action, MirrorDirection, Model, PivotInput, View};
 use std::{
@@ -63,6 +65,7 @@ struct LastFrame {
     uniforms: gpu::Uniforms,
 }
 struct EditorApp {
+    block: block_ui::UiState,
     operation_source: rcam_diagnostics::Source,
     diagnostic_export: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
     tx: SyncSender<(u64, rcam_diagnostics::Source, Action)>,
@@ -228,6 +231,7 @@ impl EditorApp {
         let recovery_candidate =
             recovery::directory().and_then(|dir| recovery::discover(&dir).into_iter().next());
         let mut app = Self {
+            block: Default::default(),
             operation_source: rcam_diagnostics::Source::System,
             diagnostic_export: None,
             tx,
@@ -341,7 +345,8 @@ impl EditorApp {
         if self.modal.is_some()
             && matches!(
                 a,
-                Action::Move(..)
+                Action::BlockEdit(..)
+                    | Action::Move(..)
                     | Action::Rotate(..)
                     | Action::Mirror(..)
                     | Action::SetFlashSize(..)
@@ -438,6 +443,60 @@ impl EditorApp {
         {
             self.send(Action::Delete);
         }
+    }
+    fn arrangement_entries(&mut self, ui: &mut egui::Ui) {
+        let eligibility = state::arrangement_eligibility(&self.view);
+        let usable = self.usable();
+        if self.view.selected.ordered.len() >= 2
+            && let Some(anchor) = self.view.selected.primary()
+        {
+            let kind = if matches!(
+                anchor.object.origin,
+                editor_core::ObjectOrigin::GeneratedText { .. }
+            ) {
+                "文字组"
+            } else {
+                "对象"
+            };
+            ui.label(
+                RichText::new(format!(
+                    "锚点：{kind} {}（最后选中，保持不动）",
+                    anchor.object.object_id
+                ))
+                .background_color(crate::ui::tokens::selection_highlight()),
+            );
+            ui.separator();
+        }
+        ui.menu_button("对齐", |ui| {
+            ui.add_enabled_ui(usable && eligibility.align, |ui| {
+                for (label, command) in [
+                    ("左对齐", command_ids::OBJECT_ALIGN_LEFT),
+                    ("右对齐", command_ids::OBJECT_ALIGN_RIGHT),
+                    ("顶端对齐", command_ids::OBJECT_ALIGN_TOP),
+                    ("底端对齐", command_ids::OBJECT_ALIGN_BOTTOM),
+                    ("水平居中", command_ids::OBJECT_ALIGN_HCENTER),
+                    ("垂直居中", command_ids::OBJECT_ALIGN_VCENTER),
+                ] {
+                    if ui.button(label).clicked() {
+                        self.dispatch(command);
+                        ui.close();
+                    }
+                }
+            });
+        });
+        ui.menu_button("分布", |ui| {
+            ui.add_enabled_ui(usable && eligibility.distribute, |ui| {
+                for (label, command) in [
+                    ("水平等距分布", command_ids::OBJECT_DISTRIBUTE_HORIZONTAL),
+                    ("垂直等距分布", command_ids::OBJECT_DISTRIBUTE_VERTICAL),
+                ] {
+                    if ui.button(label).clicked() {
+                        self.dispatch(command);
+                        ui.close();
+                    }
+                }
+            });
+        });
     }
     fn history_buttons(&mut self, ui: &mut egui::Ui) {
         let undo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0);
@@ -687,6 +746,13 @@ impl CommandDispatcher for EditorApp {
     type Outcome = bool;
 
     fn dispatch(&mut self, command: CommandId) -> Self::Outcome {
+        if self.block_command(command) {
+            return true;
+        }
+        if let Some(action) = arrangement_action(command) {
+            self.send(action);
+            return true;
+        }
         match command {
             command_ids::GRIP_CANCEL => {
                 if self.grip.take().is_some() {
@@ -720,6 +786,22 @@ impl CommandDispatcher for EditorApp {
             _ => false,
         }
     }
+}
+
+fn arrangement_action(command: CommandId) -> Option<Action> {
+    Some(match command {
+        command_ids::OBJECT_ALIGN_LEFT => Action::Align(AlignmentMode::Left),
+        command_ids::OBJECT_ALIGN_RIGHT => Action::Align(AlignmentMode::Right),
+        command_ids::OBJECT_ALIGN_TOP => Action::Align(AlignmentMode::Top),
+        command_ids::OBJECT_ALIGN_BOTTOM => Action::Align(AlignmentMode::Bottom),
+        command_ids::OBJECT_ALIGN_HCENTER => Action::Align(AlignmentMode::HCenter),
+        command_ids::OBJECT_ALIGN_VCENTER => Action::Align(AlignmentMode::VCenter),
+        command_ids::OBJECT_DISTRIBUTE_HORIZONTAL => {
+            Action::Distribute(DistributionAxis::Horizontal)
+        }
+        command_ids::OBJECT_DISTRIBUTE_VERTICAL => Action::Distribute(DistributionAxis::Vertical),
+        _ => return None,
+    })
 }
 
 impl eframe::App for EditorApp {
@@ -1020,6 +1102,7 @@ impl eframe::App for EditorApp {
         self.operation_source = rcam_diagnostics::Source::Shortcut;
         let text_focus = self.text_input_at_event || ctx.wants_keyboard_input();
         if !modal_open && !self.ime_active && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.cancel_block();
             self.measure.clear();
             if self.text.floating.is_some() {
                 self.text.resume_dialog();
@@ -1031,6 +1114,27 @@ impl eframe::App for EditorApp {
                 self.text.cancel();
                 self.tool = tools::ActiveTool::Select;
             }
+        }
+        if self
+            .block
+            .session
+            .as_ref()
+            .is_some_and(|s| !s.valid(&self.view))
+            || (self.block.session.is_some()
+                && (modal_open
+                    || self.tool != tools::ActiveTool::Block
+                    || !ctx.input(|i| i.focused)))
+        {
+            self.cancel_block();
+        }
+        if self.block.session.is_some()
+            && ctx.input(|i| {
+                i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::PointerGone))
+            })
+        {
+            self.cancel_block();
         }
         if cancel_drag || modal_open || self.display_error.is_some() {
             self.drag = None;
@@ -1065,7 +1169,7 @@ impl eframe::App for EditorApp {
         if drag::shortcuts_allowed(
             text_focus,
             self.busy,
-            modal_open || self.text.floating.is_some(),
+            modal_open || self.text.floating.is_some() || self.block.session.is_some(),
         ) {
             ctx.input_mut(|i| {
                 if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) && !self.busy {
@@ -1216,6 +1320,7 @@ impl eframe::App for EditorApp {
                 ui.menu_button("编辑", |ui| {
                     self.history_buttons(ui);
                     self.object_buttons(ui);
+                    self.block_entries(ui);
                     ui.separator();
                     ui.add_enabled_ui(
                         self.usable() && drag::editable_selection(&self.view),
@@ -1234,6 +1339,7 @@ impl eframe::App for EditorApp {
                         },
                     );
                 });
+                ui.menu_button("排列", |ui| self.arrangement_entries(ui));
                 ui.menu_button("插入", |ui| {
                     if crate::ui::command_widgets::button(
                         ui,
@@ -1503,6 +1609,23 @@ impl eframe::App for EditorApp {
                 }
                 if let Some(o) = self.view.selected.primary() {
                     ui.label(format!("选中 {}", o.object.object_id));
+                    if self.view.selected.ordered.len() >= 2 {
+                        let kind = if matches!(
+                            o.object.origin,
+                            editor_core::ObjectOrigin::GeneratedText { .. }
+                        ) {
+                            "文字组"
+                        } else {
+                            "对象"
+                        };
+                        ui.label(
+                            RichText::new(format!(
+                                "对齐锚点：{kind} {}（最后选中）",
+                                o.object.object_id
+                            ))
+                            .background_color(crate::ui::tokens::selection_highlight()),
+                        );
+                    }
                 }
                 ui.label(&self.view.message);
                 // Display-transient diagnostics keep the last-good frame on screen and
@@ -1559,7 +1682,23 @@ impl eframe::App for EditorApp {
                 if modal_open {
                     ui.disable();
                 }
-                self.layer_panel(ui);
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.block.library, false, "图层");
+                    if ui
+                        .selectable_value(&mut self.block.library, true, "Blocks")
+                        .clicked()
+                    {
+                        rcam_diagnostics::runtime_event(
+                            rcam_diagnostics::Level::Info,
+                            "block.library.open",
+                        );
+                    }
+                });
+                if self.block.library {
+                    self.block_library(ui);
+                } else {
+                    self.layer_panel(ui);
+                }
             });
         self.layer_panel_rect = layer_panel.response.rect;
         if ctx.input(|i| i.pointer.any_released())
@@ -1629,6 +1768,7 @@ impl eframe::App for EditorApp {
                                 );
                             }
                         }
+                        self.block_properties(ui);
                         ui.separator();
                         ui.add_enabled_ui(
                             self.usable() && drag::editable_selection(&self.view),
@@ -1894,6 +2034,14 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                if self.block.session.is_some() && !modal_open && !text_focus { self.block_canvas(ctx, &r, rect); }
+                if self.tool == tools::ActiveTool::Select && !modal_open {
+                    r.context_menu(|ui| {
+                        ui.menu_button("对齐 / 分布", |ui| self.arrangement_entries(ui));
+                        ui.separator();
+                        self.block_entries(ui);
+                    });
+                }
                 self.closeout_context_transition();
                 // Tool/menu input above can change context in this same frame.
                 // Recheck before release, rather than waiting for the next frame.
@@ -2091,6 +2239,7 @@ impl eframe::App for EditorApp {
                     }
                     if let Some(grip) = &self.grip { grip.paint(&painter,self.camera,rect,ctx.pixels_per_point()); }
                 }
+                self.paint_block(&painter, rect, ctx.pixels_per_point());
                 self.invalidate_text_overlay();
                 if self.tool == tools::ActiveTool::Text {
                     self.text.paint(&painter, self.camera, rect);

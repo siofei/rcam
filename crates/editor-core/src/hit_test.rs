@@ -65,6 +65,26 @@ pub(crate) fn manufacturing_boundary_edges(
     select_rect::edges_for(geometry, &apertures, &mut macros, &mut budget, false)
 }
 
+/// Read-only analytic boundaries for a transient display overlay. Includes
+/// standard aperture holes; shares the hit-test material implementation.
+/// The caller must keep the result display-only and bound the total workload.
+pub fn display_boundary_edges(
+    geometry: &SemanticGeometry,
+    apertures: &[ApertureDefinition],
+) -> Result<Vec<RegionEdge>, HitTestError> {
+    let apertures = apertures
+        .iter()
+        .map(|a| (a.id.as_str(), &a.shape))
+        .collect();
+    select_rect::edges_for(
+        geometry,
+        &apertures,
+        &mut HashMap::new(),
+        &mut Budget(MAX_HIT_TEST_WORK),
+        true,
+    )
+}
+
 impl SemanticDocument {
     /// The service supplies validated manufacturing geometry. A query either
     /// returns all matching IDs in exposure order, or one error (no partial IDs).

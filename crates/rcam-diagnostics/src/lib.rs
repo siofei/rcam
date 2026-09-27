@@ -677,6 +677,34 @@ impl Operation {
             event.metrics.insert("grip_kind".into(), grip_kind);
         }
     }
+    /// Fixed arrangement categories and counts; anchor identity is hashed, never logged raw.
+    pub fn arrangement_metadata(
+        &mut self,
+        mode: Option<u64>,
+        axis: Option<u64>,
+        anchor: Option<&str>,
+        count: usize,
+        moved: usize,
+    ) {
+        if let Some(event) = &mut self.event {
+            if let Some(mode) = mode {
+                event.metrics.insert("mode".into(), mode);
+            }
+            if let Some(axis) = axis {
+                event.metrics.insert("axis".into(), axis);
+            }
+            if let Some(anchor) = anchor {
+                let hash = editor_core::hash::sha256_hex(anchor.as_bytes());
+                event.metrics.insert(
+                    "anchor_hash".into(),
+                    u64::from_str_radix(&hash[..16], 16).expect("hex SHA256"),
+                );
+            }
+            event.metrics.insert("object_count".into(), count as u64);
+            event.metrics.insert("moved_count".into(), moved as u64);
+            event.metrics.insert("changed_objects".into(), moved as u64);
+        }
+    }
     pub fn selection_count(&mut self, count: usize) {
         if let Some(event) = &mut self.event {
             event.metrics.insert("selection_count".into(), count as u64);

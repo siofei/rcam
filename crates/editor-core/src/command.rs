@@ -31,6 +31,14 @@ pub mod ids {
     pub const OBJECT_MOVE: CommandId = CommandId("object.move");
     pub const OBJECT_ROTATE: CommandId = CommandId("object.rotate");
     pub const OBJECT_MIRROR: CommandId = CommandId("object.mirror");
+    pub const OBJECT_ALIGN_LEFT: CommandId = CommandId("objects.align_left");
+    pub const OBJECT_ALIGN_RIGHT: CommandId = CommandId("objects.align_right");
+    pub const OBJECT_ALIGN_TOP: CommandId = CommandId("objects.align_top");
+    pub const OBJECT_ALIGN_BOTTOM: CommandId = CommandId("objects.align_bottom");
+    pub const OBJECT_ALIGN_HCENTER: CommandId = CommandId("objects.align_hcenter");
+    pub const OBJECT_ALIGN_VCENTER: CommandId = CommandId("objects.align_vcenter");
+    pub const OBJECT_DISTRIBUTE_HORIZONTAL: CommandId = CommandId("objects.distribute_horizontal");
+    pub const OBJECT_DISTRIBUTE_VERTICAL: CommandId = CommandId("objects.distribute_vertical");
     pub const VIEW_FIT: CommandId = CommandId("view.fit");
     pub const VIEW_FIT_ACTIVE_LAYER: CommandId = CommandId("view.fit_active_layer");
     pub const VIEW_GRID_TOGGLE: CommandId = CommandId("view.grid.toggle");
@@ -40,6 +48,13 @@ pub mod ids {
     pub const TOOL_SELECT: CommandId = CommandId("tool.select");
     pub const TOOL_MEASURE: CommandId = CommandId("tool.measure");
     pub const TOOL_TEXT: CommandId = CommandId("tool.text");
+    pub const BLOCK_CREATE: CommandId = CommandId("block.create_from_selection");
+    pub const BLOCK_PLACE: CommandId = CommandId("block.place");
+    pub const BLOCK_RENAME: CommandId = CommandId("block.rename");
+    pub const BLOCK_EXPLODE: CommandId = CommandId("block.explode");
+    pub const BLOCK_DELETE: CommandId = CommandId("block.delete_definition");
+    pub const BLOCK_SELECT: CommandId = CommandId("block.select_instances");
+    pub const BLOCK_TRANSFORM: CommandId = CommandId("block.transform");
     pub const GRIP_CANCEL: CommandId = CommandId("grip.cancel");
     pub const SNAP_TOGGLE: CommandId = CommandId("snap.toggle");
 }
@@ -281,9 +296,96 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
             Some(Shortcut::new(Modifiers::PRIMARY, ch('d'))),
             X::Canvas,
         ),
+        d(ids::BLOCK_CREATE, "创建 Block…", C::Object, None, X::Canvas),
+        d(ids::BLOCK_PLACE, "放置 Block", C::Object, None, X::Canvas),
+        d(
+            ids::BLOCK_RENAME,
+            "重命名 Block…",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::BLOCK_EXPLODE,
+            "拆解 Block…",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::BLOCK_DELETE,
+            "删除 Block 定义…",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::BLOCK_SELECT,
+            "选择 Block 实例",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::BLOCK_TRANSFORM,
+            "实例变换…",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
         d(ids::OBJECT_MOVE, "移动…", C::Object, None, X::Canvas),
         d(ids::OBJECT_ROTATE, "旋转…", C::Object, None, X::Canvas),
         d(ids::OBJECT_MIRROR, "镜像…", C::Object, None, X::Canvas),
+        d(ids::OBJECT_ALIGN_LEFT, "左对齐", C::Object, None, X::Canvas),
+        d(
+            ids::OBJECT_ALIGN_RIGHT,
+            "右对齐",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::OBJECT_ALIGN_TOP,
+            "顶端对齐",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::OBJECT_ALIGN_BOTTOM,
+            "底端对齐",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::OBJECT_ALIGN_HCENTER,
+            "水平居中",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::OBJECT_ALIGN_VCENTER,
+            "垂直居中",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::OBJECT_DISTRIBUTE_HORIZONTAL,
+            "水平等距分布",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::OBJECT_DISTRIBUTE_VERTICAL,
+            "垂直等距分布",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
         d(
             ids::VIEW_FIT,
             "适应可见图层",
@@ -533,6 +635,14 @@ mod tests {
             "object.move",
             "object.rotate",
             "object.mirror",
+            "objects.align_left",
+            "objects.align_right",
+            "objects.align_top",
+            "objects.align_bottom",
+            "objects.align_hcenter",
+            "objects.align_vcenter",
+            "objects.distribute_horizontal",
+            "objects.distribute_vertical",
             "view.fit",
             "view.grid.toggle",
             "layer.create",

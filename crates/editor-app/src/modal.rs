@@ -11,10 +11,20 @@ pub(crate) enum ActiveModal {
     Grid,
     ObjectSnap,
     Units,
+    BlockCreate,
+    BlockRename,
+    BlockDelete,
+    BlockExplode,
+    BlockTransform,
 }
 impl ActiveModal {
     fn title(self) -> &'static str {
         match self {
+            Self::BlockCreate => "创建 Block",
+            Self::BlockRename => "重命名 Block",
+            Self::BlockDelete => "删除 Block 定义",
+            Self::BlockExplode => "拆解 Block",
+            Self::BlockTransform => "Block 实例属性",
             Self::Text => "插入文本",
             Self::Move => "数值移动",
             Self::Rotate => "旋转",
@@ -31,6 +41,7 @@ impl EditorApp {
         if self.busy || self.close_prompt || self.modal.is_some() {
             return;
         }
+        self.cancel_block();
         self.text.cancel();
         self.drag = None;
         if modal != ActiveModal::Units {
@@ -107,6 +118,11 @@ impl EditorApp {
                                     && self.modal_pending.is_none()
                                     && self.text.pending_apply.is_none()),
                             |ui| match modal {
+                                ActiveModal::BlockCreate
+                                | ActiveModal::BlockRename
+                                | ActiveModal::BlockDelete
+                                | ActiveModal::BlockExplode
+                                | ActiveModal::BlockTransform => self.block_modal(ui, modal),
                                 ActiveModal::Units => self.units_modal(ui),
                                 ActiveModal::Text => self.text_controls(ui),
                                 ActiveModal::Rotate | ActiveModal::Mirror => {
@@ -235,12 +251,13 @@ impl EditorApp {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    fn app() -> EditorApp {
+    pub(crate) fn app() -> EditorApp {
         let (tx, _requests) = std::sync::mpsc::sync_channel(1);
         let (_reply, rx) = std::sync::mpsc::sync_channel(1);
         EditorApp {
+            block: Default::default(),
             diagnostic_export: None,
             operation_source: rcam_diagnostics::Source::System,
             tx,
