@@ -4,6 +4,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::mem::size_of;
 
 pub use crate::alignment::{AlignmentMode, DistributionAxis};
+#[path = "array.rs"]
+mod array;
+pub use array::{ArrayEstimate, MAX_ARRAY_CELLS, RectangularArray};
 
 /// World axes: horizontal y=coordinate_mm, vertical x=coordinate_mm.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

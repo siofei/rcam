@@ -287,3 +287,8 @@ identity/platform changes. GUI/IME/outline offset remain open.
 ### S4-C4 closeout (2026-09-27)
 
 S4-C4 Alignment / Distribution = **PASS（Mac-first bounded）**。六种制造 world-AABB 对齐与双轴等边缘间距分布已实现，使用最后选中对象作固定 Anchor；同层原子事务、Undo/Redo、BlockInstance、完整文字组、项目/恢复/导出、诊断和资源限制已验收。语义见 ADR 0040，范围及证据见 S4_C4_PLAN、S4_C4_ACCEPTANCE_ADDENDUM、S4_C4_REVIEW；最终干净提交、原生二进制及包校验身份以 versioned exports/S4C4_*/REVIEW.md 为准。Windows deferred/not executed；不代表完整 V1、CORE10 10/10 或 P100K 通过。C4 后停止，Array/Panelization 未启动。
+
+
+## 2026-09-27 — S4-C5 development
+
+Start bounded non-associative rectangular array implementation, ADR 0041 and local C5 acceptance matrix. Frozen V1 cases/platform requirements are unchanged. IN PROGRESS; acceptance pending.

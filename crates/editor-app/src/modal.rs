@@ -3,6 +3,7 @@ use crate::{EditorApp, PivotMode, state::Action, tools};
 use eframe::egui;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ActiveModal {
+    Array,
     Text,
     Move,
     Rotate,
@@ -25,6 +26,7 @@ impl ActiveModal {
             Self::BlockDelete => "删除 Block 定义",
             Self::BlockExplode => "拆解 Block",
             Self::BlockTransform => "Block 实例属性",
+            Self::Array => "矩形阵列 / Rectangular Array",
             Self::Text => "插入文本",
             Self::Move => "数值移动",
             Self::Rotate => "旋转",
@@ -86,6 +88,8 @@ impl EditorApp {
     pub(crate) fn cancel_modal(&mut self) {
         let keep_measure =
             self.modal == Some(ActiveModal::Units) && self.tool == tools::ActiveTool::Measure;
+        self.array.requested = None;
+        self.view.array_preview = None;
         self.modal = None;
         self.modal_pending = None;
         self.text.cancel();
@@ -123,6 +127,7 @@ impl EditorApp {
                                 | ActiveModal::BlockDelete
                                 | ActiveModal::BlockExplode
                                 | ActiveModal::BlockTransform => self.block_modal(ui, modal),
+                                ActiveModal::Array => self.array_modal(ui),
                                 ActiveModal::Units => self.units_modal(ui),
                                 ActiveModal::Text => self.text_controls(ui),
                                 ActiveModal::Rotate | ActiveModal::Mirror => {
@@ -275,6 +280,7 @@ pub(crate) mod tests {
             spacing: "0.1".into(),
             tool: Default::default(),
             text: Default::default(),
+            array: crate::array_ui::Draft::default(),
             modal: None,
             modal_pending: None,
             draft_snap: false,

@@ -27,6 +27,7 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 #[serde(rename_all = "snake_case")]
 pub enum Source {
     Menu,
+    Context,
     Toolbar,
     Shortcut,
     Canvas,
@@ -708,6 +709,43 @@ impl Operation {
     pub fn selection_count(&mut self, count: usize) {
         if let Some(event) = &mut self.event {
             event.metrics.insert("selection_count".into(), count as u64);
+        }
+    }
+    /// Array dimensions/counts and pitch categories only; never numeric geometry.
+    pub fn array_metadata(
+        &mut self,
+        spec: editor_core::edit::RectangularArray,
+        source: usize,
+        created: usize,
+        contains_block: bool,
+    ) {
+        let sign = |v: f64| {
+            if !v.is_finite() {
+                3
+            } else if v == 0.0 {
+                0
+            } else if v > 0.0 {
+                1
+            } else {
+                2
+            }
+        };
+        if let Some(event) = &mut self.event {
+            for (key, value) in [
+                ("rows", spec.rows),
+                ("columns", spec.columns),
+                (
+                    "cell_count",
+                    spec.rows.checked_mul(spec.columns).unwrap_or(0),
+                ),
+                ("source_object_count", source as u64),
+                ("created_object_count", created as u64),
+                ("source_contains_block", u64::from(contains_block)),
+                ("pitch_x_sign", sign(spec.pitch_x_mm)),
+                ("pitch_y_sign", sign(spec.pitch_y_mm)),
+            ] {
+                event.metrics.insert(key.into(), value);
+            }
         }
     }
     pub fn end(mut self, revision: Option<u64>, error: Option<&str>) {

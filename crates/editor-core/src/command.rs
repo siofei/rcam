@@ -31,6 +31,7 @@ pub mod ids {
     pub const OBJECT_MOVE: CommandId = CommandId("object.move");
     pub const OBJECT_ROTATE: CommandId = CommandId("object.rotate");
     pub const OBJECT_MIRROR: CommandId = CommandId("object.mirror");
+    pub const OBJECT_ARRAY_RECTANGULAR: CommandId = CommandId("objects.array_rectangular");
     pub const OBJECT_ALIGN_LEFT: CommandId = CommandId("objects.align_left");
     pub const OBJECT_ALIGN_RIGHT: CommandId = CommandId("objects.align_right");
     pub const OBJECT_ALIGN_TOP: CommandId = CommandId("objects.align_top");
@@ -336,6 +337,13 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
         d(ids::OBJECT_MOVE, "移动…", C::Object, None, X::Canvas),
         d(ids::OBJECT_ROTATE, "旋转…", C::Object, None, X::Canvas),
         d(ids::OBJECT_MIRROR, "镜像…", C::Object, None, X::Canvas),
+        d(
+            ids::OBJECT_ARRAY_RECTANGULAR,
+            "矩形阵列…",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
         d(ids::OBJECT_ALIGN_LEFT, "左对齐", C::Object, None, X::Canvas),
         d(
             ids::OBJECT_ALIGN_RIGHT,

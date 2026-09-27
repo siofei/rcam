@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod app_tests;
+mod array_ui;
 mod block_display;
 mod block_ui;
 mod camera;
@@ -83,6 +84,7 @@ struct EditorApp {
     spacing: String,
     tool: tools::ActiveTool,
     text: text_tool::Draft,
+    array: array_ui::Draft,
     modal: Option<ActiveModal>,
     modal_pending: Option<u64>,
     draft_snap: bool,
@@ -249,6 +251,7 @@ impl EditorApp {
             spacing: "0.1".into(),
             tool: Default::default(),
             text: Default::default(),
+            array: array_ui::Draft::default(),
             modal: None,
             modal_pending: None,
             draft_snap: false,
@@ -318,6 +321,8 @@ impl EditorApp {
     fn send(&mut self, a: Action) {
         let source = if matches!(&a, Action::RestoreProject(..) | Action::RecoveryWrite(..)) {
             rcam_diagnostics::Source::Recovery
+        } else if matches!(&a, Action::ArrayApply(..)) {
+            self.array.source
         } else if self.modal.is_some() {
             rcam_diagnostics::Source::Modal
         } else {
@@ -345,7 +350,8 @@ impl EditorApp {
         if self.modal.is_some()
             && matches!(
                 a,
-                Action::BlockEdit(..)
+                Action::ArrayApply(..)
+                    | Action::BlockEdit(..)
                     | Action::Move(..)
                     | Action::Rotate(..)
                     | Action::Mirror(..)
@@ -467,6 +473,18 @@ impl EditorApp {
             );
             ui.separator();
         }
+        ui.menu_button("阵列", |ui| {
+            if ui
+                .add_enabled(
+                    usable && array_ui::eligible(&self.view),
+                    egui::Button::new("矩形阵列…"),
+                )
+                .clicked()
+            {
+                self.dispatch(command_ids::OBJECT_ARRAY_RECTANGULAR);
+                ui.close();
+            }
+        });
         ui.menu_button("对齐", |ui| {
             ui.add_enabled_ui(usable && eligibility.align, |ui| {
                 for (label, command) in [
@@ -746,6 +764,10 @@ impl CommandDispatcher for EditorApp {
     type Outcome = bool;
 
     fn dispatch(&mut self, command: CommandId) -> Self::Outcome {
+        if command == command_ids::OBJECT_ARRAY_RECTANGULAR {
+            self.open_array();
+            return true;
+        }
         if self.block_command(command) {
             return true;
         }
@@ -879,6 +901,7 @@ impl eframe::App for EditorApp {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
+            self.accept_array_reply();
             recovery::complete_write(
                 &mut self.pending_recovery_identity,
                 &mut self.last_recovered_identity,
@@ -2037,7 +2060,8 @@ impl eframe::App for EditorApp {
                 if self.block.session.is_some() && !modal_open && !text_focus { self.block_canvas(ctx, &r, rect); }
                 if self.tool == tools::ActiveTool::Select && !modal_open {
                     r.context_menu(|ui| {
-                        ui.menu_button("对齐 / 分布", |ui| self.arrangement_entries(ui));
+                        self.operation_source = rcam_diagnostics::Source::Context;
+                        ui.menu_button("排列 / 阵列", |ui| self.arrangement_entries(ui));
                         ui.separator();
                         self.block_entries(ui);
                     });
@@ -2259,6 +2283,7 @@ impl eframe::App for EditorApp {
                         ctx.pixels_per_point()
                     );
                 }
+                self.paint_array(&painter, rect, ctx.pixels_per_point());
                 self.grid.paint(
                     &painter,
                     self.camera,

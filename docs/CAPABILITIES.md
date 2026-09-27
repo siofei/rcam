@@ -281,3 +281,8 @@ C3 收口时的 `system.capabilities.stage` 为 `S4-C3 Block Editor v1 (Mac-firs
 ### S4-C4 closeout (2026-09-27)
 
 S4-C4 Alignment / Distribution = **PASS（Mac-first bounded）**。六种制造 world-AABB 对齐与双轴等边缘间距分布已实现，使用最后选中对象作固定 Anchor；同层原子事务、Undo/Redo、BlockInstance、完整文字组、项目/恢复/导出、诊断和资源限制已验收。语义见 ADR 0040，范围及证据见 S4_C4_PLAN、S4_C4_ACCEPTANCE_ADDENDUM、S4_C4_REVIEW；最终干净提交、原生二进制及包校验身份以 versioned exports/S4C4_*/REVIEW.md 为准。Windows deferred/not executed；不代表完整 V1、CORE10 10/10 或 P100K 通过。C4 后停止，Array/Panelization 未启动。
+
+
+### S4-C5 Array / Panelization v1 (in progress)
+
+The user started S4-C5 on 2026-09-27. Scope is non-associative Rectangular Array only, via `objects.array_rectangular`: same-layer contiguous ordered source, complete text groups, signed f64 mm pitch, row-major cells and shared Block/Aperture definitions. Original cell is unchanged; copies follow its span in one Undo transaction. UI preview is transient and bounded. See S4_C5_PLAN, S4_C5_ACCEPTANCE_ADDENDUM and ADR 0041. Earlier “Array not started” statements describe C4 closeout; C5 is now IN PROGRESS, not PASS. Windows deferred/not executed; no full V1/CORE10/P100K claim. Stop after C5, without PnP/RefDes or associative arrays.

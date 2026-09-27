@@ -39,6 +39,8 @@ fn s4c4_fixture_identity(name: &str) -> Option<String> {
         S4C4_ARRANGEMENT_FIXTURE_NAME => S4C4_ARRANGEMENT_FIXTURE,
         "negative-gap.gbr" => S4C4_NEGATIVE_GAP_FIXTURE,
         "grid-1000.gbr" => S4C4_GRID_FIXTURE,
+        "array-dcd.gbr" => include_bytes!("../../../fixtures/synthetic/s4c5/array-dcd.gbr"),
+        "array-400.gbr" => include_bytes!("../../../fixtures/synthetic/s4c5/array-400.gbr"),
         _ => return None,
     };
     Some(editor_core::hash::sha256_hex(bytes))
@@ -711,6 +713,11 @@ pub fn action_text(a: &Action) -> String {
             drag.delta.y_mm
         ),
         Action::Move(dx, dy) => format!("Move {dx} {dy}"),
+        Action::ArrayPreview(_) => "array.preview".into(),
+        Action::ArrayApply(r) => format!(
+            "objects.array_rectangular rows={} columns={}",
+            r.params.rows, r.params.columns
+        ),
         Action::Align(mode) => format!("objects.align mode={mode:?}"),
         Action::Distribute(axis) => format!("objects.distribute axis={axis:?}"),
         Action::Rotate(..) => "Rotate".into(),
@@ -962,6 +969,7 @@ impl EditorApp {
             "instance_count": self.view.block_counts.values().sum::<usize>(),
             "session": self.block.session.as_ref().map(|s| json!({"kind": if matches!(s.kind, crate::block_ui::SessionKind::Create { .. }) {"create"} else {"place"}, "preview_paths":s.preview.as_ref().map(|p|p.paths.len()), "preview_build_us":s.preview.as_ref().map(|p|p.build_us),"preview_ppm":s.preview.as_ref().map(|p|p.ppm)})),
         });
+        observation["array"] = self.view.array_preview.as_ref().map(|p| json!({"rows":p.request.params.rows,"columns":p.request.params.columns,"cells":p.estimate.cell_count,"created_objects":p.estimate.created_object_count,"preview_paths":p.paths.len(),"preview_build_us":p.build_us,"simplified":p.simplified,"modal_open":self.modal==Some(crate::modal::ActiveModal::Array)})).unwrap_or(Value::Null);
         observation["display_unit"] = json!(self.display_unit.suffix());
         observation["grid_visible"] = json!(self.grid.visible);
         observation["grid_spacing_mm"] = json!(self.grid.spacing_mm);

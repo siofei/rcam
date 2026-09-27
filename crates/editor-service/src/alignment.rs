@@ -142,7 +142,7 @@ impl ApplicationService {
     }
 }
 
-fn check_arrangement_targets(
+pub(super) fn check_arrangement_targets(
     record: &S1DocumentRecord,
     layer_id: &str,
     ids: &[String],
@@ -166,7 +166,7 @@ fn check_arrangement_targets(
                 if layer.id != layer_id {
                     return Err(ServiceError {
                         code: "CROSS_LAYER_EDIT_UNSUPPORTED".into(),
-                        message: "对齐和分布仅支持同一可编辑图层。".into(),
+                        message: "操作仅支持同一可编辑图层。".into(),
                         details: serde_json::json!({"field":"object_ids"}),
                     });
                 }
@@ -181,7 +181,7 @@ fn check_arrangement_targets(
     if !workspace::layer_selectable(record, layer_id)? {
         return Err(ServiceError::invalid_field(
             "layer_id",
-            "对齐和分布要求可见、可选的图层",
+            "操作要求可见、可选的图层",
         ));
     }
     let state = &record.workspace[layer_id];

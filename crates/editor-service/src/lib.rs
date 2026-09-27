@@ -4,7 +4,9 @@
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
 mod alignment;
+mod array;
 pub use alignment::{AlignParams, AlignmentMode, DistributeParams, DistributionAxis};
+pub use array::ArrayRectangularParams;
 mod grip;
 mod metrics;
 pub use grip::GripEditParams;
@@ -3048,6 +3050,7 @@ impl ApplicationService {
             | "layers.update_many"
             | "layers.reset_colors"
             | "objects.move"
+            | "objects.array_rectangular"
             | "objects.align"
             | "objects.distribute"
             | "objects.rotate"
@@ -3132,6 +3135,14 @@ impl ApplicationService {
                         parse_params(&request.params)?,
                     )?)
                     .map_err(serialize_error)?,
+                    "objects.array_rectangular" => {
+                        serde_json::to_value(self.objects_array_rectangular(
+                            id,
+                            revision,
+                            parse_params(&request.params)?,
+                        )?)
+                        .map_err(serialize_error)?
+                    }
                     "objects.align" => serde_json::to_value(self.objects_align(
                         id,
                         revision,

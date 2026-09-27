@@ -323,50 +323,11 @@ impl Model {
                 },
             )
             .map_err(|e| fail(&e))?;
-        let mut paths = vec![];
-        let mut total = 0usize;
-        for object in resolved {
-            for edge in editor_core::hit_test::display_boundary_edges(
-                &object.geometry,
-                &self.view.apertures,
-            )
-            .map_err(|e| fail(&e.to_string()))?
-            {
-                let path = match edge {
-                    RegionEdge::Line { start, end } => vec![start, end],
-                    RegionEdge::Arc(a) => {
-                        let sweep = a.sweep_radians().ok_or_else(|| fail("无效圆弧"))?;
-                        let step =
-                            4. * (0.25 / (2. * ppm * a.radius())).clamp(0., 1.).sqrt().asin();
-                        let n = (sweep / step).ceil().max(1.);
-                        if n > 100_000. {
-                            return Err(fail("RESOURCE_LIMIT: Block 预览细分超限"));
-                        }
-                        let angle =
-                            (a.start.y_mm - a.center.y_mm).atan2(a.start.x_mm - a.center.x_mm);
-                        let sign = if a.direction == editor_core::ArcDirection::Clockwise {
-                            -1.
-                        } else {
-                            1.
-                        };
-                        (0..=n as usize)
-                            .map(|i| {
-                                let t = angle + sign * sweep * i as f64 / n;
-                                MmPoint::new(
-                                    a.center.x_mm + a.radius() * t.cos(),
-                                    a.center.y_mm + a.radius() * t.sin(),
-                                )
-                            })
-                            .collect()
-                    }
-                };
-                total += path.len();
-                if total > 200_000 {
-                    return Err(fail("RESOURCE_LIMIT: Block 预览点数超限"));
-                }
-                paths.push(path);
-            }
-        }
+        let paths = preview_paths(
+            resolved.iter().map(|o| &o.geometry),
+            &self.view.apertures,
+            ppm,
+        )?;
         self.view.block_cache_stats = self.block_display_cache.stats();
         self.view.block_preview = Some(Arc::new(Preview {
             context,
@@ -377,6 +338,53 @@ impl Model {
         }));
         Ok(())
     }
+}
+/// Shared display-only outlines, built on the worker and reused by Block/Array previews.
+pub(crate) fn preview_paths<'a>(
+    geometries: impl Iterator<Item = &'a SemanticGeometry>,
+    apertures: &[editor_core::ApertureDefinition],
+    ppm: f64,
+) -> Result<Vec<Vec<MmPoint>>, ServiceError> {
+    let mut paths = vec![];
+    let mut total = 0usize;
+    for geometry in geometries {
+        for edge in editor_core::hit_test::display_boundary_edges(geometry, apertures)
+            .map_err(|e| fail(&e.to_string()))?
+        {
+            let path = match edge {
+                RegionEdge::Line { start, end } => vec![start, end],
+                RegionEdge::Arc(a) => {
+                    let sweep = a.sweep_radians().ok_or_else(|| fail("无效圆弧"))?;
+                    let step = 4. * (0.25 / (2. * ppm * a.radius())).clamp(0., 1.).sqrt().asin();
+                    let n = (sweep / step).ceil().max(1.);
+                    if n > 100_000. {
+                        return Err(fail("RESOURCE_LIMIT: Block 预览细分超限"));
+                    }
+                    let angle = (a.start.y_mm - a.center.y_mm).atan2(a.start.x_mm - a.center.x_mm);
+                    let sign = if a.direction == editor_core::ArcDirection::Clockwise {
+                        -1.
+                    } else {
+                        1.
+                    };
+                    (0..=n as usize)
+                        .map(|i| {
+                            let t = angle + sign * sweep * i as f64 / n;
+                            MmPoint::new(
+                                a.center.x_mm + a.radius() * t.cos(),
+                                a.center.y_mm + a.radius() * t.sin(),
+                            )
+                        })
+                        .collect()
+                }
+            };
+            total += path.len();
+            if total > 200_000 {
+                return Err(fail("RESOURCE_LIMIT: Block 预览点数超限"));
+            }
+            paths.push(path);
+        }
+    }
+    Ok(paths)
 }
 impl EditorApp {
     pub(crate) fn cancel_block(&mut self) {
@@ -889,7 +897,7 @@ impl EditorApp {
 
 #[cfg(test)]
 #[path = "../../rcam-project/tests/common/mod.rs"]
-mod fixtures;
+pub(crate) mod fixtures;
 
 #[cfg(test)]
 mod tests {

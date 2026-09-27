@@ -17,6 +17,7 @@ pub struct View {
     pub layers: Vec<LayerInfo>,
     pub apertures: Vec<editor_core::ApertureDefinition>,
     pub block_cache_stats: (usize, usize),
+    pub array_preview: Option<Arc<crate::array_ui::Preview>>,
     pub block_preview: Option<Arc<crate::block_ui::Preview>>,
     pub block_counts: std::collections::HashMap<String, usize>,
     pub block_definitions: Vec<editor_core::block::BlockDefinition>,
@@ -211,6 +212,8 @@ pub enum MirrorDirection {
     Vertical,
 }
 pub enum Action {
+    ArrayPreview(Box<crate::array_ui::Request>),
+    ArrayApply(Box<crate::array_ui::Request>),
     BlockEdit(Box<crate::block_ui::Request>),
     BlockPreview(crate::block_ui::Context, String, f64),
     BlockSelect(String),
@@ -1231,6 +1234,8 @@ impl Model {
         self.view.focus_bounds = None;
         let result = (|| match action {
             Action::BlockEdit(request) => self.block_edit(*request),
+            Action::ArrayPreview(request) => self.array_preview(*request),
+            Action::ArrayApply(request) => self.array_apply(*request),
             Action::BlockPreview(context, id, ppm) => self.block_preview(context, id, ppm),
             Action::BlockSelect(id) => self.block_select(&id),
             Action::Open(path) => self.open(&path),
