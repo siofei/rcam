@@ -360,6 +360,15 @@ fn object_history_and_edge_budgets_preflight_exact_boundaries() {
     let selected = ids(&d);
     let before = d.clone();
     let mut h = EditHistory::default();
+    let mut exact_objects = d.clone();
+    run(
+        &mut exact_objects,
+        &mut EditHistory::default(),
+        &selected,
+        spec(1, 5001, 1., 0.),
+    )
+    .unwrap();
+    assert_eq!(exact_objects.layers[0].objects.len(), 10_002);
     assert_eq!(
         run(&mut d, &mut h, &selected, spec(1, 5002, 1., 0.)),
         Err(EditError::ResourceLimit)
@@ -420,4 +429,34 @@ fn object_history_and_edge_budgets_preflight_exact_boundaries() {
     assert_eq!(h.undo_len(), 0);
     let created = run(&mut d, &mut h, &selected, spec(1, 2, 10., 0.)).unwrap();
     assert_eq!(created[0], "array-generated-object-0");
+}
+
+#[test]
+fn document_object_budget_includes_other_layers_at_exact_boundary() {
+    use editor_core::edit::MAX_EDIT_DOCUMENT_OBJECTS;
+    let mut d = doc(1);
+    let selected = ids(&d);
+    d.layers.push(SemanticLayer {
+        id: "other".into(),
+        objects: (1..MAX_EDIT_DOCUMENT_OBJECTS - 1).map(object).collect(),
+    });
+    let mut history = EditHistory::default();
+    let made = run(&mut d, &mut history, &selected, spec(1, 2, 10., 0.)).unwrap();
+    assert_eq!(made, ["array-generated-object-0"]);
+    assert_eq!(
+        d.layers.iter().map(|l| l.objects.len()).sum::<usize>(),
+        MAX_EDIT_DOCUMENT_OBJECTS
+    );
+    let bytes = history.bytes();
+    assert_eq!(
+        run(&mut d, &mut history, &selected, spec(1, 2, 10., 0.)),
+        Err(EditError::ResourceLimit)
+    );
+    assert_eq!(history.bytes(), bytes);
+    assert_eq!(history.undo_len(), 1);
+    assert_eq!(d.layers[0].objects.len(), 2);
+    // Make room without touching the edited layer, then prove rejection consumed no ID.
+    d.layers[1].objects.pop();
+    let made = run(&mut d, &mut history, &selected, spec(1, 2, 20., 0.)).unwrap();
+    assert_eq!(made, ["array-generated-object-1"]);
 }

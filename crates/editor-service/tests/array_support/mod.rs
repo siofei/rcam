@@ -119,6 +119,24 @@ impl Run {
 }
 impl Drop for Run {
     fn drop(&mut self) {
+        if let Some(output) = std::env::var_os("RCAM_S4C5_EVIDENCE_DIR") {
+            fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
+                std::fs::create_dir_all(destination).unwrap();
+                for entry in std::fs::read_dir(source).unwrap() {
+                    let entry = entry.unwrap();
+                    let target = destination.join(entry.file_name());
+                    if entry.file_type().unwrap().is_dir() {
+                        copy_tree(&entry.path(), &target);
+                    } else {
+                        std::fs::copy(entry.path(), target).unwrap();
+                    }
+                }
+            }
+            copy_tree(
+                &self.dir,
+                &PathBuf::from(output).join(self.dir.file_name().unwrap()),
+            );
+        }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }

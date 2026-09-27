@@ -29,7 +29,7 @@ def main():
     (out/'tested-source-before.sha256').write_text(identity)
     (out/'environment.json').write_text(json.dumps(dict(schema_version=2,stage='S4-C5',platform=platform.platform(),machine=platform.machine(),windows='deferred / not executed',clean=not bool(status)),indent=2)+'\n')
     env = dict(os.environ)
-    env.update(PATH=str((ROOT/'.tools/cargo/bin').resolve())+os.pathsep+env['PATH'],CARGO_HOME=str((ROOT/'.tools/cargo').resolve()),RUSTUP_HOME=str((ROOT/'.tools/rustup').resolve()),CARGO_TARGET_DIR=str((ROOT/'.tools/target').resolve()),PYTHONPYCACHEPREFIX='/tmp/rcam-c5-pycache')
+    env.update(PATH=str((ROOT/'.tools/cargo/bin').resolve())+os.pathsep+env['PATH'],CARGO_HOME=str((ROOT/'.tools/cargo').resolve()),RUSTUP_HOME=str((ROOT/'.tools/rustup').resolve()),CARGO_TARGET_DIR=str((ROOT/'.tools/target').resolve()),PYTHONPYCACHEPREFIX='/tmp/rcam-c5-pycache',RCAM_S4C5_EVIDENCE_DIR=str(out/'array-artifacts'))
     commands = [
         ['cargo','fmt','--all','--','--check'],
         ['cargo','check','--workspace','--all-targets','--locked'],
