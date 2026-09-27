@@ -1010,7 +1010,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-C5 Array / Panelization v1 (Mac-first; native acceptance pending)".into(),
+            stage: "S4-C5 Array / Panelization v1 (Mac-first bounded)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),

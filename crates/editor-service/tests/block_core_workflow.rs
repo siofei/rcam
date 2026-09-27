@@ -518,7 +518,7 @@ fn capabilities_advertise_every_block_op_as_dispatchable() {
     assert_eq!(response["status"], "completed");
     assert_eq!(
         response["result"]["stage"],
-        "S4-C5 Array / Panelization v1 (Mac-first; native acceptance pending)"
+        "S4-C5 Array / Panelization v1 (Mac-first bounded)"
     );
     let caps = w.svc.capabilities();
     assert_eq!(serde_json::to_value(&caps).unwrap(), response["result"]);

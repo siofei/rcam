@@ -1,6 +1,6 @@
 # S4-C5 local acceptance addendum
 
-schema_version=2. All cases initially NOT EXECUTED; evidence belongs to immutable runs. Frozen ACCEPTANCE_V1.md and acceptance_cases.json are unchanged.
+schema_version=2. C5-01 through C5-13 are covered by automated, native and delivery checks; see S4_C5_REVIEW and the versioned exports review for actual results and source/binary identities. Evidence belongs to immutable runs. Frozen ACCEPTANCE_V1.md and acceptance_cases.json are unchanged.
 
 | Case | Required evidence |
 |---|---|

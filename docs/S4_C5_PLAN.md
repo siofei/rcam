@@ -1,6 +1,6 @@
 # S4-C5 Array / Panelization v1
 
-Status: IN PROGRESS (Mac-first). User started the supplied S4-C5 task on 2026-09-27. C4 closeout remains unchanged.
+Status: PASS (Mac-first bounded), 2026-09-28; final delivery identity is recorded in the versioned exports review. User started the supplied S4-C5 task on 2026-09-27. C4 closeout remains unchanged.
 
 Scope: non-associative rectangular array, ordinary objects and shared BlockInstances, one service transaction, numeric modal and transient bounded preview, diagnostics, semantic/resource/project/export/recovery tests, release benchmarks, native acceptance and versioned four-file delivery. No new schema/entity, automatic Create Block, circular/staggered array, PnP/RefDes or subsequent stage.
 

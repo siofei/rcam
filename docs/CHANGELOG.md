@@ -292,3 +292,7 @@ S4-C4 Alignment / Distribution = **PASS（Mac-first bounded）**。六种制造 
 ## 2026-09-27 — S4-C5 development
 
 Start bounded non-associative rectangular array implementation, ADR 0041 and local C5 acceptance matrix. Frozen V1 cases/platform requirements are unchanged. IN PROGRESS; acceptance pending.
+
+## 2026-09-28 — S4-C5 bounded closeout
+
+Rectangular Array core/service/modal, bounded preview, signed row-major exposure copies, per-cell text identity, shared Block/Aperture references, atomic resource checks and exact Undo/Redo are accepted Mac-first. Project/recovery/expanded Gerber, diagnostics, release benchmarks and native CUA checks are recorded in S4_C5_REVIEW; final source/native/package identities belong to the versioned exports review. Windows/full V1/CORE10/P100K remain deferred. Stop after C5.

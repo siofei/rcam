@@ -91,7 +91,7 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
     let capabilities = service.capabilities();
     assert_eq!(
         capabilities.stage,
-        "S4-C5 Array / Panelization v1 (Mac-first; native acceptance pending)"
+        "S4-C5 Array / Panelization v1 (Mac-first bounded)"
     );
     for operation in [
         "system.capabilities",

@@ -97,7 +97,7 @@ cargo build --release --locked -p editor-app
 **S4-B1 Multi-Gerber Workspace = PASS（Mac-first）**（见 docs/S4_B1_REVIEW.md）；**S4-B2 Block Core + `.rcam` schema v1 = PASS（Mac-first）**（见 docs/S4_B2_REVIEW.md）；**S4-B3 `.rcam` Project Lifecycle = PASS（Mac-first）**（见 docs/S4_B3_PLAN.md、docs/S4_B3_REVIEW.md、ADR 0033 / 0034）。**S4-C1 Full Object Snap = PASS（Mac-first bounded）**（见 docs/S4_C1_REVIEW.md）；**INFRA1 Runtime Diagnostics = PASS（Mac-first bounded）**（见 exports/INFRA1_PANIC_c65bee0/REVIEW.md）；**S4-C2 Grip Editing v1 = PASS（Mac-first bounded）**（见 exports/S4C2_f1293f2/REVIEW.md）；**S4-C3 Block Editor v1 = PASS（Mac-first bounded）**（见 docs/S4_C3_REVIEW.md）。
 Global Units & Manufacturing Precision Foundation 按 Mac-first 范围收口（见 GLOBAL_UNITS_PRECISION_REVIEW）；
 不声称 Windows、完整 V1、P100K 或完整 CORE10。
-S4-C1、INFRA1、S4-C2、S4-C3 均已按各自证据完成 Mac-first bounded closeout。S4-C2 限制 Hole/Arc-edged Region node Grip、Macro Grip、多对象 Grip 与 Windows；C3 不含内部 Definition 编辑、Array、Alignment、PnP/RefDes。当前阶段为 **S4-C4 Alignment / Distribution**，PASS（Mac-first bounded）。Windows deferred / not executed；最终双平台 V1、CORE10 10/10 与 P100K 门槛保持不变。
+S4-C1、INFRA1、S4-C2、S4-C3 均已按各自证据完成 Mac-first bounded closeout。S4-C2 限制 Hole/Arc-edged Region node Grip、Macro Grip、多对象 Grip 与 Windows；C3 不含内部 Definition 编辑、Array、Alignment、PnP/RefDes。C4 收口时阶段为 **S4-C4 Alignment / Distribution**，PASS（Mac-first bounded）；当前 S4-C5 状态见末节。Windows deferred / not executed；最终双平台 V1、CORE10 10/10 与 P100K 门槛保持不变。
 
 ## Forward Architecture Reservations（长期约束，S4-B1 合并）
 
@@ -170,13 +170,13 @@ INFRA1 Runtime Diagnostics 与 panic hook closeout 最终为 PASS（Mac-first bo
 
 Block Library、Create/Base Point、Place、Transform、Rename/Delete、Select Instances、Explode、Project、Gerber flatten 与 Diagnostics 已通过 Mac-first bounded 验收；制造修改仍经 ApplicationService。最终复审及 package identity 见 `docs/S4_C3_REVIEW.md`。内部 Definition 编辑、Array、Alignment、PnP/RefDes 与 Windows deferred。
 
-当前阶段为 **S4-C4 Alignment / Distribution**，PASS（Mac-first bounded）。Windows deferred / not executed，最终双平台 V1、CORE10 10/10 与 P100K 门槛不变。
+C4 收口时阶段为 **S4-C4 Alignment / Distribution**，PASS（Mac-first bounded）；当前 S4-C5 状态见末节。Windows deferred / not executed，最终双平台 V1、CORE10 10/10 与 P100K 门槛不变。
 
 ### S4-C4 closeout (2026-09-27)
 
 S4-C4 Alignment / Distribution = **PASS（Mac-first bounded）**。六种制造 world-AABB 对齐与双轴等边缘间距分布已实现，使用最后选中对象作固定 Anchor；同层原子事务、Undo/Redo、BlockInstance、完整文字组、项目/恢复/导出、诊断和资源限制已验收。语义见 ADR 0040，范围及证据见 S4_C4_PLAN、S4_C4_ACCEPTANCE_ADDENDUM、S4_C4_REVIEW；最终干净提交、原生二进制及包校验身份以 versioned exports/S4C4_*/REVIEW.md 为准。Windows deferred/not executed；不代表完整 V1、CORE10 10/10 或 P100K 通过。C4 后停止，Array/Panelization 未启动。
 
 
-### S4-C5 Array / Panelization v1 (in progress)
+### S4-C5 Array / Panelization v1 (PASS, Mac-first bounded; 2026-09-28)
 
-The user started S4-C5 on 2026-09-27. Scope is non-associative Rectangular Array only, via `objects.array_rectangular`: same-layer contiguous ordered source, complete text groups, signed f64 mm pitch, row-major cells and shared Block/Aperture definitions. Original cell is unchanged; copies follow its span in one Undo transaction. UI preview is transient and bounded. See S4_C5_PLAN, S4_C5_ACCEPTANCE_ADDENDUM and ADR 0041. Earlier “Array not started” statements describe C4 closeout; C5 is now IN PROGRESS, not PASS. Windows deferred/not executed; no full V1/CORE10/P100K claim. Stop after C5, without PnP/RefDes or associative arrays.
+The user started S4-C5 on 2026-09-27. Scope is non-associative Rectangular Array only, via `objects.array_rectangular`: same-layer contiguous ordered source, complete text groups, signed f64 mm pitch, row-major cells and shared Block/Aperture definitions. Original cell is unchanged; copies follow its span in one Undo transaction. UI preview is transient and bounded. See S4_C5_PLAN, S4_C5_ACCEPTANCE_ADDENDUM and ADR 0041. Earlier “Array not started” statements describe C4 closeout. S4-C5 is PASS (Mac-first bounded); final clean source, native binary and four-file package identity are recorded in the versioned exports review and S4_C5_REVIEW. Windows deferred/not executed; no full V1/CORE10/P100K claim. Stop after C5, without PnP/RefDes or associative arrays.
