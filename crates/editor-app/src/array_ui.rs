@@ -134,6 +134,9 @@ impl Model {
         });
         let paths = if let Some(previous) = previous {
             previous.paths.clone()
+        } else if source_outline_cost(&self.view) > 10_000 {
+            // Bound expansion before resolving/cloning shared Block geometry.
+            Arc::new(vec![])
         } else {
             let mut geometries = vec![];
             for selected in &self.view.selected.ordered {
@@ -173,6 +176,15 @@ impl Model {
         let simplified = paths.is_empty()
             || estimate.cell_count > 1000
             || points.saturating_mul(estimate.cell_count) > 200_000;
+        if simplified {
+            static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            rcam_diagnostics::rate_limited(
+                &LAST,
+                rcam_diagnostics::Level::Debug,
+                "array.preview.simplified",
+                &[("cell_count", estimate.cell_count as u64)],
+            );
+        }
         self.view.block_cache_stats = self.block_display_cache.stats();
         self.view.array_preview = Some(Arc::new(Preview {
             request,
@@ -205,6 +217,33 @@ impl Model {
         }
         Ok(())
     }
+}
+fn source_outline_cost(view: &View) -> usize {
+    use editor_core::block::BlockObjectGeometry;
+    let edges = |contours: &[editor_core::RegionContour]| {
+        contours
+            .iter()
+            .fold(1usize, |n, c| n.saturating_add(c.edges.len()))
+    };
+    view.selected.ordered.iter().fold(0usize, |n, selected| {
+        n.saturating_add(match &selected.object.geometry {
+            SemanticGeometry::Region { contours } => edges(contours),
+            SemanticGeometry::BlockInstance { definition_id, .. } => view
+                .block_definitions
+                .iter()
+                .find(|d| d.id == *definition_id)
+                .map(|d| {
+                    d.objects.iter().fold(0usize, |n, o| {
+                        n.saturating_add(match &o.geometry {
+                            BlockObjectGeometry::Region { contours } => edges(contours),
+                            _ => 1,
+                        })
+                    })
+                })
+                .unwrap_or(usize::MAX),
+            _ => 1,
+        })
+    })
 }
 impl EditorApp {
     pub(crate) fn accept_array_reply(&mut self) {
@@ -512,6 +551,29 @@ mod tests {
         assert_eq!(second.estimate.created_object_count, 9999);
         assert!(Arc::ptr_eq(&first.paths, &second.paths));
         assert_eq!(model.view.info.as_ref().unwrap().undo_entries, 0);
+    }
+    #[test]
+    fn array_preview_bounds_expansion_before_resolving_many_block_instances() {
+        let mut model = Model::default();
+        model.run(Action::RestoreProject(
+            rcam_project::encode_v1(&fixtures::big_project(400, 100)).unwrap(),
+        ));
+        let definition = model.view.block_definitions[0].id.0.clone();
+        model.run(Action::BlockSelect(definition));
+        assert_eq!(model.view.selected.ordered.len(), 100);
+        let mut app = crate::modal::tests::app();
+        app.view = model.view.clone();
+        app.modal = Some(ActiveModal::Array);
+        app.array.rows = "1".into();
+        app.array.columns = "2".into();
+        let request = app.array_request().unwrap();
+        let before = model.block_display_cache.stats();
+        model.array_preview(request).unwrap();
+        let preview = model.view.array_preview.as_ref().unwrap();
+        assert!(preview.simplified);
+        assert!(preview.paths.is_empty());
+        assert_eq!(preview.estimate.created_object_count, 100);
+        assert_eq!(model.block_display_cache.stats(), before);
     }
     #[test]
     #[ignore = "release preview timing with 400 shared Block primitives"]

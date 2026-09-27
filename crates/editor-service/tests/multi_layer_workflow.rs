@@ -1951,7 +1951,7 @@ fn capabilities_are_consistent_with_the_supported_operations() {
     let caps = service.capabilities();
     assert_eq!(
         caps.stage,
-        "S4-C4 Alignment / Distribution (Mac-first bounded)"
+        "S4-C5 Array / Panelization v1 (Mac-first; native acceptance pending)"
     );
     for op in [
         "document.new",

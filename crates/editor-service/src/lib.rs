@@ -1010,7 +1010,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-C4 Alignment / Distribution (Mac-first bounded)".into(),
+            stage: "S4-C5 Array / Panelization v1 (Mac-first; native acceptance pending)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -1029,6 +1029,7 @@ impl ApplicationService {
                 "objects.set_properties".into(),
                 "objects.grips".into(),
                 "objects.grip_edit".into(),
+                "objects.array_rectangular".into(),
                 "objects.align".into(),
                 "objects.distribute".into(),
                 "edit.batch".into(),
