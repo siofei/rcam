@@ -746,6 +746,11 @@ impl EditorApp {
             probe.frames_left -= 1;
             observation["native_closeout"] = json!({"frame": ctx.cumulative_frame_nr(), "label": probe.label,
                 "input_origin": "instrumented_eframe_raw_input_hook",
+                "active_tool": match self.tool {
+                    crate::tools::ActiveTool::Select => "Select",
+                    crate::tools::ActiveTool::Measure => "Measure",
+                    crate::tools::ActiveTool::Text => "Text",
+                },
                 "alt_down": ctx.input(|i| i.modifiers.alt),
                 "focused": ctx.input(|i| i.focused),
                 "primary_down": ctx.input(|i| i.pointer.primary_down()),
