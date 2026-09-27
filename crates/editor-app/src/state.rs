@@ -604,9 +604,8 @@ impl Model {
             self.view.snap_snapshot = Some(snapshot.clone());
             self.snapshot = Some(snapshot);
         }
-        // Selection follows the selectable policy: an object that became hidden or
-        // non-selectable (layer or category) leaves the selection so a later Delete
-        // cannot act on something the user cannot see. Locking never deselects.
+        // Hidden objects leave selection. Visible non-selectable objects retain
+        // identity for inspection; edit_targets and Grip independently refuse edits.
         let mut selected = Vec::new();
         let previous = std::mem::take(&mut self.view.selected.ordered);
         for o in previous {
@@ -623,7 +622,7 @@ impl Model {
             }
         }
         let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
-        selected.retain(|o| classifier.selectable(o));
+        selected.retain(|o| classifier.visible(o));
         self.view.selected.ordered = selected;
         self.rebuild();
         Ok(())
@@ -818,10 +817,10 @@ impl Model {
                 Some(_) => return Err(error("NOT_FOUND", "图层不存在")),
                 None => {}
             }
-            if !classifier.visible(o) {
+            if !classifier.selectable(o) {
                 return Err(error(
                     "INVALID_ARGUMENT",
-                    "选择包含隐藏对象，整组操作已拒绝",
+                    "选择包含隐藏或不可选对象，整组操作已拒绝",
                 ));
             }
             if o.layer_id != primary.layer_id {

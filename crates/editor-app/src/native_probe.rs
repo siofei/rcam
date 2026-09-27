@@ -2,12 +2,13 @@
 //! S4-C2 geometry observation additionally requires `RCAM_NATIVE_SYNTHETIC_GRIP_SHA256`
 //! to equal the embedded public fixture hash and matching import provenance.
 //!
-//! It only *observes*: every frame whose observable state changed appends one JSON
+//! By default it only *observes*: every frame whose observable state changed appends one JSON
 //! line to `native_observations.jsonl` (layers, revisions, dialogs, the exact screen
 //! rectangle of each Layer-row control, pixels-per-point, panel width...), every
 //! action sent to the service is appended to `native_actions.log`, and a screenshot
 //! is written as `screens/<label>.ppm` when a `shot.request` file containing the label
-//! appears in the directory. Nothing here changes application or manufacturing state.
+//! appears in the directory. The separately opted-in closeout driver below injects
+//! fixture-only native RawInput; it never calls Grip preview/commit helpers.
 use crate::{
     EditorApp, grip,
     state::{Action, View},
@@ -15,7 +16,7 @@ use crate::{
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
-    io::Write,
+    io::{Read, Write},
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -49,6 +50,10 @@ pub struct Probe {
     fixture_sha256: String,
     synthetic_grip_opt_in: bool,
     pub drops: u32,
+    closeout: bool,
+    frames_left: u32,
+    label: String,
+    context_transition: Option<String>,
 }
 
 impl Probe {
@@ -67,6 +72,10 @@ impl Probe {
             fixture_sha256,
             synthetic_grip_opt_in,
             drops: 0,
+            closeout: std::env::var("RCAM_NATIVE_CLOSEOUT").ok().as_deref() == Some("1"),
+            frames_left: 0,
+            label: String::new(),
+            context_transition: None,
         };
         probe.action("PROBE_START");
         Some(probe)
@@ -729,6 +738,24 @@ impl EditorApp {
             "busy": self.busy,
             "dropped_file_batches": self.probe.as_ref().map_or(0, |p| p.drops),
         });
+        if let Some(probe) = self
+            .probe
+            .as_mut()
+            .filter(|p| p.closeout && p.frames_left > 0 && p.allows_synthetic_grip(&self.view))
+        {
+            probe.frames_left -= 1;
+            observation["native_closeout"] = json!({"frame": ctx.cumulative_frame_nr(), "label": probe.label,
+                "input_origin": "instrumented_eframe_raw_input_hook",
+                "alt_down": ctx.input(|i| i.modifiers.alt),
+                "focused": ctx.input(|i| i.focused),
+                "primary_down": ctx.input(|i| i.pointer.primary_down()),
+                "primary_released": ctx.input(|i| i.pointer.primary_released()),
+                "escape_pressed": ctx.input(|i| i.key_pressed(egui::Key::Escape)),
+                "pointer_gone": ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::PointerGone))),
+                "grid_snap_enabled": self.grid.snap_enabled,
+                "object_snap_enabled": self.object_snap.enabled,
+            });
+        }
         observation["grip"] = json!({
             "features": crate::grip::features(&self.view).ok().map(|features| features.into_iter().map(|f| {
                 let p = self.camera.screen(f.position_mm, self.canvas_rect);
@@ -786,10 +813,170 @@ impl EditorApp {
             )
         }) {
             observation["synthetic_grip"] = synthetic;
+            if let Some(snapshot) = &self.view.snap_snapshot {
+                let geometry: Vec<_> = snapshot.layers.iter().map(|layer| json!({
+                    "id": layer.id, "objects": layer.objects.iter().map(|object|
+                        geometry_json(object, &snapshot.apertures, None)).collect::<Vec<_>>()
+                })).collect();
+                observation["geometry_hash"] = json!(editor_core::hash::sha256_hex(
+                    serde_json::to_string(&geometry).unwrap().as_bytes()
+                ));
+            }
         }
         if let Some(probe) = self.probe.as_mut() {
             probe.observe(observation);
             probe.screenshots(ctx);
+        }
+    }
+}
+
+// Fixed public-fixture acceptance driver, not a public automation API. Requests
+// cannot name files, modify geometry, or invoke a Grip helper. Input reaches egui
+// through eframe's supported raw-input hook and then the normal update path.
+impl EditorApp {
+    pub(crate) fn closeout_raw_input(&mut self, raw: &mut egui::RawInput) {
+        let Some(probe) = self.probe.as_mut() else {
+            return;
+        };
+        if !probe.closeout || !probe.synthetic_grip_opt_in {
+            return;
+        }
+        let request = probe.dir.join("interaction.request");
+        let Ok(file) = std::fs::File::open(&request) else {
+            return;
+        };
+        let _ = std::fs::remove_file(&request);
+        let mut bytes = Vec::new();
+        if file.take(2049).read_to_end(&mut bytes).is_err() || bytes.len() > 2048 {
+            return;
+        }
+        let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+            return;
+        };
+        let command = value["command"].as_str().unwrap_or("");
+        if !matches!(
+            command,
+            "import_fixture"
+                | "press"
+                | "move"
+                | "release"
+                | "esc"
+                | "esc_release"
+                | "blur"
+                | "pointer_gone"
+                | "tool_release"
+                | "modal_release"
+                | "reset_context"
+                | "snap_on"
+                | "selectable"
+                | "visible"
+                | "locked"
+                | "idle"
+        ) {
+            return;
+        }
+        if command == "import_fixture" && self.view.layers.is_empty() && !self.busy {
+            // Dismiss only this test process's prompt; preserve recovery files.
+            self.recovery_candidate = None;
+            self.send(Action::ImportGerbers(vec![
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/synthetic/s4c2/grips.gbr"),
+            ]));
+            return;
+        }
+        if !probe.allows_synthetic_grip(&self.view) {
+            return;
+        }
+        probe.frames_left = 32;
+        probe.label = value["label"]
+            .as_str()
+            .unwrap_or(command)
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+            .take(80)
+            .collect();
+        probe.action(&format!("INSTRUMENTED_NATIVE_INPUT {command}"));
+        let position = value["world"]
+            .as_array()
+            .and_then(|v| {
+                let p = editor_core::MmPoint::new(v.first()?.as_f64()?, v.get(1)?.as_f64()?);
+                p.is_finite()
+                    .then(|| self.camera.screen(p, self.canvas_rect))
+            })
+            .filter(|p| self.canvas_rect.contains(*p));
+        raw.focused = command != "blur";
+        raw.modifiers.alt = value["alt"].as_bool().unwrap_or(false);
+        let modifiers = raw.modifiers;
+        if let Some(pos) = position {
+            raw.events.push(egui::Event::PointerMoved(pos));
+            if matches!(
+                command,
+                "press" | "release" | "esc_release" | "tool_release" | "modal_release"
+            ) {
+                raw.events.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: command == "press",
+                    modifiers,
+                });
+            }
+        }
+        if matches!(command, "esc" | "esc_release") {
+            raw.events.push(egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            });
+            raw.events.push(egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: false,
+                repeat: false,
+                modifiers,
+            });
+        }
+        match command {
+            "pointer_gone" => raw.events.push(egui::Event::PointerGone),
+            "blur" => raw.events.push(egui::Event::WindowFocused(false)),
+            "tool_release" | "modal_release" => probe.context_transition = Some(command.into()),
+            "reset_context" => {
+                self.tool = crate::tools::ActiveTool::Select;
+                self.modal = None;
+            }
+            "snap_on" => {
+                self.object_snap.enabled = true;
+                self.grid.snap_enabled = true;
+            }
+            "selectable" | "visible" | "locked" => {
+                if let (Some(info), Some(selected)) = (&self.view.info, self.view.layers.first()) {
+                    let enabled = value["enabled"].as_bool().unwrap_or(true);
+                    self.send(Action::Layer(editor_service::LayerUpdateParams {
+                        layer_id: selected.layer_id.clone(),
+                        expected_workspace_revision: info.workspace_revision.clone(),
+                        selectable: (command == "selectable").then_some(enabled),
+                        visible: (command == "visible").then_some(enabled),
+                        locked: (command == "locked").then_some(enabled),
+                        ..Default::default()
+                    }));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Run after the early cancellation guard, before the canvas release guard:
+    // this deliberately exercises a context transition *within* the same update.
+    pub(crate) fn closeout_context_transition(&mut self) {
+        let transition = self
+            .probe
+            .as_mut()
+            .and_then(|p| p.context_transition.take());
+        match transition.as_deref() {
+            Some("tool_release") => self.tool = crate::tools::ActiveTool::Text,
+            Some("modal_release") => self.open_modal(crate::modal::ActiveModal::Grid),
+            _ => {}
         }
     }
 }
@@ -871,6 +1058,10 @@ mod tests {
             fixture_sha256: fixture_sha256(),
             synthetic_grip_opt_in: true,
             drops: 0,
+            closeout: std::env::var("RCAM_NATIVE_CLOSEOUT").ok().as_deref() == Some("1"),
+            frames_left: 0,
+            label: String::new(),
+            context_transition: None,
         };
         let synthetic = probe
             .synthetic_grip_observation(&model.view, None, None, None)

@@ -21,3 +21,7 @@ S4-C1 的 SnapFeature 标识制造几何上可吸附的位置；它不说明哪�
 ## 后果与边界
 
 旧 `ArcSource` 可能在编辑后消失，这是来源真实性要求；项目和 Gerber 往返须检查制造几何，不要求保留失效的原始 G74/G75 声明。独立 Grip ID 与 SnapFeature ID 不强行合并。`.rcam` 保持现有 schema v1，除既有对象/光圈变更外不持久化 hover、session 或 snap candidate。Windows 与其他 S4-C2+ 功能 deferred；阶段 PASS 由原生门禁和版本化证据决定。
+
+## Final native closeout clarification (2026-09-27)
+
+The final closeout request explicitly retains selection when a visible layer becomes non-selectable. Selection refresh therefore retains visible objects; both Grip generation and the common app edit-target guard reject non-selectable targets. Hidden objects still leave selection. Restoring selectability restores Grip without reselecting. This is a view/permission policy only, with no manufacturing transaction or API change; the new app regression and final native permission observations verify it.

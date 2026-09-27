@@ -38,3 +38,15 @@
 Grip 专用 numeric entry 暂缓；现有数值属性编辑保留。Macro primitive、Region Hole contour/arc-node、CompatibilitySolid、GeneratedText glyph、Block 内部与多对象 node edit 不开放。Core 与 Service 回归使用 internal semantic construction 覆盖 line-only Hole contour 返回空 Grip；public project validator 仍拒绝独立 Hole contour，不表示 `.rcam` 或 Gerber 导入支持它。
 RectangularSweep 继续原有轴向合法性；非法斜线端点拒绝，不扩大导出能力。
 Windows deferred / 未执行；完整 V1、CORE10 10/10、P100K、Block Editor、Alignment、Array、PnP/RefDes 未开展。
+
+## FINAL NATIVE INTERACTION CLOSEOUT（2026-09-27）
+
+038440c 基线的原生主链已完成，证据为 `exports/S4C2_038440c/public-evidence-staging/native-probe/20260927-run2/`；上文关于无法连接 CUA 的早期阻塞已由该 run 解除。基线仍为 ALMOST PASS，取消/Alt 等不得借此视为通过。
+
+本轮范围只补 C2-GRIP-01/04/05/06：Esc（含同帧 release）、blur、PointerGone、同帧 tool/modal、Alt、selected hidden/selectable、连续 idle ID 和 diagnostics。使用现有 `native_probe` 的独立 opt-in `RCAM_NATIVE_CLOSEOUT=1`，且必须匹配公开 fixture SHA/provenance；事件由 eframe 官方 `raw_input_hook` 注入，随后经过真实 InputState、EditorApp::update、Grip Session 和原子服务路径。明确标记 instrumented native，不冒充人工硬件操作。Probe 不能指定外部输入路径或直接执行 Grip helper；同帧 context 注入位于早期取消检查之后、release guard 之前。
+
+源码变更涉及 app 验收探针、Esc 的诊断原因标识（原取消行为不变）和下述 non-selectable 选择策略。Core/Service/Snap/几何 preview/commit 源码保持 038440c；旧主链按相同几何业务代码继承，非相同 binary。最终新 release 的取消、Alt、权限、稳定 ID 和 marker 观测必须重新运行。新 clean commit 完整重跑门禁并绑定 binary SHA；最终结果、逐项前后状态、基线来源和打包核验写入版本化 exports 的 `REVIEW.md`、`acceptance_summary.json`、`native-cancel-observations.json`，未完成这些之前仍不标记 PASS。
+
+Windows deferred / not executed；完成本收口后停止，不进入 S4-C2+。
+
+Selection follow-up: the closeout request requires visible/non-selectable selected objects to retain identity. App selection refresh now retains visible objects; edit_targets refuses non-selectable edits. A new regression proves no Grip, Delete rejection with unchanged manufacturing state, and Grip restoration. Hidden objects still leave selection. Native permission cases must be rerun on the final binary.

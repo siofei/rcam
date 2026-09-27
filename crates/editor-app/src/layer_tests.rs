@@ -606,3 +606,38 @@ fn delete_dialog_numbers_are_grouped_and_display_glyphs_are_distinct() {
         .collect();
     assert_eq!(glyphs.len(), 3);
 }
+
+#[test]
+fn nonselectable_retains_selection_but_refuses_grip_and_delete() {
+    let mut f = Fixture::new();
+    let layer = f.import(&["A.gbr"])[0].clone();
+    f.m.select(MmPoint::new(10., 10.), 0.1, Replace).unwrap();
+    let ids: Vec<String> =
+        f.m.view
+            .selected
+            .ids()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+    let before = f.m.view.info.clone().unwrap();
+    assert!(!crate::grip::features(&f.m.view).unwrap().is_empty());
+    f.update(LayerUpdateParams {
+        selectable: Some(false),
+        ..f.patch(&layer)
+    });
+    assert_eq!(f.m.view.selected.ids(), ids);
+    assert!(crate::grip::features(&f.m.view).unwrap().is_empty());
+    f.m.run(Action::Delete);
+    assert_eq!(f.m.view.error.as_ref().unwrap().code, "INVALID_ARGUMENT");
+    let after = f.m.view.info.as_ref().unwrap();
+    assert_eq!(after.revision, before.revision);
+    assert_eq!(after.undo_entries, before.undo_entries);
+    assert_eq!(after.redo_entries, before.redo_entries);
+    assert_eq!(after.dirty, before.dirty);
+    f.update(LayerUpdateParams {
+        selectable: Some(true),
+        ..f.patch(&layer)
+    });
+    assert_eq!(f.m.view.selected.ids(), ids);
+    assert!(!crate::grip::features(&f.m.view).unwrap().is_empty());
+}

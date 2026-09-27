@@ -724,6 +724,7 @@ impl CommandDispatcher for EditorApp {
 
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.closeout_raw_input(raw);
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
         self.ime_event =
@@ -1046,6 +1047,8 @@ impl eframe::App for EditorApp {
                 "grip.cancel.modal"
             } else if self.tool != tools::ActiveTool::Select {
                 "grip.cancel.tool_change"
+            } else if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                "grip.cancel.esc"
             } else if !ctx.input(|i| i.focused) {
                 "grip.cancel.blur"
             } else if ctx.input(|i| {
@@ -1891,6 +1894,7 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                self.closeout_context_transition();
                 // Tool/menu input above can change context in this same frame.
                 // Recheck before release, rather than waiting for the next frame.
                 if self.grip.is_some() && (self.tool != tools::ActiveTool::Select

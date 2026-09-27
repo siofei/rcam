@@ -1196,3 +1196,7 @@ Save/Save As 为 `.rcam` 保留。View state（颜色/可见/可选/锁定/层�
 ### S4-C2 Grip Editing v1（2026-09-25 启动）
 
 依据 S4_C2_PLAN、S4_C2_ACCEPTANCE_ADDENDUM 与 ADR 0038，先完成单对象制造 Grip 的 query→纯预览→Service 原子提交闭环，再按 Mac 原生、Retina、COW、Snap、项目/导出往返、诊断和固定包门禁复审。当前状态“实施中/未验收”，Windows deferred；不启动完整 Block Editor 或其他 S4-C2+ 功能。
+
+### S4-C2 final interaction closeout — selection inspection
+
+依据 final native interaction closeout 任务，visible 对象在 layer/category selectable 变为 false 时保留已选身份以便检查；不得重新拾取，不提供 editable Grip，app 统一编辑目标校验拒绝制造操作。恢复 selectable 后已选对象的 Grip 返回。隐藏仍清除选择；锁定仍保留选择且禁止编辑。此规则不改变制造数据、服务 API 或历史事务语义。对应新增 app 回归和 C2-GRIP-01 原生补证；原冻结验收 expected 保持不变。
