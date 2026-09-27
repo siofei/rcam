@@ -50,3 +50,5 @@ Windows deferred / 未执行；完整 V1、CORE10 10/10、P100K、Block Editor�
 Windows deferred / not executed；完成本收口后停止，不进入 S4-C2+。
 
 Selection follow-up: the closeout request requires visible/non-selectable selected objects to retain identity. App selection refresh now retains visible objects; edit_targets refuses non-selectable edits. A new regression proves no Grip, Delete rejection with unchanged manufacturing state, and Grip restoration. Hidden objects still leave selection. Native permission cases must be rerun on the final binary.
+
+The same guard also covers a DragMove captured before selectability changed: the app checks current editable targets and exact selection identity before service submission. Direct-drag arming refuses non-selectable selections. The focused regression covers this stale gesture with zero revision/history change; final native smoke checks normal release and Undo/Redo remain valid.

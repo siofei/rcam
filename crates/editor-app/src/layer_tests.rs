@@ -609,6 +609,7 @@ fn delete_dialog_numbers_are_grouped_and_display_glyphs_are_distinct() {
 
 #[test]
 fn nonselectable_retains_selection_but_refuses_grip_and_delete() {
+    use eframe::egui::{Pos2, Rect, Vec2};
     let mut f = Fixture::new();
     let layer = f.import(&["A.gbr"])[0].clone();
     f.m.select(MmPoint::new(10., 10.), 0.1, Replace).unwrap();
@@ -620,6 +621,15 @@ fn nonselectable_retains_selection_but_refuses_grip_and_delete() {
             .map(str::to_owned)
             .collect();
     let before = f.m.view.info.clone().unwrap();
+    let mut stale_drag = crate::drag::Drag::arm(
+        &f.m.view,
+        Pos2::ZERO,
+        crate::camera::Camera::default(),
+        Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.)),
+        2.,
+    )
+    .unwrap();
+    stale_drag.delta = MmPoint::new(1., 0.);
     assert!(!crate::grip::features(&f.m.view).unwrap().is_empty());
     f.update(LayerUpdateParams {
         selectable: Some(false),
@@ -627,6 +637,9 @@ fn nonselectable_retains_selection_but_refuses_grip_and_delete() {
     });
     assert_eq!(f.m.view.selected.ids(), ids);
     assert!(crate::grip::features(&f.m.view).unwrap().is_empty());
+    assert!(!crate::drag::editable_selection(&f.m.view));
+    f.m.run(Action::DragMove(Box::new(stale_drag)));
+    assert_eq!(f.m.view.error.as_ref().unwrap().code, "INVALID_ARGUMENT");
     f.m.run(Action::Delete);
     assert_eq!(f.m.view.error.as_ref().unwrap().code, "INVALID_ARGUMENT");
     let after = f.m.view.info.as_ref().unwrap();

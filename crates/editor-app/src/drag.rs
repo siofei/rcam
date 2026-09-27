@@ -34,7 +34,7 @@ pub fn editable_selection(view: &View) -> bool {
             view.selected
                 .primary()
                 .is_some_and(|p| p.layer_id == o.layer_id)
-                && classifier.visible(o)
+                && classifier.selectable(o)
                 && classifier.edit_refusal(o).is_none()
         })
 }

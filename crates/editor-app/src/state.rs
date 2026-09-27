@@ -1308,6 +1308,10 @@ impl Model {
             }
             Action::DragMove(drag) => {
                 self.editable()?;
+                let (layer, objects) = self.edit_targets()?;
+                if layer != drag.layer || objects != drag.objects {
+                    return Err(error("INVALID_ARGUMENT", "拖动期间选择已改变"));
+                }
                 self.service.objects_move(
                     &drag.document,
                     &drag.revision,
