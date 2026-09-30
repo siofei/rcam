@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 pub const FORMAT: &str = "rcam";
 pub const FORMAT_VERSION: u32 = 1;
+pub const BOARD_FORMAT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectId(pub String);
@@ -104,8 +105,7 @@ pub struct LayerProjectState {
 /// Reserved extension point (§42): a real `.rcam` schema position for board
 /// coordinate data once RCam actually owns some, without inventing fake
 /// component-list semantics today.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct BoardProjectState {}
+pub type BoardProjectState = editor_core::pnp::BoardState;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RCamProject {
@@ -161,8 +161,18 @@ impl RCamProject {
     /// roundtrip `DrillObject`, §43).
     pub fn validate(&self) -> Result<(), crate::error::ProjectError> {
         use crate::error::ProjectError;
-        if self.format_version != FORMAT_VERSION {
+        if ![FORMAT_VERSION, BOARD_FORMAT_VERSION].contains(&self.format_version) {
             return Err(ProjectError::UnknownFormatVersion(self.format_version));
+        }
+        if let Some(board) = &self.board {
+            if self.format_version != BOARD_FORMAT_VERSION {
+                return Err(ProjectError::SchemaInvalid(
+                    "Board data requires version 2".into(),
+                ));
+            }
+            board
+                .validate()
+                .map_err(|e| ProjectError::SchemaInvalid(e.into()))?;
         }
         if self.project_id.0.trim().is_empty() {
             return Err(ProjectError::SchemaInvalid("empty project_id".into()));

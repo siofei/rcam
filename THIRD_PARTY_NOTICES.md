@@ -120,3 +120,6 @@ macOS and Windows; no native zlib, filesystem extraction, window or GPU dependen
 Reviewed locked source APIs `compress_to_vec` and `inflate::core::decompress`.
 Alternative: flate2 adds a wrapper/backend choice; a full zip crate would replace the
 existing bounded container parser unnecessarily. Transitive adler2/simd-adler32 remain locked.
+
+
+S4-D1 adds no parser/runtime dependency. CSV/TSV parser uses Rust stdlib; existing pinned serde enables its `rc` feature for shared immutable component tables. Existing serde licenses/version unchanged. No third-party PnP input, customer samples or fonts distributed.

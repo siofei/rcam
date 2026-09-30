@@ -20,6 +20,10 @@ pub(crate) struct AppPreferences {
 
 impl AppPreferences {
     pub fn path() -> Option<PathBuf> {
+        #[cfg(feature = "internal-evidence")]
+        if let Some(dir) = crate::native_d1::directory() {
+            return Some(dir.join("state/preferences.json"));
+        }
         Some(
             PathBuf::from(std::env::var_os("HOME")?)
                 .join("Library/Application Support/RCam/preferences.json"),

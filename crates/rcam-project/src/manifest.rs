@@ -24,10 +24,14 @@ pub struct Manifest {
 
 /// Build the manifest for a set of (path, content) pairs, already sorted by
 /// path by the caller (`codec::encode_v1`).
-pub fn build(project_id: &str, files: &[(String, Vec<u8>)]) -> Manifest {
+pub fn build_versioned(
+    project_id: &str,
+    format_version: u32,
+    files: &[(String, Vec<u8>)],
+) -> Manifest {
     Manifest {
         format: FORMAT.into(),
-        format_version: FORMAT_VERSION,
+        format_version,
         project_id: project_id.into(),
         entries: files
             .iter()
@@ -50,7 +54,7 @@ pub fn verify(manifest: &Manifest, files: &HashMap<String, Vec<u8>>) -> Result<(
             manifest.format
         )));
     }
-    if manifest.format_version != FORMAT_VERSION {
+    if ![FORMAT_VERSION, crate::model::BOARD_FORMAT_VERSION].contains(&manifest.format_version) {
         return Err(ProjectError::UnknownFormatVersion(manifest.format_version));
     }
     for entry in &manifest.entries {
@@ -78,4 +82,9 @@ pub fn verify(manifest: &Manifest, files: &HashMap<String, Vec<u8>>) -> Result<(
 
 fn entry_paths(manifest: &Manifest) -> impl Iterator<Item = &str> {
     manifest.entries.iter().map(|entry| entry.path.as_str())
+}
+
+/// Existing v1 callers retain byte identity.
+pub fn build(project_id: &str, files: &[(String, Vec<u8>)]) -> Manifest {
+    build_versioned(project_id, FORMAT_VERSION, files)
 }

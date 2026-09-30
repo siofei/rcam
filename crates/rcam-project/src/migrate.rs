@@ -1,17 +1,7 @@
-//! Migration dispatch boundary (§51 of the S4-B2 brief).
-//!
-//! S4-B2 freezes only `format_version = 1`; there is nothing to migrate
-//! *from* yet. This module exists so a future `format_version = 2` reader
-//! has one call site to extend (`decode_v2` bytes -> `migrate_v1_to_v2` ->
-//! `RCamProject`) instead of an ever-growing pile of `Option<>` fields
-//! bolted onto a single serde struct.
-
-use crate::error::ProjectError;
-use crate::model::RCamProject;
-
-/// Dispatch on an unrecognized `format_version`. Every version other than 1
-/// is unknown today, so this always fails closed (§50) rather than guessing
-/// at a decode strategy.
+//! Unknown-version boundary. The codec reads versions 1 and 2 directly and
+//! migrates the v1 empty Board placeholder to None before validation (ADR 0042).
+use crate::{error::ProjectError, model::RCamProject};
+/// Unknown versions fail closed; no speculative migration or partial loading.
 pub fn migrate(format_version: u32, _bytes: &[u8]) -> Result<RCamProject, ProjectError> {
     Err(ProjectError::UnknownFormatVersion(format_version))
 }

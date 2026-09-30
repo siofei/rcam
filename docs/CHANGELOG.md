@@ -296,3 +296,8 @@ Start bounded non-associative rectangular array implementation, ADR 0041 and loc
 ## 2026-09-28 — S4-C5 bounded closeout
 
 Rectangular Array core/service/modal, bounded preview, signed row-major exposure copies, per-cell text identity, shared Block/Aperture references, atomic resource checks and exact Undo/Redo are accepted Mac-first. Project/recovery/expanded Gerber, diagnostics, release benchmarks and native CUA checks are recorded in S4_C5_REVIEW; final source/native/package identities belong to the versioned exports review. Windows/full V1/CORE10/P100K remain deferred. Stop after C5.
+
+
+## 2026-09-30 — S4-D1 foundation started
+
+ADR 0042 freezes independent PnP/RefDes Board metadata, explicit source mapping and rigid registration, project transactions and conditional schema v2 (v1 geometry-only compatibility retained). Adds D1-01–D1-13; original 96 AT identities/expected/platforms unchanged. No new product dependencies: existing serde `rc` feature shares immutable component snapshots; internal-evidence excludes native injection control from default distribution. Acceptance remains pending; Windows, association and assembly export deferred.

@@ -9,6 +9,10 @@ use std::{
 
 #[derive(Clone, Default)]
 pub struct View {
+    pub board: Option<Arc<editor_core::pnp::BoardState>>,
+    pub component_indices: Arc<Vec<usize>>,
+    pub component_query: Option<ComponentQuery>,
+    pub pnp_preview: Option<Arc<crate::components_ui::PreviewReply>>,
     pub project_workspace: Option<rcam_project::WorkspaceProjectState>,
     pub text_reply: Option<Arc<crate::text_tool::Reply>>,
     pub metrics: Vec<MetricsItem>,
@@ -212,6 +216,13 @@ pub enum MirrorDirection {
     Vertical,
 }
 pub enum Action {
+    PnpPreview(crate::components_ui::PreviewRequest),
+    PnpImport(crate::block_ui::Context, ImportPnpParams),
+    BoardRegistration(
+        crate::block_ui::Context,
+        editor_core::pnp::RegistrationInput,
+    ),
+    ComponentSearch(crate::block_ui::Context, ComponentQuery),
     ArrayPreview(Box<crate::array_ui::Request>),
     ArrayApply(Box<crate::array_ui::Request>),
     BlockEdit(Box<crate::block_ui::Request>),
@@ -681,6 +692,26 @@ impl Model {
     pub(crate) fn refresh(&mut self, geometry: bool) -> Result<(), ServiceError> {
         let id = self.info()?.document_id;
         self.view.info = Some(self.service.document_get(&id)?);
+        let board = self.service.board_state(&id)?;
+        let changed = match (&board, &self.view.board) {
+            (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+            (None, None) => false,
+            _ => true,
+        };
+        if changed {
+            let q = ComponentQuery {
+                revision: self.view.info.as_ref().unwrap().revision.clone(),
+                query: String::new(),
+                mode: RefdesMatch::Prefix,
+                side: None,
+                footprint: None,
+                offset: 0,
+                limit: 500,
+            };
+            self.view.component_indices = self.service.component_indices(&id, &q)?;
+            self.view.component_query = Some(q);
+        }
+        self.view.board = board;
         self.view.project_workspace = Some(self.service.project_workspace(&id)?);
         self.view.layers = self.service.layers_list(&id)?;
         self.view.bounds = self.service.visible_bounds(&id)?.bounds;
@@ -1233,6 +1264,10 @@ impl Model {
         self.view.removed = None;
         self.view.focus_bounds = None;
         let result = (|| match action {
+            Action::PnpPreview(request) => self.pnp_preview(request),
+            Action::PnpImport(context, params) => self.pnp_import(context, params),
+            Action::BoardRegistration(context, input) => self.registration_apply(context, input),
+            Action::ComponentSearch(context, query) => self.component_search(context, query),
             Action::BlockEdit(request) => self.block_edit(*request),
             Action::ArrayPreview(request) => self.array_preview(*request),
             Action::ArrayApply(request) => self.array_apply(*request),

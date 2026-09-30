@@ -6,7 +6,7 @@
 use crate::error::ProjectError;
 use crate::manifest::{self, Manifest};
 use crate::migrate;
-use crate::model::{BoardProjectState, LayerProjectState, RCamProject};
+use crate::model::{LayerProjectState, RCamProject};
 use crate::zip_codec::{self, ReadPolicy, ZipEntry};
 use editor_core::block::BlockDefinition;
 use std::collections::HashMap;
@@ -87,7 +87,8 @@ struct ProjectRootFile {
     layer_order: Vec<String>,
     block_definition_ids: Vec<String>,
     apertures: Vec<editor_core::ApertureDefinition>,
-    board: Option<BoardProjectState>,
+    #[serde(default)]
+    board: Option<serde_json::Value>,
 }
 
 /// `serde_json` silently turns a non-finite `f64` into JSON `null` instead of
@@ -124,7 +125,10 @@ pub fn encode_v1(project: &RCamProject) -> Result<Vec<u8>, ProjectError> {
             .map(|d| d.id.0.clone())
             .collect(),
         apertures: project.apertures.clone(),
-        board: project.board,
+        board: project
+            .board
+            .as_ref()
+            .map(|b| serde_json::to_value(b).expect("validated board is serializable")),
     };
     files.push(("project.json".into(), to_json(&root, "project.json")?));
 
@@ -138,7 +142,32 @@ pub fn encode_v1(project: &RCamProject) -> Result<Vec<u8>, ProjectError> {
     }
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let manifest = manifest::build(&project.project_id.0, &files);
+    let budget = Budget::default();
+    let mut total = 0usize;
+    for (_, data) in &files {
+        if data.len() > budget.max_entry_bytes {
+            return Err(ProjectError::ResourceLimit {
+                resource: "entry_bytes",
+                limit: budget.max_entry_bytes,
+                actual: data.len(),
+            });
+        }
+        total = total
+            .checked_add(data.len())
+            .ok_or(ProjectError::ResourceLimit {
+                resource: "archive_bytes",
+                limit: budget.max_uncompressed_bytes,
+                actual: usize::MAX,
+            })?;
+    }
+    if total > budget.max_uncompressed_bytes {
+        return Err(ProjectError::ResourceLimit {
+            resource: "archive_bytes",
+            limit: budget.max_uncompressed_bytes,
+            actual: total,
+        });
+    }
+    let manifest = manifest::build_versioned(&project.project_id.0, project.format_version, &files);
     let manifest_bytes =
         serde_json::to_vec(&manifest).map_err(|e| ProjectError::SchemaInvalid(e.to_string()))?;
 
@@ -240,7 +269,7 @@ pub fn decode_with_budget(bytes: &[u8], budget: &Budget) -> Result<RCamProject, 
     // before trusting a single byte of project content, §50) and again
     // inside `RCamProject::validate` for any caller that builds a project by
     // hand instead of through this decoder.
-    if manifest.format_version != crate::model::FORMAT_VERSION {
+    if ![1, 2].contains(&manifest.format_version) {
         return migrate::migrate(manifest.format_version, bytes);
     }
     let schema_timing = crate::timings::Timer::new("schema_hash_validation_us");
@@ -251,9 +280,42 @@ pub fn decode_with_budget(bytes: &[u8], budget: &Budget) -> Result<RCamProject, 
         .get("project.json")
         .ok_or_else(|| ProjectError::SchemaInvalid("missing project.json".into()))?;
     let root: ProjectRootFile = parse_json(project_bytes, budget, "project.json")?;
-    if root.format_version != crate::model::FORMAT_VERSION {
+    if ![1, 2].contains(&root.format_version) {
         return Err(ProjectError::UnknownFormatVersion(root.format_version));
     }
+    if root.format_version != manifest.format_version {
+        return Err(ProjectError::SchemaInvalid(
+            "manifest/project version mismatch".into(),
+        ));
+    }
+    let board = match root.board {
+        None => None,
+        Some(serde_json::Value::Object(ref fields))
+            if root.format_version == 1 && fields.is_empty() =>
+        {
+            None
+        }
+        Some(_) if root.format_version == 1 => {
+            return Err(ProjectError::SchemaInvalid("nonempty legacy Board".into()));
+        }
+        Some(value) => {
+            if value
+                .get("components")
+                .and_then(|c| c.as_array())
+                .is_some_and(|c| c.len() > editor_core::pnp::MAX_COMPONENTS)
+            {
+                return Err(ProjectError::ResourceLimit {
+                    resource: "components",
+                    limit: editor_core::pnp::MAX_COMPONENTS,
+                    actual: value["components"].as_array().unwrap().len(),
+                });
+            }
+            Some(
+                serde_json::from_value(value)
+                    .map_err(|_| ProjectError::SchemaInvalid("invalid Board schema".into()))?,
+            )
+        }
+    };
     if root.layer_order.len() > budget.max_layers {
         return Err(ProjectError::ResourceLimit {
             resource: "layers",
@@ -334,7 +396,7 @@ pub fn decode_with_budget(bytes: &[u8], budget: &Budget) -> Result<RCamProject, 
         layers,
         apertures: root.apertures,
         block_definitions,
-        board: root.board,
+        board,
     };
     let validation_timing = crate::timings::Timer::new("validation_us");
     project.validate()?;

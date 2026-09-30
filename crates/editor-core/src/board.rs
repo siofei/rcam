@@ -1,10 +1,9 @@
-//! Coordinate-space reservation for PCB / PnP work (S4-B1 placeholder, no UI).
+//! Independent PCB/PnP Board coordinates and rigid registration (S4-D1).
 //!
 //! The canonical manufacturing coordinate stays f64 millimetres ("Manufacturing
 //! World"). Future PnP/centroid data lives in a *Board* space and reaches the
 //! world through one rigid `CoordinateTransform2D`. Arbitrary scale and shear are
-//! intentionally not expressible. Nothing here is advertised as a supported
-//! operation yet.
+//! intentionally not expressible.
 
 use crate::MmPoint;
 use serde::{Deserialize, Serialize};
@@ -25,6 +24,7 @@ pub enum CoordinateSpace {
 /// rotation (degrees, counter-clockwise), then translation. `scale` is absent
 /// by design.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CoordinateTransform2D {
     pub reflect_x: bool,
     pub rotation_deg: f64,
@@ -110,12 +110,13 @@ fn normalize_degrees(value: f64) -> f64 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BoardPoint {
     pub x_mm: f64,
     pub y_mm: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BoardSide {
     Top,
@@ -125,10 +126,11 @@ pub enum BoardSide {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ComponentId(pub String);
 
-/// Reserved model for PnP / centroid data. It is deliberately *not* attached to
+/// Independent model for PnP / centroid data. It is deliberately *not* attached to
 /// `SemanticObject`: a RefDes belongs to a component, not to Gerber geometry.
-/// `components.list/search/get` and `view.focus_component` are NOT supported yet.
+/// Queries live in ApplicationService; focus is a session-only GUI operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ComponentPlacement {
     pub id: ComponentId,
     pub refdes: String,

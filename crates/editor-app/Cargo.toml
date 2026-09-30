@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+internal-evidence = []
+
 [dependencies]
 rcam-diagnostics.workspace = true
 editor-core.workspace = true

@@ -1951,7 +1951,7 @@ fn capabilities_are_consistent_with_the_supported_operations() {
     let caps = service.capabilities();
     assert_eq!(
         caps.stage,
-        "S4-C5 Array / Panelization v1 (Mac-first bounded)"
+        "S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)"
     );
     for op in [
         "document.new",

@@ -1,0 +1,4 @@
+RefDes,X,Y,Rotation,Side,Footprint,Value
+R123,0,0,0,Top,0603,10k
+C15,10,0,90,Bottom,0603,100n
+元件1,0,10,37,Top,"封装,测试",值

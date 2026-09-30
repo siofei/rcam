@@ -15,8 +15,10 @@ use crate::{
 };
 use eframe::egui;
 use serde_json::{Value, json};
+#[cfg(feature = "internal-evidence")]
+use std::io::Read;
 use std::{
-    io::{Read, Write},
+    io::Write,
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -39,6 +41,7 @@ fn s4c4_fixture_identity(name: &str) -> Option<String> {
         S4C4_ARRANGEMENT_FIXTURE_NAME => S4C4_ARRANGEMENT_FIXTURE,
         "negative-gap.gbr" => S4C4_NEGATIVE_GAP_FIXTURE,
         "grid-1000.gbr" => S4C4_GRID_FIXTURE,
+        "board.gbr" => include_bytes!("../../../fixtures/synthetic/s4d1/board.gbr"),
         "array-dcd.gbr" => include_bytes!("../../../fixtures/synthetic/s4c5/array-dcd.gbr"),
         "array-400.gbr" => include_bytes!("../../../fixtures/synthetic/s4c5/array-400.gbr"),
         _ => return None,
@@ -713,6 +716,10 @@ pub fn action_text(a: &Action) -> String {
             drag.delta.y_mm
         ),
         Action::Move(dx, dy) => format!("Move {dx} {dy}"),
+        Action::PnpPreview(_) => "components.preview_pnp".into(),
+        Action::PnpImport(..) => "components.import_pnp".into(),
+        Action::BoardRegistration(..) => "board.set_registration".into(),
+        Action::ComponentSearch(..) => "components.search".into(),
         Action::ArrayPreview(_) => "array.preview".into(),
         Action::ArrayApply(r) => format!(
             "objects.array_rectangular rows={} columns={}",
@@ -969,6 +976,21 @@ impl EditorApp {
             "instance_count": self.view.block_counts.values().sum::<usize>(),
             "session": self.block.session.as_ref().map(|s| json!({"kind": if matches!(s.kind, crate::block_ui::SessionKind::Create { .. }) {"create"} else {"place"}, "preview_paths":s.preview.as_ref().map(|p|p.paths.len()), "preview_build_us":s.preview.as_ref().map(|p|p.build_us),"preview_ppm":s.preview.as_ref().map(|p|p.ppm)})),
         });
+        if self.view.board.as_ref().is_some_and(|b| {
+            b.provenance.sha256
+                == editor_core::hash::sha256_hex(include_bytes!(
+                    "../../../fixtures/synthetic/s4d1/pnp.csv"
+                ))
+        }) && self.view.layers.len() == 1
+            && self.view.layers[0].provenance.as_ref().is_some_and(|p| {
+                p.imported_sha256
+                    == editor_core::hash::sha256_hex(include_bytes!(
+                        "../../../fixtures/synthetic/s4d1/board.gbr"
+                    ))
+            })
+        {
+            observation["components"] = json!({"count":self.view.board.as_ref().unwrap().components.len(),"registration":self.view.board.as_ref().unwrap().registration,"query_results":self.view.component_indices.len(),"focused":self.components.focused,"overlay":self.components.overlay});
+        }
         observation["array"] = self.view.array_preview.as_ref().map(|p| json!({"rows":p.request.params.rows,"columns":p.request.params.columns,"cells":p.estimate.cell_count,"created_objects":p.estimate.created_object_count,"preview_paths":p.paths.len(),"preview_build_us":p.build_us,"simplified":p.simplified,"modal_open":self.modal==Some(crate::modal::ActiveModal::Array)})).unwrap_or(Value::Null);
         observation["display_unit"] = json!(self.display_unit.suffix());
         observation["grid_visible"] = json!(self.grid.visible);
@@ -1039,6 +1061,7 @@ impl EditorApp {
 // cannot name files, modify geometry, or invoke a Grip helper. Input reaches egui
 // through eframe's supported raw-input hook and then the normal update path.
 impl EditorApp {
+    #[cfg(feature = "internal-evidence")]
     pub(crate) fn closeout_raw_input(&mut self, raw: &mut egui::RawInput) {
         let Some(probe) = self.probe.as_mut() else {
             return;

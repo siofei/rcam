@@ -52,7 +52,11 @@ impl S1DocumentRecord {
         let mut workspace = self.project_settings.clone();
         workspace.active_layer_id = self.active_layer_id.clone();
         RCamProject {
-            format_version: FORMAT_VERSION,
+            format_version: if self.board.is_some() {
+                rcam_project::BOARD_FORMAT_VERSION
+            } else {
+                FORMAT_VERSION
+            },
             project_id: ProjectId(self.project_id.clone()),
             manufacturing: ManufacturingProjectSettings {
                 precision: self.manufacturing_precision,
@@ -93,7 +97,7 @@ impl S1DocumentRecord {
                 .collect(),
             apertures: self.document.apertures.clone(),
             block_definitions: self.document.block_definitions.clone(),
-            board: None,
+            board: self.board.as_ref().map(|b| b.as_ref().clone()),
         }
     }
 
@@ -116,6 +120,7 @@ impl S1DocumentRecord {
             .collect();
         let json = serde_json::to_vec(&(
             &self.project_id,
+            &self.board,
             self.manufacturing_precision,
             &settings,
             &styles,
@@ -339,6 +344,20 @@ impl ApplicationService {
         let mut document = project.to_semantic_document();
         document.id = document_id.clone();
         let mut record = self.new_record(document)?;
+        record.board = project.board.map(std::sync::Arc::new);
+        record.next_component_id = record
+            .board
+            .as_ref()
+            .and_then(|b| {
+                b.components
+                    .iter()
+                    .filter_map(|c| c.id.0.strip_prefix("component-")?.parse::<u64>().ok())
+                    .max()
+            })
+            .map_or(Ok(0), |n| {
+                n.checked_add(1)
+                    .ok_or_else(|| ServiceError::resource("component_ids", usize::MAX, usize::MAX))
+            })?;
         record.project_id = project.project_id.0;
         record.project_path = path;
         record.last_saved_project_hash = saved_hash;

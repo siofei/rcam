@@ -89,6 +89,10 @@ pub enum BatchEdit {
 
 #[derive(Debug, Clone)]
 enum Operation {
+    Board {
+        before: Option<std::sync::Arc<crate::pnp::BoardState>>,
+        after: Option<std::sync::Arc<crate::pnp::BoardState>>,
+    },
     Modify(Vec<Change>),
     Insert(Vec<IndexedObject>),
     Delete(Vec<IndexedObject>),
@@ -465,6 +469,92 @@ impl EditHistory {
             self.truncated_bytes = self.truncated_bytes.saturating_add(evicted.bytes);
         }
         ids
+    }
+
+    /// A project transaction, not a manufacturing or layer transaction.
+    pub fn commit_board(
+        &mut self,
+        document_id: &str,
+        current: &mut Option<std::sync::Arc<crate::pnp::BoardState>>,
+        next: Option<std::sync::Arc<crate::pnp::BoardState>>,
+    ) -> Result<bool, EditError> {
+        if self
+            .document_id
+            .as_deref()
+            .is_some_and(|id| id != document_id)
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        if *current == next {
+            return Ok(false);
+        }
+        if next.as_ref().is_some_and(|s| s.validate().is_err()) {
+            return Err(EditError::InvalidArgument);
+        }
+        let shared = current
+            .as_ref()
+            .zip(next.as_ref())
+            .is_some_and(|(a, b)| std::sync::Arc::ptr_eq(&a.components, &b.components));
+        let bytes = 512usize
+            .saturating_add(if shared {
+                8192
+            } else {
+                current.as_ref().map_or(0, |s| s.history_bytes())
+            })
+            .saturating_add(next.as_ref().map_or(0, |s| s.history_bytes()));
+        self.budget(bytes)?;
+        let tx = Transaction {
+            layer_id: String::new(),
+            layer: 0,
+            operation: Operation::Board {
+                before: current.clone(),
+                after: next.clone(),
+            },
+            before_order: vec![],
+            after_order: vec![],
+            bytes,
+        };
+        self.document_id = Some(document_id.into());
+        self.redo.clear();
+        self.undo.push(tx);
+        while self.undo.len() > self.max_entries || self.bytes() > self.max_bytes {
+            let evicted = self.undo.remove(0);
+            self.truncated_entries += 1;
+            self.truncated_bytes = self.truncated_bytes.saturating_add(evicted.bytes);
+        }
+        *current = next;
+        Ok(true)
+    }
+    pub fn next_is_board(&self, forward: bool) -> bool {
+        (if forward { &self.redo } else { &self.undo })
+            .last()
+            .is_some_and(|t| matches!(t.operation, Operation::Board { .. }))
+    }
+    pub fn step_board(
+        &mut self,
+        document_id: &str,
+        current: &mut Option<std::sync::Arc<crate::pnp::BoardState>>,
+        forward: bool,
+    ) -> Result<(), EditError> {
+        if self.document_id.as_deref() != Some(document_id) {
+            return Err(EditError::InvalidArgument);
+        }
+        let tx = (if forward { &self.redo } else { &self.undo })
+            .last()
+            .ok_or(EditError::EmptyHistory)?;
+        let Operation::Board { before, after } = &tx.operation else {
+            return Err(EditError::InvalidArgument);
+        };
+        if current != if forward { before } else { after } {
+            return Err(EditError::InvalidArgument);
+        }
+        *current = if forward { after } else { before }.clone();
+        if forward {
+            self.undo.push(self.redo.pop().unwrap());
+        } else {
+            self.redo.push(self.undo.pop().unwrap());
+        }
+        Ok(())
     }
 
     pub fn move_objects(
@@ -2177,6 +2267,9 @@ impl EditHistory {
             return Err(EditError::EmptyHistory);
         }
         let tx = self.undo.last().ok_or(EditError::EmptyHistory)?;
+        if matches!(tx.operation, Operation::Board { .. }) {
+            return Err(EditError::InvalidArgument);
+        }
         if matches!(tx.operation, Operation::Layers(_)) {
             return self.step_layers(document, false);
         }
@@ -2190,6 +2283,9 @@ impl EditHistory {
             return Err(EditError::EmptyHistory);
         }
         let tx = self.redo.last().ok_or(EditError::EmptyHistory)?;
+        if matches!(tx.operation, Operation::Board { .. }) {
+            return Err(EditError::InvalidArgument);
+        }
         if matches!(tx.operation, Operation::Layers(_)) {
             return self.step_layers(document, true);
         }
@@ -2205,6 +2301,9 @@ fn check_transaction(
     tx: &Transaction,
     forward: bool,
 ) -> Result<(), EditError> {
+    if matches!(tx.operation, Operation::Board { .. }) {
+        return Err(EditError::InvalidArgument);
+    }
     if matches!(tx.operation, Operation::Layers(_)) {
         // Verified by `LayerMove::{insert_into, extract_from}` before mutation.
         return Ok(());
@@ -2244,6 +2343,7 @@ fn check_transaction(
         .filter(|l| l.id == tx.layer_id)
         .ok_or(EditError::InvalidArgument)?;
     match &tx.operation {
+        Operation::Board { .. } => return Err(EditError::InvalidArgument),
         Operation::Layers(_) => {}
         Operation::RenameBlockDefinition { .. } | Operation::RemoveBlockDefinition { .. } => {
             unreachable!("handled above, before the layer lookup")
@@ -2408,7 +2508,7 @@ fn check_transaction(
 fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Vec<String> {
     match &tx.operation {
         // Layer moves mutate the transaction itself and never reach this path.
-        Operation::Layers(_) => Vec::new(),
+        Operation::Board { .. } | Operation::Layers(_) => Vec::new(),
         Operation::Modify(changes) => {
             let objects = &mut document.layers[tx.layer].objects;
             changes
@@ -2534,7 +2634,8 @@ fn operation_changes_shape(operation: &Operation) -> bool {
         Operation::Batch(batch) => !batch.inserted_apertures.is_empty(),
         Operation::ReplaceObjects(op) => op.definition_insert.is_some(),
         Operation::RemoveBlockDefinition { .. } => true,
-        Operation::Modify(_)
+        Operation::Board { .. }
+        | Operation::Modify(_)
         | Operation::Insert(_)
         | Operation::Delete(_)
         | Operation::Layers(_)

@@ -4,6 +4,7 @@ mod array_ui;
 mod block_display;
 mod block_ui;
 mod camera;
+mod components_ui;
 mod display;
 #[cfg(test)]
 mod display_tests;
@@ -20,6 +21,8 @@ mod modal;
 mod perf_tests;
 use modal::ActiveModal;
 mod native_bench;
+#[cfg(feature = "internal-evidence")]
+mod native_d1;
 mod native_probe;
 mod object_snap;
 mod platform;
@@ -66,6 +69,7 @@ struct LastFrame {
     uniforms: gpu::Uniforms,
 }
 struct EditorApp {
+    components: components_ui::UiState,
     block: block_ui::UiState,
     operation_source: rcam_diagnostics::Source,
     diagnostic_export: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
@@ -251,6 +255,7 @@ impl EditorApp {
             spacing: "0.1".into(),
             tool: Default::default(),
             text: Default::default(),
+            components: components_ui::UiState::default(),
             array: array_ui::Draft::default(),
             modal: None,
             modal_pending: None,
@@ -828,6 +833,7 @@ fn arrangement_action(command: CommandId) -> Option<Action> {
 
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        #[cfg(feature = "internal-evidence")]
         self.closeout_raw_input(raw);
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
@@ -902,6 +908,7 @@ impl eframe::App for EditorApp {
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
             self.accept_array_reply();
+            self.accept_component_reply(changed);
             recovery::complete_write(
                 &mut self.pending_recovery_identity,
                 &mut self.last_recovered_identity,
@@ -1260,12 +1267,14 @@ impl eframe::App for EditorApp {
             });
         }
         self.operation_source = rcam_diagnostics::Source::Menu;
+        self.component_window(ctx);
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             if modal_open {
                 ui.disable();
             }
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.strong("RCam");
+                if ui.add_enabled(!self.busy && self.view.info.is_some(),egui::Button::new("PCB / PnP")).clicked(){self.components.open=true;}
                 ui.separator();
                 ui.menu_button("文件", |ui| {
                     if crate::ui::command_widgets::button(ui, command_ids::FILE_NEW_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy)).clicked()
@@ -2026,7 +2035,7 @@ impl eframe::App for EditorApp {
                             } => Some((*pos, *modifiers)),
                             _ => None,
                         })
-                    }) && self.tool == tools::ActiveTool::Select
+                    }) && self.components.pick.is_none() && self.tool == tools::ActiveTool::Select
                         && !ctx.wants_keyboard_input()
                         && self.usable()
                         && !cancel_drag
@@ -2066,6 +2075,7 @@ impl eframe::App for EditorApp {
                         self.block_entries(ui);
                     });
                 }
+                if !modal_open {self.component_canvas(ctx,&r,rect);}
                 self.closeout_context_transition();
                 // Tool/menu input above can change context in this same frame.
                 // Recheck before release, rather than waiting for the next frame.
@@ -2263,6 +2273,7 @@ impl eframe::App for EditorApp {
                     }
                     if let Some(grip) = &self.grip { grip.paint(&painter,self.camera,rect,ctx.pixels_per_point()); }
                 }
+                self.paint_component(&painter,rect,ctx.pixels_per_point());
                 self.paint_block(&painter, rect, ctx.pixels_per_point());
                 self.invalidate_text_overlay();
                 if self.tool == tools::ActiveTool::Text {
@@ -2412,6 +2423,11 @@ impl eframe::App for EditorApp {
             self.layer_dialogs(ctx);
         }
         self.probe_frame(ctx);
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut native) = self.components.native.take() {
+            native.tick(self, ctx);
+            self.components.native = Some(native);
+        }
         if self.modal.is_none()
             && !self.close_prompt
             && let Some(e) = self.view.error.clone()
@@ -2597,7 +2613,16 @@ fn geometry_properties(
 fn main() -> eframe::Result {
     let diagnostics = std::env::var_os("HOME").and_then(|home| {
         rcam_diagnostics::Runtime::start(
-            std::path::PathBuf::from(home).join("Library/Logs/RCam"),
+            {
+                #[cfg(feature = "internal-evidence")]
+                if let Some(dir) = native_d1::directory() {
+                    dir.join("logs")
+                } else {
+                    std::path::PathBuf::from(home).join("Library/Logs/RCam")
+                }
+                #[cfg(not(feature = "internal-evidence"))]
+                std::path::PathBuf::from(home).join("Library/Logs/RCam")
+            },
             env!("CARGO_PKG_VERSION"),
             option_env!("RCAM_BUILD_COMMIT").unwrap_or("unknown"),
         )

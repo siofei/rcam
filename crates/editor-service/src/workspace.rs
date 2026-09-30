@@ -701,6 +701,8 @@ impl ApplicationService {
             project_path: None,
             last_saved_project_hash: None,
             saved_project_state_hash: String::new(),
+            board: None,
+            next_component_id: 0,
             project_settings: project::default_workspace_settings(),
             manufacturing_precision: ManufacturingPrecision::default(),
             saved_precision: ManufacturingPrecision::default(),

@@ -3,6 +3,7 @@ use crate::{EditorApp, PivotMode, state::Action, tools};
 use eframe::egui;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ActiveModal {
+    Pnp,
     Array,
     Text,
     Move,
@@ -26,6 +27,7 @@ impl ActiveModal {
             Self::BlockDelete => "删除 Block 定义",
             Self::BlockExplode => "拆解 Block",
             Self::BlockTransform => "Block 实例属性",
+            Self::Pnp => "导入 PnP — 明确映射与预览",
             Self::Array => "矩形阵列 / Rectangular Array",
             Self::Text => "插入文本",
             Self::Move => "数值移动",
@@ -88,6 +90,7 @@ impl EditorApp {
     pub(crate) fn cancel_modal(&mut self) {
         let keep_measure =
             self.modal == Some(ActiveModal::Units) && self.tool == tools::ActiveTool::Measure;
+        self.view.pnp_preview = None;
         self.array.requested = None;
         self.view.array_preview = None;
         self.modal = None;
@@ -127,6 +130,7 @@ impl EditorApp {
                                 | ActiveModal::BlockDelete
                                 | ActiveModal::BlockExplode
                                 | ActiveModal::BlockTransform => self.block_modal(ui, modal),
+                                ActiveModal::Pnp => self.pnp_modal(ui),
                                 ActiveModal::Array => self.array_modal(ui),
                                 ActiveModal::Units => self.units_modal(ui),
                                 ActiveModal::Text => self.text_controls(ui),
@@ -280,6 +284,7 @@ pub(crate) mod tests {
             spacing: "0.1".into(),
             tool: Default::default(),
             text: Default::default(),
+            components: crate::components_ui::UiState::default(),
             array: crate::array_ui::Draft::default(),
             modal: None,
             modal_pending: None,

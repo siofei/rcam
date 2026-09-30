@@ -39,6 +39,10 @@ pub(crate) struct RecoveryMetadata {
 }
 
 pub(crate) fn directory() -> Option<PathBuf> {
+    #[cfg(feature = "internal-evidence")]
+    if let Some(dir) = crate::native_d1::directory() {
+        return Some(dir.join("state/recovery"));
+    }
     Some(PathBuf::from(std::env::var_os("HOME")?).join("Library/Caches/RCam/recovery"))
 }
 

@@ -1216,3 +1216,8 @@ The user has started S4-C4. ADR 0040 freezes manufacturing world-AABB alignment,
 ### S4-C5 Array / Panelization v1 (PASS, Mac-first bounded; 2026-09-28)
 
 The user started S4-C5 on 2026-09-27. Scope is non-associative Rectangular Array only, via `objects.array_rectangular`: same-layer contiguous ordered source, complete text groups, signed f64 mm pitch, row-major cells and shared Block/Aperture definitions. Original cell is unchanged; copies follow its span in one Undo transaction. UI preview is transient and bounded. See S4_C5_PLAN, S4_C5_ACCEPTANCE_ADDENDUM and ADR 0041. Earlier “Array not started” statements describe C4 closeout. S4-C5 is PASS (Mac-first bounded); final clean source, native binary and four-file package identity are recorded in the versioned exports review and S4_C5_REVIEW. Windows deferred/not executed; no full V1/CORE10/P100K claim. Stop after C5, without PnP/RefDes or associative arrays.
+
+
+### S4-D1 PCB / PnP / RefDes Foundation (started 2026-09-30)
+
+S4-D1 is IMPLEMENTING; acceptance pending final automatic/native/package gates. Scope: explicit bounded CSV/TSV mapping/units/Side/rotation preview, independent ComponentPlacement table, rigid Board→World registration, RefDes exact/prefix/substring search and virtualized focus/overlay, atomic project Undo/Redo and v2 Board persistence/Recovery. No component↔opening association, library replacement, Drill, assembly export or Windows signature. Historical C5 stop points are superseded only by this explicitly started stage. See S4_D1_PLAN, S4_D1_ACCEPTANCE_ADDENDUM, S4_D1_REVIEW and ADR 0042. Windows/full V1/CORE10/P100K remain deferred; stop before S4-D2.

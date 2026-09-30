@@ -22,6 +22,7 @@ pub mod board;
 pub mod command;
 pub mod drill;
 pub mod edit;
+pub mod pnp;
 pub mod snap;
 mod transform;
 pub mod workspace;

@@ -518,21 +518,22 @@ fn capabilities_advertise_every_block_op_as_dispatchable() {
     assert_eq!(response["status"], "completed");
     assert_eq!(
         response["result"]["stage"],
-        "S4-C5 Array / Panelization v1 (Mac-first bounded)"
+        "S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)"
     );
     let caps = w.svc.capabilities();
     assert_eq!(serde_json::to_value(&caps).unwrap(), response["result"]);
     println!("CAPABILITY_OUTPUT={}", response["result"]);
-    for op in ["objects.grips", "objects.grip_edit"] {
+    for op in [
+        "objects.grips",
+        "objects.grip_edit",
+        "components.search",
+        "components.import_pnp",
+        "board.set_registration",
+    ] {
         assert!(caps.supported_operations.iter().any(|s| s == op));
         assert!(!caps.unsupported_operations.iter().any(|s| s == op));
     }
-    for op in [
-        "drill.import",
-        "components.search",
-        "snap.resolve",
-        "layers.merge",
-    ] {
+    for op in ["drill.import", "snap.resolve", "layers.merge"] {
         assert!(caps.unsupported_operations.iter().any(|s| s == op));
         assert!(!caps.supported_operations.iter().any(|s| s == op));
     }

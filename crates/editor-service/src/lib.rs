@@ -5,8 +5,10 @@
 
 mod alignment;
 mod array;
+mod components;
 pub use alignment::{AlignParams, AlignmentMode, DistributeParams, DistributionAxis};
 pub use array::ArrayRectangularParams;
+pub use components::*;
 mod grip;
 mod metrics;
 pub use grip::GripEditParams;
@@ -542,6 +544,8 @@ struct S1DocumentRecord {
     project_path: Option<PathBuf>,
     last_saved_project_hash: Option<String>,
     saved_project_state_hash: String,
+    board: Option<std::sync::Arc<editor_core::pnp::BoardState>>,
+    next_component_id: u64,
     project_settings: rcam_project::WorkspaceProjectState,
     manufacturing_precision: ManufacturingPrecision,
     saved_precision: ManufacturingPrecision,
@@ -1010,7 +1014,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-C5 Array / Panelization v1 (Mac-first bounded)".into(),
+            stage: "S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),
@@ -1066,6 +1070,13 @@ impl ApplicationService {
                 "layers.set_solo".into(),
                 "layers.update_many".into(),
                 "layers.reset_colors".into(),
+                "components.preview_pnp".into(),
+                "components.import_pnp".into(),
+                "components.list".into(),
+                "components.search".into(),
+                "components.get".into(),
+                "board.get_registration".into(),
+                "board.set_registration".into(),
                 "blocks.list_definitions".into(),
                 "blocks.get_definition".into(),
                 "blocks.create_definition_from_objects".into(),
@@ -1079,7 +1090,6 @@ impl ApplicationService {
             // caller can tell "not yet" from "unknown". None of these is dispatchable.
             unsupported_operations: vec![
                 "drill.import".into(),
-                "components.search".into(),
                 "snap.resolve".into(),
                 "layers.merge".into(),
             ],
@@ -2336,6 +2346,14 @@ impl ApplicationService {
         expected_revision: &str,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        if record.history.next_is_board(false) {
+            record
+                .history
+                .step_board(&record.document.id, &mut record.board, false)
+                .map_err(map_edit_error)?;
+            record.revision += 1;
+            return Ok(edit_result(document_id, record, vec![], 0));
+        }
         let shape_changed = record.history.next_undo_changes_shape();
         let layer_effect = record.history.peek_undo_layer_effect();
         let workspace_revision = workspace::next_workspace_revision(record)?;
@@ -2403,6 +2421,14 @@ impl ApplicationService {
         expected_revision: &str,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        if record.history.next_is_board(true) {
+            record
+                .history
+                .step_board(&record.document.id, &mut record.board, true)
+                .map_err(map_edit_error)?;
+            record.revision += 1;
+            return Ok(edit_result(document_id, record, vec![], 0));
+        }
         let shape_changed = record.history.next_redo_changes_shape();
         let layer_effect = record.history.peek_redo_layer_effect();
         let workspace_revision = workspace::next_workspace_revision(record)?;
@@ -2779,6 +2805,72 @@ impl ApplicationService {
                     });
                 }
                 serde_json::to_value(self.capabilities()).map_err(serialize_error)?
+            }
+            "components.preview_pnp" if self.file_access.is_some() => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Params {
+                    path: String,
+                    mapping: editor_core::pnp::PnpMapping,
+                }
+                let p: Params = parse_params(&request.params)?;
+                if request.expected_revision.is_some() || request.document_id.is_some() {
+                    return Err(ServiceError::invalid(
+                        "preview does not accept document_id or expected_revision",
+                    ));
+                }
+                serde_json::to_value(self.components_preview_pnp(&p.path, &p.mapping)?)
+                    .map_err(serialize_error)?
+            }
+            "components.import_pnp" | "board.set_registration" if self.file_access.is_some() => {
+                let id = required_document_id(request)?;
+                let revision = request
+                    .expected_revision
+                    .as_deref()
+                    .ok_or_else(|| ServiceError::invalid("expected_revision required"))?;
+                let result = if request.op == "components.import_pnp" {
+                    self.components_import_pnp(id, revision, parse_params(&request.params)?)?
+                } else {
+                    self.board_set_registration(id, revision, parse_params(&request.params)?)?
+                };
+                serde_json::to_value(result).map_err(serialize_error)?
+            }
+            "components.list"
+            | "components.search"
+            | "components.get"
+            | "board.get_registration"
+                if self.file_access.is_some() =>
+            {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid("read query uses params.revision"));
+                }
+                let id = required_document_id(request)?;
+                match request.op.as_str() {
+                    "components.get" => {
+                        #[derive(Deserialize)]
+                        #[serde(deny_unknown_fields)]
+                        struct Params {
+                            component_id: String,
+                        }
+                        let p: Params = parse_params(&request.params)?;
+                        serde_json::to_value(self.components_get(id, &p.component_id)?)
+                            .map_err(serialize_error)?
+                    }
+                    "board.get_registration" => {
+                        parse_empty_params(&request.params)?;
+                        serde_json::to_value(self.board_get_registration(id)?)
+                            .map_err(serialize_error)?
+                    }
+                    _ => {
+                        let q: ComponentQuery = parse_params(&request.params)?;
+                        serde_json::to_value(if request.op == "components.list" {
+                            self.components_list(id, &q)?
+                        } else {
+                            self.components_search(id, &q)?
+                        })
+                        .map_err(serialize_error)?
+                    }
+                }
             }
             "document.open_s0" => {
                 if request.expected_revision.is_some() {
