@@ -3,8 +3,10 @@ use std::{collections::BTreeSet, process::Command};
 // Reviewed normal dependencies through S4-A2 (ADR 0025: bounded pure Rust material offset). Adding any package
 // requires an explicit boundary review, including native window/dialog crates.
 // ADR 0037: rcam-diagnostics uses only std, serde, editor-core and rcam-project.
-// No OS dialog, window, GPU or network dependency is introduced.
-const ALLOWED: &str = "rcam-diagnostics editor-service miniz_oxide adler2 simd-adler32 editor-core editor-text rcam-project clipper2-rust ttf-parser gerber-io gerber-types gerber_parser serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn chrono iana-time-zone core-foundation-sys num-traits num-rational num-bigint num-integer strum strum_macros heck thiserror thiserror-impl uuid anyhow lazy-regex lazy-regex-proc_macros regex regex-automata regex-syntax aho-corasick memchr once_cell log itoa zmij windows-core windows-implement windows-interface windows-result windows-strings windows-link";
+// ADR 0043: locked quick-xml 0.41.0 (MIT) reads bounded data-only OOXML;
+// its default normal dependency is memchr. No OS dialog, window, GPU or
+// network dependency is introduced.
+const ALLOWED: &str = "quick-xml rcam-diagnostics editor-service miniz_oxide adler2 simd-adler32 editor-core editor-text rcam-project clipper2-rust ttf-parser gerber-io gerber-types gerber_parser serde serde_core serde_derive serde_json proc-macro2 quote unicode-ident syn chrono iana-time-zone core-foundation-sys num-traits num-rational num-bigint num-integer strum strum_macros heck thiserror thiserror-impl uuid anyhow lazy-regex lazy-regex-proc_macros regex regex-automata regex-syntax aho-corasick memchr once_cell log itoa zmij windows-core windows-implement windows-interface windows-result windows-strings windows-link";
 
 fn unreviewed(tree: &str) -> BTreeSet<&str> {
     let allowed: BTreeSet<_> = ALLOWED.split_whitespace().collect();
@@ -51,6 +53,7 @@ fn service_normal_dependency_gate() {
 
 #[test]
 fn dependency_gate_rejects_window_gpu_dialog_and_unknown_crates() {
+    assert!(unreviewed("editor-service v0.1.0\nquick-xml v0.41.0\nmemchr v2.8.3").is_empty());
     for forbidden in [
         "egui",
         "eframe",

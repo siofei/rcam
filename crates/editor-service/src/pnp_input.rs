@@ -125,6 +125,9 @@ fn xml(
                 ))?;
             }
             Event::GeneralRef(r) => {
+                if depth == 0 {
+                    return Err((0, "xml_root"));
+                }
                 let v = if let Some(c) = r.resolve_char_ref().map_err(|_| (0, "xml_entity"))? {
                     c.to_string()
                 } else {

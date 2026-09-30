@@ -184,6 +184,20 @@ fn bad_archive_formula_sheet_and_limits_are_atomic() {
     for (sheet,code) in [(r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1000000"/></sheetData></worksheet>"#.to_owned(),"row_budget"),(r#"<!DOCTYPE worksheet [<!ENTITY x "secret">]><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>"#.to_owned(),"xml_doctype"),(r#"<worksheet xmlns="evil"/>"#.to_owned(),"xml_namespace"),(format!(r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="3"><c r="A3" t="inlineStr"><is><t>{}</t></is></c></row></sheetData></worksheet>"#,"x".repeat(MAX_FIELD_BYTES+1)),"field_budget")] {
         std::fs::write(r.dir.join("bad.xlsx"),xlsx(&sheet,shared)).unwrap();let p=r.service.components_preview_pnp("bad.xlsx",&mapping()).unwrap();assert_eq!(p.preview.diagnostics[0].code,code);
     }
+    let trailing = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>&amp;"#;
+    std::fs::write(
+        r.dir.join("bad.xlsx"),
+        xlsx(
+            trailing,
+            r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>"#,
+        ),
+    )
+    .unwrap();
+    let p = r
+        .service
+        .components_preview_pnp("bad.xlsx", &mapping())
+        .unwrap();
+    assert_eq!(p.preview.diagnostics[0].code, "xml_root");
     let mut m = mapping();
     m.source = Some(PnpSource::Xlsx {
         worksheet: "Missing".into(),
