@@ -24,9 +24,58 @@ pub enum Delimiter {
     Csv,
     Tsv,
 }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PnpColumnSpan {
+    pub start: usize,
+    pub end: Option<usize>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PnpSource {
+    Delimited {
+        skip_lines: usize,
+        has_header: bool,
+    },
+    Xlsx {
+        worksheet: String,
+        header_row: usize,
+    },
+    FixedWidth {
+        skip_lines: usize,
+        columns: Vec<PnpColumnSpan>,
+    },
+}
+impl PnpSource {
+    pub fn valid(&self) -> bool {
+        match self {
+            Self::Delimited { skip_lines, .. } => *skip_lines <= MAX_PNP_LINES,
+            Self::Xlsx {
+                worksheet,
+                header_row,
+            } => valid_text(worksheet) && *header_row <= MAX_PNP_LINES,
+            Self::FixedWidth {
+                skip_lines,
+                columns,
+            } => {
+                *skip_lines <= MAX_PNP_LINES
+                    && !columns.is_empty()
+                    && columns.len() <= MAX_COLUMNS
+                    && columns.iter().enumerate().all(|(i, c)| {
+                        c.start <= MAX_FIELD_BYTES
+                            && c.end.is_none_or(|e| e > c.start && e <= MAX_FIELD_BYTES)
+                            && (c.end.is_some() || i + 1 == columns.len())
+                            && (i == 0 || columns[i - 1].end.is_some_and(|e| e <= c.start))
+                    })
+            }
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PnpMapping {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<PnpSource>,
     pub delimiter: Delimiter,
     pub unit: PnpUnit,
     pub refdes: usize,
@@ -59,8 +108,13 @@ impl PnpMapping {
         let unique: HashSet<_> = cols.iter().collect();
         cols.iter().all(|c| *c < MAX_COLUMNS)
             && unique.len() == cols.len()
-            && valid_text(&self.top_token)
-            && valid_text(&self.bottom_token)
+            && self.source.as_ref().is_none_or(PnpSource::valid)
+            && (valid_text(&self.top_token)
+                || (self.top_token.is_empty()
+                    && matches!(self.source, Some(PnpSource::FixedWidth { .. }))))
+            && (valid_text(&self.bottom_token)
+                || (self.bottom_token.is_empty()
+                    && matches!(self.source, Some(PnpSource::FixedWidth { .. }))))
             && self.top_token.trim() == self.top_token
             && self.bottom_token.trim() == self.bottom_token
             && self.top_token != self.bottom_token
@@ -267,8 +321,15 @@ pub struct PnpDiagnostic {
     pub field: String,
     pub code: String,
 }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PnpSampleRow {
+    pub line: usize,
+    pub fields: Vec<String>,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PnpPreview {
+    #[serde(default)]
+    pub sample_rows: Vec<PnpSampleRow>,
     pub headers: Vec<String>,
     pub components: Vec<ComponentPlacement>,
     pub diagnostics: Vec<PnpDiagnostic>,
@@ -276,7 +337,7 @@ pub struct PnpPreview {
     pub row_count: usize,
 }
 impl PnpPreview {
-    fn error(&mut self, line: usize, field: &str, code: &str) {
+    pub fn error(&mut self, line: usize, field: &str, code: &str) {
         self.diagnostic_count += 1;
         if self.diagnostics.len() < MAX_DIAGNOSTICS {
             self.diagnostics.push(PnpDiagnostic {
@@ -292,8 +353,8 @@ impl PnpPreview {
 }
 /// Physical start-line numbers survive quoted newlines. Scanner has bounded work,
 /// storage, fields and diagnostics even for malformed attacker-controlled input.
-type ParsedRows = Vec<(usize, Vec<String>)>;
-fn rows(text: &str, delimiter: u8) -> Result<ParsedRows, (usize, &'static str)> {
+pub type PnpTableRows = Vec<(usize, Vec<String>)>;
+fn rows(text: &str, delimiter: u8) -> Result<PnpTableRows, (usize, &'static str)> {
     let bytes = text.as_bytes();
     let mut result = vec![];
     let mut fields = vec![];
@@ -374,56 +435,99 @@ fn rows(text: &str, delimiter: u8) -> Result<ParsedRows, (usize, &'static str)> 
     }
     Ok(result)
 }
+/// Read a bounded delimited table without interpreting field roles or units.
+pub fn read_pnp_rows(
+    bytes: &[u8],
+    delimiter: Delimiter,
+) -> Result<PnpTableRows, (usize, &'static str)> {
+    if bytes.len() > MAX_PNP_BYTES {
+        return Err((0, "byte_budget"));
+    }
+    let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
+    let text = std::str::from_utf8(bytes).map_err(|e| {
+        (
+            bytes[..e.valid_up_to()]
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count()
+                + 1,
+            "invalid_utf8",
+        )
+    })?;
+    rows(
+        text,
+        match delimiter {
+            Delimiter::Csv => b',',
+            Delimiter::Tsv => b'\t',
+        },
+    )
+}
 pub fn parse_pnp(bytes: &[u8], mapping: &PnpMapping) -> PnpPreview {
+    let result = if mapping.source.is_some() {
+        Err((0, "requires_input_adapter"))
+    } else {
+        read_pnp_rows(bytes, mapping.delimiter)
+    };
+    match result {
+        Ok(rows) => parse_pnp_table(&rows, mapping),
+        Err((line, code)) => {
+            let mut out = PnpPreview {
+                sample_rows: vec![],
+                headers: vec![],
+                components: vec![],
+                diagnostics: vec![],
+                diagnostic_count: 0,
+                row_count: 0,
+            };
+            out.error(line, "file", code);
+            out
+        }
+    }
+}
+/// Source adapters preserve physical row numbers and share all business validation.
+pub fn parse_pnp_table(rows: &[(usize, Vec<String>)], mapping: &PnpMapping) -> PnpPreview {
     let mut out = PnpPreview {
+        sample_rows: vec![],
         headers: vec![],
         components: vec![],
         diagnostics: vec![],
         diagnostic_count: 0,
         row_count: 0,
     };
-    if bytes.len() > MAX_PNP_BYTES {
-        out.error(0, "file", "byte_budget");
+    let mut text_bytes = 0usize;
+    if rows.len() > MAX_COMPONENTS + 1
+        || rows.iter().enumerate().any(|(i, (line, fields))| {
+            (*line == 0 && i != 0)
+                || *line > MAX_PNP_LINES
+                || fields.len() > MAX_COLUMNS
+                || fields.iter().any(|f| {
+                    text_bytes = text_bytes.saturating_add(f.len());
+                    f.len() > MAX_FIELD_BYTES || text_bytes > MAX_PNP_BYTES
+                })
+        })
+    {
+        out.error(0, "file", "table_budget");
         return out;
     }
-    if !mapping.validate() {
-        out.error(0, "mapping", "invalid_mapping");
-        return out;
-    }
-    let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
-    let text = match std::str::from_utf8(bytes) {
-        Ok(s) => s,
-        Err(e) => {
-            out.error(
-                bytes[..e.valid_up_to()]
-                    .iter()
-                    .filter(|b| **b == b'\n')
-                    .count()
-                    + 1,
-                "file",
-                "invalid_utf8",
-            );
-            return out;
-        }
-    };
-    let rows = match rows(
-        text,
-        match mapping.delimiter {
-            Delimiter::Csv => b',',
-            Delimiter::Tsv => b'\t',
-        },
-    ) {
-        Ok(r) => r,
-        Err((l, c)) => {
-            out.error(l, "file", c);
-            return out;
-        }
-    };
     let Some((_, headers)) = rows.first() else {
         out.error(1, "header", "missing_header");
         return out;
     };
     out.headers = headers.clone();
+    out.row_count = rows.len().saturating_sub(1);
+    out.sample_rows = rows
+        .iter()
+        .skip(1)
+        .take(20)
+        .map(|(line, fields)| PnpSampleRow {
+            line: *line,
+            fields: fields.clone(),
+        })
+        .collect();
+    if !mapping.validate() {
+        out.error(0, "mapping", "invalid_mapping");
+        return out;
+    }
     let indices: Vec<_> = [
         Some(mapping.refdes),
         Some(mapping.x),
@@ -438,15 +542,16 @@ pub fn parse_pnp(bytes: &[u8], mapping: &PnpMapping) -> PnpPreview {
     .collect();
     if headers.len() > MAX_COLUMNS
         || indices.iter().any(|i| *i >= headers.len())
-        || headers.iter().any(|h| !valid_text(h))
-        || headers
-            .iter()
-            .map(|s| s.trim())
-            .collect::<HashSet<_>>()
-            .len()
-            != headers.len()
+        || (mapping.source.is_none()
+            && (headers.iter().any(|h| !valid_text(h))
+                || headers
+                    .iter()
+                    .map(|s| s.trim())
+                    .collect::<HashSet<_>>()
+                    .len()
+                    != headers.len()))
     {
-        out.error(1, "header", "missing_or_duplicate_field");
+        out.error(rows[0].0, "header", "missing_or_duplicate_field");
         return out;
     }
     let mut identities = HashSet::new();
@@ -455,7 +560,6 @@ pub fn parse_pnp(bytes: &[u8], mapping: &PnpMapping) -> PnpPreview {
         PnpUnit::Inch => 25.4,
     };
     for (line, fields) in rows.iter().skip(1) {
-        out.row_count += 1;
         let before = out.diagnostic_count;
         if fields.len() != headers.len() {
             out.error(*line, "row", "field_count");

@@ -101,7 +101,7 @@ pub fn choose_path(save: bool, name: &str) -> Result<Option<PathBuf>, String> {
             panel.setTitle(Some(&NSString::from_str(if name == "font" {
                 "选择本地字体 TTF / OTF / TTC"
             } else if name == "pnp" {
-                "导入 PnP CSV / TSV"
+                "导入 PnP XLSX / TXT / CSV / TSV"
             } else {
                 "打开 Gerber"
             })));

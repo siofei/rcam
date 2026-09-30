@@ -114,7 +114,15 @@ impl EditorApp {
         };
         let response =
             egui::Modal::new(egui::Id::new("manufacturing-parameters")).show(ctx, |ui| {
-                ui.set_width(crate::ui::tokens::modal_width(ctx, 440., 180.));
+                ui.set_width(crate::ui::tokens::modal_width(
+                    ctx,
+                    if modal == ActiveModal::Pnp {
+                        760.
+                    } else {
+                        440.
+                    },
+                    180.,
+                ));
                 ui.heading(modal.title());
                 egui::ScrollArea::vertical()
                     .max_height((ctx.content_rect().height() - 160.).max(100.))

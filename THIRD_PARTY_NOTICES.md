@@ -123,3 +123,7 @@ existing bounded container parser unnecessarily. Transitive adler2/simd-adler32 
 
 
 S4-D1 adds no parser/runtime dependency. CSV/TSV parser uses Rust stdlib; existing pinned serde enables its `rc` feature for shared immutable component tables. Existing serde licenses/version unchanged. No third-party PnP input, customer samples or fonts distributed.
+
+## S4-D1 XLSX/TXT input compatibility — 2026-10-01
+
+editor-service directly uses existing locked quick-xml 0.41.0 (MIT) for streaming data-only OOXML input. Official locked source/API was inspected in the Cargo registry; documentation: https://docs.rs/quick-xml/0.41.0/quick_xml/ . No package version is added/upgraded; Cargo.lock gains only the direct dependency edge. Existing bounded rcam-project ZIP reader is reused with tighter budgets. Rust std handles fixed-width UTF-8. Alternatives considered: general calamine/Excel runtime or custom XML parser; existing maintained XML and bounded ZIP facilities keep this data-only scope smaller. No formulas, macros, online data or fonts are evaluated/distributed.

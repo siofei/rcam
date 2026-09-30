@@ -305,3 +305,8 @@ ADR 0042 freezes independent PnP/RefDes Board metadata, explicit source mapping 
 ## 2026-10-01 — S4-D1 Mac-first bounded closeout
 
 S4-D1 Import/Mapping, rigid Board→World registration, RefDes list/search/focus/overlay, atomic metadata history and schema-v2 Save/Open/Recovery completed. Clean candidate d06f653 passed 16 gates, 726 workspace tests, native Metal workflow, diagnostics privacy and complete four-file fresh-source hash audit (467/467). Actual CUA invalid-preview/cancel and Bottom/C15 search are distinguished from controlled EditorApp Action workflow; physical human input is not claimed. Public release excludes active evidence controls. Final clean identity and repeat gate/native/archive evidence are bound in exports/S4D1_*/REVIEW.md. Stop before D2; Windows/full V1/CORE10/P100K deferred.
+
+
+## 2026-10-01 — S4-D1 coordinate input follow-up
+
+Add bounded data-only XLSX and explicit fixed-width TXT adapters using the existing ZIP/locked XML dependencies. Preview includes original numbered sample rows even with invalid business mapping. GUI supports per-column role/Ignore selection, separate column/unit/convention confirmation and explicit unknown-unit selection. Headerless input keeps its first record; discarded columns never enter Board/project metadata. Original-byte hashes fence import. ADR0043 records budgets, compatibility and five private read-only sample checks; exact results are recorded separately. No D2/production alignment or new platform claims.

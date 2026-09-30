@@ -526,6 +526,7 @@ dependencies = [
  "editor-core",
  "editor-text",
  "gerber-io",
+ "quick-xml",
  "rcam-diagnostics",
  "rcam-project",
  "serde",

@@ -35,7 +35,7 @@ def main():
         ['cargo','check','--workspace','--all-targets','--locked'],
         ['cargo','clippy','--workspace','--all-targets','--locked','--','-D','warnings'],
         ['cargo','clippy','--locked','-p','editor-app','--all-targets','--features','internal-evidence','--','-D','warnings'],
-        ['cargo','test','--locked','-p','editor-core','--test','pnp_foundation','-p','editor-service','--test','pnp_workflow','--test','pnp_diagnostics','-p','rcam-project','--test','pnp_project','--','--nocapture'],
+        ['cargo','test','--locked','-p','editor-core','--test','pnp_foundation','-p','editor-service','--test','pnp_workflow','--test','pnp_diagnostics','--test','pnp_input_formats','-p','rcam-project','--test','pnp_project','--','--nocapture'],
         ['cargo','test','--locked','-p','editor-app','components_ui','--','--nocapture'],
         ['cargo','test','--workspace','--locked','--no-fail-fast'],
         ['cargo','test','--locked','-p','editor-service','--test','automation_contract','--test','headless_workflow'],

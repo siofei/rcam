@@ -1,0 +1,11 @@
+# S4-D1 coordinate input compatibility review
+
+Scope: S4-D1 follow-up requested by the user, R03/R11/R15/R17/R19/R20/R21/R22 and local regressions AT-007/023/074/082–086/088–095/097. Original96 cases and prior bc97e02 delivery are unchanged. ADR0043 and S4_D1_INPUT_COMPAT_PLAN define allowed modules and bounded formats.
+
+Implemented: XLSX worksheet/header selection, headerless CSV/TSV/XLSX, explicit TXT byte spans preserving blank Side, original table preview (20 rows), per-column roles or Ignore, and separate manual column/unit/convention confirmations. Unknown columns start unassigned. Header suggestions need a user action. Changing a mapping retains the source table while invalidating the normalized import preview; source/path/revision fences prevent stale imports. Only selected fields persist. Formula/archive/XML/resource failures reject the whole batch. Core/service remain window/GPU independent.
+
+Private read-only service preview and independent original-file comparison passed for five user samples: file1 1462 rows/17 columns, file2 319/7, file3 437/6, file4 297/10, file5 1301/10; total3816 components. All7 required/optional component fields and each raw sample row matched independent Python standard-library OOXML/TXT extraction. Every original SHA-256 remained unchanged. Neither real Board import nor manufacturing registration was performed. TXT blank=Top, m=Bottom and MILLIMETERS are user-confirmed. Excel units and all rotation conventions remain pending manual confirmation. Paths/content stay in ignored private evidence.
+
+Synthetic checks cover mapping proposals, mixed string/numeric cells, Unicode/rich text, exact f64 precision, row diagnostics, original-byte provenance, source hash conflicts, invalid source/CRC/formulas/budgets, headerless first-record preservation, discarded fields, atomic import, Undo/Redo and project reopening. UI checks cover role reassignment/Ignore, missing role validation, explicit unit/column confirmations and table rendering.
+
+Final clean source, commands/exit codes/environment, raw gate logs, public executable and any controlled native results belong to the versioned exports/S4D1_INPUT_*/REVIEW.md. This document records implementation/parse scope; it does not claim physical GUI input, Windows, physical alignment, full V1/CORE10/P100K or D2. Existing stage reviews remain historical.

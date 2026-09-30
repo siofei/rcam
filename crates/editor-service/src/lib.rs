@@ -6,6 +6,7 @@
 mod alignment;
 mod array;
 mod components;
+mod pnp_input;
 pub use alignment::{AlignParams, AlignmentMode, DistributeParams, DistributionAxis};
 pub use array::ArrayRectangularParams;
 pub use components::*;

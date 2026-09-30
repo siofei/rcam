@@ -26,6 +26,7 @@ gerber_parser = "0.5.0"
 gerber-types = "0.7.0"
 serde = { version = "1.0.219", features = ["derive", "rc"] }
 serde_json = { version = "1.0.140", features = ["float_roundtrip"] }
+quick-xml = "=0.41.0"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 eframe = { version = "0.33.3", default-features = false, features = ["wgpu", "default_fonts"] }
 egui-wgpu = "0.33.3"

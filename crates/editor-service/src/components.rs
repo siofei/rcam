@@ -14,6 +14,12 @@ pub struct ImportPnpParams {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PnpFilePreview {
+    #[serde(default)]
+    pub worksheets: Vec<String>,
+    #[serde(default)]
+    pub suggested_mapping: Option<PnpMapping>,
+    #[serde(default)]
+    pub declared_unit: Option<PnpUnit>,
     pub sha256: String,
     pub preview: PnpPreview,
 }
@@ -117,7 +123,8 @@ impl ApplicationService {
                 .as_ref()
                 .ok_or_else(|| ServiceError::permission(Path::new(path), "read"))?;
             let (_, bytes) = policy.read_path_limited(path, MAX_PNP_BYTES)?;
-            let preview = parse_pnp(&bytes, mapping);
+            let (preview, worksheets, suggested_mapping, declared_unit) =
+                crate::pnp_input::preview(&bytes, mapping);
             rcam_diagnostics::measurements(
                 rcam_diagnostics::Level::Info,
                 "components.preview.counts",
@@ -127,6 +134,9 @@ impl ApplicationService {
                 ],
             );
             Ok(PnpFilePreview {
+                worksheets,
+                suggested_mapping,
+                declared_unit,
                 sha256: sha256_hex(&bytes),
                 preview,
             })
@@ -178,7 +188,7 @@ impl ApplicationService {
                     details: serde_json::json!({}),
                 });
             }
-            let mut preview = parse_pnp(&bytes, &params.mapping);
+            let (mut preview, _, _, _) = crate::pnp_input::preview(&bytes, &params.mapping);
             rcam_diagnostics::measurements(
                 rcam_diagnostics::Level::Info,
                 "components.import.counts",
@@ -196,6 +206,13 @@ impl ApplicationService {
                 "invalid_utf8",
                 "field_budget",
                 "row_budget",
+                "table_budget",
+                "xlsx_archive_rejected",
+                "formula_unsupported",
+                "fixed_width_boundary",
+                "declared_unit_mismatch",
+                "worksheet_selection_required",
+                "worksheet_not_found",
             ];
             let counts: Vec<_> = categories
                 .iter()

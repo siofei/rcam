@@ -66,7 +66,7 @@ impl Run {
     fn observation(&self, app: &EditorApp, label: &str) -> Value {
         let info = app.view.info.as_ref();
         let snapshot = app.view.snap_snapshot.as_ref();
-        json!({"label":label,"input_kind":"controlled instrumented native EditorApp Action path","commit":option_env!("RCAM_BUILD_COMMIT"),"adapter":app.adapter,"component_count":app.view.board.as_ref().map_or(0,|b|b.components.len()),"board":app.view.board.as_ref().map(|b|b.as_ref()),"revision":info.map(|i|&i.revision),"dirty":info.map(|i|i.dirty),"project_dirty":info.map(|i|i.project_dirty),"undo":info.map(|i|i.undo_entries),"redo":info.map(|i|i.redo_entries),"geometry_sha256":snapshot.map(|s|sha256_hex(&serde_json::to_vec(&(&s.apertures,&s.block_definitions,&s.layers)).unwrap())),"object_count":snapshot.map(|s|s.layers.iter().map(|l|l.objects.len()).sum::<usize>()),"diagnostics":app.view.pnp_preview.as_ref().map(|r|&r.result.preview.diagnostics),"preview_valid":app.view.pnp_preview.as_ref().map(|r|r.result.preview.valid()),"mapping":app.components.mapping,"units_confirmed":app.components.units_confirmed,"convention_confirmed":app.components.convention_confirmed,"query_results":app.view.component_indices.len(),"focus":app.components.focused,"camera_center":app.camera.center,"camera_scale":app.camera.scale,"overlay":app.components.overlay,"display_unit":app.display_unit.suffix(),"pixels_per_point":app.reported_ppp,"error_code":app.view.error.as_ref().map(|e|&e.code)})
+        json!({"label":label,"input_kind":"controlled instrumented native EditorApp Action path","commit":option_env!("RCAM_BUILD_COMMIT"),"adapter":app.adapter,"component_count":app.view.board.as_ref().map_or(0,|b|b.components.len()),"board":app.view.board.as_ref().map(|b|b.as_ref()),"revision":info.map(|i|&i.revision),"dirty":info.map(|i|i.dirty),"project_dirty":info.map(|i|i.project_dirty),"undo":info.map(|i|i.undo_entries),"redo":info.map(|i|i.redo_entries),"geometry_sha256":snapshot.map(|s|sha256_hex(&serde_json::to_vec(&(&s.apertures,&s.block_definitions,&s.layers)).unwrap())),"object_count":snapshot.map(|s|s.layers.iter().map(|l|l.objects.len()).sum::<usize>()),"diagnostics":app.view.pnp_preview.as_ref().map(|r|&r.result.preview.diagnostics),"preview_valid":app.view.pnp_preview.as_ref().map(|r|r.result.preview.valid()),"mapping":app.components.mapping,"units_confirmed":app.components.units_confirmed,"units_selected":app.components.units_selected,"columns_confirmed":app.components.columns_confirmed,"sample_rows":app.view.pnp_preview.as_ref().map(|r|r.result.preview.sample_rows.len()),"convention_confirmed":app.components.convention_confirmed,"query_results":app.view.component_indices.len(),"focus":app.components.focused,"camera_center":app.camera.center,"camera_scale":app.camera.scale,"overlay":app.components.overlay,"display_unit":app.display_unit.suffix(),"pixels_per_point":app.reported_ppp,"error_code":app.view.error.as_ref().map(|e|&e.code)})
     }
     fn record(&mut self, app: &EditorApp, label: &str) {
         let v = self.observation(app, label);
@@ -148,6 +148,10 @@ impl Run {
             }
             3 => {
                 app.open_pnp(self.dir.join("pnp-invalid.csv"));
+                app.components.mapping = editor_core::pnp::PnpMapping {
+                    source: app.components.mapping.source.clone(),
+                    ..crate::components_ui::UiState::default().mapping
+                };
                 let req = PreviewRequest {
                     context,
                     path: self.dir.join("pnp-invalid.csv"),
@@ -188,6 +192,12 @@ impl Run {
                 app.view.error = None;
                 app.cancel_modal();
                 app.open_pnp(self.dir.join("pnp.csv"));
+                app.components.mapping = editor_core::pnp::PnpMapping {
+                    source: app.components.mapping.source.clone(),
+                    ..crate::components_ui::UiState::default().mapping
+                };
+                app.components.units_selected = true;
+                app.components.columns_confirmed = true;
                 app.components.units_confirmed = true;
                 app.components.convention_confirmed = true;
                 app.send(Action::PnpPreview(PreviewRequest {

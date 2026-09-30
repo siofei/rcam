@@ -13,3 +13,4 @@ gerber-io.workspace = true
 rcam-project.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+quick-xml.workspace = true

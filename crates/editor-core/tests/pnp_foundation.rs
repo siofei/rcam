@@ -1,6 +1,7 @@
 use editor_core::{MmPoint, board::*, pnp::*};
 fn mapping() -> PnpMapping {
     PnpMapping {
+        source: None,
         delimiter: Delimiter::Csv,
         unit: PnpUnit::Mm,
         refdes: 0,
