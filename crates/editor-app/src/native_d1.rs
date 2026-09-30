@@ -160,6 +160,23 @@ impl Run {
                 app.send(Action::PnpPreview(req));
             }
             4 => {
+                // Opening now schedules raw-table discovery. Respect the real
+                // serialized worker before submitting the explicit fixture map.
+                if app
+                    .view
+                    .pnp_preview
+                    .as_ref()
+                    .is_some_and(|r| r.request.mapping != app.components.mapping)
+                {
+                    self.record(app, "raw-table-discovery-before-column-selection");
+                    app.send(Action::PnpPreview(PreviewRequest {
+                        context,
+                        path: app.components.path.clone().unwrap(),
+                        mapping: app.components.mapping.clone(),
+                    }));
+                    self.last = Instant::now();
+                    return;
+                }
                 self.record(app, "invalid-preview");
                 let r = app.view.pnp_preview.as_ref().unwrap();
                 if r.result.preview.valid() || r.result.preview.diagnostic_count != 3 {
@@ -207,6 +224,23 @@ impl Run {
                 }));
             }
             6 => {
+                // Opening now schedules raw-table discovery. Respect the real
+                // serialized worker before submitting the explicit fixture map.
+                if app
+                    .view
+                    .pnp_preview
+                    .as_ref()
+                    .is_some_and(|r| r.request.mapping != app.components.mapping)
+                {
+                    self.record(app, "raw-table-discovery-before-column-selection");
+                    app.send(Action::PnpPreview(PreviewRequest {
+                        context,
+                        path: app.components.path.clone().unwrap(),
+                        mapping: app.components.mapping.clone(),
+                    }));
+                    self.last = Instant::now();
+                    return;
+                }
                 self.record(app, "valid-mapping-preview");
                 let r = app.view.pnp_preview.as_ref().unwrap();
                 if !r.result.preview.valid() {
