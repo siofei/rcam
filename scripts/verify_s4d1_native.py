@@ -16,9 +16,17 @@ def project(path):
 def verify(root):
     observations=json.loads((root/'native-observations.json').read_text())
     assert observations['status']=='PASS'
-    assert 'Apple' in observations['adapter'] or 'Metal' in observations['adapter']
+    assert 'Metal' in observations['adapter']
+    identity=json.loads((root/'binary-identity.json').read_text())
+    assert observations['commit']==identity['commit']
+    assert observations['binary_sha256']==identity['sha256']
     records={r['label']:r for r in observations['records']}
     baseline=records['baseline'];invalid=records['invalid-import-zero-mutation']
+    assert baseline['object_count']==4 and baseline['revision']=='1' and baseline['undo']==1
+    initial=project(root/'baseline.rcam')
+    assert initial['format_version']==1 and initial['board'] is None
+    valid=records['valid-mapping-preview']
+    assert valid['preview_valid'] and valid['units_confirmed'] and valid['convention_confirmed']
     for k in ['revision','dirty','project_dirty','undo','redo','geometry_sha256','component_count']: assert invalid[k]==baseline[k],k
     assert records['invalid-preview']['preview_valid'] is False
     assert [d['line'] for d in records['invalid-preview']['diagnostics']]==[3,3,4]
@@ -49,10 +57,13 @@ def verify(root):
     assert {c['side'] for c in saved['board']['components']}=={'top','bottom'}
     with zipfile.ZipFile(root/'diagnostics.zip') as z:
         assert z.testzip() is None
+        environment=json.loads(z.read('environment.json'))
+        assert environment['os']=='macos' and environment['arch']=='aarch64' and environment['profile']=='release'
+        assert 'Metal' in environment['gpu'] and environment['commit']==observations['commit']
         text='\n'.join(z.read(n).decode('utf8',errors='replace') for n in z.namelist())
         for s in ['components.import_pnp','board.set_registration','invalid_number','unknown_side','duplicate_identity']: assert s in text,s
         for forbidden in ['R123','C15','封装','10k','pnp.csv','/Users/','/Volumes/',str(root)]: assert forbidden not in text,forbidden
-    return dict(schema_version=2,status='PASS',stage='S4-D1',evidence_kind=observations['evidence_kind'],commit=observations['commit'],records_verified=len(records),component_count=3,sides=['top','bottom'],gerber_sha256=sha(before),source_sha256=sha((root/'pnp.csv').read_bytes()),project_sha256=sha((root/'pnp.rcam').read_bytes()),recovery_sha256=sha((root/'recovery.rcam').read_bytes()),physical_input='not claimed',windows='deferred / not executed')
+    return dict(schema_version=2,status='PASS',stage='S4-D1',evidence_kind=observations['evidence_kind'],commit=observations['commit'],binary_sha256=observations['binary_sha256'],records_verified=len(records),component_count=3,sides=['top','bottom'],gerber_sha256=sha(before),source_sha256=sha((root/'pnp.csv').read_bytes()),project_sha256=sha((root/'pnp.rcam').read_bytes()),recovery_sha256=sha((root/'recovery.rcam').read_bytes()),physical_input='not claimed',windows='deferred / not executed')
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('root',type=Path);parser.add_argument('--out',type=Path,required=True);args=parser.parse_args()
     report=verify(args.root);args.out.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))

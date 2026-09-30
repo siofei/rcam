@@ -95,7 +95,7 @@ def main():
         entries['performance.json']=(gates/'pnp-artifacts/performance.json').read_bytes()
         # Only known, independent-verified synthetic outputs; no user documents.
         allowed=['native-observations.json','binary-identity.json','stdout.log','stderr.log',
-                 'board.gbr','pnp.csv','pnp-invalid.csv','before.gbr','after.gbr','pnp.rcam','recovery.rcam','diagnostics.zip']
+                 'baseline.rcam','board.gbr','pnp.csv','pnp-invalid.csv','before.gbr','after.gbr','pnp.rcam','recovery.rcam','diagnostics.zip']
         for name in allowed:
             path=native/name
             assert path.is_file(),name
@@ -108,6 +108,7 @@ def main():
                 if not name.endswith('.png'):data=redact(data.decode()).encode()
                 entries['native/'+name]=data
         entries['native/independent-verification.json']=serialized(native_report)
+        entries['case_results.json']=serialized(dict(schema_version=2,stage='S4-D1',commit=commit,required_platforms=['macos'],cases=[dict(id=f'D1-{i:02d}',status='PASS',evidence=['gates/gates.json','native/independent-verification.json','source_delivery_audit.json']) for i in range(1,14)],windows='deferred / not executed',physical_input='not claimed'))
         entries['source_fresh_extract_report.json']=fresh_bytes
         entries['binary-identity.json']=serialized(dict(commit=commit,builds=summary['binary_hashes'],active_driver='internal-evidence only; default public feature set excludes active input driver'))
         audit=dict(schema_version=2,status='PASS',commit=commit,clean=True,frozen_baseline=frozen,

@@ -404,7 +404,7 @@ S1-B2b 当时仍单文件/单服务文档；layer.update 于 S1-B2c 实施，其
 expected_revision；params 必填 layer_id、expected_workspace_revision（十进制字符串），可选
  display_name（非空白，≤1024 UTF-8字节）、visible、locked。省略/null保持原值，未知字段拒绝。
 实际设置变化仅 workspace_revision +1；no-op 成功但两种版本/历史/dirty均不变。
-返回 DocumentInfo（新增 workspace_revision）；信封 revision 仍是制造版本。
+返回 DocumentInfo（新增 workspace_revision）；S1-B2c 时信封 revision 是制造版本。S4-D1 起该 revision 统一覆盖制造及 Board 内容修改，workspace_revision 仍单独覆盖会话图层设置。
 `layers.list` 的 name 改为 display_name，并新增 visible。状态仅在当前会话保留。
 锁定层拒绝新制造编辑；Undo/Redo不受锁定阻断。查询/导出不按 visible 过滤。
 
@@ -722,7 +722,7 @@ At C5 closeout, `objects.array_rectangular` was supported and `system.capabiliti
 
 ### S4-D1 PCB / PnP / RefDes Foundation
 
-Current implementation stage: `S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)`. Stage acceptance remains pending final gates, Native and delivery; capability support is implementation availability, not a PASS claim.
+Current implementation stage: `S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)`. Mac-first bounded acceptance passed; exact final source/native/package identities belong to versioned exports/S4D1_*/REVIEW.md. Windows/full V1/CORE10/P100K remain deferred.
 
 `components.preview_pnp` reads a host-authorized bounded file; params `{path,mapping}`. Mapping contains delimiter csv/tsv, unit mm/inch, zero-based distinct refdes/x/y/rotation/side and optional footprint/value indices, exact top_token/bottom_token, clockwise, rotation_offset_deg, invert_y. Header is mandatory. Response includes SHA-256, headers, component preview, physical-line/field/category diagnostics and total diagnostic count (max100 displayed). No unit/Side/Bottom-axis inference.
 

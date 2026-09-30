@@ -66,7 +66,7 @@ impl Run {
     fn observation(&self, app: &EditorApp, label: &str) -> Value {
         let info = app.view.info.as_ref();
         let snapshot = app.view.snap_snapshot.as_ref();
-        json!({"label":label,"input_kind":"controlled instrumented native EditorApp Action path","commit":option_env!("RCAM_BUILD_COMMIT"),"adapter":app.adapter,"component_count":app.view.board.as_ref().map_or(0,|b|b.components.len()),"board":app.view.board.as_ref().map(|b|b.as_ref()),"revision":info.map(|i|&i.revision),"dirty":info.map(|i|i.dirty),"project_dirty":info.map(|i|i.project_dirty),"undo":info.map(|i|i.undo_entries),"redo":info.map(|i|i.redo_entries),"geometry_sha256":snapshot.map(|s|sha256_hex(&serde_json::to_vec(&(&s.apertures,&s.block_definitions,&s.layers)).unwrap())),"object_count":snapshot.map(|s|s.layers.iter().map(|l|l.objects.len()).sum::<usize>()),"diagnostics":app.view.pnp_preview.as_ref().map(|r|&r.result.preview.diagnostics),"preview_valid":app.view.pnp_preview.as_ref().map(|r|r.result.preview.valid()),"query_results":app.view.component_indices.len(),"focus":app.components.focused,"camera_center":app.camera.center,"camera_scale":app.camera.scale,"overlay":app.components.overlay,"display_unit":app.display_unit.suffix(),"pixels_per_point":app.reported_ppp,"error_code":app.view.error.as_ref().map(|e|&e.code)})
+        json!({"label":label,"input_kind":"controlled instrumented native EditorApp Action path","commit":option_env!("RCAM_BUILD_COMMIT"),"adapter":app.adapter,"component_count":app.view.board.as_ref().map_or(0,|b|b.components.len()),"board":app.view.board.as_ref().map(|b|b.as_ref()),"revision":info.map(|i|&i.revision),"dirty":info.map(|i|i.dirty),"project_dirty":info.map(|i|i.project_dirty),"undo":info.map(|i|i.undo_entries),"redo":info.map(|i|i.redo_entries),"geometry_sha256":snapshot.map(|s|sha256_hex(&serde_json::to_vec(&(&s.apertures,&s.block_definitions,&s.layers)).unwrap())),"object_count":snapshot.map(|s|s.layers.iter().map(|l|l.objects.len()).sum::<usize>()),"diagnostics":app.view.pnp_preview.as_ref().map(|r|&r.result.preview.diagnostics),"preview_valid":app.view.pnp_preview.as_ref().map(|r|r.result.preview.valid()),"mapping":app.components.mapping,"units_confirmed":app.components.units_confirmed,"convention_confirmed":app.components.convention_confirmed,"query_results":app.view.component_indices.len(),"focus":app.components.focused,"camera_center":app.camera.center,"camera_scale":app.camera.scale,"overlay":app.components.overlay,"display_unit":app.display_unit.suffix(),"pixels_per_point":app.reported_ppp,"error_code":app.view.error.as_ref().map(|e|&e.code)})
     }
     fn record(&mut self, app: &EditorApp, label: &str) {
         let v = self.observation(app, label);
@@ -78,7 +78,11 @@ impl Run {
         self.finish(app);
     }
     fn finish(&mut self, app: &EditorApp) {
-        let report = json!({"schema_version":2,"stage":"S4-D1","status":if self.failed{"FAIL"}else{"PASS"},"evidence_kind":"instrumented native Apple Silicon / Metal, real EditorApp worker and ApplicationService; no physical-input claim","commit":option_env!("RCAM_BUILD_COMMIT"),"adapter":app.adapter,"records":self.records});
+        let binary_sha256 = std::env::current_exe()
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|b| sha256_hex(&b));
+        let report = json!({"binary_sha256":binary_sha256,"schema_version":2,"stage":"S4-D1","status":if self.failed{"FAIL"}else{"PASS"},"evidence_kind":"instrumented native Apple Silicon / Metal, real EditorApp worker and ApplicationService; no physical-input claim","commit":option_env!("RCAM_BUILD_COMMIT"),"adapter":app.adapter,"records":self.records});
         let _ = std::fs::write(
             self.dir.join("native-observations.json"),
             serde_json::to_vec_pretty(&report).unwrap(),
@@ -88,10 +92,6 @@ impl Run {
     pub fn tick(&mut self, app: &mut EditorApp, ctx: &egui::Context) {
         ctx.request_repaint_after(Duration::from_millis(100));
         if self.phase >= 100 || app.busy || self.last.elapsed() < Duration::from_millis(700) {
-            return;
-        }
-        if app.view.error.is_some() && !matches!(self.phase, 5 | 6) {
-            self.fail(app, "unexpected-worker-error");
             return;
         }
         if !app.view.layers.is_empty()
@@ -115,6 +115,10 @@ impl Run {
             self.records
                 .push(json!({"label":"synthetic_pnp_gate_rejected"}));
             self.finish(app);
+            return;
+        }
+        if app.view.error.is_some() && !matches!(self.phase, 5 | 6) {
+            self.fail(app, "unexpected-worker-error");
             return;
         }
         let Some(context) = Context::capture(&app.view) else {
@@ -436,6 +440,7 @@ impl Run {
                     app.components.focused = Some(focus);
                     app.fit = false;
                 }
+                app.view.message = "S4-D1 synthetic native workflow complete".into();
                 self.finish(app);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
                     "d1-final",

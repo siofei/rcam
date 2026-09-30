@@ -301,3 +301,7 @@ Rectangular Array core/service/modal, bounded preview, signed row-major exposure
 ## 2026-09-30 — S4-D1 foundation started
 
 ADR 0042 freezes independent PnP/RefDes Board metadata, explicit source mapping and rigid registration, project transactions and conditional schema v2 (v1 geometry-only compatibility retained). Adds D1-01–D1-13; original 96 AT identities/expected/platforms unchanged. No new product dependencies: existing serde `rc` feature shares immutable component snapshots; internal-evidence excludes native injection control from default distribution. Acceptance remains pending; Windows, association and assembly export deferred.
+
+## 2026-10-01 — S4-D1 Mac-first bounded closeout
+
+S4-D1 Import/Mapping, rigid Board→World registration, RefDes list/search/focus/overlay, atomic metadata history and schema-v2 Save/Open/Recovery completed. Clean candidate d06f653 passed 16 gates, 726 workspace tests, native Metal workflow, diagnostics privacy and complete four-file fresh-source hash audit (467/467). Actual CUA invalid-preview/cancel and Bottom/C15 search are distinguished from controlled EditorApp Action workflow; physical human input is not claimed. Public release excludes active evidence controls. Final clean identity and repeat gate/native/archive evidence are bound in exports/S4D1_*/REVIEW.md. Stop before D2; Windows/full V1/CORE10/P100K deferred.

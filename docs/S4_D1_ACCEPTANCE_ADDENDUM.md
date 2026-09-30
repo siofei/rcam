@@ -18,4 +18,4 @@ schema_version=2; stage=S4-D1; Mac-first bounded; independent of frozen 96 AT ca
 | D1-12 | Diagnostics counts/failure/categories with no source content or client paths |
 | D1-13 | Required full/regression gates + clean commit + complete four-file delivery, fresh full-source extraction and per-file comparison |
 
-All cases initially NOT EXECUTED; actual observations and evidence paths belong to S4_D1_REVIEW and versioned exports review. No PASS in advance.
+D1-01–D1-13: PASS (Mac-first bounded), 2026-10-01, after candidate tests/native/archive audits. Actual observations, evidence kinds and final clean identities belong to S4_D1_REVIEW and versioned exports review. Windows deferred / not executed; physical human input is not claimed.
