@@ -69,6 +69,9 @@ pub struct Capabilities {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceLimits {
     pub max_hit_test_work: usize,
+    /// None means exact rectangle selection has no fixed work admission cap.
+    #[serde(default)]
+    pub max_select_rect_work: Option<usize>,
     pub max_metrics_work: usize,
     pub max_metrics_objects: usize,
     pub max_source_bytes: usize,
@@ -977,6 +980,7 @@ impl ApplicationService {
                 ],
                 resource_limits: ResourceLimits {
                     max_hit_test_work: 0,
+                    max_select_rect_work: None,
                     max_metrics_work: 0,
                     max_metrics_objects: 0,
                     max_source_bytes: gerber_io::MAX_SOURCE_BYTES,
@@ -1102,6 +1106,7 @@ impl ApplicationService {
             ],
             resource_limits: ResourceLimits {
                     max_hit_test_work: editor_core::hit_test::MAX_HIT_TEST_WORK,
+                    max_select_rect_work: None,
                     max_metrics_work: editor_core::metrics::MAX_METRICS_WORK,
                     max_metrics_objects: metrics::MAX_METRICS_OBJECTS,
                 max_source_bytes: gerber_io::S1_MAX_SOURCE_BYTES,

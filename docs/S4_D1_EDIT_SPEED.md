@@ -42,7 +42,10 @@ original worker workload measured Move/Undo 1155/1164 ms for the 12-layer set
 and 1301/1388 ms for the 527227-object project. Incremental refresh measured
 87/81 ms and 209/209 ms respectively. Twenty repeated Move/Undo pairs with
 1 and 1000 selected line objects restored exact geometry and initial dirty
-state; observed maxima were 107 ms for the set and 249 ms for the project.
+state; development maxima were 107 ms for the set and 249 ms for the project.
+The final b031c31 five-iteration-per-group run subsequently observed maxima
+of 112 ms for the set and 516 ms for the project; retain those raw outliers
+and do not interpret the development maxima as a latency guarantee.
 These are bounded development observations, not formal AT-075/PMIX acceptance
 or final native approval. Final clean-commit gates, supplementary full-builder
 comparisons and native-binary identity are recorded in versioned delivery

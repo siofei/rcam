@@ -735,3 +735,11 @@ GUI displays the original table with a role chooser above every column: Ignore/R
 `board.set_registration` requires document_id + expected_revision and tagged params: `{kind:"manual",transform:{reflect_x,rotation_deg,translation:{x_mm,y_mm}}}` or `{kind:"two_point",board:[p0,p1],world:[q0,q1],reflect_x}`. Coordinates mm, CCW degrees; explicit reflection applies before rotation/translation. No scale/shear. Two-point baseline >=0.001mm, distance mismatch/residual <=0.001mm; mismatch is rejected. Registration is one project transaction, equal input/result is a no-op. Import/registration and geometry history interleave; Undo/Redo advance the common content revision while manufacturing dirty remains geometry-based. World coordinates absent until explicitly registered. GUI focus/Overlay/search are session-only and have no history/dirty/revision effects; `view.focus_component` is not a headless manufacturing operation.
 
 Board-bearing Save/Open/Recovery uses schema v2; board=None retains v1. New reader accepts v1 and v2; v1 empty placeholder migrates to None; nonempty v1 Board rejects. Old readers reject v2. Encoding, JSON/ZIP/resource/hash checks apply to Board too. Gerber Export is independent of components and registration; no new geometry or attributes. Source raw text, component names/values and absolute source paths never enter operation logs/diagnostic ZIP.
+
+### S4-D1 rectangle work policy refinement (ADR0046)
+
+`resource_limits.max_select_rect_work` is an additive nullable integer; `null`
+means exact `objects.select_rect` has no fixed work admission cap. Existing
+`max_hit_test_work` applies to point hit testing. Invalid and uncertain geometry
+still fails atomically with no partial result; successful rectangle queries
+return stable IDs in exposure order and never advance revisions/history.

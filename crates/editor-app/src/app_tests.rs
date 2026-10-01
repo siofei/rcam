@@ -3119,3 +3119,98 @@ fn estimated_pixel_work_above_old_budget_is_diagnostic_only() {
     .unwrap();
     assert!(prepared.stats.estimated_work > 2_000_000_000.);
 }
+
+#[test]
+fn rectangle_lookup_preserves_order_and_old_selection_on_invalid_query() {
+    let (mut m, _) = setup();
+    let bounds = m.view.bounds.unwrap();
+    let before = m.view.info.clone();
+    m.run(Action::SelectRect(
+        bounds,
+        editor_core::hit_test::SelectRectMode::Crossing,
+    ));
+    assert!(m.view.error.is_none());
+    assert!(!m.view.selected.ordered.is_empty());
+    let selected = m.view.selected.ordered.clone();
+    assert_eq!(m.view.info, before);
+    let invalid = editor_core::BoundsMm {
+        min_x_mm: f64::NAN,
+        ..bounds
+    };
+    m.run(Action::SelectRect(
+        invalid,
+        editor_core::hit_test::SelectRectMode::Window,
+    ));
+    assert!(m.view.error.is_some());
+    assert_eq!(m.view.selected.ordered, selected);
+    assert_eq!(m.view.info, before);
+}
+
+#[test]
+#[ignore = "requires explicit private read-only input manifest"]
+fn real_large_rectangle_selection_regression() {
+    use editor_core::hit_test::SelectRectMode::{Crossing, Window};
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(std::env::var_os("RCAM_LARGE_INPUTS").unwrap()).unwrap(),
+    )
+    .unwrap();
+    for kind in ["set", "project"] {
+        let mut m = Model::default();
+        if kind == "set" {
+            let paths: Vec<_> = manifest["set"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| PathBuf::from(p.as_str().unwrap()))
+                .collect();
+            m.import_gerbers(&paths).unwrap();
+        } else {
+            m.open_project(
+                std::path::Path::new(manifest["project"].as_str().unwrap()),
+                true,
+            )
+            .unwrap();
+        }
+        let before = m.view.info.clone();
+        let bounds = m.view.bounds.unwrap();
+        let c = bounds.center();
+        let small = editor_core::BoundsMm {
+            min_x_mm: c.x_mm - 5.,
+            max_x_mm: c.x_mm + 5.,
+            min_y_mm: c.y_mm - 5.,
+            max_y_mm: c.y_mm + 5.,
+        };
+        for (region, r) in [("small", small), ("full", bounds)] {
+            let mut previous = Vec::new();
+            for mode in [Window, Crossing] {
+                let start = std::time::Instant::now();
+                m.run(Action::SelectRect(r, mode));
+                eprintln!(
+                    "RECT_REPRO kind={kind} region={region} mode={mode:?} ms={:.3} selected={} error={:?}",
+                    start.elapsed().as_secs_f64() * 1000.,
+                    m.view.selected.ordered.len(),
+                    m.view.error
+                );
+                assert!(m.view.error.is_none(), "{:?}", m.view.error);
+                assert!(m.view.blocked.is_none());
+                assert_eq!(m.view.info, before);
+                let ids: Vec<_> = m
+                    .view
+                    .selected
+                    .ordered
+                    .iter()
+                    .map(|o| (o.layer_id.clone(), o.object.object_id.clone()))
+                    .collect();
+                if mode == Window {
+                    previous = ids;
+                } else {
+                    let crossing: std::collections::HashSet<_> = ids.into_iter().collect();
+                    assert!(previous.iter().all(|id| crossing.contains(id)));
+                    if region == "full" {
+                        assert!(crossing.len() > 100000);
+                    }
+                }
+            }
+        }
+    }
+}

@@ -27,13 +27,19 @@ impl From<SemanticError> for HitTestError {
     }
 }
 
-struct Budget(usize);
+struct Budget(Option<usize>);
 impl Budget {
     fn charge(&mut self, n: usize) -> Result<(), HitTestError> {
-        self.0 = self.0.checked_sub(n).ok_or(HitTestError::ResourceLimit {
-            limit: MAX_HIT_TEST_WORK,
-            attempted: (MAX_HIT_TEST_WORK - self.0).saturating_add(n),
-        })?;
+        if let Some(remaining) = self.0 {
+            self.0 = Some(
+                remaining
+                    .checked_sub(n)
+                    .ok_or(HitTestError::ResourceLimit {
+                        limit: MAX_HIT_TEST_WORK,
+                        attempted: (MAX_HIT_TEST_WORK - remaining).saturating_add(n),
+                    })?,
+            );
+        }
         Ok(())
     }
 }
@@ -61,7 +67,7 @@ pub(crate) fn manufacturing_boundary_edges(
         .map(|aperture| (aperture.id.as_str(), &aperture.shape))
         .collect();
     let mut macros = HashMap::new();
-    let mut budget = Budget(MAX_HIT_TEST_WORK);
+    let mut budget = Budget(Some(MAX_HIT_TEST_WORK));
     select_rect::edges_for(geometry, &apertures, &mut macros, &mut budget, false)
 }
 
@@ -80,7 +86,7 @@ pub fn display_boundary_edges(
         geometry,
         &apertures,
         &mut HashMap::new(),
-        &mut Budget(MAX_HIT_TEST_WORK),
+        &mut Budget(Some(MAX_HIT_TEST_WORK)),
         true,
     )
 }
@@ -109,7 +115,7 @@ impl SemanticDocument {
             .map(|a| (a.id.as_str(), &a.shape))
             .collect();
         let mut macros: HashMap<String, material::Material> = HashMap::new();
-        let mut budget = Budget(MAX_HIT_TEST_WORK);
+        let mut budget = Budget(Some(MAX_HIT_TEST_WORK));
         let mut result = Vec::new();
         for object in &layer.objects {
             budget.charge(1)?;
@@ -466,8 +472,15 @@ fn geometry_distance(
 mod budget_tests {
     use super::*;
     #[test]
+    fn unlimited_work_does_not_accumulate_or_overflow() {
+        let mut budget = Budget(None);
+        budget.charge(usize::MAX).unwrap();
+        budget.charge(usize::MAX).unwrap();
+        assert_eq!(budget.0, None);
+    }
+    #[test]
     fn reports_attempted_work_and_preserves_remaining_budget_on_failure() {
-        let mut budget = Budget(MAX_HIT_TEST_WORK);
+        let mut budget = Budget(Some(MAX_HIT_TEST_WORK));
         budget.charge(123).unwrap();
         assert_eq!(
             budget.charge(MAX_HIT_TEST_WORK),
@@ -476,6 +489,6 @@ mod budget_tests {
                 attempted: MAX_HIT_TEST_WORK + 123,
             })
         );
-        assert_eq!(budget.0, MAX_HIT_TEST_WORK - 123);
+        assert_eq!(budget.0, Some(MAX_HIT_TEST_WORK - 123));
     }
 }

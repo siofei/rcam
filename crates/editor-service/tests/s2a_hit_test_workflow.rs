@@ -292,6 +292,13 @@ fn hit_test_capability_empty_layer_and_closed_document() {
             .contains(&json!("objects.hit_test"))
     );
     assert_eq!(caps["resource_limits"]["max_hit_test_work"], 2_000_000);
+    assert!(
+        caps["resource_limits"]
+            .as_object()
+            .unwrap()
+            .contains_key("max_select_rect_work")
+    );
+    assert!(caps["resource_limits"]["max_select_rect_work"].is_null());
     r.ok(
         "objects.delete",
         Some("0"),

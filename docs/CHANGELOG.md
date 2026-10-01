@@ -329,3 +329,11 @@ Clear arrangement, query budget and numerical ambiguity contracts. Add analytic
 distance truth and private press/release replay regressions. This extends the
 large-workspace maintenance scope to editor-core hit-test only; final evidence
 and delivery identity are recorded in the new versioned export review.
+
+## 2026-10-01 — large-workspace marquee follow-up
+
+Remove cumulative rectangle work admission under the explicit user override;
+retain exact material/numerical validation and atomic query semantics. GUI
+selection resolves IDs from one immutable snapshot rather than repeated layer
+scans. Add nullable rectangle capability and preserve former expensive failure
+fixture as an exact success regression (ADR0046). Final acceptance pending.

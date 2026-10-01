@@ -1244,3 +1244,10 @@ are unchanged. See `S4_D1_LARGE_WORKSPACE_FIX.md` for bounded repair evidence.
 每个字段、层／对象顺序、曝光、元数据和 signed zero 均保留比较语义。
 磁盘摘要、项目 schema、制造几何与公共 DTO 不变。见 ADR 0045 与
 `S4_D1_EDIT_SPEED.md`，不修改正式性能门槛。
+
+## 2026-10-01 marquee work admission refinement
+
+Under the explicit large-resource user override, exact rectangle selection has
+no fixed cumulative work cap (ADR0046). Numeric/geometry errors still fail
+atomically; worker processing and stable exposure-ordered IDs remain required.
+This does not relax frozen V1 latency acceptance or point-query work policy.

@@ -358,7 +358,8 @@ impl SemanticDocument {
             .map(|a| (a.id.as_str(), &a.shape))
             .collect();
         let mut macros: HashMap<String, Material> = HashMap::new();
-        let mut budget = Budget(MAX_HIT_TEST_WORK);
+        // Large layers retain exact all-or-error selection without work admission.
+        let mut budget = Budget(None);
         let mut result = Vec::new();
         for object in &layer.objects {
             budget.charge(1)?;

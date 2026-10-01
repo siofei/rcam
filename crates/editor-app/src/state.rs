@@ -1016,6 +1016,14 @@ impl Model {
     ) -> Result<(), ServiceError> {
         self.editable()?;
         let d = self.info()?;
+        let snapshot = match &self.snapshot {
+            Some(snapshot)
+                if snapshot.document_id == d.document_id && snapshot.revision == d.revision =>
+            {
+                snapshot.clone()
+            }
+            _ => Arc::new(self.service.render_snapshot(&d.document_id)?),
+        };
         let mut selected = Vec::new();
         for l in self
             .view
@@ -1032,14 +1040,27 @@ impl Model {
                     selectable_only: true,
                 },
             )?;
+            if result.object_ids.is_empty() {
+                continue;
+            }
+            let layer = snapshot
+                .layers
+                .iter()
+                .find(|layer| layer.id == l.layer_id)
+                .ok_or_else(|| error("NOT_FOUND", "框选快照缺少图层"))?;
+            let objects: std::collections::HashMap<_, _> = layer
+                .objects
+                .iter()
+                .map(|object| (object.object_id.as_str(), object))
+                .collect();
             for object_id in result.object_ids {
-                selected.push(self.service.objects_get(
-                    &d.document_id,
-                    ObjectParams {
-                        layer_id: l.layer_id.clone(),
-                        object_id,
-                    },
-                )?);
+                let object = objects
+                    .get(object_id.as_str())
+                    .ok_or_else(|| error("NOT_FOUND", "框选快照缺少对象"))?;
+                selected.push(ObjectInfo {
+                    layer_id: l.layer_id.clone(),
+                    object: (*object).clone(),
+                });
             }
         }
         self.view.selected.ordered = selected;
@@ -1763,14 +1784,21 @@ impl Model {
         }
         if let Some(d) = &self.view.info {
             eprintln!(
-                "state document={} revision={} workspace={} dirty={} undo={} redo={} selected={:?} layers={}",
+                "state document={} revision={} workspace={} dirty={} undo={} redo={} selected_count={} selected_first64={:?} layers={}",
                 d.document_id,
                 d.revision,
                 d.workspace_revision,
                 d.dirty,
                 d.undo_entries,
                 d.redo_entries,
-                self.view.selected.ids(),
+                self.view.selected.ordered.len(),
+                self.view
+                    .selected
+                    .ordered
+                    .iter()
+                    .take(64)
+                    .map(|object| object.object.object_id.as_str())
+                    .collect::<Vec<_>>(),
                 d.layer_ids.len()
             );
         }

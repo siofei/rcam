@@ -429,7 +429,7 @@ fn empty_macro_and_clear_objects_have_stable_selection_order() {
     );
 }
 #[test]
-fn rect_invalid_numerical_and_budget_failure_is_atomic() {
+fn rect_invalid_numerical_failure_and_unlimited_macro_query_are_atomic() {
     use editor_core::hit_test::HitTestError;
     let mut d = doc(
         SemanticGeometry::Line {
@@ -461,10 +461,17 @@ fn rect_invalid_numerical_and_budget_failure_is_atomic() {
     d.layers[0]
         .objects
         .extend(expensive.layers[0].objects.clone());
-    assert!(matches!(
-        d.select_rect("layer", rect(-1., -1., 5000., 2.), SelectRectMode::Crossing),
-        Err(HitTestError::ResourceLimit { .. })
-    ));
+    // Keep the same expensive fixture formerly rejected by the work cap.
+    d.layers[0].objects[1].object_id = "expensive-macro".into();
+    let expensive_before = d.clone();
+    for mode in [SelectRectMode::Window, SelectRectMode::Crossing] {
+        assert_eq!(
+            d.select_rect("layer", rect(-1., -1., 5000., 2.), mode)
+                .unwrap(),
+            vec!["object", "expensive-macro"]
+        );
+        assert_eq!(d, expensive_before);
+    }
     assert!(matches!(
         before.select_rect("layer", rect(0., 0., 1e9, 1e9), SelectRectMode::Window),
         Err(HitTestError::Unsupported(_))
@@ -535,4 +542,49 @@ fn macro_rectangles_match_independent_cell_relation_truth() {
             check(&d, r, SelectRectMode::Window, contained);
         }
     }
+}
+
+#[test]
+fn seventy_thousand_capsules_have_exact_ordered_rectangle_results_without_work_cap() {
+    let mut d = doc(
+        SemanticGeometry::Line {
+            start: p(0., 0.),
+            end: p(1., 0.),
+            width_mm: 1.,
+        },
+        None,
+    );
+    d.layers[0].objects = (0..70000)
+        .map(|i| SemanticObject {
+            object_id: format!("line-{i}"),
+            exposure: Exposure::Dark,
+            origin: ObjectOrigin::Imported { command_index: i },
+            geometry: SemanticGeometry::Line {
+                start: p(i as f64 * 3., 0.),
+                end: p(i as f64 * 3. + 1., 0.),
+                width_mm: 1.,
+            },
+        })
+        .collect();
+    let before = d.clone();
+    for mode in [SelectRectMode::Window, SelectRectMode::Crossing] {
+        let all = d
+            .select_rect("layer", rect(-1., -1., 210000., 1.), mode)
+            .unwrap();
+        assert_eq!(
+            all,
+            (0..70000).map(|i| format!("line-{i}")).collect::<Vec<_>>()
+        );
+    }
+    // Analytic capsule extents: left -0.5, right +1.5, y +/-0.5.
+    let r = rect(300., -1., 600., 1.);
+    assert_eq!(
+        d.select_rect("layer", r, SelectRectMode::Window).unwrap(),
+        (101..200).map(|i| format!("line-{i}")).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        d.select_rect("layer", r, SelectRectMode::Crossing).unwrap(),
+        (100..=200).map(|i| format!("line-{i}")).collect::<Vec<_>>()
+    );
+    assert_eq!(d, before);
 }
