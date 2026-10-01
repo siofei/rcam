@@ -7,7 +7,8 @@ also stalls during interaction. This is maintenance of S4-D1, not a new stage.
 Scope: R03/R05/R09/R11/R16/R17/R18/R19/R20/R21/R22. Regression references:
 AT-003/011/030/039/040/068/073/074/075/082/083/084/088/089/091/094.
 Allowed modules: editor-app display, viewport scheduling, state, spatial index
-and their tests; editor-service canonical content hash buffering.
+and their tests; editor-service canonical content hash buffering; editor-core
+analytic point-selection and its regression tests (user-reported tangency error).
 No parser support expansion, manufacturing simplification, new dependencies,
 project schema changes or D2 capabilities.
 
@@ -62,3 +63,20 @@ Limits: Windows not executed; no full V1/CORE10/P100K or idle-CPU acceptance.
 Very large scene edits still require rebuilding changed geometry and history
 hashing; observed latency remains about 1-2 s. Hardware allocation and exact
 index/finite-coordinate requirements cannot be replaced by approximate data.
+
+## Point-selection tangency follow-up
+
+The user's native point press exposed a rounded-pad aperture on a lower layer:
+all seven primitives are Dark, but the previous code unnecessarily constructed
+an intersection arrangement and rejected a floating-point tangent gap. Dark-only
+macros now use their exact primitive union: inside any primitive is material;
+outside the union, its nearest primitive edge is the distance witness. Internal
+seams are allowed material witnesses, as in the existing boundary contract.
+Ordered Dark/Clear macros still use the arrangement and retain numerical
+ambiguity refusal. No tolerance is increased and no primitive is discarded.
+
+Regressions compare a near-tangent rounded union with independently calculated
+rectangle/circle distances, retain the mixed-exposure near-coincident refusal,
+and replay private project press/select coordinates at zero, enlarged and
+zoomed tolerances. The private regression is opt-in and does not distribute
+sample geometry. Selection never changes manufacturing content or history.

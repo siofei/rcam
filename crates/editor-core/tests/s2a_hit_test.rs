@@ -633,3 +633,34 @@ fn tiny_hole_center_is_not_filled_by_a_fixed_numeric_selection_band() {
     }
     check(&d, p(10., 20.), 0., false);
 }
+
+#[test]
+fn dark_union_rounded_pad_tangency_matches_independent_distance() {
+    // A cap sits a representable step below a rectangle's tangent edge.
+    // Requiring an arrangement used to reject this harmless Dark union.
+    let cy = 1.0_f64.next_down();
+    let d = macro_doc(vec![
+        rectangle(Exposure::Dark, 4., 2., p(0., 0.)),
+        circle(Exposure::Dark, 0.5, p(-1.5, cy)),
+        circle(Exposure::Dark, 0.5, p(1.5, cy)),
+        rectangle(Exposure::Dark, 3., 1., p(0., 1.)),
+    ]);
+    d.validate().unwrap();
+    for x in [-2.2_f64, -2., -1.75, -1., 0., 1., 1.75, 2., 2.2] {
+        for y in [-1.2_f64, -1., 0., 0.5, 1., 1.25, 1.5, 1.7] {
+            let rectangle_distance = (x.abs() - 2.).max(0.).hypot((y.abs() - 1.).max(0.));
+            let bridge_distance = (x.abs() - 1.5)
+                .max(0.)
+                .hypot(((y - 1.).abs() - 0.5).max(0.));
+            let left_distance = ((x + 1.5).hypot(y - cy) - 0.5).max(0.);
+            let right_distance = ((x - 1.5).hypot(y - cy) - 0.5).max(0.);
+            let distance = rectangle_distance
+                .min(bridge_distance)
+                .min(left_distance)
+                .min(right_distance);
+            for tolerance in [0., 0.05, 0.15, 0.3] {
+                check(&d, p(x, y), tolerance, distance <= tolerance + 1e-13);
+            }
+        }
+    }
+}

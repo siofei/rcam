@@ -314,3 +314,14 @@ S4-D1 Import/Mapping, rigid Board→World registration, RefDes list/search/focus
 ## 2026-10-01 — S4-D1 coordinate input follow-up
 
 Add bounded data-only XLSX and explicit fixed-width TXT adapters using the existing ZIP/locked XML dependencies. Preview includes original numbered sample rows even with invalid business mapping. GUI supports per-column role/Ignore selection, separate column/unit/convention confirmation and explicit unknown-unit selection. Headerless input keeps its first record; discarded columns never enter Board/project metadata. Original-byte hashes fence import. ADR0043 records budgets, compatibility and five private read-only sample checks; exact results are recorded separately. No D2/production alignment or new platform claims.
+
+
+## 2026-10-01 — S4-D1 point-selection repair
+
+A native point press reached a Dark-only rounded-pad macro and was incorrectly
+rejected by unnecessary line/circle arrangement tangency classification. Reuse
+exact primitive-union boundary witnesses for Dark-only macros; retain ordered
+Clear arrangement, query budget and numerical ambiguity contracts. Add analytic
+distance truth and private press/release replay regressions. This extends the
+large-workspace maintenance scope to editor-core hit-test only; final evidence
+and delivery identity are recorded in the new versioned export review.

@@ -66,6 +66,48 @@ fn unchanged_workspace_reuses_scene_and_failed_camera_attempt_settles() {
     assert!(m.view.display_transient.is_none());
 }
 
+#[test]
+#[ignore = "requires private project"]
+fn real_large_point_selection_regression() {
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(std::env::var_os("RCAM_LARGE_INPUTS").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let mut m = Model::default();
+    m.open_project(
+        std::path::Path::new(manifest["project"].as_str().unwrap()),
+        true,
+    )
+    .unwrap();
+    let before = m.view.info.clone();
+    for (x, y) in [
+        (110.964, 199.782),
+        (112.754, 244.521),
+        (102.950, 244.444),
+        (78.5394, 90.9010),
+    ] {
+        for tol in [0., 0.05447, 0.5898355194907762] {
+            m.run(Action::ProbeDrag(MmPoint::new(x, y), tol));
+            eprintln!("PRESS_REPRO {x} {y} tol={tol} error={:?}", m.view.error);
+            assert!(m.view.error.is_none());
+            m.run(Action::Select(MmPoint::new(x, y), tol, Replace));
+            eprintln!(
+                "POINT_REPRO {x} {y} selected={:?} error={:?}",
+                m.view
+                    .selected
+                    .ordered
+                    .iter()
+                    .map(|o| &o.object.object_id)
+                    .collect::<Vec<_>>(),
+                m.view.error
+            );
+            assert!(m.view.error.is_none());
+            assert_eq!(m.view.info, before);
+            assert!(!m.view.project_dirty);
+        }
+    }
+}
+
 /// Private inputs stay outside the source tree; exercise the same worker model
 /// as the UI and retain phase timings rather than timing a substitute parser.
 #[test]

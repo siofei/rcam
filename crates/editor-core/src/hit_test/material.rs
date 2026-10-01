@@ -206,9 +206,23 @@ impl Material {
         if !precision.is_finite() {
             return Err(HitTestError::Unsupported("non-finite macro extent"));
         }
+        // Preserve the existing per-query macro admission budget.
+        budget.charge(edges.len().saturating_mul(edges.len()))?;
+        // A Dark-only macro is an exact union. All primitive edges remain
+        // material witnesses, including internal seams; outside the union the
+        // nearest primitive boundary gives its distance. No intersection
+        // topology is needed, so rounded-pad tangencies cannot make it fail.
+        // Ordered macros containing Clear still use the arrangement below.
+        if primitives.iter().all(|p| p.exposure == Exposure::Dark) {
+            return Ok(Self {
+                primitives,
+                boundary: edges.iter().map(|e| e.curve.edge(0., 1.)).collect(),
+                source_edges: edges.iter().map(|e| e.curve).collect(),
+                precision,
+            });
+        }
         // ponytail: bounded quadratic arrangement only for one query's unique
         // macros; persistent spatial acceleration requires measured demand.
-        budget.charge(edges.len().saturating_mul(edges.len()))?;
         let mut cuts = vec![vec![0., 1.]; edges.len()];
         for i in 0..edges.len() {
             for j in i + 1..edges.len() {
