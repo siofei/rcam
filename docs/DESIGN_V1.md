@@ -1226,3 +1226,13 @@ S4-D1 is PASS (Mac-first bounded). Candidate implementation acceptance, native a
 ### S4-D1 coordinate input follow-up (2026-10-01)
 
 The user requested real XLSX/TXT parsing and a manual table-mapping workflow after bc97e02 closeout. See S4_D1_INPUT_COMPAT_PLAN and ADR0043: bounded data-only XLSX with explicit worksheet/header (or no header), fixed-width UTF-8 TXT preserving blank Side, and explicit headerless CSV/TSV. GUI previews raw sample rows with per-column role/Ignore controls; columns, units and conventions need manual confirmation. Unknown units require explicit selection. Optional source metadata keeps old mapping defaults; only selected fields persist. The supplied TXT convention is user-confirmed blank=Top/m=Bottom/MILLIMETERS; Excel units and rotation conventions remain unconfirmed. This follow-up does not expand into D2. Actual checks and remaining native/platform gaps belong to its versioned review; prior S4D1_bc97e02 delivery remains historical evidence.
+
+### S4-D1 large-workspace display policy (2026-10-01)
+
+Per explicit user direction, valid large workspaces are displayed even when
+object count, contour storage, cell density or estimated pixel work exceed
+previous display performance budgets. Such budgets are optimization targets
+and diagnostics, not admission limits. Performance may degrade with size.
+Display indices must remain exactly representable and geometry must remain
+finite; manufacturing/import/export safety and fixed V1 acceptance requirements
+are unchanged. See `S4_D1_LARGE_WORKSPACE_FIX.md` for bounded repair evidence.

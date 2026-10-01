@@ -37,6 +37,7 @@ pub struct View {
     pub message: String,
     pub render_ppm: f64,
     pub render_viewport: Option<BoundsMm>,
+    pub display_attempt: Option<(BoundsMm, f64)>,
     pub display_transient: Option<String>,
     pub drag_hit: bool,
     pub press_hit: Option<ObjectInfo>,
@@ -713,8 +714,27 @@ impl Model {
         }
         self.view.board = board;
         self.view.project_workspace = Some(self.service.project_workspace(&id)?);
-        self.view.layers = self.service.layers_list(&id)?;
-        self.view.bounds = self.service.visible_bounds(&id)?.bounds;
+        let layers = self.service.layers_list(&id)?;
+        let display_changed = geometry
+            || layers.len() != self.view.layers.len()
+            || layers.iter().zip(&self.view.layers).any(|(a, b)| {
+                a.layer_id != b.layer_id
+                    || a.visible != b.visible
+                    || a.effective_visible != b.effective_visible
+                    || a.base_color != b.base_color
+                    || a.color_mode != b.color_mode
+                    || a.display_mode != b.display_mode
+                    || a.classes.len() != b.classes.len()
+                    || a.classes.iter().zip(&b.classes).any(|(a, b)| {
+                        a.class != b.class
+                            || a.visible != b.visible
+                            || a.effective_color != b.effective_color
+                    })
+            });
+        self.view.layers = layers;
+        if display_changed {
+            self.view.bounds = self.service.visible_bounds(&id)?.bounds;
+        }
         if geometry {
             if self.snapshot.as_ref().is_none_or(|s| s.document_id != id) {
                 self.block_display_cache = Default::default();
@@ -761,7 +781,9 @@ impl Model {
         let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
         selected.retain(|o| classifier.visible(o));
         self.view.selected.ordered = selected;
-        self.rebuild();
+        if display_changed {
+            self.rebuild();
+        }
         Ok(())
     }
     fn rebuild(&mut self) {
@@ -770,6 +792,10 @@ impl Model {
         };
         self.serial += 1;
         self.view.render_ppm = self.ppm;
+        // Coverage records attempted work, including a resource refusal. The UI
+        // retries only when the camera/LOD changes, never on every error reply.
+        self.view.render_viewport = self.viewport.map(|(_, b)| b);
+        self.view.display_attempt = self.viewport.map(|(_, b)| (b, self.ppm));
         let anchor = self.view.bounds.map_or(MmPoint::new(0., 0.), |b| {
             MmPoint::new(
                 b.min_x_mm + (b.max_x_mm - b.min_x_mm) / 2.,
@@ -794,7 +820,6 @@ impl Model {
                 self.view.scene = Some(Arc::new(scene));
                 self.view.blocked = None;
                 self.view.display_transient = None;
-                self.view.render_viewport = self.viewport.map(|(_, b)| b);
             }
             Err(e) if e.starts_with("DISPLAY_PRECISION:") => {
                 rcam_diagnostics::render_exception(

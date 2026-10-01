@@ -15,6 +15,7 @@ pub struct Uniforms {
     pub preview: [f32; 4],
     pub grid: [f32; 4],
     pub world: [f32; 4],
+    pub selection_bounds: [f32; 4],
 }
 pub fn uniforms(
     scene: &Scene,
@@ -139,8 +140,50 @@ fn binned_polygon_work(
                             }
                         })
                         .count() as f64
+                        + 1.
                 } else {
-                    edge_count as f64
+                    // The shader chooses its ray per sample, then stops at
+                    // the first edge past that sample's X. Integrate a
+                    // conservative pixel-column count for each edge; charging
+                    // the whole row the densest prefix overcounts broad copper.
+                    let width = (visible_x[1] - visible_x[0]) * ppm;
+                    if width <= 0. {
+                        return None;
+                    }
+                    let mut columns = width.ceil() + 1.; // failing edge / break
+                    for left in [true, false] {
+                        let header_index = if left {
+                            primitive.b[3] as usize + bin
+                        } else {
+                            primitive.meta[2] as usize + primitive.meta[3] as usize + bin
+                        };
+                        let h = *scene.points.get(header_index)?;
+                        let edges = scene.points.get(
+                            h[0] as usize
+                                ..(h[0] as usize).checked_add((h[1] as usize).checked_mul(2)?)?,
+                        )?;
+                        let lo = visible_x[0].max(if left { f64::NEG_INFINITY } else { split });
+                        let hi = visible_x[1].min(if left { split } else { f64::INFINITY });
+                        if hi < lo {
+                            continue;
+                        }
+                        for edge in edges.chunks_exact(2) {
+                            let threshold = f64::from(if left {
+                                edge[0][0].min(edge[1][0])
+                            } else {
+                                edge[0][0].max(edge[1][0])
+                            }) + shifted_x;
+                            let span = if left {
+                                hi - lo.max(threshold)
+                            } else {
+                                hi.min(threshold) - lo
+                            };
+                            if span >= 0. {
+                                columns += (span * ppm).ceil() + 1.;
+                            }
+                        }
+                    }
+                    columns / width
                 };
                 prefix_cache[bin] = Some(active);
                 active
@@ -212,6 +255,45 @@ pub fn prepare_measured(
     stats.max_candidates_in_view = viewport.max_candidates_in_view;
     stats.cell_references_visited = viewport.cell_references_visited;
     let mut work = index.sample_candidate_work(&viewport, ppm);
+    let mut selection_bounds = [
+        f32::INFINITY,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+    ];
+    for (object, flag) in scene.objects.iter().zip(selected_flags) {
+        if *flag == 0 || object.meta[3] == 0 {
+            continue;
+        }
+        for k in 0..2 {
+            selection_bounds[k] = selection_bounds[k].min(object.bounds[k] + preview[k]);
+            selection_bounds[k + 2] =
+                selection_bounds[k + 2].max(object.bounds[k + 2] + preview[k]);
+        }
+    }
+    let has_selection = selection_bounds[0].is_finite();
+    if has_selection {
+        // Halo evaluation is restricted to selected envelopes. Query probes
+        // need an additional halo beyond the shader's pixel early-out box.
+        let selected_view = index.viewport(std::array::from_fn(|k| {
+            let v = f64::from(selection_bounds[k]) + if k < 2 { -4. / ppm } else { 4. / ppm };
+            if k < 2 {
+                v.max(bounds[k])
+            } else {
+                v.min(bounds[k])
+            }
+        }));
+        work += index.sample_candidate_work(&selected_view, ppm);
+        for (k, v) in selection_bounds.iter_mut().enumerate() {
+            *v = if k < 2 {
+                (*v - (2. / ppm) as f32).next_down()
+            } else {
+                (*v + (2. / ppm) as f32).next_up()
+            };
+        }
+    } else {
+        selection_bounds = [0.; 4];
+    }
     for id in &viewport.ordered_candidate_ids {
         let index = *id as usize;
         let object = &scene.objects[index];
@@ -271,24 +353,58 @@ pub fn prepare_measured(
             0.
         };
         for primitive in &scene.primitives[object.meta[0] as usize..object.meta[1] as usize] {
-            let cost = if primitive.meta[0] == 1 {
-                vertical * f64::from(primitive.meta[3])
+            let polygon = matches!(primitive.meta[0], 1 | 3);
+            let px = if polygon {
+                [
+                    visible_x[0]
+                        .max(f64::from(primitive.bounds[0]) + shifted_x - sample_margin_px / ppm),
+                    visible_x[1]
+                        .min(f64::from(primitive.bounds[2]) + shifted_x + sample_margin_px / ppm),
+                ]
+            } else {
+                visible_x
+            };
+            let py = if polygon {
+                [
+                    visible_y[0]
+                        .max(f64::from(primitive.bounds[1]) + shifted_y - sample_margin_px / ppm),
+                    visible_y[1]
+                        .min(f64::from(primitive.bounds[3]) + shifted_y + sample_margin_px / ppm),
+                ]
+            } else {
+                visible_y
+            };
+            let columns = if polygon {
+                ((px[1] - px[0]).max(0.) * ppm).ceil() + 1.
+            } else {
+                horizontal
+            };
+            let rows = ((py[1] - py[0]).max(0.) * ppm).ceil() + 1.;
+            let cost = if px[1] < px[0] || py[1] < py[0] {
+                0.
+            } else if primitive.meta[0] == 1 {
+                rows * f64::from(primitive.meta[3])
             } else if primitive.meta[0] == 3 {
-                binned_polygon_work(
-                    scene, primitive, visible_x, visible_y, ppm, shifted_x, shifted_y,
-                )
-                .unwrap_or(vertical * f64::from(primitive.b[1]))
+                binned_polygon_work(scene, primitive, px, py, ppm, shifted_x, shifted_y)
+                    .unwrap_or(rows * f64::from(primitive.b[1]))
             } else {
                 vertical
             };
-            work += horizontal * cost * 20.;
+            // Four AA material samples. Outline calls material four times
+            // per AA sample; only selected objects add four halo samples.
+            let samples = if object.style[1] == crate::display::MODE_EDGE {
+                16.
+            } else {
+                4.
+            } + if selected_flags[index] != 0 { 4. } else { 0. };
+            // Polygon bounds checks still execute throughout the object's box;
+            // only the edge scan is restricted to the individual contour.
+            work += (columns * cost + if polygon { horizontal * vertical } else { 0. }) * samples;
         }
     }
-    // Four coverage samples plus four selected-edge samples, conservatively bounded.
-    if !work.is_finite() || work > 2_000_000_000. {
-        return Err(format!(
-            "RESOURCE_LIMIT: resource=candidate_sample_work limit=2000000000 actual={work}"
-        ));
+    // Work is diagnostic, not an admission limit: large workspaces may render slowly.
+    if !work.is_finite() {
+        return Err("VALIDATION_FAILED: non-finite display work estimate".into());
     }
     stats.estimated_work = work;
     stats.cpu_prepare_ms = started.elapsed().as_secs_f64() * 1000.;
@@ -309,7 +425,13 @@ pub fn prepare_measured(
                 // in/out answer depends on last-bit rounding of the shader compiler.
                 (1.5 * 1.0123 / (camera.scale * f64::from(ppp))) as f32,
             ],
-            counts: [scene.objects.len() as u32, index.cols, index.rows, 0],
+            counts: [
+                scene.objects.len() as u32,
+                index.cols,
+                index.rows,
+                u32::from(has_selection),
+            ],
+            selection_bounds,
         },
         index,
     })
@@ -564,17 +686,96 @@ mod binned_work_tests {
     use super::*;
 
     #[test]
+    fn split_ray_work_bounds_all_horizontal_sample_phases_and_translation() {
+        let edges: Vec<_> = (0..20)
+            .map(|i| {
+                let x = -1.5 + i as f32 * 0.15;
+                ([x, 0.], [x + 0.3, 1.])
+            })
+            .collect();
+        let mut points = vec![[0.; 2]; 2];
+        let mut right = edges.clone();
+        right.reverse();
+        for (header, list) in [right, edges].into_iter().enumerate() {
+            points[header] = [points.len() as f32, list.len() as f32];
+            for (a, b) in list {
+                points.push(a);
+                points.push(b);
+            }
+        }
+        let scene = Scene {
+            serial: 0,
+            index: Arc::default(),
+            anchor: editor_core::MmPoint::new(0., 0.),
+            objects: vec![],
+            primitives: vec![],
+            points,
+            ids: vec![],
+            ppm: 20.,
+        };
+        let primitive = Primitive {
+            meta: [3, 1, 0, 0],
+            a: [1., 0., 1., 0.],
+            b: [1., 20., 0., 1.],
+            bounds: [0.; 4],
+        };
+        for shift in [0., 10.] {
+            let estimate = binned_polygon_work(
+                &scene,
+                &primitive,
+                [-1. + shift, 1. + shift],
+                [0., 1.],
+                20.,
+                shift,
+                0.,
+            )
+            .unwrap()
+                * 40.;
+            for phase in 0..40 {
+                let mut visits = 0;
+                for column in 0..40 {
+                    let x = -1. + (column as f64 + phase as f64 / 40.) / 20.;
+                    let left = x < 0.;
+                    let h = scene.points[usize::from(left)];
+                    for i in 0..h[1] as usize {
+                        visits += 20;
+                        let a = scene.points[h[0] as usize + i * 2];
+                        let b = scene.points[h[0] as usize + i * 2 + 1];
+                        if (left && f64::from(a[0].min(b[0])) > x)
+                            || (!left && f64::from(a[0].max(b[0])) < x)
+                        {
+                            break;
+                        }
+                    }
+                }
+                assert!(
+                    estimate >= f64::from(visits),
+                    "phase={phase} shift={shift} estimated={estimate} visits={visits}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn subpixel_bins_cover_every_sample_phase() {
         let counts: Vec<u32> = (0..100)
             .map(|bin| if bin % 13 == 0 { 50 } else { 1 })
             .collect();
+        let mut points: Vec<_> = counts.iter().map(|&count| [0., count as f32]).collect();
+        for (bin, &count) in counts.iter().enumerate() {
+            points[bin][0] = points.len() as f32;
+            for _ in 0..count {
+                points.push([-2., 0.]);
+                points.push([2., 1.]);
+            }
+        }
         let scene = Scene {
             serial: 0,
             index: Arc::default(),
             anchor: editor_core::MmPoint::new(0., 0.),
             objects: Vec::new(),
             primitives: Vec::new(),
-            points: counts.iter().map(|&count| [0., count as f32]).collect(),
+            points,
             ids: Vec::new(),
             ppm: 10.,
         };
@@ -582,6 +783,7 @@ mod binned_work_tests {
             meta: [3, 1, 0, 0],
             a: [1., 0., 100., 0.],
             b: [100., 50., 0., 0.],
+            bounds: [0.; 4],
         };
         let estimate =
             binned_polygon_work(&scene, &primitive, [-1., 1.], [0., 1.], 10., 0., 0.).unwrap();

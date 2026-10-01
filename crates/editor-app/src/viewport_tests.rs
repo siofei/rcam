@@ -18,6 +18,7 @@ fn scene(objects: Vec<Object>) -> Scene {
             meta: [0, 1, 0, 0],
             a: [0.; 4],
             b: [0.25, 0., 0., 0.],
+            bounds: [0.; 4],
         }],
         points: vec![],
         ppm: 100.,

@@ -1,6 +1,6 @@
-struct Uniforms { view:vec4<f32>, camera:vec4<f32>, counts:vec4<u32>, preview:vec4<f32>, grid:vec4<f32>, world:vec4<f32> }
+struct Uniforms { view:vec4<f32>, camera:vec4<f32>, counts:vec4<u32>, preview:vec4<f32>, grid:vec4<f32>, world:vec4<f32>, selection_bounds:vec4<f32> }
 struct Object { tag:vec4<u32>, bounds:vec4<f32>, style:vec4<u32> }
-struct Primitive { tag:vec4<u32>, a:vec4<f32>, b:vec4<f32> }
+struct Primitive { tag:vec4<u32>, a:vec4<f32>, b:vec4<f32>, bounds:vec4<f32> }
 @group(0) @binding(0) var<uniform> u:Uniforms;
 @group(0) @binding(1) var<storage,read> objects:array<Object>;
 @group(0) @binding(2) var<storage,read> shapes:array<Primitive>;
@@ -17,6 +17,7 @@ fn cell(p:vec2<f32>)->u32 {
 }
 fn cross(a:vec2<f32>,b:vec2<f32>)->f32{return a.x*b.y-a.y*b.x;}
 fn contains(s:Primitive,p:vec2<f32>)->bool {
+    if (s.tag.x==1u || s.tag.x==3u) && (any(p<s.bounds.xy) || any(p>s.bounds.zw)) {return false;}
     if s.tag.x==0u {
         let d=s.a.zw-s.a.xy; let l=dot(d,d);var t=0.;
         if l>0. {t=clamp(dot(p-s.a.xy,d)/l,0.,1.);}
@@ -124,6 +125,7 @@ fn sample_scene(p:vec2<f32>)->vec3<f32> {
     let q=0.25/u.camera.z;
     var edge=false;
     var color=(sample_scene(p+vec2(q,q))+sample_scene(p+vec2(q,-q))+sample_scene(p+vec2(-q,q))+sample_scene(p-vec2(q,q)))*0.25;
+    if u.counts.w!=0u && all(p>=u.selection_bounds.xy) && all(p<=u.selection_bounds.zw) {
     let e=u.camera.w;
     let queries=array<vec2<f32>,4>(p+vec2(e,0.),p-vec2(e,0.),p+vec2(0.,e),p-vec2(0.,e));
     var cursors:array<u32,4>;
@@ -141,6 +143,7 @@ fn sample_scene(p:vec2<f32>)->vec3<f32> {
           let c=object_material(o,p+vec2(0.,e));let d=object_material(o,p-vec2(0.,e));
           if a!=b || c!=d {edge=true;}
         }
+    }
     }
     // One halo per pixel: the inverse colour is not idempotent, so several selected
     // display objects of one id must not cancel each other out.

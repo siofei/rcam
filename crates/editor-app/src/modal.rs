@@ -281,6 +281,7 @@ pub(crate) mod tests {
             rx,
             view: crate::state::View::default(),
             busy: false,
+            viewport_sequence: None,
             sequence: 0,
             camera: crate::camera::Camera::default(),
             last_good: None,

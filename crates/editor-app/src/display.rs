@@ -7,8 +7,8 @@ use std::f64::consts::TAU;
 
 // One 230k-flash real stencil needs roughly 1.2M polygon vertices/primitives.
 // This remains a display-only budget; the manufacturing object limit is separate.
-const MAX_ITEMS: usize = 2_000_000;
-const POLYGON_BIN_THRESHOLD: usize = 32;
+const ACCELERATION_TARGET_ITEMS: usize = 2_000_000;
+const POLYGON_BIN_THRESHOLD: usize = 16;
 const POLYGON_BIN_TARGET_EDGES: usize = 1;
 const POLYGON_BIN_MAX_COUNT: usize = 4096;
 const POLYGON_BIN_MAX_STORAGE_MULTIPLIER: usize = 64;
@@ -37,6 +37,17 @@ pub const HAIRLINE_PX: f64 = 1.0;
 /// the coarsest supported zoom, otherwise zooming out clips the outer half of the line.
 pub const LOD_MAX_ZOOM_OUT: f64 = 4.;
 
+/// A refused request also covers its attempted camera range. A new pan/LOD
+/// can recover; an unchanged camera must settle instead of scheduling a loop.
+pub fn covers_view(bounds: BoundsMm, scale: f64, lo: MmPoint, hi: MmPoint, ppm: f64) -> bool {
+    lo.x_mm >= bounds.min_x_mm
+        && lo.y_mm >= bounds.min_y_mm
+        && hi.x_mm <= bounds.max_x_mm
+        && hi.y_mm <= bounds.max_y_mm
+        && ppm <= scale
+        && ppm >= scale / LOD_MAX_ZOOM_OUT
+}
+
 /// Geometry-only display semantics for `LayerDisplayMode::ZeroWidth`.
 /// Category policy remains owned by the outer `SemanticObject`; in particular,
 /// resolved Block primitives still use `DisplayClass::BlockInstance` for
@@ -59,6 +70,7 @@ pub struct Primitive {
     pub meta: [u32; 4],
     pub a: [f32; 4],
     pub b: [f32; 4],
+    pub bounds: [f32; 4],
 }
 #[derive(Clone)]
 pub struct Scene {
@@ -166,6 +178,7 @@ impl Scene {
                 )?;
             }
         }
+        scene.accelerate_polygons()?;
         scene.index = if let Some(old) = previous.filter(|old| {
             old.anchor == scene.anchor
                 && old.ids == scene.ids
@@ -337,6 +350,7 @@ impl Scene {
                             },
                             0.,
                         ],
+                        bounds: [0.; 4],
                     });
                 }
             }
@@ -354,9 +368,14 @@ impl Scene {
                                 // Stable sagitta formula; <= 0.20 physical px, leaving conversion margin.
                                 let step = 4.
                                     * (0.20 / self.ppm / (2. * a.radius())).min(1.).sqrt().asin();
-                                let count = (sweep / step).ceil().max(1.);
-                                if !count.is_finite() || count > MAX_ITEMS as f64 {
-                                    return Err("RESOURCE_LIMIT: Region display segments".into());
+                                // Subpixel curved contours must still enclose
+                                // an area: a circle cannot collapse to one point,
+                                // nor an arc plus its closing line to two.
+                                let count = (sweep / step.min(std::f64::consts::FRAC_PI_2))
+                                    .ceil()
+                                    .max(if contour.edges.len() < 3 { 2. } else { 1. });
+                                if !count.is_finite() || count >= u32::MAX as f64 {
+                                    return Err("DISPLAY_PRECISION: Region segment index is not representable".into());
                                 }
                                 let angle = (a.start.y_mm - a.center.y_mm)
                                     .atan2(a.start.x_mm - a.center.x_mm);
@@ -374,9 +393,6 @@ impl Scene {
                                 }
                             }
                         }
-                        if points.len() > MAX_ITEMS {
-                            return Err("RESOURCE_LIMIT: Region display points".into());
-                        }
                     }
                     self.polygon(&points, Exposure::Dark, true)?;
                 }
@@ -390,9 +406,7 @@ impl Scene {
                 return Err("BUG: nested BlockInstance reached push_primitive_object".into());
             }
         }
-        if self.primitives.len() + self.points.len() > MAX_ITEMS {
-            return Err(format!("RESOURCE_LIMIT: display items ({MAX_ITEMS})"));
-        }
+        self.check_budget(0)?;
         let end = self.primitives.len();
         let mut bounds = self.primitive_bounds(start, end);
         // Use actual arc sweeps rather than the full-circle envelope of the
@@ -465,9 +479,11 @@ impl Scene {
             .len()
             .saturating_add(self.primitives.len())
             .saturating_add(extra)
-            > MAX_ITEMS
+            >= (1 << 24)
         {
-            return Err(format!("RESOURCE_LIMIT: display items ({MAX_ITEMS})"));
+            return Err(
+                "DISPLAY_PRECISION: display storage index is not exactly representable".into(),
+            );
         }
         Ok(())
     }
@@ -511,6 +527,7 @@ impl Scene {
             meta: [0, u32::from(e == Exposure::Dark), 0, mark],
             a: [a[0], a[1], b[0], b[1]],
             b: [self.scalar(r)?, 0., 0., 0.],
+            bounds: [0.; 4],
         });
         Ok(())
     }
@@ -524,29 +541,92 @@ impl Scene {
             .map(|point| self.point(*point))
             .collect::<Result<Vec<_>, _>>()?;
         let start = self.points.len();
-        if let Some((bins, y_min, inverse_height, max_edges)) = self.polygon_bins(&local) {
-            let edge_references = bins.iter().map(Vec::len).sum::<usize>();
-            let extra = local
-                .len()
-                .saturating_add(bins.len().saturating_mul(2))
-                .saturating_add(edge_references.saturating_mul(4));
-            self.check_budget(extra.saturating_add(1))?;
-            let x_min = local
-                .iter()
-                .map(|point| point[0])
-                .fold(f32::INFINITY, f32::min);
-            let x_max = local
-                .iter()
-                .map(|point| point[0])
-                .fold(f32::NEG_INFINITY, f32::max);
-            self.points.extend_from_slice(&local);
+        self.points.extend_from_slice(&local);
+        self.primitives.push(Primitive {
+            meta: [
+                1,
+                u32::from(e == Exposure::Dark),
+                start as u32,
+                points.len() as u32,
+            ],
+            a: [u32::from(winding) as f32, 0., 0., 0.],
+            b: [0.; 4],
+            bounds: std::array::from_fn(|k| {
+                let axis = k % 2;
+                if k < 2 {
+                    local
+                        .iter()
+                        .map(|p| p[axis])
+                        .fold(f32::INFINITY, f32::min)
+                        .next_down()
+                } else {
+                    local
+                        .iter()
+                        .map(|p| p[axis])
+                        .fold(f32::NEG_INFINITY, f32::max)
+                        .next_up()
+                }
+            }),
+        });
+        Ok(())
+    }
+    /// Reserve every raw contour before spending any memory on acceleration.
+    /// Share the remaining fixed budget by area times edge count, so early layers
+    /// cannot consume storage required by later layers. No vertices are dropped.
+    fn accelerate_polygons(&mut self) -> Result<(), String> {
+        let weight = |p: &Primitive, points: &[[f32; 2]]| {
+            if p.meta[0] != 1 || (p.meta[3] as usize) < POLYGON_BIN_THRESHOLD {
+                return 0.;
+            }
+            let vertices = &points[p.meta[2] as usize..(p.meta[2] + p.meta[3]) as usize];
+            let bounds = vertices.iter().fold(
+                [
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                ],
+                |mut b, v| {
+                    for k in 0..2 {
+                        b[k] = b[k].min(f64::from(v[k]));
+                        b[k + 2] = b[k + 2].max(f64::from(v[k]));
+                    }
+                    b
+                },
+            );
+            (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) * f64::from(p.meta[3])
+        };
+        let total: f64 = self
+            .primitives
+            .iter()
+            .map(|p| weight(p, &self.points))
+            .sum();
+        if total <= 0. {
+            return Ok(());
+        }
+        let extra =
+            ACCELERATION_TARGET_ITEMS.saturating_sub(self.points.len() + self.primitives.len());
+        let raw = std::mem::take(&mut self.points);
+        for primitive in &mut self.primitives {
+            if primitive.meta[0] != 1 {
+                continue;
+            }
+            let local =
+                &raw[primitive.meta[2] as usize..(primitive.meta[2] + primitive.meta[3]) as usize];
+            let budget = (extra as f64 * weight(primitive, &raw) / total).floor() as usize;
+            let start = self.points.len();
+            primitive.meta[2] = start as u32;
+            self.points.extend_from_slice(local);
+            let Some((bins, y_min, inverse_height, max_edges)) = Self::polygon_bins(local, budget)
+            else {
+                continue;
+            };
+            let x_min = local.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
+            let x_max = local.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max);
             let headers = self.points.len();
             let left_headers = headers + bins.len();
             self.points.resize(headers + bins.len() * 2, [0.; 2]);
             for (index, mut bin) in bins.into_iter().enumerate() {
-                // The right ray ignores edges wholly left of p; the left ray
-                // ignores edges wholly right of p. Sorting lets the shader
-                // stop without changing winding or even/odd fill semantics.
                 bin.sort_by(|(a, b), (c, d)| c[0].max(d[0]).total_cmp(&a[0].max(b[0])));
                 self.points[headers + index] = [self.points.len() as f32, bin.len() as f32];
                 for &(a, b) in &bin {
@@ -560,44 +640,23 @@ impl Scene {
                     self.points.push(b);
                 }
             }
-            self.primitives.push(Primitive {
-                // Type 3 retains the original vertices at `tag.z..tag.z+tag.w`
-                // for the independent reference shader. Production uses the
-                // exact same f32 edges through bounded horizontal bins.
-                meta: [
-                    3,
-                    u32::from(e == Exposure::Dark),
-                    start as u32,
-                    local.len() as u32,
-                ],
-                a: [u32::from(winding) as f32, y_min, inverse_height, 0.],
-                b: [
-                    (left_headers - headers) as f32,
-                    max_edges as f32,
-                    x_min + (x_max - x_min) * 0.5,
-                    left_headers as f32,
-                ],
-            });
-            return Ok(());
+            primitive.meta[0] = 3;
+            primitive.a[1] = y_min;
+            primitive.a[2] = inverse_height;
+            primitive.b = [
+                (left_headers - headers) as f32,
+                max_edges as f32,
+                x_min + (x_max - x_min) * 0.5,
+                left_headers as f32,
+            ];
         }
-        self.points.extend_from_slice(&local);
-        self.primitives.push(Primitive {
-            meta: [
-                1,
-                u32::from(e == Exposure::Dark),
-                start as u32,
-                points.len() as u32,
-            ],
-            a: [u32::from(winding) as f32, 0., 0., 0.],
-            b: [0.; 4],
-        });
-        Ok(())
+        self.check_budget(0)
     }
     /// Exact point-in-polygon acceleration for display only. A horizontal ray
     /// can only cross edges whose y-range contains the sample, so duplicating
     /// those edges into bounded y bins preserves winding/even-odd answers while
     /// avoiding a full glyph-contour scan for every screen sample.
-    fn polygon_bins(&self, points: &[[f32; 2]]) -> Option<PolygonBins> {
+    fn polygon_bins(points: &[[f32; 2]], available: usize) -> Option<PolygonBins> {
         if points.len() < POLYGON_BIN_THRESHOLD {
             return None;
         }
@@ -640,11 +699,6 @@ impl Scene {
                 .saturating_mul(2)
                 .saturating_add(references.saturating_mul(4));
             let max_edges = bins.iter().map(Vec::len).max().unwrap_or(0);
-            let available = MAX_ITEMS
-                .saturating_sub(self.points.len())
-                .saturating_sub(self.primitives.len())
-                .saturating_sub(points.len())
-                .saturating_sub(1);
             if storage
                 <= points
                     .len()
@@ -811,5 +865,32 @@ impl Scene {
             }
         }
         b
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    #[test]
+    fn raw_display_storage_above_old_budget_is_accepted() {
+        let mut scene = Scene {
+            serial: 1,
+            index: Default::default(),
+            anchor: MmPoint::new(0., 0.),
+            objects: vec![],
+            primitives: vec![],
+            points: vec![[0.; 2]; ACCELERATION_TARGET_ITEMS + 1],
+            ids: vec![],
+            ppm: 20.,
+        };
+        scene
+            .polygon(
+                &rectangle(MmPoint::new(0., 0.), 10., 10.),
+                Exposure::Dark,
+                true,
+            )
+            .unwrap();
+        assert_eq!(scene.points.len(), ACCELERATION_TARGET_ITEMS + 5);
+        assert_eq!(scene.primitives.len(), 1);
     }
 }

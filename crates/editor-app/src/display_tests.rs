@@ -794,7 +794,8 @@ fn metal_probes(selected_count: usize) {
             preview: if preview { [3., -2., 0., 0.] } else { [0.; 4] },
             view: [0.; 4],
             camera: [0.; 4],
-            counts: [scene.objects.len() as u32, u32::from(preview), 0, 0],
+            counts: [scene.objects.len() as u32, u32::from(preview), 0, 1],
+            selection_bounds: [-1e6, -1e6, 1e6, 1e6],
         };
         let buf = |bytes: &[u8], usage| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1005,6 +1006,100 @@ fn large_polygon_horizontal_bins_match_full_reference_winding() {
                     != 0;
                 assert_eq!(binned, full, "point {p:?} left={left}");
             }
+        }
+    }
+}
+
+#[test]
+fn polygon_acceleration_cannot_starve_later_contours() {
+    let (mut snapshot, layers) = fixture("s2a3/gui_primitives.gbr");
+    let vertices: Vec<_> = (0..256)
+        .map(|i| {
+            let a = std::f64::consts::TAU * i as f64 / 256.;
+            let r = if i % 7 == 0 { 3. } else { 2. };
+            MmPoint::new(r * a.cos(), r * a.sin())
+        })
+        .collect();
+    let contour = RegionContour {
+        role: RegionRole::Solid,
+        edges: (0..256)
+            .map(|i| RegionEdge::Line {
+                start: vertices[i],
+                end: vertices[(i + 1) % 256],
+            })
+            .collect(),
+    };
+    snapshot.layers[0].objects = (0..500)
+        .map(|i| SemanticObject {
+            object_id: format!("budget-contour-{i}"),
+            geometry: SemanticGeometry::Region {
+                contours: vec![contour.clone()],
+            },
+            exposure: if i % 2 == 0 {
+                Exposure::Dark
+            } else {
+                Exposure::Clear
+            },
+            origin: ObjectOrigin::Generated {
+                operation_id: "budget-regression".into(),
+            },
+        })
+        .collect();
+    let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 20., 1).unwrap();
+    assert_eq!(scene.objects.len(), 500);
+    assert_eq!(scene.ids.last().unwrap(), "budget-contour-499");
+    assert!(scene.points.len() + scene.primitives.len() <= 2_000_000);
+    for (i, p) in scene.primitives.iter().enumerate() {
+        assert_eq!(p.meta[3], 256);
+        assert_eq!(scene.objects[i].meta[2], u32::from(i % 2 == 0));
+        for (j, v) in vertices.iter().enumerate() {
+            assert_eq!(
+                scene.points[p.meta[2] as usize + j],
+                [v.x_mm as f32, v.y_mm as f32]
+            );
+        }
+    }
+}
+
+#[test]
+fn subpixel_curved_regions_retain_closed_area_at_fit_zoom() {
+    let (mut snapshot, layers) = fixture("s2a3/gui_primitives.gbr");
+    let start = MmPoint::new(0.001, 0.);
+    let end = MmPoint::new(-0.001, 0.);
+    for full_circle in [true, false] {
+        let arc = ArcGeometry {
+            start,
+            end: if full_circle { start } else { end },
+            center: MmPoint::new(0., 0.),
+            direction: ArcDirection::CounterClockwise,
+            full_circle,
+            source: None,
+        };
+        let mut edges = vec![RegionEdge::Arc(arc)];
+        if !full_circle {
+            edges.push(RegionEdge::Line {
+                start: end,
+                end: start,
+            });
+        }
+        snapshot.layers[0].objects = vec![SemanticObject {
+            object_id: "subpixel-region".into(),
+            exposure: Exposure::Dark,
+            origin: ObjectOrigin::Generated {
+                operation_id: "subpixel".into(),
+            },
+            geometry: SemanticGeometry::Region {
+                contours: vec![RegionContour {
+                    role: RegionRole::Solid,
+                    edges,
+                }],
+            },
+        }];
+        for ppm in [0.01, 1., 20., 1000.] {
+            let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), ppm, 1).unwrap();
+            assert!(scene.primitives[0].meta[3] >= 3);
+            assert!(scene.objects[0].bounds[2] > scene.objects[0].bounds[0]);
+            assert!(scene.objects[0].bounds[3] > scene.objects[0].bounds[1]);
         }
     }
 }

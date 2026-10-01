@@ -1,6 +1,6 @@
 struct Uniforms { view:vec4<f32>, camera:vec4<f32>, counts:vec4<u32>, preview:vec4<f32> }
 struct Object { tag:vec4<u32>, bounds:vec4<f32>, style:vec4<u32> }
-struct Primitive { tag:vec4<u32>, a:vec4<f32>, b:vec4<f32> }
+struct Primitive { tag:vec4<u32>, a:vec4<f32>, b:vec4<f32>, bounds:vec4<f32> }
 @group(0) @binding(0) var<uniform> u:Uniforms;
 @group(0) @binding(1) var<storage,read> objects:array<Object>;
 @group(0) @binding(2) var<storage,read> shapes:array<Primitive>;

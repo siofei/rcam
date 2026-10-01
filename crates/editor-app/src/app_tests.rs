@@ -7,6 +7,274 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+#[test]
+fn display_work_keeps_controls_enabled_and_accepts_one_user_command() {
+    let mut app = crate::modal::tests::app();
+    let (tx, requests) = std::sync::mpsc::sync_channel(2);
+    app.tx = tx;
+    let bounds = editor_core::BoundsMm {
+        min_x_mm: 0.,
+        min_y_mm: 0.,
+        max_x_mm: 10.,
+        max_y_mm: 10.,
+    };
+    app.send(Action::Viewport(MmPoint::new(5., 5.), bounds, 16.));
+    assert!(!app.busy);
+    assert_eq!(app.viewport_sequence, Some(1));
+    app.send(Action::Viewport(MmPoint::new(5., 5.), bounds, 16.));
+    assert_eq!(app.sequence, 1, "one pending display request");
+    app.send(Action::Select(MmPoint::new(5., 5.), 0.01, Replace));
+    assert!(app.busy);
+    assert_eq!(app.sequence, 2);
+    assert!(matches!(
+        requests.try_recv().unwrap().2,
+        Action::Viewport(..)
+    ));
+    assert!(matches!(requests.try_recv().unwrap().2, Action::Select(..)));
+    assert!(requests.try_recv().is_err());
+}
+
+#[test]
+fn unchanged_workspace_reuses_scene_and_failed_camera_attempt_settles() {
+    let (mut m, _) = setup();
+    let scene = m.view.scene.clone().unwrap();
+    let id = m.view.layers[0].layer_id.clone();
+    m.run(Action::SetActiveLayer(Some(id)));
+    patch(&mut m, None, Some(true), Some("renamed".into()));
+    assert!(std::sync::Arc::ptr_eq(
+        &scene,
+        m.view.scene.as_ref().unwrap()
+    ));
+    let bounds = m.view.bounds.unwrap();
+    m.run(Action::Viewport(MmPoint::new(1e18, 1e18), bounds, 128.));
+    assert!(m.view.display_transient.is_some());
+    let (attempt, ppm) = m.view.display_attempt.unwrap();
+    let lo = MmPoint::new(bounds.min_x_mm, bounds.min_y_mm);
+    let hi = MmPoint::new(bounds.max_x_mm, bounds.max_y_mm);
+    assert!(crate::display::covers_view(attempt, ppm, lo, hi, 64.));
+    assert!(!crate::display::covers_view(attempt, ppm, lo, hi, 256.));
+    assert!(!crate::display::covers_view(
+        attempt,
+        ppm,
+        MmPoint::new(lo.x_mm - 1., lo.y_mm),
+        hi,
+        64.
+    ));
+    m.run(Action::Viewport(bounds.center(), bounds, 32.));
+    assert!(m.view.blocked.is_none());
+    assert!(m.view.display_transient.is_none());
+}
+
+/// Private inputs stay outside the source tree; exercise the same worker model
+/// as the UI and retain phase timings rather than timing a substitute parser.
+#[test]
+#[ignore = "requires explicit private input manifest and release profiling"]
+fn real_large_workspace_profile() {
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(std::env::var_os("RCAM_LARGE_INPUTS").expect("RCAM_LARGE_INPUTS")).unwrap(),
+    )
+    .unwrap();
+    for kind in ["set", "project"] {
+        let mut m = Model::default();
+        let start = std::time::Instant::now();
+        let result = if kind == "set" {
+            let paths: Vec<_> = manifest["set"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| PathBuf::from(p.as_str().unwrap()))
+                .collect();
+            m.import_gerbers(&paths)
+        } else {
+            m.open_project(
+                std::path::Path::new(manifest["project"].as_str().unwrap()),
+                true,
+            )
+        };
+        eprintln!(
+            "PROFILE {kind} load_ms={} result={result:?} blocked={:?}",
+            start.elapsed().as_secs_f64() * 1000.,
+            m.view.blocked
+        );
+        assert!(result.is_ok(), "real input must load: {result:?}");
+        assert!(m.view.blocked.is_none(), "{:?}", m.view.blocked);
+        let doc = m.view.info.as_ref().unwrap().document_id.clone();
+        let start = std::time::Instant::now();
+        let snapshot = m.service.render_snapshot(&doc).unwrap();
+        eprintln!(
+            "PROFILE {kind} snapshot_ms={} objects={} apertures={}",
+            start.elapsed().as_secs_f64() * 1000.,
+            snapshot
+                .layers
+                .iter()
+                .map(|l| l.objects.len())
+                .sum::<usize>(),
+            snapshot.apertures.len()
+        );
+        for layer in &snapshot.layers {
+            let mut single = snapshot.clone();
+            single.layers = vec![layer.clone()];
+            let start = std::time::Instant::now();
+            let scene =
+                crate::display::Scene::build(&single, &m.view.layers, MmPoint::new(0., 0.), 20., 0);
+            eprintln!(
+                "PROFILE {kind} layer={} objects={} scene_ms={} counts={:?}",
+                layer.id,
+                layer.objects.len(),
+                start.elapsed().as_secs_f64() * 1000.,
+                scene.as_ref().map(|s| (
+                    s.primitives.len(),
+                    s.points.len(),
+                    s.primitives
+                        .iter()
+                        .filter(|p| matches!(p.meta[0], 1 | 3))
+                        .map(|p| p.meta[3] as usize)
+                        .sum::<usize>()
+                ))
+            );
+        }
+        let rect = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(770., 713.),
+        );
+        let mut camera = crate::camera::Camera::default();
+        camera.fit(m.view.bounds, rect);
+        for zoom in [1., 2., 4., 8., 16.] {
+            let c = crate::camera::Camera {
+                scale: camera.scale * zoom,
+                ..camera
+            };
+            let lo = c.world(rect.left_bottom(), rect);
+            let hi = c.world(rect.right_top(), rect);
+            let margin_x = (hi.x_mm - lo.x_mm) * 0.5 + 4. / c.scale;
+            let margin_y = (hi.y_mm - lo.y_mm) * 0.5 + 4. / c.scale;
+            let coverage = editor_core::BoundsMm {
+                min_x_mm: lo.x_mm - margin_x,
+                min_y_mm: lo.y_mm - margin_y,
+                max_x_mm: hi.x_mm + margin_x,
+                max_y_mm: hi.y_mm + margin_y,
+            };
+            let start = std::time::Instant::now();
+            m.run(Action::Viewport(
+                c.center,
+                coverage,
+                2f64.powf(c.scale.log2().ceil()),
+            ));
+            eprintln!(
+                "PROFILE {kind} camera_scene zoom={zoom} ms={} blocked={:?}",
+                start.elapsed().as_secs_f64() * 1000.,
+                m.view.blocked
+            );
+            let scene = m.view.scene.as_ref().expect("complete real camera scene");
+            let start = std::time::Instant::now();
+            let prepared = crate::gpu::prepare_measured(
+                scene,
+                c,
+                rect,
+                2.,
+                &vec![0; scene.objects.len()],
+                MmPoint::new(0., 0.),
+            );
+            eprintln!(
+                "PROFILE {kind} gpu_prepare zoom={zoom} ms={} result={:?}",
+                start.elapsed().as_secs_f64() * 1000.,
+                prepared.as_ref().map(|p| &p.stats)
+            );
+            if std::env::var_os("RCAM_LARGE_REQUIRE_PASS").is_some() {
+                assert!(prepared.is_ok(), "{kind} zoom={zoom} {:?}", prepared.err());
+            }
+        }
+        let start = std::time::Instant::now();
+        let _ = m.service.visible_bounds(&doc).unwrap();
+        eprintln!(
+            "PROFILE {kind} bounds_ms={}",
+            start.elapsed().as_secs_f64() * 1000.
+        );
+        for ppm in [8., 16., 8.] {
+            let start = std::time::Instant::now();
+            m.run(Action::Viewport(
+                MmPoint::new(0., 0.),
+                m.view.bounds.unwrap(),
+                ppm,
+            ));
+            eprintln!(
+                "PROFILE {kind} viewport ppm={ppm} ms={} blocked={:?}",
+                start.elapsed().as_secs_f64() * 1000.,
+                m.view.blocked
+            );
+        }
+        for _ in 0..3 {
+            let start = std::time::Instant::now();
+            m.run(Action::SetActiveLayer(Some(
+                m.view.layers[0].layer_id.clone(),
+            )));
+            eprintln!(
+                "PROFILE {kind} active_ms={}",
+                start.elapsed().as_secs_f64() * 1000.
+            );
+        }
+        if let Some(point) = snapshot
+            .layers
+            .iter()
+            .flat_map(|l| &l.objects)
+            .find_map(|o| {
+                if let SemanticGeometry::Flash {
+                    center,
+                    aperture_id,
+                    ..
+                } = &o.geometry
+                    && snapshot.apertures.iter().any(|a| {
+                        a.id == *aperture_id
+                            && matches!(
+                                a.shape,
+                                editor_core::ApertureShape::Rectangle {
+                                    hole_diameter_mm: None,
+                                    ..
+                                }
+                            )
+                    })
+                {
+                    return Some(*center);
+                }
+                None
+            })
+        {
+            let start = std::time::Instant::now();
+            m.run(Action::Select(point, 0.01, Replace));
+            eprintln!(
+                "PROFILE {kind} select_ms={} count={} error={:?}",
+                start.elapsed().as_secs_f64() * 1000.,
+                m.view.selected.ordered.len(),
+                m.view.error
+            );
+            if !m.view.selected.ordered.is_empty() {
+                let start = std::time::Instant::now();
+                m.run(Action::Move("0.1".into(), "0".into()));
+                eprintln!(
+                    "PROFILE {kind} move_ms={} error={:?}",
+                    start.elapsed().as_secs_f64() * 1000.,
+                    m.view.error
+                );
+                let start = std::time::Instant::now();
+                m.run(Action::History(false));
+                eprintln!(
+                    "PROFILE {kind} undo_ms={} error={:?}",
+                    start.elapsed().as_secs_f64() * 1000.,
+                    m.view.error
+                );
+                assert!(m.view.error.is_none(), "{:?}", m.view.error);
+                let after = m.service.render_snapshot(&doc).unwrap();
+                assert_eq!(
+                    snapshot.layers, after.layers,
+                    "Undo restores all geometry exactly"
+                );
+                assert_eq!(snapshot.apertures, after.apertures);
+                assert_eq!(snapshot.block_definitions, after.block_definitions);
+            }
+        }
+    }
+}
 const SOURCE: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,2*%\n%ADD11C,4X2*%\nD10*\nX10000000Y20000000D03*\nD11*\nX20000000Y20000000D03*\nM02*\n";
 fn setup_source(name: &str, source: &[u8]) -> (Model, PathBuf) {
     let base = std::env::var_os("RCAM_GUI_EVIDENCE")
@@ -2574,4 +2842,31 @@ fn all_arrangement_command_ids_dispatch_to_their_typed_actions() {
         };
         assert_eq!(actual, expected, "wrong mapping for {}", command.0);
     }
+}
+
+#[test]
+fn estimated_pixel_work_above_old_budget_is_diagnostic_only() {
+    let mut m = Model::default();
+    m.open(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/s2a3/gui_primitives.gbr"),
+    )
+    .unwrap();
+    let rect = eframe::egui::Rect::from_min_size(
+        eframe::egui::Pos2::ZERO,
+        eframe::egui::vec2(100_000., 100_000.),
+    );
+    let mut camera = crate::camera::Camera::default();
+    camera.fit(m.view.bounds, rect);
+    let scene = m.view.scene.as_ref().unwrap();
+    let prepared = crate::gpu::prepare_measured(
+        scene,
+        camera,
+        rect,
+        1.,
+        &vec![0; scene.objects.len()],
+        MmPoint::new(0., 0.),
+    )
+    .unwrap();
+    assert!(prepared.stats.estimated_work > 2_000_000_000.);
 }

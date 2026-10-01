@@ -3630,10 +3630,16 @@ fn content_hash(document: &SemanticDocument) -> String {
             Ok(())
         }
     }
-    let mut writer = HashWriter(Sha256::new());
+    // JSON emits many tiny writes. Buffer those without allocating a
+    // document-sized byte vector, while hashing exactly the same JSON bytes.
+    let mut writer = io::BufWriter::with_capacity(64 * 1024, HashWriter(Sha256::new()));
     serde_json::to_writer(&mut writer, document)
         .expect("validated finite model and infallible hash writer");
-    writer.0.finish()
+    writer
+        .into_inner()
+        .unwrap_or_else(|_| unreachable!("infallible hash writer"))
+        .0
+        .finish()
 }
 
 fn check_revision(actual: u64, expected: &str) -> Result<(), ServiceError> {
@@ -4524,6 +4530,16 @@ M02*
 #[cfg(test)]
 mod s1b_guards {
     use super::*;
+
+    #[test]
+    fn buffered_content_hash_matches_exact_serialized_model_bytes() {
+        let (service, id, _, _) = service();
+        let document = &service.documents[&id].document;
+        assert_eq!(
+            content_hash(document),
+            sha256_hex(&serde_json::to_vec(document).unwrap())
+        );
+    }
 
     fn service() -> (ApplicationService, String, String, String) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))

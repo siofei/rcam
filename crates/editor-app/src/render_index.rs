@@ -3,8 +3,6 @@ use crate::display::Object;
 
 pub const MAX_GRID_CELLS: usize = 262_144;
 pub const MAX_CELL_REFERENCES: usize = 1_000_000;
-const MAX_RENDER_OBJECTS: usize = 1_000_000;
-const MAX_OBJECTS_PER_CELL: usize = 16_384;
 #[derive(Clone, Debug, Default)]
 pub struct RenderIndex {
     pub world: [f32; 4],
@@ -29,7 +27,12 @@ fn limit(resource: &str, limit: usize, actual: usize) -> String {
 impl RenderIndex {
     pub fn build(objects: &[Object], selected: &[u32], delta: [f32; 2]) -> Result<Self, String> {
         let _timing = rcam_diagnostics::Timing::start("render_index.build");
-        Self::bounded(objects, selected, delta, MAX_CELL_REFERENCES)
+        Self::bounded(
+            objects,
+            selected,
+            delta,
+            MAX_CELL_REFERENCES.max(objects.len().saturating_mul(4)),
+        )
     }
     fn bounded(
         objects: &[Object],
@@ -37,8 +40,8 @@ impl RenderIndex {
         delta: [f32; 2],
         budget: usize,
     ) -> Result<Self, String> {
-        if objects.len() > MAX_RENDER_OBJECTS {
-            return Err(limit("render_objects", MAX_RENDER_OBJECTS, objects.len()));
+        if objects.len() >= u32::MAX as usize {
+            return Err("DISPLAY_PRECISION: object index is not representable".into());
         }
         let bounds: Vec<_> = objects
             .iter()
@@ -136,12 +139,8 @@ impl RenderIndex {
                 continue;
             }
             index.max_candidates = counts.iter().copied().max().unwrap_or(0);
-            if index.max_candidates > MAX_OBJECTS_PER_CELL {
-                return Err(limit(
-                    "objects_per_cell",
-                    MAX_OBJECTS_PER_CELL,
-                    index.max_candidates,
-                ));
+            if total.saturating_add(counts.len()).saturating_add(1) >= u32::MAX as usize {
+                return Err("DISPLAY_PRECISION: cell index is not representable".into());
             }
             index.data = Vec::with_capacity(counts.len() + 1 + total);
             let mut offset = (counts.len() + 1) as u32;
@@ -173,7 +172,9 @@ impl RenderIndex {
             ..Default::default()
         };
         if (0..2).any(|k| {
-            bounds[k + 2] < f64::from(self.world[k]) || bounds[k] > f64::from(self.world[k + 2])
+            bounds[k + 2] < bounds[k]
+                || bounds[k + 2] < f64::from(self.world[k])
+                || bounds[k] > f64::from(self.world[k + 2])
         }) {
             return result;
         }
@@ -229,9 +230,17 @@ impl RenderIndex {
                     let hi = origin + (coordinate + 1) as f64 / inverse;
                     let visible =
                         hi.min(view.world_bounds[axis + 2]) - lo.max(view.world_bounds[axis]);
-                    dimensions[axis] = (visible * ppm).max(0.);
+                    // A cell can contain ceil(span) + 1 pixel columns/rows
+                    // at any AA/halo sample phase, including subpixel cells.
+                    dimensions[axis] = if visible >= 0. {
+                        (visible * ppm).ceil() + 1.
+                    } else {
+                        0.
+                    };
                 }
-                work += dimensions[0] * dimensions[1] * f64::from(count) * 20.;
+                // Four coverage queries; GPU prepare separately charges the
+                // selected-edge merge only inside its selected envelope.
+                work += dimensions[0] * dimensions[1] * f64::from(count) * 4.;
             }
         }
         work
@@ -311,11 +320,8 @@ mod tests {
                 .unwrap_err()
                 .contains("resource=cell_references")
         );
-        assert!(
-            RenderIndex::build(&vec![o[0]; MAX_OBJECTS_PER_CELL + 1], &[], [0.; 2])
-                .unwrap_err()
-                .contains("objects_per_cell")
-        );
+        let dense = RenderIndex::build(&vec![o[0]; 16_385], &[], [0.; 2]).unwrap();
+        assert_eq!(dense.max_candidates, 16_385);
     }
     #[test]
     fn preview_translation_updates_candidate_membership() {

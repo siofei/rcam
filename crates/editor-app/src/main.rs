@@ -77,6 +77,7 @@ struct EditorApp {
     rx: Receiver<(u64, View)>,
     view: View,
     busy: bool,
+    viewport_sequence: Option<u64>,
     sequence: u64,
     camera: Camera,
     last_good: Option<LastFrame>,
@@ -180,7 +181,9 @@ impl EditorApp {
                 break;
             }
         }
-        let (tx, request) = mpsc::sync_channel::<(u64, rcam_diagnostics::Source, Action)>(1);
+        // At most one display request plus one user operation. A read-only
+        // viewport build never disables or consumes the user's next command.
+        let (tx, request) = mpsc::sync_channel::<(u64, rcam_diagnostics::Source, Action)>(2);
         let (reply, rx) = mpsc::sync_channel(1);
         let ctx = cc.egui_ctx.clone();
         std::thread::spawn(move || {
@@ -244,6 +247,7 @@ impl EditorApp {
             rx,
             view: View::default(),
             busy: false,
+            viewport_sequence: None,
             sequence: 0,
             camera: Camera::default(),
             last_good: None,
@@ -340,7 +344,7 @@ impl EditorApp {
                 return;
             }
         };
-        if self.busy {
+        if self.busy || (matches!(a, Action::Viewport(..)) && self.viewport_sequence.is_some()) {
             return;
         }
         self.pending_project_error_title = match &a {
@@ -351,6 +355,7 @@ impl EditorApp {
         if !matches!(a, Action::ProbeDrag(..)) {
             self.drag = None;
         }
+        let previous_sequence = self.sequence;
         self.sequence += 1;
         if self.modal.is_some()
             && matches!(
@@ -371,12 +376,21 @@ impl EditorApp {
         if let Some(probe) = &self.probe {
             probe.action(&native_probe::action_text(&a));
         }
+        let viewport = matches!(a, Action::Viewport(..));
         match self.tx.try_send((self.sequence, source, a)) {
             Ok(()) => {
-                self.busy = true;
+                if viewport {
+                    self.viewport_sequence = Some(self.sequence);
+                } else {
+                    self.busy = true;
+                }
                 self.ui_error = None;
             }
-            Err(e) => self.ui_error = Some(format!("后台任务不可用：{e}")),
+            Err(e) => {
+                self.sequence = previous_sequence;
+                self.modal_pending = None;
+                self.ui_error = Some(format!("后台任务不可用：{e}"));
+            }
         }
     }
     fn usable(&self) -> bool {
@@ -901,7 +915,14 @@ impl eframe::App for EditorApp {
         }
         self.last_frame = now;
 
-        if let Ok((id, view)) = self.rx.try_recv()
+        let reply = self.rx.try_recv().ok();
+        if reply
+            .as_ref()
+            .is_some_and(|(id, _)| self.viewport_sequence == Some(*id))
+        {
+            self.viewport_sequence = None;
+        }
+        if let Some((id, view)) = reply
             && id == self.sequence
         {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
@@ -2190,7 +2211,10 @@ impl eframe::App for EditorApp {
                     && (outside
                         || ppm > self.view.render_ppm
                         || ppm < self.view.render_ppm / display::LOD_MAX_ZOOM_OUT);
-                if needs_lod && !self.busy {
+                let attempted = self.view.display_attempt.is_some_and(|(b, scale)| {
+                    display::covers_view(b, scale, lo, hi, ppm)
+                });
+                if needs_lod && !attempted && !self.busy && self.viewport_sequence.is_none() {
                     let margin_x = (hi.x_mm - lo.x_mm) * 0.5 + 4. / ppm;
                     let margin_y = (hi.y_mm - lo.y_mm) * 0.5 + 4. / ppm;
                     self.send(Action::Viewport(

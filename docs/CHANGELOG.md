@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-10-01 · S4-D1 大型工程显示修复
+
+按用户明确要求取消固定显示资源准入上限，超大工程允许降低交互性能。显示索引与加速预算自适应，制造、导入和导出安全契约保持原有要求。修复无效视口反复重试造成的工具栏闪烁、图层状态变化导致的全图重建，以及制造索引反复创建光圈映射的问题；新增 Retina 真样本、轮廓边界与像素一致性回归。见 ADR 0044 和 S4_D1_LARGE_WORKSPACE_FIX。验收记录按最终提交另存，不修改冻结的 V1 门槛。
+
 ## 2026-09-27 · S4-C3 Block Editor v1（PASS，Mac-first bounded）
 
 完成 Block Library、Create/Base Point、Place、实例 Transform、Rename/Delete、Select Instances、Explode，以及 Project persistence、Gerber flatten export、Diagnostics 的 Mac-first bounded 验收。Mac 原生 CUA 覆盖 Block Library、创建/拾取基点、放置、实例变换、Explode、Rename/Delete、项目保存/重开、Gerber Export/Reimport 与诊断导出；Release 性能使用公开合成的 400×100 工程、120 帧测量，preview build 为 152 µs，egui CPU preview-frame build P50 0.027208 ms / P95 0.068125 ms / max 0.798917 ms。该指标不含 GPU 呈现或鼠标输入延迟，不外推为真实大板或 P100K 性能。制造语义继续遵循既有 ApplicationService、f64 mm、曝光顺序与 fail-closed 校验；未扩展到内部 Definition 编辑、Array、Alignment 或 PnP/RefDes。最终证据和交付身份见 [S4-C3 review](S4_C3_REVIEW.md)。Windows deferred / not executed；不代表双平台 V1、CORE10 10/10 或 P100K 通过。C3 收口时下一阶段为 C4；本次 C4 状态见对应条目。
