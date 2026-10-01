@@ -288,6 +288,11 @@ fn whole_block_and_complete_text_group_bounds_cache_edit_invalidation() {
 fn performance_100k_sparse_and_5000_dense() {
     use std::time::Instant;
     let r = setup(100000);
+    let guard =
+        rcam_diagnostics::Runtime::start(r.dir.join("performance-diagnostics"), "perf", "perf")
+            .unwrap();
+    assert!(guard.install_sink());
+    let runtime = guard.runtime();
     let q = query(&r);
     let cold = Instant::now();
     let page = nearby(&r, &q).unwrap();
@@ -301,6 +306,59 @@ fn performance_100k_sparse_and_5000_dense() {
     samples.sort_by(f64::total_cmp);
     assert!(page.nearby_object_count < 100);
     assert!(samples[95] < 100.);
+    fn phases(
+        runtime: &rcam_diagnostics::Runtime,
+        path: &std::path::Path,
+        nearby_count: usize,
+    ) -> serde_json::Value {
+        runtime.export(path).unwrap();
+        let entries = rcam_project::zip_codec::read_zip(
+            &std::fs::read(path).unwrap(),
+            &rcam_project::zip_codec::ReadPolicy {
+                max_entries: 100,
+                max_uncompressed_bytes: 100_000_000,
+                max_entry_bytes: 30_000_000,
+                max_path_len: 512,
+            },
+        )
+        .unwrap();
+        let metrics: Vec<serde_json::Value> = entries
+            .iter()
+            .filter(|e| e.path.ends_with(".log"))
+            .flat_map(|e| std::str::from_utf8(&e.data).unwrap().lines())
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .filter(|v| {
+                v["command_id"] == "components.nearby.counts"
+                    && v["metrics"]["nearby_object_count"].as_u64() == Some(nearby_count as u64)
+            })
+            .map(|v| v["metrics"].clone())
+            .collect();
+        assert!(metrics.len() > 1);
+        let cold_build_us = metrics[0]["index_build_us"].as_u64().unwrap();
+        let mut output = serde_json::Map::new();
+        for key in [
+            "world_index_us",
+            "classify_us",
+            "sort_us",
+            "query_us",
+            "envelope_tests",
+        ] {
+            let mut values: Vec<u64> = metrics
+                .iter()
+                .skip(1)
+                .map(|m| m[key].as_u64().unwrap())
+                .collect();
+            values.sort_unstable();
+            output.insert(key.into(),json!({"p50":values[values.len()/2],"p95":values[(values.len()*95/100).min(values.len()-1)],"warm_samples":values.len()}));
+        }
+        output.insert("cold_index_build_us".into(), json!(cold_build_us));
+        serde_json::Value::Object(output)
+    }
+    let sparse_phases = phases(
+        &runtime,
+        &r.dir.join("sparse-phases.zip"),
+        page.nearby_object_count,
+    );
     let mut bytes = String::from("%FSLAX46Y46*%\n%MOMM*%\n%ADD10C,0.8*%\nD10*\n");
     for _ in 0..5000 {
         bytes.push_str("X0Y0D03*\n");
@@ -319,7 +377,8 @@ fn performance_100k_sparse_and_5000_dense() {
     }
     assert_eq!(ids.len(), 5000);
     assert!(ids.windows(2).all(|p| p[0] < p[1]));
-    let report = json!({"schema_version":2,"manufacturing_objects":100000,"cold_ms":cold_ms,"query_p50_ms":samples[50],"query_p95_ms":samples[95],"nearby_object_count":page.nearby_object_count,"dense_count":5000,"dense_pages":10,"status":"PASS","p100k_product_acceptance":"not claimed"});
+    let dense_phases = phases(&runtime, &r.dir.join("dense-phases.zip"), 5000);
+    let report = json!({"schema_version":2,"manufacturing_objects":100000,"cold_ms":cold_ms,"query_p50_ms":samples[50],"query_p95_ms":samples[95],"nearby_object_count":page.nearby_object_count,"dense_count":5000,"dense_pages":10,"sparse_phases":sparse_phases,"dense_phases":dense_phases,"status":"PASS","p100k_product_acceptance":"not claimed"});
     println!("{report}");
     if let Some(out) = std::env::var_os("RCAM_S4D2_EVIDENCE_DIR") {
         let out = std::path::PathBuf::from(out);

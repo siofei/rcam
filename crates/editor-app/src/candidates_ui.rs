@@ -488,10 +488,27 @@ mod tests {
         for ppp in [1., 2., 3.] {
             for scale in [1., 100., 1000.] {
                 app.camera.scale = scale;
-                let _ = ctx.run(Default::default(), |ctx| {
+                let output = ctx.run(Default::default(), |ctx| {
                     let painter = ctx.layer_painter(egui::LayerId::background());
                     app.paint_candidates(&painter, rect, ppp);
                 });
+                let outlines: Vec<_> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|s| {
+                        if let egui::Shape::LineSegment { stroke, .. } = &s.shape {
+                            (stroke.color == tokens::CANDIDATE_WINDOW).then_some(stroke.width)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                assert_eq!(outlines.len(), 4);
+                assert!(
+                    outlines
+                        .iter()
+                        .all(|w| (w * ppp - tokens::CANDIDATE_OUTLINE_PX).abs() < 1e-6)
+                );
             }
         }
         assert_eq!(app.view.info, before);
@@ -506,5 +523,101 @@ mod tests {
         assert!(app.candidate_reply().is_none());
         app.view.info.as_mut().unwrap().document_id = "other".into();
         assert!(app.candidate_reply().is_none());
+    }
+    #[test]
+    fn candidate_selection_drives_existing_align_array_block_and_grip_transactions() {
+        for tool in ["align", "array", "block"] {
+            let mut m = setup();
+            register(&mut m);
+            let req = request(&m);
+            m.run(Action::CandidateQuery(req.clone()));
+            m.run(Action::CandidateSelect(req, false));
+            assert_eq!(m.view.selected.ordered.len(), 4);
+            let baseline = m.view.snap_snapshot.clone().unwrap();
+            let before = m.view.info.clone().unwrap();
+            let ids = m
+                .view
+                .selected
+                .ids()
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let layer = m.view.layers[0].layer_id.clone();
+            match tool {
+                "align" => {
+                    assert!(crate::state::arrangement_eligibility(&m.view).align);
+                    m.run(Action::Align(AlignmentMode::Left));
+                }
+                "array" => {
+                    assert!(crate::array_ui::eligible(&m.view));
+                    m.run(Action::ArrayApply(Box::new(crate::array_ui::Request {
+                        context: Context::capture(&m.view).unwrap(),
+                        params: ArrayRectangularParams {
+                            layer_id: layer,
+                            object_ids: ids,
+                            rows: 2,
+                            columns: 2,
+                            pitch_x_mm: 40.,
+                            pitch_y_mm: 40.,
+                        },
+                        ppm: m.ppm,
+                    })));
+                }
+                _ => m.run(Action::BlockEdit(Box::new(crate::block_ui::Request {
+                    context: Context::capture(&m.view).unwrap(),
+                    edit: crate::block_ui::Edit::Create(CreateBlockDefinitionParams {
+                        layer_id: layer,
+                        object_ids: ids,
+                        local_origin_mm: PivotMm { x_mm: 0., y_mm: 0. },
+                        name: "Candidates".into(),
+                    }),
+                }))),
+            }
+            assert!(m.view.error.is_none(), "{tool}: {:?}", m.view.error);
+            assert_eq!(
+                m.view.info.as_ref().unwrap().undo_entries,
+                before.undo_entries + 1
+            );
+            m.run(Action::History(false));
+            assert!(m.view.error.is_none());
+            assert_eq!(
+                m.view.snap_snapshot.as_ref().unwrap().layers,
+                baseline.layers
+            );
+        }
+        let mut m = setup();
+        register(&mut m);
+        let mut req = request(&m);
+        req.query.component_id = m.view.board.as_ref().unwrap().components[1].id.0.clone();
+        req.query.window = ManufacturingSearchWindow::ComponentLocalRect {
+            width_mm: 2.,
+            height_mm: 2.,
+        };
+        m.run(Action::CandidateQuery(req.clone()));
+        m.run(Action::CandidateSelect(req, false));
+        assert_eq!(m.view.selected.ordered.len(), 1);
+        let features = crate::grip::features(&m.view).unwrap();
+        let center = features
+            .iter()
+            .find(|f| f.id == editor_core::grip::GripFeatureId::Radius)
+            .unwrap();
+        let mut session = crate::grip::Session::arm(&m.view, center.id).unwrap();
+        let before = m.view.info.clone().unwrap();
+        let baseline = m.view.snap_snapshot.clone().unwrap();
+        session.update(editor_core::MmPoint::new(
+            center.position_mm.x_mm + 1.,
+            center.position_mm.y_mm,
+        ));
+        m.run(session.release().unwrap());
+        assert!(m.view.error.is_none());
+        assert_eq!(
+            m.view.info.as_ref().unwrap().undo_entries,
+            before.undo_entries + 1
+        );
+        m.run(Action::History(false));
+        assert_eq!(
+            m.view.snap_snapshot.as_ref().unwrap().layers,
+            baseline.layers
+        );
     }
 }

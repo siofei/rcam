@@ -11,7 +11,10 @@ def verify(root):
     assert report['status']=='PASS' and 'Metal' in report['adapter']
     identity=json.loads((root/'binary-identity.json').read_text())
     assert identity['commit']==report['commit'] and identity['sha256']==report['binary_sha256']
+    assert report['frame_ticks']>50 and report['max_frame_gap_ms']>0
     rows={r['label']:r for r in report['records']}
+    search_before=rows['before-refdes-search'];search_after=rows['refdes-search-list-only']
+    for k in ['revision','dirty','project_dirty','undo','redo','geometry_sha256','camera_center','camera_scale','selected_count','focused_side']:assert search_before[k]==search_after[k],k
     before=rows['unregistered-before'];rejected=rows['unregistered-rejected']
     assert rejected['error_code']=='REGISTRATION_REQUIRED' and rejected['candidate_page'] is None
     for k in ['revision','dirty','project_dirty','undo','redo','geometry_sha256','camera_center','camera_scale','selected_count']:assert before[k]==rejected[k],k

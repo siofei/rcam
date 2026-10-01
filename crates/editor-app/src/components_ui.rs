@@ -1058,6 +1058,9 @@ mod tests {
         );
         let mut app = crate::modal::tests::app();
         app.view = m.view.clone();
+        // Focus now submits a candidate request; retain the UI test's receiver.
+        let (tx, requests) = std::sync::mpsc::sync_channel(2);
+        app.tx = tx;
         let mut uncalibrated = focus.clone();
         uncalibrated.world_position = None;
         uncalibrated.world_rotation_deg = None;
@@ -1065,7 +1068,16 @@ mod tests {
         app.focus_component(uncalibrated);
         assert!(app.ui_error.as_ref().is_some_and(|e| e.contains("未校准")));
         assert_eq!(app.camera.center, camera_before.center);
+        assert!(matches!(
+            requests.try_recv().unwrap().2,
+            Action::CandidateQuery(_)
+        ));
+        app.busy = false;
         app.focus_component(focus.clone());
+        assert!(matches!(
+            requests.try_recv().unwrap().2,
+            Action::CandidateQuery(_)
+        ));
         assert!(app.ui_error.is_none());
         assert_eq!(app.camera.center, focus.world_position.unwrap());
         assert!(!app.fit);

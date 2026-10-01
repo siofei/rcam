@@ -55,7 +55,10 @@ def main():
     entries['delivery-audit.json']=serialized(dict(schema_version=2,commit=commit,status='PASS',source_sha256=sha(source.read_bytes()),source_archive=zip_audit(source),tested_source_binding=fresh['tested_source_binding'],frozen=frozen,binaries=summary['binary_hashes'],native=verified,public_evidence='synthetic allowlist and path-redacted command logs; original logs/binaries retained locally'))
     entries['README.md']=('S4-D2 Mac-first bounded evidence\n\nClean commit: '+commit+'\n\nCandidate != Association. Bounds candidates are not final Boolean openings or footprint ownership. Native evidence is a controlled synthetic real EditorApp worker/ApplicationService/Metal workflow, separately identified from physical human input (not claimed). Native 100k PnP fixture is generated data. All raw command stdout/stderr is retained with local paths redacted; unredacted originals and both binaries remain locally. Windows/full V1/CORE10/P100K deferred.\n').encode()
     for name,data in entries.items():
-        if name.endswith(('.json','.log','.txt','.md','.sha256')):safe_text(data)
+        if name.endswith(('.json','.log','.txt','.md','.sha256','.csv','.gbr')):safe_text(data)
+        if name.endswith('.zip'):
+            with zipfile.ZipFile(__import__('io').BytesIO(data)) as z:
+                for inner in z.namelist():safe_text(z.read(inner))
     entries['EVIDENCE.sha256']=''.join(f'{sha(data)}  {name}\n' for name,data in sorted(entries.items())).encode()
     evidence=out/(stem+'_public_evidence.zip');write_zip(evidence,entries);zip_audit(evidence)
     with tempfile.TemporaryDirectory(prefix='rcam-d2-repeat-') as temporary:

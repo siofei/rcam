@@ -25,6 +25,10 @@ pub struct Run {
     failed: bool,
     baseline_saved: bool,
     baseline_exported: bool,
+    searched: bool,
+    frame_ticks: u64,
+    last_frame: Instant,
+    max_frame_gap_ms: f64,
 }
 impl Run {
     pub fn from_env() -> Option<Self> {
@@ -63,6 +67,10 @@ impl Run {
             failed: false,
             baseline_saved: false,
             baseline_exported: false,
+            searched: false,
+            frame_ticks: 0,
+            last_frame: Instant::now(),
+            max_frame_gap_ms: 0.,
         })
     }
     fn record(&mut self, app: &EditorApp, label: &str) {
@@ -80,7 +88,7 @@ impl Run {
             .ok()
             .and_then(|p| std::fs::read(p).ok())
             .map(|b| sha256_hex(&b));
-        let report = json!({"schema_version":2,"stage":"S4-D2","status":if self.failed{"FAIL"}else{"PASS"},"commit":option_env!("RCAM_BUILD_COMMIT"),"binary_sha256":hash,"adapter":app.adapter,"evidence_kind":"controlled synthetic native EditorApp worker/ApplicationService/Metal; physical human input not claimed","records":self.records});
+        let report = json!({"schema_version":2,"stage":"S4-D2","status":if self.failed{"FAIL"}else{"PASS"},"commit":option_env!("RCAM_BUILD_COMMIT"),"binary_sha256":hash,"adapter":app.adapter,"evidence_kind":"controlled synthetic native EditorApp worker/ApplicationService/Metal; physical human input not claimed","records":self.records,"frame_ticks":self.frame_ticks,"max_frame_gap_ms":self.max_frame_gap_ms});
         std::fs::write(
             self.dir.join("native-observations.json"),
             serde_json::to_vec_pretty(&report).unwrap(),
@@ -90,6 +98,11 @@ impl Run {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
     pub fn tick(&mut self, app: &mut EditorApp, ctx: &egui::Context) {
+        self.frame_ticks += 1;
+        self.max_frame_gap_ms = self
+            .max_frame_gap_ms
+            .max(self.last_frame.elapsed().as_secs_f64() * 1000.);
+        self.last_frame = Instant::now();
         ctx.request_repaint_after(Duration::from_millis(100));
         if self.phase >= 100 || app.busy || self.last.elapsed() < Duration::from_millis(700) {
             return;
@@ -185,8 +198,32 @@ impl Run {
                 ));
             }
             5 => {
+                if !self.searched {
+                    self.searched = true;
+                    app.components.query = "C15".into();
+                    self.record(app, "before-refdes-search");
+                    app.send(Action::ComponentSearch(
+                        context.clone(),
+                        ComponentQuery {
+                            revision: context.revision,
+                            query: "C15".into(),
+                            mode: RefdesMatch::Exact,
+                            side: None,
+                            footprint: None,
+                            offset: 0,
+                            limit: 500,
+                        },
+                    ));
+                    self.last = Instant::now();
+                    return;
+                }
+                self.record(app, "refdes-search-list-only");
+                assert_eq!(app.view.component_indices.len(), 1);
                 let b = app.view.board.as_ref().unwrap().clone();
-                app.focus_component(component_info(&b.components[0], &b));
+                app.focus_component(component_info(
+                    &b.components[app.view.component_indices[0]],
+                    &b,
+                ));
             }
             6 => {
                 self.record(app, "registered-top-candidates");
