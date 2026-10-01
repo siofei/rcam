@@ -103,7 +103,7 @@ fn real_large_point_selection_regression() {
             );
             assert!(m.view.error.is_none());
             assert_eq!(m.view.info, before);
-            assert!(!m.view.project_dirty);
+            assert!(!m.view.info.as_ref().unwrap().project_dirty);
         }
     }
 }
