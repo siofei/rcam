@@ -91,7 +91,7 @@ fn s1_json_contract_publishes_only_authorized_real_operations() {
     let capabilities = service.capabilities();
     assert_eq!(
         capabilities.stage,
-        "S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)"
+        "S4-D2 RefDes-Assisted Stencil Candidate Selection v1 (Mac-first bounded)"
     );
     for operation in [
         "system.capabilities",

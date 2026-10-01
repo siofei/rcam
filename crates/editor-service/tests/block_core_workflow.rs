@@ -518,7 +518,7 @@ fn capabilities_advertise_every_block_op_as_dispatchable() {
     assert_eq!(response["status"], "completed");
     assert_eq!(
         response["result"]["stage"],
-        "S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)"
+        "S4-D2 RefDes-Assisted Stencil Candidate Selection v1 (Mac-first bounded)"
     );
     let caps = w.svc.capabilities();
     assert_eq!(serde_json::to_value(&caps).unwrap(), response["result"]);

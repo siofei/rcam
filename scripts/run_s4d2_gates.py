@@ -68,7 +68,7 @@ def main():
             shutil.copy2(ROOT/'.tools/target/release/editor-app',out/'bin'/('editor-app-internal-evidence' if '--features' in command else 'editor-app-public'))
             if '--features' not in command:
                 binary_data=(out/'bin/editor-app-public').read_bytes()
-                markers=[b'RCAM_S4D1_NATIVE_DIR',b'RCAM_S4D2_NATIVE_DIR',b'interaction.request']
+                markers=[b'RCAM_S4D1_NATIVE_DIR',b'RCAM_S4D2_NATIVE_DIR',b'interaction.request',b'native-capture.request']
                 leaks=[m.decode() for m in markers if m in binary_data]
                 (out/'public-driver-boundary.json').write_text(json.dumps(dict(status='FAIL' if leaks else 'PASS',active_driver_markers=leaks,feature='default'),indent=2)+'\n')
                 if leaks: result.returncode=1

@@ -56,7 +56,7 @@ def main():
     entries['README.md']=('S4-D2 Mac-first bounded evidence\n\nClean commit: '+commit+'\n\nCandidate != Association. Bounds candidates are not final Boolean openings or footprint ownership. Native evidence is a controlled synthetic real EditorApp worker/ApplicationService/Metal workflow, separately identified from physical human input (not claimed). Native 100k PnP fixture is generated data. All raw command stdout/stderr is retained with local paths redacted; unredacted originals and both binaries remain locally. Windows/full V1/CORE10/P100K deferred.\n').encode()
     for name,data in entries.items():
         if name.endswith(('.json','.log','.txt','.md','.sha256','.csv','.gbr')):safe_text(data)
-        if name.endswith('.zip'):
+        if name.endswith(('.zip','.rcam')):
             with zipfile.ZipFile(__import__('io').BytesIO(data)) as z:
                 for inner in z.namelist():safe_text(z.read(inner))
     entries['EVIDENCE.sha256']=''.join(f'{sha(data)}  {name}\n' for name,data in sorted(entries.items())).encode()

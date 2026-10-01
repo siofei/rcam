@@ -416,3 +416,47 @@ impl ApplicationService {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn reserved_drill_layer_is_rejected_before_component_lookup_without_mutation() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/s4d2");
+        let mut s = ApplicationService::with_file_access(FileAccessPolicy::new(
+            root.clone(),
+            [root.clone()],
+            [root],
+        ));
+        let d = s.open("board.gbr").unwrap();
+        let layer = d.layer_ids[0].clone();
+        s.documents
+            .get_mut(&d.document_id)
+            .unwrap()
+            .workspace
+            .get_mut(&layer)
+            .unwrap()
+            .kind = editor_core::workspace::LayerKind::Drill;
+        let before = s.document_get(&d.document_id).unwrap();
+        let error = s
+            .components_nearby_manufacturing(
+                &d.document_id,
+                &NearbyManufacturingQuery {
+                    revision: before.revision.clone(),
+                    component_id: "reserved".into(),
+                    layer_ids: vec![layer],
+                    window: ManufacturingSearchWindow::ComponentLocalRect {
+                        width_mm: 10.,
+                        height_mm: 10.,
+                    },
+                    offset: 0,
+                    limit: 500,
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_ARGUMENT");
+        assert!(error.message.contains("only Gerber"));
+        assert_eq!(s.document_get(&d.document_id).unwrap(), before);
+    }
+}

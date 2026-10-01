@@ -449,7 +449,30 @@ mod tests {
                     expected_workspace_revision: info.workspace_revision,
                     updates: vec![LayerPatch {
                         layer_id: m.view.layers[0].layer_id.clone(),
+                        visible: Some(false),
                         selectable: Some(true),
+                        ..Default::default()
+                    }],
+                },
+            )
+            .unwrap();
+        m.refresh(false).unwrap();
+        let req = request(&m);
+        m.run(Action::CandidateQuery(req.clone()));
+        assert_eq!(m.view.candidate_reply.as_ref().unwrap().page.total, 4);
+        m.run(Action::CandidateSelect(req, false));
+        assert!(m.view.selected.ordered.is_empty());
+        let info = m.view.info.clone().unwrap();
+        m.service
+            .layers_update_many(
+                &info.document_id,
+                &info.revision,
+                UpdateLayersParams {
+                    expected_workspace_revision: info.workspace_revision,
+                    updates: vec![LayerPatch {
+                        layer_id: m.view.layers[0].layer_id.clone(),
+                        selectable: Some(true),
+                        visible: Some(true),
                         locked: Some(true),
                         ..Default::default()
                     }],

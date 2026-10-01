@@ -2648,7 +2648,7 @@ fn main() -> eframe::Result {
         rcam_diagnostics::Runtime::start(
             {
                 #[cfg(feature = "internal-evidence")]
-                if let Some(dir) = native_d1::directory() {
+                if let Some(dir) = native_d2::directory().or_else(native_d1::directory) {
                     dir.join("logs")
                 } else {
                     std::path::PathBuf::from(home).join("Library/Logs/RCam")

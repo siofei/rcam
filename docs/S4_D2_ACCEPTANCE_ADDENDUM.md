@@ -1,6 +1,6 @@
 # S4-D2 bounded acceptance addendum
 
-schema_version=2; original 96 cases, AT-079 retirement and required_platforms unchanged. D2 cases require macOS; Windows deferred. Status is not PASS until recorded final evidence exists.
+schema_version=2; original 96 cases, AT-079 retirement and required_platforms unchanged. D2 cases require macOS; Windows deferred. D2-01–D2-13 = PASS (Mac-first bounded); raw command results, independently verified controlled native observations, release measurements and final source/package binding are required together. See S4_D2_REVIEW and the versioned exports review. Physical human input is not claimed.
 
 | Case | Required evidence |
 |---|---|

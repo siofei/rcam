@@ -1006,7 +1006,7 @@ impl ApplicationService {
         }
         Capabilities {
             api_version: API_VERSION,
-            stage: "S4-D1 PCB / PnP / RefDes Foundation (Mac-first bounded)".into(),
+            stage: "S4-D2 RefDes-Assisted Stencil Candidate Selection v1 (Mac-first bounded)".into(),
             read_only: false,
             supported_operations: vec![
                 "system.capabilities".into(),

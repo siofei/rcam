@@ -104,6 +104,13 @@ impl Run {
             .max(self.last_frame.elapsed().as_secs_f64() * 1000.);
         self.last_frame = Instant::now();
         ctx.request_repaint_after(Duration::from_millis(100));
+        // Optional synthetic-only pause for observing the live native overlay.
+        if self.phase == 7
+            && self.dir.join("native-capture.request").exists()
+            && !self.dir.join("native-capture.resume").exists()
+        {
+            return;
+        }
         if self.phase >= 100 || app.busy || self.last.elapsed() < Duration::from_millis(700) {
             return;
         }
@@ -226,6 +233,16 @@ impl Run {
                 ));
             }
             6 => {
+                let bounds = app
+                    .view
+                    .candidate_reply
+                    .as_ref()
+                    .unwrap()
+                    .page
+                    .window
+                    .bounds();
+                app.camera.fit(Some(bounds), app.canvas_rect);
+                app.fit = false;
                 self.record(app, "registered-top-candidates");
                 let r = app.view.candidate_reply.as_ref().unwrap();
                 app.send(Action::CandidateSelect(r.request.clone(), false));
