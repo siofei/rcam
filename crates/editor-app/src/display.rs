@@ -199,6 +199,135 @@ impl Scene {
         };
         Ok(scene)
     }
+    /// Reconvert only changed objects whose primitive/contour storage layout
+    /// remains identical. All pointers and exposure positions stay in place;
+    /// accelerated polygons and structural changes use the full build.
+    #[allow(clippy::too_many_arguments)]
+    pub fn patch(
+        previous: &Scene,
+        filtered: &RenderSnapshot,
+        full: &RenderSnapshot,
+        changed: &[(usize, usize)],
+        layers: &[LayerInfo],
+        anchor: MmPoint,
+        ppm: f64,
+        serial: u64,
+    ) -> Option<Result<Self, String>> {
+        if previous.anchor != anchor
+            || previous.ppm != ppm
+            || !full.block_definitions.is_empty()
+            || previous.objects.len() != previous.ids.len()
+            || !filtered
+                .layers
+                .iter()
+                .flat_map(|l| &l.objects)
+                .map(|o| &o.object_id)
+                .eq(previous.ids.iter())
+        {
+            return None;
+        }
+        let changed_ids: std::collections::HashSet<_> = changed
+            .iter()
+            .map(|&(l, o)| full.layers[l].objects[o].object_id.as_str())
+            .collect();
+        let subset = RenderSnapshot {
+            document_id: filtered.document_id.clone(),
+            revision: filtered.revision.clone(),
+            workspace_revision: filtered.workspace_revision.clone(),
+            styles: filtered.styles.clone(),
+            apertures: filtered.apertures.clone(),
+            block_definitions: vec![],
+            layers: filtered
+                .layers
+                .iter()
+                .map(|l| SemanticLayer {
+                    id: l.id.clone(),
+                    objects: l
+                        .objects
+                        .iter()
+                        .filter(|o| changed_ids.contains(o.object_id.as_str()))
+                        .cloned()
+                        .collect(),
+                })
+                .collect(),
+        };
+        let fresh = match Self::build_cached(
+            &subset,
+            layers,
+            anchor,
+            ppm,
+            serial,
+            None,
+            &mut crate::block_display::BlockDisplayCache::default(),
+        ) {
+            Ok(s) => s,
+            Err(e) => return Some(Err(e)),
+        };
+        let indices: HashMap<_, _> = previous
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.as_str(), i))
+            .collect();
+        // Preflight before copying: offsets can be reused only with the same raw
+        // contour length. No unreferenced append-only storage accumulates.
+        for (i, id) in fresh.ids.iter().enumerate() {
+            let old = &previous.objects[indices[id.as_str()]];
+            let next = &fresh.objects[i];
+            if old.meta[1] - old.meta[0] != next.meta[1] - next.meta[0] {
+                return None;
+            }
+            for (a, b) in previous.primitives[old.meta[0] as usize..old.meta[1] as usize]
+                .iter()
+                .zip(&fresh.primitives[next.meta[0] as usize..next.meta[1] as usize])
+            {
+                if a.meta[0] != b.meta[0]
+                    || a.meta[0] == 3
+                    || (a.meta[0] == 1 && a.meta[3] != b.meta[3])
+                {
+                    return None;
+                }
+            }
+        }
+        let mut result = previous.clone();
+        result.serial = serial;
+        let mut index_changed = false;
+        for (i, id) in fresh.ids.iter().enumerate() {
+            let index = indices[id.as_str()];
+            let old = previous.objects[index];
+            let mut next = fresh.objects[i];
+            next.meta[0] = old.meta[0];
+            next.meta[1] = old.meta[1];
+            index_changed |= old.bounds != next.bounds || old.meta[3] != next.meta[3];
+            result.objects[index] = next;
+            for (j, b) in fresh.primitives
+                [fresh.objects[i].meta[0] as usize..fresh.objects[i].meta[1] as usize]
+                .iter()
+                .enumerate()
+            {
+                let offset = old.meta[0] as usize + j;
+                let a = previous.primitives[offset];
+                let mut primitive = *b;
+                if b.meta[0] == 1 {
+                    let length = b.meta[3] as usize;
+                    result.points[a.meta[2] as usize..a.meta[2] as usize + length].copy_from_slice(
+                        &fresh.points[b.meta[2] as usize..b.meta[2] as usize + length],
+                    );
+                    primitive.meta[2] = a.meta[2];
+                }
+                result.primitives[offset] = primitive;
+            }
+        }
+        if index_changed {
+            result.index =
+                match crate::render_index::RenderIndex::build(&result.objects, &[], [0.; 2]) {
+                    Ok(index) => std::sync::Arc::new(index),
+                    Err(e) => return Some(Err(e)),
+                };
+        }
+        Some(Ok(result))
+    }
+
     /// Push one manufacturing object. Category Visible/Color comes from the
     /// outer object, so a `BlockInstance` remains one atomic category. The
     /// ZeroWidth geometry mode is evaluated for every resolved primitive.

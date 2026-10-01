@@ -410,7 +410,7 @@ impl ApplicationService {
             .max(record.sources.len() as u64)
             .saturating_add(1);
         record.next_color_index = record.workspace.len();
-        record.saved_content_hash = content_hash(&record.document);
+        record.reset_dirty_baseline();
         record.saved_project_state_hash = if recovered {
             String::new()
         } else {
@@ -455,7 +455,13 @@ impl ApplicationService {
         &self,
         document_id: &str,
     ) -> Result<WorkspaceProjectState, ServiceError> {
-        Ok(self.project_snapshot(document_id)?.workspace)
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        let mut workspace = record.project_settings.clone();
+        workspace.active_layer_id = record.active_layer_id.clone();
+        Ok(workspace)
     }
 
     pub fn project_set_workspace(
@@ -600,7 +606,7 @@ impl ApplicationService {
         record.project_path = Some(target);
         record.last_saved_project_hash = Some(sha256_hex(&bytes));
         record.saved_project_state_hash = record.project_state_hash()?;
-        record.saved_content_hash = content_hash(&record.document);
+        record.reset_dirty_baseline();
         record.saved_precision = record.manufacturing_precision;
         Ok(document_info(document_id, record))
     }

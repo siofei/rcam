@@ -292,18 +292,50 @@ fn real_large_workspace_profile() {
             );
             if !m.view.selected.ordered.is_empty() {
                 let start = std::time::Instant::now();
-                m.run(Action::Move("0.1".into(), "0".into()));
+                let selected = m.view.selected.ordered[0].clone();
+                let revision = m.view.info.as_ref().unwrap().revision.clone();
+                m.service
+                    .objects_move(
+                        &doc,
+                        &revision,
+                        editor_service::MoveParams {
+                            layer_id: selected.layer_id,
+                            object_ids: m
+                                .view
+                                .selected
+                                .ordered
+                                .iter()
+                                .map(|o| o.object.object_id.clone())
+                                .collect(),
+                            dx_mm: 0.1,
+                            dy_mm: 0.,
+                        },
+                    )
+                    .unwrap();
                 eprintln!(
-                    "PROFILE {kind} move_ms={} error={:?}",
-                    start.elapsed().as_secs_f64() * 1000.,
-                    m.view.error
+                    "PROFILE {kind} move_service_ms={}",
+                    start.elapsed().as_secs_f64() * 1000.
+                );
+                let refresh = std::time::Instant::now();
+                m.refresh(true).unwrap();
+                eprintln!(
+                    "PROFILE {kind} move_refresh_ms={} move_ms={}",
+                    refresh.elapsed().as_secs_f64() * 1000.,
+                    start.elapsed().as_secs_f64() * 1000.
                 );
                 let start = std::time::Instant::now();
-                m.run(Action::History(false));
+                let revision = m.view.info.as_ref().unwrap().revision.clone();
+                m.service.history_undo(&doc, &revision).unwrap();
                 eprintln!(
-                    "PROFILE {kind} undo_ms={} error={:?}",
-                    start.elapsed().as_secs_f64() * 1000.,
-                    m.view.error
+                    "PROFILE {kind} undo_service_ms={}",
+                    start.elapsed().as_secs_f64() * 1000.
+                );
+                let refresh = std::time::Instant::now();
+                m.refresh(true).unwrap();
+                eprintln!(
+                    "PROFILE {kind} undo_refresh_ms={} undo_ms={}",
+                    refresh.elapsed().as_secs_f64() * 1000.,
+                    start.elapsed().as_secs_f64() * 1000.
                 );
                 assert!(m.view.error.is_none(), "{:?}", m.view.error);
                 let after = m.service.render_snapshot(&doc).unwrap();
@@ -317,6 +349,181 @@ fn real_large_workspace_profile() {
         }
     }
 }
+#[test]
+fn incremental_scene_and_bounds_equal_full_rebuild_after_move_undo() {
+    let source = SOURCE
+        .replace("%ADD11C,4X2*%", "%ADD11C,4X2*%\n%ADD12R,4X2*%")
+        .replace("M02*\n", "D12*\nX30000000Y20000000D03*\nM02*\n");
+    let (mut m, _) = setup_source("patch-circle-hole-rectangle.gbr", source.as_bytes());
+    let coverage = editor_core::BoundsMm {
+        min_x_mm: -100.,
+        min_y_mm: -100.,
+        max_x_mm: 100.,
+        max_y_mm: 100.,
+    };
+    m.run(Action::Viewport(MmPoint::new(0., 0.), coverage, 32.));
+    // The existing C,4X2 fixture has a transparent 2 mm hole at its centre.
+    m.run(Action::Select(MmPoint::new(20., 20.), 0., Replace));
+    assert!(m.view.selected.ordered.is_empty());
+    for point in [
+        MmPoint::new(10., 20.),
+        MmPoint::new(21.5, 20.),
+        MmPoint::new(30., 20.),
+    ] {
+        m.run(Action::Select(point, 0., Replace));
+        let before = m.view.snap_snapshot.clone().unwrap();
+        let scene = m.view.scene.clone().unwrap();
+        m.run(Action::Move("0.25".into(), "0.125".into()));
+        assert!(m.view.error.is_none());
+        let after = m.view.snap_snapshot.clone().unwrap();
+        let changed = crate::world_index::changed_objects(&after, &before).unwrap();
+        let filtered = m.view.snap_index.query(&after, &m.view.layers, coverage);
+        let patched = crate::display::Scene::patch(
+            &scene,
+            &filtered,
+            &after,
+            &changed,
+            &m.view.layers,
+            scene.anchor,
+            scene.ppm,
+            scene.serial + 1,
+        )
+        .unwrap()
+        .unwrap();
+        let fresh = crate::display::Scene::build(
+            &filtered,
+            &m.view.layers,
+            scene.anchor,
+            scene.ppm,
+            patched.serial,
+        )
+        .unwrap();
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&patched.primitives),
+            bytemuck::cast_slice::<_, u8>(&fresh.primitives)
+        );
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&patched.objects),
+            bytemuck::cast_slice::<_, u8>(&fresh.objects)
+        );
+        assert_eq!(patched.points, fresh.points);
+        assert_eq!(patched.index.data, fresh.index.data);
+        assert_eq!(
+            m.view.bounds,
+            m.service.visible_bounds(&after.document_id).unwrap().bounds
+        );
+        let rebuilt = crate::world_index::WorldIndex::build(&after).unwrap();
+        assert_eq!(
+            m.view.snap_index.query_indices(coverage),
+            rebuilt.query_indices(coverage)
+        );
+        m.run(Action::History(false));
+        assert_eq!(m.view.snap_snapshot.as_ref().unwrap().layers, before.layers);
+        assert!(!m.view.info.as_ref().unwrap().dirty);
+    }
+}
+
+#[test]
+#[ignore = "private samples and release edit timing"]
+fn real_large_edit_speed_profile() {
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(std::env::var_os("RCAM_LARGE_INPUTS").unwrap()).unwrap(),
+    )
+    .unwrap();
+    for kind in ["set", "project"] {
+        let mut m = Model::default();
+        if kind == "set" {
+            m.import_gerbers(
+                &manifest["set"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| PathBuf::from(p.as_str().unwrap()))
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+        } else {
+            m.open_project(
+                std::path::Path::new(manifest["project"].as_str().unwrap()),
+                true,
+            )
+            .unwrap();
+        }
+        let baseline = m.view.snap_snapshot.clone().unwrap();
+        let baseline_dirty = m.view.info.as_ref().unwrap().dirty;
+        let mut coverage = m.view.bounds.unwrap();
+        coverage.min_x_mm -= 10.;
+        coverage.min_y_mm -= 10.;
+        coverage.max_x_mm += 10.;
+        coverage.max_y_mm += 10.;
+        m.run(Action::Viewport(coverage.center(), coverage, 8.));
+        let layer = baseline
+            .layers
+            .iter()
+            .find(|l| {
+                l.objects
+                    .iter()
+                    .filter(|o| matches!(o.geometry, SemanticGeometry::Line { .. }))
+                    .count()
+                    >= 1000
+            })
+            .unwrap();
+        for count in [1, 1000] {
+            m.view.selected.ordered = layer
+                .objects
+                .iter()
+                .filter(|o| matches!(o.geometry, SemanticGeometry::Line { .. }))
+                .take(count)
+                .map(|o| editor_service::ObjectInfo {
+                    layer_id: layer.id.clone(),
+                    object: o.clone(),
+                })
+                .collect();
+            for iteration in 0..5 {
+                let start = std::time::Instant::now();
+                m.run(Action::Move("0.1".into(), "0".into()));
+                let move_ms = start.elapsed().as_secs_f64() * 1000.;
+                assert!(m.view.error.is_none(), "{:?}", m.view.error);
+                if iteration == 0 {
+                    let snapshot = m.view.snap_snapshot.as_ref().unwrap();
+                    let filtered = m.view.snap_index.query(snapshot, &m.view.layers, coverage);
+                    let scene = m.view.scene.as_ref().unwrap();
+                    let fresh = crate::display::Scene::build(
+                        &filtered,
+                        &m.view.layers,
+                        scene.anchor,
+                        scene.ppm,
+                        scene.serial,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        bytemuck::cast_slice::<_, u8>(&scene.primitives),
+                        bytemuck::cast_slice::<_, u8>(&fresh.primitives)
+                    );
+                    assert_eq!(
+                        bytemuck::cast_slice::<_, u8>(&scene.objects),
+                        bytemuck::cast_slice::<_, u8>(&fresh.objects)
+                    );
+                    assert_eq!(scene.points, fresh.points);
+                    assert_eq!(scene.index.data, fresh.index.data);
+                }
+                let start = std::time::Instant::now();
+                m.run(Action::History(false));
+                let undo_ms = start.elapsed().as_secs_f64() * 1000.;
+                assert!(m.view.error.is_none(), "{:?}", m.view.error);
+                assert_eq!(m.view.info.as_ref().unwrap().dirty, baseline_dirty);
+                let after = m.view.snap_snapshot.as_ref().unwrap();
+                assert_eq!(baseline.layers, after.layers);
+                assert_eq!(baseline.apertures, after.apertures);
+                assert_eq!(baseline.block_definitions, after.block_definitions);
+                eprintln!(
+                    "EDIT_SPEED kind={kind} objects={count} iteration={iteration} move_ms={move_ms} undo_ms={undo_ms} exact_restore=true"
+                );
+            }
+        }
+    }
+}
+
 const SOURCE: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,2*%\n%ADD11C,4X2*%\nD10*\nX10000000Y20000000D03*\nD11*\nX20000000Y20000000D03*\nM02*\n";
 fn setup_source(name: &str, source: &[u8]) -> (Model, PathBuf) {
     let base = std::env::var_os("RCAM_GUI_EVIDENCE")

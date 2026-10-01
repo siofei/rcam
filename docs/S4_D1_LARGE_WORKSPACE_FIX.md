@@ -80,3 +80,12 @@ rectangle/circle distances, retain the mixed-exposure near-coincident refusal,
 and replay private project press/select coordinates at zero, enlarged and
 zoomed tolerances. The private regression is opt-in and does not distribute
 sample geometry. Selection never changes manufacturing content or history.
+
+## Subsequent edit-speed maintenance
+
+The user requested faster modification/Undo after the 63db63d delivery.
+The later ordered dirty-signature and incremental display/index work is scoped
+in S4_D1_EDIT_SPEED and ADR 0045. Its final sample timings supersede the older
+1–2 second observations for the covered edits; complex structural operations
+continue to use the complete builder. Final identity and native/package proof
+are recorded separately in the S4D1_EDIT versioned export review.

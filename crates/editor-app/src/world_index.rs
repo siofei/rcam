@@ -2,6 +2,36 @@
 use editor_core::{BoundsMm, individual_geometries_bounds_with_blocks};
 use editor_service::{LayerInfo, RenderSnapshot};
 
+/// A partial update is permitted only while layer/object identity and reusable
+/// definitions remain unchanged. The ordinary full build handles all other edits.
+pub fn changed_objects(
+    current: &RenderSnapshot,
+    previous: &RenderSnapshot,
+) -> Option<Vec<(usize, usize)>> {
+    if current.document_id != previous.document_id
+        || current.apertures != previous.apertures
+        || current.block_definitions != previous.block_definitions
+        || current.layers.len() != previous.layers.len()
+    {
+        return None;
+    }
+    let mut changed = Vec::new();
+    for (l, (a, b)) in current.layers.iter().zip(&previous.layers).enumerate() {
+        if a.id != b.id || a.objects.len() != b.objects.len() {
+            return None;
+        }
+        for (o, (a, b)) in a.objects.iter().zip(&b.objects).enumerate() {
+            if a.object_id != b.object_id {
+                return None;
+            }
+            if a != b {
+                changed.push((l, o));
+            }
+        }
+    }
+    Some(changed)
+}
+
 #[derive(Clone, Default)]
 pub struct WorldIndex {
     entries: Vec<(BoundsMm, usize, usize)>,
@@ -38,6 +68,89 @@ impl WorldIndex {
             max_span_x_mm,
         })
     }
+    pub fn update(
+        &self,
+        snapshot: &RenderSnapshot,
+        changed: &[(usize, usize)],
+    ) -> Result<Self, String> {
+        let bounds = individual_geometries_bounds_with_blocks(
+            changed
+                .iter()
+                .map(|&(l, o)| &snapshot.layers[l].objects[o].geometry),
+            &snapshot.apertures,
+            &snapshot.block_definitions,
+        )
+        .map_err(|e| format!("VALIDATION_FAILED: world envelope: {e}"))?;
+        let mut updates: std::collections::HashMap<_, _> =
+            changed.iter().copied().zip(bounds).collect();
+        let mut result = self.clone();
+        result
+            .entries
+            .retain_mut(|(bounds, l, o)| match updates.remove(&(*l, *o)) {
+                Some(Some(next)) => {
+                    *bounds = next;
+                    true
+                }
+                Some(None) => false,
+                None => true,
+            });
+        result.entries.extend(
+            updates
+                .into_iter()
+                .filter_map(|((l, o), b)| b.map(|b| (b, l, o))),
+        );
+        result
+            .entries
+            .sort_by(|a, b| a.0.min_x_mm.total_cmp(&b.0.min_x_mm));
+        result.max_span_x_mm = result
+            .entries
+            .iter()
+            .map(|(b, _, _)| b.max_x_mm - b.min_x_mm)
+            .fold(0., f64::max);
+        Ok(result)
+    }
+    pub fn visible_bounds(
+        &self,
+        snapshot: &RenderSnapshot,
+        layers: &[LayerInfo],
+    ) -> Option<BoundsMm> {
+        let shapes = editor_core::workspace::aperture_shape_map(&snapshot.apertures);
+        let policies: Vec<_> = snapshot
+            .layers
+            .iter()
+            .map(|layer| {
+                layers
+                    .iter()
+                    .find(|l| l.layer_id == layer.id)
+                    .map(|l| (l, l.classes.iter().all(|c| c.visible)))
+            })
+            .collect();
+        let mut result: Option<BoundsMm> = None;
+        for &(bounds, l, o) in &self.entries {
+            let Some((policy, all_visible)) = policies[l] else {
+                continue;
+            };
+            if !policy.visible || !policy.effective_visible {
+                continue;
+            }
+            if !all_visible {
+                let class = editor_core::workspace::classify_object(
+                    &snapshot.layers[l].objects[o],
+                    &shapes,
+                );
+                if policy
+                    .classes
+                    .iter()
+                    .any(|c| c.class == class && !c.visible)
+                {
+                    continue;
+                }
+            }
+            result = Some(result.map_or(bounds, |b| b.union(bounds)));
+        }
+        result
+    }
+
     pub fn query(
         &self,
         snapshot: &RenderSnapshot,

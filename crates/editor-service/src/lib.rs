@@ -13,6 +13,7 @@ pub use components::*;
 mod grip;
 mod metrics;
 pub use grip::GripEditParams;
+mod content_state;
 mod project;
 mod text;
 mod workspace;
@@ -574,41 +575,21 @@ struct S1DocumentRecord {
     diagnostics: Vec<String>,
     revision: u64,
     history: EditHistory,
-    /// Baseline of "manufacturing dirty": the Workspace content when it was
-    /// created. It is never a Gerber file and Export never moves it.
-    saved_content_hash: String,
-    /// `(revision, content hash)` of the document as of that manufacturing
-    /// revision; workspace-only edits (which never bump it) reuse the hash.
-    content_hash_cache: HashCache,
-}
-
-#[derive(Debug, Default)]
-struct HashCache(std::sync::Mutex<Option<(u64, String)>>);
-
-impl Clone for HashCache {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
+    /// Saved/current canonical chunk signatures; never derived from revision.
+    content_state: content_state::ContentState,
 }
 
 impl S1DocumentRecord {
     fn is_dirty(&self) -> bool {
-        let mut cache = self
-            .content_hash_cache
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match cache.as_ref() {
-            Some((revision, hash)) if *revision == self.revision => {
-                *hash != self.saved_content_hash
-            }
-            _ => {
-                let hash = content_hash(&self.document);
-                let dirty = hash != self.saved_content_hash;
-                *cache = Some((self.revision, hash));
-                dirty
-            }
-        }
+        self.content_state
+            .is_dirty(&self.document, self.revision, &self.history)
+    }
+    fn reset_dirty_baseline(&mut self) {
+        self.content_state = content_state::ContentState::new(
+            &self.document,
+            self.revision,
+            self.history.content_generation(),
+        );
     }
 }
 
@@ -3619,7 +3600,7 @@ fn map_edit_error(error: EditError) -> ServiceError {
 
 // Stream the stable owned model into the existing SHA-256 implementation;
 // no document-sized serialization buffer or revision-derived dirty flag.
-fn content_hash(document: &SemanticDocument) -> String {
+fn content_hash<T: Serialize + ?Sized>(document: &T) -> String {
     struct HashWriter(Sha256);
     impl io::Write for HashWriter {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {

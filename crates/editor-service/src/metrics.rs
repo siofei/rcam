@@ -90,12 +90,23 @@ impl MetricsCache {
         self.trim_identities();
     }
     pub(super) fn reconcile(&mut self, document: &SemanticDocument, ids: &[String]) {
-        let alive: HashSet<_> = document
-            .layers
+        let tracked: HashSet<_> = ids
             .iter()
-            .flat_map(|l| &l.objects)
-            .map(|o| o.object_id.as_str())
+            .filter(|id| self.active.contains_key(*id) || self.historical.contains_key(*id))
+            .map(String::as_str)
             .collect();
+        if tracked.is_empty() {
+            return;
+        }
+        let mut alive = HashSet::new();
+        for object in document.layers.iter().flat_map(|l| &l.objects) {
+            if tracked.contains(object.object_id.as_str()) {
+                alive.insert(object.object_id.as_str());
+                if alive.len() == tracked.len() {
+                    break;
+                }
+            }
+        }
         for id in ids {
             if alive.contains(id.as_str()) {
                 if let Some(t) = self.historical.remove(id) {

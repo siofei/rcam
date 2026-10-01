@@ -199,7 +199,7 @@ pub struct Model {
     pub view: View,
     snapshot: Option<Arc<RenderSnapshot>>,
     metrics_identity: String,
-    world_index: crate::world_index::WorldIndex,
+    world_index: Arc<crate::world_index::WorldIndex>,
     viewport: Option<(MmPoint, BoundsMm)>,
     serial: u64,
     pub ppm: f64,
@@ -691,6 +691,8 @@ impl Model {
         self.refresh(geometry)
     }
     pub(crate) fn refresh(&mut self, geometry: bool) -> Result<(), ServiceError> {
+        let timing = std::env::var_os("RCAM_EDIT_TIMING").is_some();
+        let mut phase = std::time::Instant::now();
         let id = self.info()?.document_id;
         self.view.info = Some(self.service.document_get(&id)?);
         let board = self.service.board_state(&id)?;
@@ -715,8 +717,7 @@ impl Model {
         self.view.board = board;
         self.view.project_workspace = Some(self.service.project_workspace(&id)?);
         let layers = self.service.layers_list(&id)?;
-        let display_changed = geometry
-            || layers.len() != self.view.layers.len()
+        let styles_changed = layers.len() != self.view.layers.len()
             || layers.iter().zip(&self.view.layers).any(|(a, b)| {
                 a.layer_id != b.layer_id
                     || a.visible != b.visible
@@ -731,16 +732,36 @@ impl Model {
                             || a.effective_color != b.effective_color
                     })
             });
+        let display_changed = geometry || styles_changed;
+        let mut delta = None;
+        if timing {
+            eprintln!(
+                "EDIT_PHASE info_ms={}",
+                phase.elapsed().as_secs_f64() * 1000.
+            );
+        }
+        phase = std::time::Instant::now();
         self.view.layers = layers;
-        if display_changed {
+        if display_changed && !geometry {
             self.view.bounds = self.service.visible_bounds(&id)?.bounds;
         }
+        if timing {
+            eprintln!(
+                "EDIT_PHASE bounds_ms={}",
+                phase.elapsed().as_secs_f64() * 1000.
+            );
+        }
+        phase = std::time::Instant::now();
         if geometry {
             if self.snapshot.as_ref().is_none_or(|s| s.document_id != id) {
                 self.block_display_cache = Default::default();
                 self.view.block_preview = None;
             }
             let snapshot = Arc::new(self.service.render_snapshot(&id)?);
+            delta = self
+                .snapshot
+                .as_deref()
+                .and_then(|old| crate::world_index::changed_objects(&snapshot, old));
             self.view.apertures = snapshot.apertures.clone();
             self.view.block_definitions = snapshot.block_definitions.clone();
             self.view.block_counts.clear();
@@ -755,38 +776,86 @@ impl Model {
                         .or_default() += 1;
                 }
             }
-            self.world_index = crate::world_index::WorldIndex::build(&snapshot)
-                .map_err(|e| error("VALIDATION_FAILED", &e))?;
-            self.view.snap_index = Arc::new(self.world_index.clone());
+            if timing {
+                eprintln!(
+                    "EDIT_PHASE snapshot_ms={}",
+                    phase.elapsed().as_secs_f64() * 1000.
+                );
+            }
+            phase = std::time::Instant::now();
+            self.world_index = Arc::new(
+                match &delta {
+                    Some(changed) => self.world_index.update(&snapshot, changed),
+                    None => crate::world_index::WorldIndex::build(&snapshot),
+                }
+                .map_err(|e| error("VALIDATION_FAILED", &e))?,
+            );
+            self.view.bounds = self
+                .world_index
+                .visible_bounds(&snapshot, &self.view.layers);
+            self.view.snap_index = self.world_index.clone();
             self.view.snap_snapshot = Some(snapshot.clone());
             self.snapshot = Some(snapshot);
         }
+        if timing {
+            eprintln!(
+                "EDIT_PHASE world_index_ms={}",
+                phase.elapsed().as_secs_f64() * 1000.
+            );
+        }
+        phase = std::time::Instant::now();
         // Hidden objects leave selection. Visible non-selectable objects retain
         // identity for inspection; edit_targets and Grip independently refuse edits.
-        let mut selected = Vec::new();
         let previous = std::mem::take(&mut self.view.selected.ordered);
-        for o in previous {
-            match self.service.objects_get(
-                &id,
-                ObjectParams {
-                    layer_id: o.layer_id.clone(),
-                    object_id: o.object.object_id.clone(),
-                },
-            ) {
-                Ok(o) => selected.push(o),
-                Err(e) if e.code == "NOT_FOUND" => {}
-                Err(e) => return Err(e),
+        let requested: std::collections::HashSet<_> = previous
+            .iter()
+            .map(|o| (o.layer_id.as_str(), o.object.object_id.as_str()))
+            .collect();
+        let mut found = std::collections::HashMap::with_capacity(previous.len());
+        if !requested.is_empty()
+            && let Some(snapshot) = &self.snapshot
+        {
+            for layer in &snapshot.layers {
+                for object in &layer.objects {
+                    if requested.contains(&(layer.id.as_str(), object.object_id.as_str())) {
+                        found.insert((layer.id.as_str(), object.object_id.as_str()), object);
+                    }
+                }
             }
         }
+        let mut selected: Vec<_> = previous
+            .iter()
+            .filter_map(|o| {
+                found
+                    .get(&(o.layer_id.as_str(), o.object.object_id.as_str()))
+                    .map(|object| ObjectInfo {
+                        layer_id: o.layer_id.clone(),
+                        object: (*object).clone(),
+                    })
+            })
+            .collect();
         let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
         selected.retain(|o| classifier.visible(o));
         self.view.selected.ordered = selected;
         if display_changed {
-            self.rebuild();
+            self.rebuild_changed(if styles_changed {
+                None
+            } else {
+                delta.as_deref()
+            });
+        }
+        if timing {
+            eprintln!(
+                "EDIT_PHASE selection_scene_ms={}",
+                phase.elapsed().as_secs_f64() * 1000.
+            );
         }
         Ok(())
     }
     fn rebuild(&mut self) {
+        self.rebuild_changed(None);
+    }
+    fn rebuild_changed(&mut self, delta: Option<&[(usize, usize)]>) {
         let Some(snapshot) = &self.snapshot else {
             return;
         };
@@ -806,15 +875,32 @@ impl Model {
         let filtered = self
             .viewport
             .map(|(_, bounds)| self.world_index.query(snapshot, &self.view.layers, bounds));
-        match Scene::build_cached(
-            filtered.as_ref().unwrap_or(snapshot),
-            &self.view.layers,
-            anchor,
-            self.ppm,
-            self.serial,
-            self.view.scene.as_deref(),
-            &mut self.block_display_cache,
-        ) {
+        let patched = delta.and_then(|changed| {
+            self.view.scene.as_deref().and_then(|previous| {
+                Scene::patch(
+                    previous,
+                    filtered.as_ref().unwrap_or(snapshot),
+                    snapshot,
+                    changed,
+                    &self.view.layers,
+                    anchor,
+                    self.ppm,
+                    self.serial,
+                )
+            })
+        });
+        let scene = patched.unwrap_or_else(|| {
+            Scene::build_cached(
+                filtered.as_ref().unwrap_or(snapshot),
+                &self.view.layers,
+                anchor,
+                self.ppm,
+                self.serial,
+                self.view.scene.as_deref(),
+                &mut self.block_display_cache,
+            )
+        });
+        match scene {
             Ok(scene) => {
                 self.view.block_cache_stats = self.block_display_cache.stats();
                 self.view.scene = Some(Arc::new(scene));
@@ -1282,6 +1368,19 @@ impl Model {
         }
     }
     pub fn run(&mut self, action: Action) {
+        let edit_timing = std::env::var_os("RCAM_EDIT_TIMING").is_some();
+        let edit_label = match &action {
+            Action::Move(..) => Some("move"),
+            Action::History(false) => Some("undo"),
+            Action::History(true) => Some("redo"),
+            Action::Rotate(..) => Some("rotate"),
+            Action::Mirror(..) => Some("mirror"),
+            Action::Duplicate => Some("duplicate"),
+            Action::Delete => Some("delete"),
+            Action::SetFlashSize(..) => Some("properties"),
+            _ => None,
+        };
+        let edit_started = std::time::Instant::now();
         self.view.error = None;
         self.view.text_reply = None;
         self.view.layer_summary = None;
@@ -1655,6 +1754,13 @@ impl Model {
             self.view.error = Some(e);
         }
         self.refresh_metrics();
+        if edit_timing && let Some(label) = edit_label {
+            eprintln!(
+                "EDIT_ACTION operation={label} elapsed_ms={} failed={}",
+                edit_started.elapsed().as_secs_f64() * 1000.,
+                self.view.error.is_some()
+            );
+        }
         if let Some(d) = &self.view.info {
             eprintln!(
                 "state document={} revision={} workspace={} dirty={} undo={} redo={} selected={:?} layers={}",

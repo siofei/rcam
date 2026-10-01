@@ -718,12 +718,15 @@ impl ApplicationService {
             next_layer_number: 1,
             next_source_number: 1,
             next_color_index: 0,
-            saved_content_hash: content_hash(&document),
+            content_state: content_state::ContentState::new(
+                &document,
+                0,
+                history.content_generation(),
+            ),
             document,
             opened_from: None,
             diagnostics: Vec::new(),
             revision: 0,
-            content_hash_cache: HashCache::default(),
             history,
         };
         if record.document.layers.is_empty() {
@@ -891,7 +894,7 @@ impl ApplicationService {
             scene,
         } = prepared;
         let mut record = self.new_record(scene.document)?;
-        record.saved_content_hash = content_hash(&record.document);
+        record.reset_dirty_baseline();
         let source_id = "src-1".to_string();
         record.next_source_number = 2;
         let provenance = ImportProvenance {

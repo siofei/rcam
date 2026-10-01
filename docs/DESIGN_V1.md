@@ -1236,3 +1236,11 @@ and diagnostics, not admission limits. Performance may degrade with size.
 Display indices must remain exactly representable and geometry must remain
 finite; manufacturing/import/export safety and fixed V1 acceptance requirements
 are unchanged. See `S4_D1_LARGE_WORKSPACE_FIX.md` for bounded repair evidence.
+
+### S4-D1 修改／撤销性能维护（2026-10-01）
+
+会话制造脏状态可按有序对象分块的 canonical JSON SHA-256 基线比较，
+仅复用成功核心事务明确未改变的块；结构编辑或缓存代次不连续时重建。
+每个字段、层／对象顺序、曝光、元数据和 signed zero 均保留比较语义。
+磁盘摘要、项目 schema、制造几何与公共 DTO 不变。见 ADR 0045 与
+`S4_D1_EDIT_SPEED.md`，不修改正式性能门槛。

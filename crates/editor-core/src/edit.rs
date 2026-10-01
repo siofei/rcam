@@ -277,9 +277,47 @@ struct Transaction {
     bytes: usize,
 }
 
+/// Session cache hint for a successful transaction. Object indices identify
+/// fixed slots; tail_from invalidates every chunk after a structural splice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentChange {
+    pub layer: usize,
+    pub object_indices: Vec<usize>,
+    pub tail_from: Option<usize>,
+}
+
+fn content_change(tx: &Transaction) -> Option<ContentChange> {
+    let mut result = ContentChange {
+        layer: tx.layer,
+        object_indices: vec![],
+        tail_from: None,
+    };
+    let changes = match &tx.operation {
+        Operation::Modify(changes) => changes,
+        Operation::ApertureResize(resize) => &resize.changes,
+        Operation::Batch(batch) => &batch.changes,
+        Operation::Insert(entries) | Operation::Delete(entries) => {
+            result.tail_from = entries.iter().map(|e| e.index).min();
+            return Some(result);
+        }
+        Operation::ReplaceObjects(op) => {
+            result.tail_from = op.removed.iter().chain(&op.inserted).map(|e| e.index).min();
+            return Some(result);
+        }
+        Operation::RenameBlockDefinition { .. } | Operation::RemoveBlockDefinition { .. } => {
+            return Some(result);
+        }
+        _ => return None,
+    };
+    result.object_indices = changes.iter().map(|c| c.index).collect();
+    Some(result)
+}
+
 #[derive(Debug, Clone)]
 pub struct EditHistory {
     document_id: Option<String>,
+    content_generation: u64,
+    last_content_change: Option<ContentChange>,
     undo: Vec<Transaction>,
     redo: Vec<Transaction>,
     // Consumed only at successful insert commit, never rewound by Undo/Delete.
@@ -306,6 +344,8 @@ impl EditHistory {
         }
         Ok(Self {
             document_id: None,
+            content_generation: 0,
+            last_content_change: None,
             undo: vec![],
             redo: vec![],
             next_generated_id: 0,
@@ -356,6 +396,20 @@ impl EditHistory {
             &format!("{}-block-", document.id),
         )?;
         Ok(())
+    }
+
+    pub fn content_generation(&self) -> u64 {
+        self.content_generation
+    }
+    pub fn last_content_change(&self) -> Option<&ContentChange> {
+        self.last_content_change.as_ref()
+    }
+    fn record_content_change(&mut self, change: Option<ContentChange>) {
+        self.content_generation = self
+            .content_generation
+            .checked_add(1)
+            .expect("content generation cannot exhaust before service revision");
+        self.last_content_change = change;
     }
 
     pub fn undo_len(&self) -> usize {
@@ -460,6 +514,7 @@ impl EditHistory {
 
     fn commit(&mut self, document: &mut SemanticDocument, tx: Transaction) -> Vec<String> {
         let ids = apply(document, &tx, true);
+        self.record_content_change(content_change(&tx));
         self.document_id = Some(document.id.clone());
         self.redo.clear();
         self.undo.push(tx);
@@ -1991,6 +2046,7 @@ impl EditHistory {
     }
 
     fn push_layer_transaction(&mut self, document: &SemanticDocument, mut tx: Transaction) {
+        self.record_content_change(None);
         if let Operation::Layers(mv) = &tx.operation {
             tx.bytes = if mv.held() {
                 mv.payload_bytes()
@@ -2246,6 +2302,7 @@ impl EditHistory {
         };
         let ids = mv.ids();
         if result.is_ok() {
+            self.record_content_change(None);
             tx.bytes = if mv.held() {
                 mv.payload_bytes()
             } else {
@@ -2275,6 +2332,8 @@ impl EditHistory {
         }
         check_transaction(document, tx, false)?;
         let ids = apply(document, tx, false);
+        let change = content_change(tx);
+        self.record_content_change(change);
         self.redo.push(self.undo.pop().unwrap());
         Ok(ids)
     }
@@ -2291,6 +2350,8 @@ impl EditHistory {
         }
         check_transaction(document, tx, true)?;
         let ids = apply(document, tx, true);
+        let change = content_change(tx);
+        self.record_content_change(change);
         self.undo.push(self.redo.pop().unwrap());
         Ok(ids)
     }
