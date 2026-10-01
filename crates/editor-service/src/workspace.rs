@@ -707,6 +707,7 @@ impl ApplicationService {
             manufacturing_precision: ManufacturingPrecision::default(),
             saved_precision: ManufacturingPrecision::default(),
             metrics: metrics::MetricsCache::default(),
+            candidates: candidates::CandidateCache::default(),
             workspace_revision: 0,
             workspace: HashMap::new(),
             sources: HashMap::new(),

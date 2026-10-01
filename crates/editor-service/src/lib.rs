@@ -5,7 +5,9 @@
 
 mod alignment;
 mod array;
+mod candidates;
 mod components;
+pub use candidates::*;
 mod pnp_input;
 pub use alignment::{AlignParams, AlignmentMode, DistributeParams, DistributionAxis};
 pub use array::ArrayRectangularParams;
@@ -68,6 +70,8 @@ pub struct Capabilities {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceLimits {
+    #[serde(default)]
+    pub max_nearby_candidates: usize,
     pub max_hit_test_work: usize,
     /// None means exact rectangle selection has no fixed work admission cap.
     #[serde(default)]
@@ -551,6 +555,7 @@ struct S1DocumentRecord {
     saved_project_state_hash: String,
     board: Option<std::sync::Arc<editor_core::pnp::BoardState>>,
     next_component_id: u64,
+    candidates: candidates::CandidateCache,
     project_settings: rcam_project::WorkspaceProjectState,
     manufacturing_precision: ManufacturingPrecision,
     saved_precision: ManufacturingPrecision,
@@ -979,6 +984,7 @@ impl ApplicationService {
                     "production export".into(),
                 ],
                 resource_limits: ResourceLimits {
+                    max_nearby_candidates: 0,
                     max_hit_test_work: 0,
                     max_select_rect_work: None,
                     max_metrics_work: 0,
@@ -1061,6 +1067,7 @@ impl ApplicationService {
                 "components.list".into(),
                 "components.search".into(),
                 "components.get".into(),
+                "components.nearby_manufacturing".into(),
                 "board.get_registration".into(),
                 "board.set_registration".into(),
                 "blocks.list_definitions".into(),
@@ -1105,6 +1112,7 @@ impl ApplicationService {
                 "RectangularSweep rotation except exact multiples of 90 degrees; diagonal mirror axes".into(),
             ],
             resource_limits: ResourceLimits {
+                    max_nearby_candidates: MAX_NEARBY_CANDIDATES,
                     max_hit_test_work: editor_core::hit_test::MAX_HIT_TEST_WORK,
                     max_select_rect_work: None,
                     max_metrics_work: editor_core::metrics::MAX_METRICS_WORK,
@@ -2821,6 +2829,16 @@ impl ApplicationService {
                     self.board_set_registration(id, revision, parse_params(&request.params)?)?
                 };
                 serde_json::to_value(result).map_err(serialize_error)?
+            }
+            "components.nearby_manufacturing" => {
+                if request.expected_revision.is_some() {
+                    return Err(ServiceError::invalid("read query uses params.revision"));
+                }
+                let q: NearbyManufacturingQuery = parse_params(&request.params)?;
+                serde_json::to_value(
+                    self.components_nearby_manufacturing(required_document_id(request)?, &q)?,
+                )
+                .map_err(serialize_error)?
             }
             "components.list"
             | "components.search"

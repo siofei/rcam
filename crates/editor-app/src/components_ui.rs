@@ -36,6 +36,7 @@ pub struct UiState {
     pub mode: RefdesMatch,
     pub side: Option<BoardSide>,
     pub footprint: String,
+    pub candidates: crate::candidates_ui::UiState,
     pub focused: Option<ComponentInfo>,
     pub focus_revision: String,
     pub manual: bool,
@@ -81,6 +82,7 @@ impl Default for UiState {
             mode: RefdesMatch::Prefix,
             side: None,
             footprint: String::new(),
+            candidates: Default::default(),
             focused: None,
             focus_revision: String::new(),
             manual: true,
@@ -737,11 +739,12 @@ impl EditorApp {
                 ui.checkbox(&mut self.components.overlay,"显示组件 Overlay");
                 let Some(board)=self.view.board.clone() else {ui.label("未导入 PnP");return;};
                 ui.label(format!("{} 个组件 · {}",board.components.len(),if board.registration.is_some(){"已校准"}else{"未校准；不提供绝对定位"}));
-                ui.horizontal(|ui|{ui.label("RefDes");ui.text_edit_singleline(&mut self.components.query);});
+                let mut search_enter=false;
+                ui.horizontal(|ui|{ui.label("RefDes");let response=ui.text_edit_singleline(&mut self.components.query);search_enter=response.lost_focus()&&ui.input(|i|i.key_pressed(egui::Key::Enter));});
                 ui.horizontal(|ui|{ui.selectable_value(&mut self.components.mode,RefdesMatch::Exact,"精确");ui.selectable_value(&mut self.components.mode,RefdesMatch::Prefix,"前缀");ui.selectable_value(&mut self.components.mode,RefdesMatch::Substring,"子串");});
                 ui.horizontal(|ui|{ui.selectable_value(&mut self.components.side,None,"全部 Side");ui.selectable_value(&mut self.components.side,Some(BoardSide::Top),"Top");ui.selectable_value(&mut self.components.side,Some(BoardSide::Bottom),"Bottom");});
                 ui.horizontal(|ui|{ui.label("Footprint（精确，可留空）");ui.text_edit_singleline(&mut self.components.footprint);});
-                if ui.button("搜索 / 应用筛选").clicked() && let Some(context)=Context::capture(&self.view){self.send(Action::ComponentSearch(context.clone(),ComponentQuery{revision:context.revision,query:self.components.query.clone(),mode:self.components.mode,side:self.components.side,footprint:(!self.components.footprint.is_empty()).then(||self.components.footprint.clone()),offset:0,limit:500}));}
+                if (ui.button("搜索 / 应用筛选").clicked()||search_enter) && let Some(context)=Context::capture(&self.view){self.send(Action::ComponentSearch(context.clone(),ComponentQuery{revision:context.revision,query:self.components.query.clone(),mode:self.components.mode,side:self.components.side,footprint:(!self.components.footprint.is_empty()).then(||self.components.footprint.clone()),offset:0,limit:500}));}
                 ui.label(format!("{} 个结果",self.view.component_indices.len()));
                 let indices=self.view.component_indices.clone();
                 egui::ScrollArea::vertical().id_salt("component-results").max_height(180.).show_rows(ui,24.,indices.len(),|ui,range|{
@@ -753,6 +756,7 @@ impl EditorApp {
                         }
                     }
                 });
+                self.candidate_controls(ui);
                 ui.collapsing("Board → Manufacturing World 配准",|ui|{
                     let previous=self.components.registration_input();
                     ui.horizontal(|ui|{ui.selectable_value(&mut self.components.manual,true,"Identity / 手工");ui.selectable_value(&mut self.components.manual,false,"两点配准");});
@@ -815,6 +819,7 @@ impl EditorApp {
         }
     }
     pub(crate) fn focus_component(&mut self, info: ComponentInfo) {
+        let unregistered = info.world_position.is_none();
         if let Some(point) = info.world_position {
             self.ui_error = None;
             self.camera.center = point;
@@ -828,6 +833,11 @@ impl EditorApp {
             .info
             .as_ref()
             .map_or(String::new(), |i| i.revision.clone());
+        self.components.candidates.requested = None;
+        self.request_candidates();
+        if unregistered {
+            self.ui_error = Some("Board 未校准：请先完成 Board→World 配准".into());
+        }
         rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info, "view.focus_component");
     }
     pub(crate) fn paint_component(&self, painter: &egui::Painter, rect: egui::Rect, ppp: f32) {
@@ -865,6 +875,8 @@ impl EditorApp {
     }
     pub(crate) fn accept_component_reply(&mut self, changed: bool) {
         if changed {
+            self.components.candidates.requested = None;
+            self.components.candidates.layers.clear();
             self.components.focused = None;
             self.components.pick = None;
         }
@@ -872,6 +884,7 @@ impl EditorApp {
             return;
         };
         if info.revision != self.components.focus_revision {
+            self.components.candidates.requested = None;
             let id = self
                 .components
                 .focused

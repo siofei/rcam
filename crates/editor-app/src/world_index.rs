@@ -1,5 +1,5 @@
 //! Cached f64 manufacturing envelopes, queried before any GPU conversion.
-use editor_core::{BoundsMm, individual_geometries_bounds_with_blocks};
+use editor_core::BoundsMm;
 use editor_service::{LayerInfo, RenderSnapshot};
 
 /// A partial update is permitted only while layer/object identity and reusable
@@ -33,81 +33,22 @@ pub fn changed_objects(
 }
 
 #[derive(Clone, Default)]
-pub struct WorldIndex {
-    entries: Vec<(BoundsMm, usize, usize)>,
-    max_span_x_mm: f64,
+pub struct WorldIndex(editor_core::world_index::WorldIndex);
+impl std::ops::Deref for WorldIndex {
+    type Target = editor_core::world_index::WorldIndex;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 impl WorldIndex {
-    pub fn build(snapshot: &RenderSnapshot) -> Result<Self, String> {
-        let mut entries = Vec::new();
-        let bounds = individual_geometries_bounds_with_blocks(
-            snapshot
-                .layers
-                .iter()
-                .flat_map(|l| &l.objects)
-                .map(|o| &o.geometry),
-            &snapshot.apertures,
-            &snapshot.block_definitions,
-        )
-        .map_err(|e| format!("VALIDATION_FAILED: world envelope: {e}"))?;
-        let mut bounds = bounds.into_iter();
-        for (layer, data) in snapshot.layers.iter().enumerate() {
-            for object in 0..data.objects.len() {
-                if let Some(bounds) = bounds.next().flatten() {
-                    entries.push((bounds, layer, object));
-                }
-            }
-        }
-        entries.sort_by(|a, b| a.0.min_x_mm.total_cmp(&b.0.min_x_mm));
-        let max_span_x_mm = entries
-            .iter()
-            .map(|(bounds, _, _)| bounds.max_x_mm - bounds.min_x_mm)
-            .fold(0., f64::max);
-        Ok(Self {
-            entries,
-            max_span_x_mm,
-        })
+    pub fn build(s: &RenderSnapshot) -> Result<Self, String> {
+        editor_core::world_index::WorldIndex::build(&s.layers, &s.apertures, &s.block_definitions)
+            .map(Self)
     }
-    pub fn update(
-        &self,
-        snapshot: &RenderSnapshot,
-        changed: &[(usize, usize)],
-    ) -> Result<Self, String> {
-        let bounds = individual_geometries_bounds_with_blocks(
-            changed
-                .iter()
-                .map(|&(l, o)| &snapshot.layers[l].objects[o].geometry),
-            &snapshot.apertures,
-            &snapshot.block_definitions,
-        )
-        .map_err(|e| format!("VALIDATION_FAILED: world envelope: {e}"))?;
-        let mut updates: std::collections::HashMap<_, _> =
-            changed.iter().copied().zip(bounds).collect();
-        let mut result = self.clone();
-        result
-            .entries
-            .retain_mut(|(bounds, l, o)| match updates.remove(&(*l, *o)) {
-                Some(Some(next)) => {
-                    *bounds = next;
-                    true
-                }
-                Some(None) => false,
-                None => true,
-            });
-        result.entries.extend(
-            updates
-                .into_iter()
-                .filter_map(|((l, o), b)| b.map(|b| (b, l, o))),
-        );
-        result
-            .entries
-            .sort_by(|a, b| a.0.min_x_mm.total_cmp(&b.0.min_x_mm));
-        result.max_span_x_mm = result
-            .entries
-            .iter()
-            .map(|(b, _, _)| b.max_x_mm - b.min_x_mm)
-            .fold(0., f64::max);
-        Ok(result)
+    pub fn update(&self, s: &RenderSnapshot, changed: &[(usize, usize)]) -> Result<Self, String> {
+        self.0
+            .update(&s.layers, &s.apertures, &s.block_definitions, changed)
+            .map(Self)
     }
     pub fn visible_bounds(
         &self,
@@ -126,7 +67,7 @@ impl WorldIndex {
             })
             .collect();
         let mut result: Option<BoundsMm> = None;
-        for &(bounds, l, o) in &self.entries {
+        for &(bounds, l, o) in self.entries() {
             let Some((policy, all_visible)) = policies[l] else {
                 continue;
             };
@@ -157,23 +98,14 @@ impl WorldIndex {
         layers: &[LayerInfo],
         view: BoundsMm,
     ) -> RenderSnapshot {
-        let start = self
-            .entries
-            .partition_point(|(bounds, _, _)| bounds.min_x_mm < view.min_x_mm - self.max_span_x_mm);
-        let end = self
-            .entries
-            .partition_point(|(b, _, _)| b.min_x_mm <= view.max_x_mm);
-        let mut candidates: Vec<_> = self.entries[start..end]
-            .iter()
-            .filter(|(b, layer, _)| {
-                b.max_x_mm >= view.min_x_mm
-                    && b.min_y_mm <= view.max_y_mm
-                    && b.max_y_mm >= view.min_y_mm
-                    && layers.iter().any(|l| {
-                        l.layer_id == snapshot.layers[*layer].id && l.visible && l.effective_visible
-                    })
+        let mut candidates: Vec<_> = self
+            .query_indices(view)
+            .into_iter()
+            .filter(|(layer, _)| {
+                layers.iter().any(|l| {
+                    l.layer_id == snapshot.layers[*layer].id && l.visible && l.effective_visible
+                })
             })
-            .map(|(_, l, o)| (*l, *o))
             .collect();
         // Restore source exposure order after the spatial query, including Clear.
         candidates.sort_unstable();
@@ -199,26 +131,6 @@ impl WorldIndex {
                 .push(snapshot.layers[l].objects[o].clone());
         }
         result
-    }
-
-    /// Object-level neighborhood for Object Snap. This returns only stable
-    /// snapshot indices; feature generation remains lazy in the caller.
-    pub fn query_indices(&self, view: BoundsMm) -> Vec<(usize, usize)> {
-        let start = self
-            .entries
-            .partition_point(|(bounds, _, _)| bounds.min_x_mm < view.min_x_mm - self.max_span_x_mm);
-        let end = self
-            .entries
-            .partition_point(|(bounds, _, _)| bounds.min_x_mm <= view.max_x_mm);
-        self.entries[start..end]
-            .iter()
-            .filter(|(bounds, _, _)| {
-                bounds.max_x_mm >= view.min_x_mm
-                    && bounds.min_y_mm <= view.max_y_mm
-                    && bounds.max_y_mm >= view.min_y_mm
-            })
-            .map(|(_, layer, object)| (*layer, *object))
-            .collect()
     }
 }
 

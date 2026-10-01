@@ -6,7 +6,7 @@ S4-D1 PCB / PnP / RefDes Foundation = **PASS (Mac-first bounded)**, 2026-10-01. 
 
 R03/R06/R08/R09/R11/R15/R16/R17/R18/R19/R20/R21/R22; local regression AT-007/023/025/039–042/058–059/063–066/069/074/082–086/088–095/097. D1-01–D1-13 are the new addendum; original 96 AT identities/expected/platforms, ACCEPTANCE_V1.md and Cargo.lock remain byte-identical to C5.
 
-Explicit bounded CSV/TSV mapping/units/Side/rotation preview feeds an independent immutable ComponentPlacement table. Board registration is rigid f64 mm only, with no scale, shear or automatic Bottom reflection. List/search/get use stable IDs and revision-fenced bounded pages; GUI search and virtual rows run through the worker. Uncalibrated focus warns and leaves the camera unchanged. Registered focus and marker/arrow/RefDes overlay use the same Board→World transform without creating manufacturing geometry.
+Explicit bounded CSV/TSV mapping/units/Side/rotation preview feeds an independent immutable ComponentPlacement table. Board registration is rigid f64 mm only, with no scale, shear or automatic Bottom reflection. List/search use revision-fenced bounded pages; get uses stable-ID lookup; GUI search and virtual rows run through the worker. Uncalibrated focus warns and leaves the camera unchanged. Registered focus and marker/arrow/RefDes overlay use the same Board→World transform without creating manufacturing geometry.
 
 Import and registration each occupy one chronological history transaction. Board shares service content revision but manufacturing dirty remains geometry-only; project dirty includes Board. `.rcam` with no Board stays v1; Board projects use v2 with strict validation. Save/Open/Recovery retain exact Board content and registration; Gerber exports remain byte-identical across metadata changes. Default public release omits all active evidence-control entry points.
 
@@ -25,3 +25,7 @@ Candidate archive audit: complete Source ZIP fresh-extracted, manifest and packa
 Search controls are drafts until Search / Apply is clicked. A Board revision rebuilds the table with all components; reapply desired draft filters after import/registration/Undo/Redo. Import diagnostics retain at most 100 categories/rows while reporting the full count. There is no continuous source-file link or automatic component-to-opening association.
 
 Windows deferred / not executed. Physical mouse/trackpad/modifier and human IME workflows are not claimed by the controlled native records. Full V1, CORE10 10/10 and manufacturing P100K are not accepted here. Component association/library replacement, Drill and assembly export remain outside D1. Stop before S4-D2.
+
+## Final inherited D1 identity (documentation hardening, 2026-10-01)
+
+Final maintenance source commit: `8b978cc6037de9a78731401d3b31b96738236b79`. Source ZIP SHA-256: `71f18e8ac7648b3056e28f571f4ce2b7e5a4daa63a26d16b46b9e491bf2eca62`. Public Evidence ZIP SHA-256: `4cbd68d075c98a667b70cd5e7af521b952182b0e54b4ac9adab9840a441d7d35`. Default public binary SHA-256: `f9484c9efd7adc53549a5d4326da61c2e3791a37a796458d79b4138447c96c6e`. Internal evidence binary SHA-256: `58d65a3cf1e2d199e0bd2fb0ff7c676d40e82cf2e1507e8efc7ae743dddf30b4`. These identities were read directly from the final D1 delivery manifest/hash list; no D1 behavior change.

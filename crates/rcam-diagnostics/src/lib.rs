@@ -519,6 +519,8 @@ fn performance_command(command: &str) -> bool {
         "gerber.import.",
         "gerber.export.",
         "snap.query.",
+        "components.nearby",
+        "components.candidates.select",
     ]
     .iter()
     .any(|prefix| command.starts_with(prefix))

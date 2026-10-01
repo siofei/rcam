@@ -4,6 +4,7 @@ mod array_ui;
 mod block_display;
 mod block_ui;
 mod camera;
+mod candidates_ui;
 mod components_ui;
 mod display;
 #[cfg(test)]
@@ -23,6 +24,8 @@ use modal::ActiveModal;
 mod native_bench;
 #[cfg(feature = "internal-evidence")]
 mod native_d1;
+#[cfg(feature = "internal-evidence")]
+mod native_d2;
 mod native_probe;
 mod object_snap;
 mod platform;
@@ -2298,6 +2301,7 @@ impl eframe::App for EditorApp {
                     if let Some(grip) = &self.grip { grip.paint(&painter,self.camera,rect,ctx.pixels_per_point()); }
                 }
                 self.paint_component(&painter,rect,ctx.pixels_per_point());
+                self.paint_candidates(&painter,rect,ctx.pixels_per_point());
                 self.paint_block(&painter, rect, ctx.pixels_per_point());
                 self.invalidate_text_overlay();
                 if self.tool == tools::ActiveTool::Text {
@@ -2451,6 +2455,11 @@ impl eframe::App for EditorApp {
         if let Some(mut native) = self.components.native.take() {
             native.tick(self, ctx);
             self.components.native = Some(native);
+        }
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut native) = self.components.candidates.native.take() {
+            native.tick(self, ctx);
+            self.components.candidates.native = Some(native);
         }
         if self.modal.is_none()
             && !self.close_prompt

@@ -337,3 +337,8 @@ retain exact material/numerical validation and atomic query semantics. GUI
 selection resolves IDs from one immutable snapshot rather than repeated layer
 scans. Add nullable rectangle capability and preserve former expensive failure
 fixture as an exact success regression (ADR0046). Final acceptance pending.
+
+
+### S4-D2 RefDes-assisted manufacturing candidate selection (2026-10-01)
+
+S4-D2 is IN PROGRESS. Registered component-local rectangle queries use explicit Gerber layers and shared f64 WorldIndex, preserve Dark/Clear and object type, aggregate whole text groups and atomic blocks, and provide deterministic revision-fenced bounded pages. Candidate != Association, final Boolean opening or footprint ownership. GUI highlight/focus/Replace/Add selection are transient and follow existing permissions/edit paths. No project schema change, footprint guess or persistent link. See S4_D2_PLAN, S4_D2_ACCEPTANCE_ADDENDUM, S4_D2_REVIEW and ADR0047 (0043 was occupied by D1 input compatibility). Windows/full V1/CORE10/P100K deferred. Stop after D2.

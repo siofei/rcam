@@ -7,7 +7,7 @@ schema_version=2; stage=S4-D1; Mac-first bounded; independent of frozen 96 AT ca
 | D1-01 | CSV/TSV/BOM/quotes/reordered columns/UTF-8, explicit mm/inch and CCW/CW/offset/axes/Side |
 | D1-02 | Missing/duplicate columns, bad UTF-8/numbers/Side/RefDes, duplicate (Side,RefDes), exact budgets, zero project/history/ID mutation |
 | D1-03 | Rigid transform identity/translation/arbitrary angle/reflection/inverse/direction, two-point fit/degenerate/distance mismatch/no scale |
-| D1-04 | Stable list/search/get IDs; exact/prefix/substring/Side/Footprint filters, bounded revision-fenced pages |
+| D1-04 | Stable IDs; list/search use bounded revision-fenced pages and exact/prefix/substring/Side/Footprint filters; get uses stable-ID lookup |
 | D1-05 | Import/registration single history transaction, mixed geometry/Board Undo/Redo, dirty/no-op/conflict/redo preservation |
 | D1-06 | v1 None/empty migration, v2 deterministic Save/Open/Recovery, invalid Board/JSON/ZIP fail-closed |
 | D1-07 | Gerber byte identity and no manufacturing objects from metadata/view operations |

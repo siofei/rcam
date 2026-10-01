@@ -291,3 +291,8 @@ The user started S4-C5 on 2026-09-27. Scope is non-associative Rectangular Array
 ### S4-D1 PCB / PnP / RefDes Foundation (PASS, Mac-first bounded; 2026-10-01)
 
 S4-D1 is PASS (Mac-first bounded). Candidate implementation acceptance, native and complete four-file archive audits passed; final clean source/binary/package identities are recorded in versioned exports/S4D1_*/REVIEW.md. Scope: explicit bounded CSV/TSV mapping/units/Side/rotation preview, independent ComponentPlacement table, rigid Board→World registration, RefDes exact/prefix/substring search and virtualized focus/overlay, atomic project Undo/Redo and v2 Board persistence/Recovery. No component↔opening association, library replacement, Drill, assembly export or Windows signature. Historical C5 stop points are superseded only by this explicitly started stage. See S4_D1_PLAN, S4_D1_ACCEPTANCE_ADDENDUM, S4_D1_REVIEW and ADR 0042. Windows/full V1/CORE10/P100K remain deferred; stop before S4-D2.
+
+
+### S4-D2 RefDes-assisted manufacturing candidate selection (2026-10-01)
+
+S4-D2 is IN PROGRESS. Registered component-local rectangle queries use explicit Gerber layers and shared f64 WorldIndex, preserve Dark/Clear and object type, aggregate whole text groups and atomic blocks, and provide deterministic revision-fenced bounded pages. Candidate != Association, final Boolean opening or footprint ownership. GUI highlight/focus/Replace/Add selection are transient and follow existing permissions/edit paths. No project schema change, footprint guess or persistent link. See S4_D2_PLAN, S4_D2_ACCEPTANCE_ADDENDUM, S4_D2_REVIEW and ADR0047 (0043 was occupied by D1 input compatibility). Windows/full V1/CORE10/P100K deferred. Stop after D2.

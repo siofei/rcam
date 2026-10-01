@@ -9,6 +9,7 @@ use std::{
 
 #[derive(Clone, Default)]
 pub struct View {
+    pub candidate_reply: Option<Arc<crate::candidates_ui::Reply>>,
     pub board: Option<Arc<editor_core::pnp::BoardState>>,
     pub component_indices: Arc<Vec<usize>>,
     pub component_query: Option<ComponentQuery>,
@@ -224,6 +225,8 @@ pub enum Action {
         editor_core::pnp::RegistrationInput,
     ),
     ComponentSearch(crate::block_ui::Context, ComponentQuery),
+    CandidateQuery(crate::candidates_ui::Request),
+    CandidateSelect(crate::candidates_ui::Request, bool),
     ArrayPreview(Box<crate::array_ui::Request>),
     ArrayApply(Box<crate::array_ui::Request>),
     BlockEdit(Box<crate::block_ui::Request>),
@@ -695,6 +698,14 @@ impl Model {
         let mut phase = std::time::Instant::now();
         let id = self.info()?.document_id;
         self.view.info = Some(self.service.document_get(&id)?);
+        if self
+            .view
+            .candidate_reply
+            .as_ref()
+            .is_some_and(|r| !r.request.context.valid(&self.view))
+        {
+            self.view.candidate_reply = None;
+        }
         let board = self.service.board_state(&id)?;
         let changed = match (&board, &self.view.board) {
             (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
@@ -1413,6 +1424,8 @@ impl Model {
             Action::PnpImport(context, params) => self.pnp_import(context, params),
             Action::BoardRegistration(context, input) => self.registration_apply(context, input),
             Action::ComponentSearch(context, query) => self.component_search(context, query),
+            Action::CandidateQuery(request) => self.candidate_query(request),
+            Action::CandidateSelect(request, add) => self.candidate_select(request, add),
             Action::BlockEdit(request) => self.block_edit(*request),
             Action::ArrayPreview(request) => self.array_preview(*request),
             Action::ArrayApply(request) => self.array_apply(*request),

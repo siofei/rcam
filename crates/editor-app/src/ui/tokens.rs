@@ -44,3 +44,8 @@ pub const GRIP_HIT_PX: f32 = 10.;
 pub const GRIP_NORMAL: Color32 = Color32::LIGHT_BLUE;
 pub const GRIP_HOVER: Color32 = Color32::WHITE;
 pub const GRIP_ACTIVE: Color32 = Color32::LIGHT_GREEN;
+
+/// D2 transient bounds/window overlays, fixed physical pixel outline.
+pub const CANDIDATE_WINDOW: Color32 = Color32::GOLD;
+pub const CANDIDATE_BOUNDS: Color32 = Color32::LIGHT_BLUE;
+pub const CANDIDATE_OUTLINE_PX: f32 = 1.5;

@@ -743,3 +743,11 @@ means exact `objects.select_rect` has no fixed work admission cap. Existing
 `max_hit_test_work` applies to point hit testing. Invalid and uncertain geometry
 still fails atomically with no partial result; successful rectangle queries
 return stable IDs in exposure order and never advance revisions/history.
+
+## S4-D2 registered manufacturing bounds candidates (implementation)
+
+`components.nearby_manufacturing` is a pure `&self` query; no `expected_revision` and no GUI selection changes. `params` has required `revision`, `component_id`, nonempty unique `layer_ids`, `window: {kind:"component_local_rect",width_mm:10,height_mm:10}`, `offset` and `limit` (1–500). Registration is required (`REGISTRATION_REQUIRED`); Board or manufacturing revision changes, including Undo/Redo, reject old revisions with `REVISION_CONFLICT`. Dimensions must be finite, >0 and <=MAX_BOARD_MM. Only explicit Gerber layers; hidden/nonselectable layers can be queried. Drill is unsupported. More than 10000 nearby physical objects or expanded logical-group members is a `RESOURCE_LIMIT` rejection with no truncated output.
+
+Result: `document_id`, `revision`, `total`, `window` (world center/orientation/dimensions), `nearby_object_count` and `items`. Each item has existing `layer_id` + `object_id`, bounded `member_object_ids`, `geometry_kind` (Flash/Line/Arc/Region/RectangularSweep/BlockInstance/GeneratedText), `exposure`, `world_bounds`, `distance_to_component_mm` (distance to AABB), `center_distance_mm`, and `fully_inside_window`. Text uses a lexically first existing member ID as anchor and includes the whole logical group; blocks are atomic. Sort: fully inside first, center distance, semantic layer order, lexical ObjectId. Pagination applies after complete classification/ranking. Window orientation reuses D1 world_rotation_deg; Bottom never causes automatic reflection.
+
+These are manufacturing *bounds candidates*, not final Boolean openings, material intersection, associations or footprint ownership proof. No CandidateId/AssociationId, geometry JSON, persistence or footprint-name inference. Headless callers decide which existing edit API to invoke. GUI selection is separate transient session state. D1 `list/search` = revision-fenced bounded page; `get` = stable-ID lookup.
