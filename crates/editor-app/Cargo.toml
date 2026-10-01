@@ -22,6 +22,9 @@ rcam-project.workspace = true
 [dev-dependencies]
 gerber-io.workspace = true
 
+[build-dependencies]
+serde_json.workspace = true
+
 [[example]]
 name = "s0-demo"
 path = "src/s0_demo.rs"

@@ -1,5 +1,7 @@
 # Gerber 编辑器 V1：设计与开发指导
 
+构建版本来源整改 INFRA2（2026-10-01）：Git 本根身份优先、脏构建显式标识；no-.git 归档必须绑定 PACKAGE_INFO 与全量源码清单，失效时中止构建。信任边界与局部验收见 [ADR 0048](adr/0048-build-source-identity.md) 和 [INFRA2 任务](INFRA2_BUILD_IDENTITY_PLAN.md)，不改变制造或双平台 V1 门槛。
+
 > 文档版本：1.1 · 基线日期：2026-09-14  
 > 产品定位：面向钢网／Gerber 图形操作的轻量桌面编辑器，而不是 PCB 布线软件或完整 CAM350 替代品。  
 > 技术路线：Rust + MakerPnP gerber-parser／gerber-types + 自有语义与编辑模型 + egui／eframe + wgpu。  

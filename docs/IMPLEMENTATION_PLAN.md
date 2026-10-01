@@ -1,5 +1,9 @@
 # 实施计划与职责
 
+## 当前整改 INFRA2 Build Source Identity（2026-10-01，R3 源码复审 PASS，阶段收口）
+
+用户授权 S4-D2 后只整改构建来源：Git clean/dirty 与可信校验的 no-.git 归档；原文任务和 BI-01–06 见 INFRA2_BUILD_IDENTITY_PLAN.md / ADR0048。先完成实现和门禁送审，复审通过后 Git commit，再以新干净提交构建/打包/fresh-extract 验真。本轮不启动持久关联、替换、Drill、装配或其他生产化功能。Windows deferred；CircuitCAM 4.4 完整兼容按用户要求最后另立任务。
+
 基线：DESIGN_V1 1.1，acceptance_cases schema 2；2026-09-14 开始。
 历史阶段采用主代理规划/验收、Luna 实现的分工；S2-B1 由主代理实现并核验；本次 S2-B2 由主代理实现/自动测试/审核，用户已取消全部 CUA 交给 Luna 的临时安排，恢复默认执行。每轮仅交付一个阶段内的小闭环。
 
