@@ -119,6 +119,7 @@ fn source_paths(root: &Path) -> Result<Vec<String>> {
         "rust-toolchain.toml",
         "README.md",
         "THIRD_PARTY_NOTICES.md",
+        "RCam_S5M1_P100K_NATIVE_CLOSEOUT_NEXT_TASK.md",
     ]
     .into_iter()
     .map(str::to_owned)

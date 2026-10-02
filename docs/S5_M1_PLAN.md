@@ -60,3 +60,8 @@ AT068最终驱动在等待后台结果的phase13不循环request_repaint；真�
 ## S5-REV-01/02 REQUEST CHANGES remediation (2026-10-02; no commit)
 
 Independent source review requested two B1 evidence-validator fixes only. Allowed: scripts/verify_s5m1_native.py and test_verify_s5m1_native.py, new scripts/check_s5m1_evidence_mutations.py for negative mutations of actual synthetic evidence, native_s5m1.rs only additive input/observed/acknowledgement monotonic timestamps, boundary frame IDs and GPU-completed/primary-in-scene observations; docs/manifest and frozen handoff. No renderer/UI/business/model/threshold/sample/trajectory changes. Point local scenes remain allowed, full marquee requires100k; navigation boundary is (navigation-start frame_id, navigation-end frame_id], with full input-to-next-input links and raw elapsed/interval consistency. Old missing-boundary/GPU-state protocol cannot be upgraded by inferring it from surviving frames; preserve old failures/results and collect new necessary traces. Source review remains REQUEST CHANGES until independent re-review.
+
+
+### 最终归档身份清单补齐（2026-10-02；实测发现）
+
+首个阶段提交2dff495的真实Source ZIP中，Python显式source manifest包含根任务RCam_S5M1_P100K_NATIVE_CLOSEOUT_NEXT_TASK.md，而Rust build_identity::source_paths固定根列表未同步；直接编译实际Rust检查器对真实解压副本返回source manifest coverage mismatch。仅允许补齐 editor-app/build_identity.rs 的相同根文件项，更新 tests/build_identity.rs 真实归档fixture/源文件变异回归及本段文档/manifest。不改变制造/渲染/输入/API/schema/样本/门槛/身份拒绝强度；无Git仍须完整逐文件校验，不能跳过该任务文档。此前partial clean门禁与失败Source ZIP保留，新提交后重做最终门禁及真实无Git editor-app构建/启动/变异恢复核对。此补充修改另送独立审查，阶段仍非PASS。

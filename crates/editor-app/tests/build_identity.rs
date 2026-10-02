@@ -63,6 +63,7 @@ impl Tree {
             "Cargo.lock",
             "Cargo.toml",
             "README.md",
+            "RCam_S5M1_P100K_NATIVE_CLOSEOUT_NEXT_TASK.md",
             "THIRD_PARTY_NOTICES.md",
             "crates/demo.rs",
             "rust-toolchain.toml",
@@ -91,13 +92,18 @@ impl Drop for Tree {
 }
 #[test]
 fn verified_archive_then_source_changed() {
-    let t = Tree::archive();
-    assert_eq!(
-        identity::resolve(&t.0).unwrap(),
-        (COMMIT.into(), "archive-verified")
-    );
-    t.write("crates/demo.rs", b"changed");
-    assert!(identity::resolve(&t.0).is_err());
+    for path in [
+        "crates/demo.rs",
+        "RCam_S5M1_P100K_NATIVE_CLOSEOUT_NEXT_TASK.md",
+    ] {
+        let t = Tree::archive();
+        assert_eq!(
+            identity::resolve(&t.0).unwrap(),
+            (COMMIT.into(), "archive-verified")
+        );
+        t.write(path, b"changed");
+        assert!(identity::resolve(&t.0).is_err(), "{path}");
+    }
 }
 #[test]
 fn missing_corrupt_info_and_manifests() {

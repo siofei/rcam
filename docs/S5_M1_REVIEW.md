@@ -91,3 +91,8 @@ P100K复用旧1000×100 C0.5/1mm pitch row-major/allDark，1aperture，SHA8111ec
 ### R2 独立源码复审放行与最终 clean 执行入口（2026-10-02）
 
 独立复审 `exports/S5M1_R2_INDEPENDENT_REVIEW_20261002T032631Z/S5M1_R2_INDEPENDENT_REVIEW.zh-CN.md`（主目录只读；Library `libfile_13f0f88237208191ba5006f44eb46a53`）结论为 **APPROVED FOR STAGE COMMIT，仅源码放行**，S5-REV-01/02关闭，无新B0/B1。本段只记录复审事实，不改冻结样本/阈值、产品/验证器或源审结论。用户授权阶段commit后，以新clean身份执行六项Mac最终门禁、D1/D2/Metal回归、正式四件套及无Gitfresh-extract；完成后停止等独立包审。最终结果另存版本化exports，尚不标S5-M1 PASS，不push；Windows/full V1/CORE10仍deferred。
+
+
+### 最终执行中补齐根任务的无Git身份覆盖（2026-10-02；另待审）
+
+首个授权提交 `2dff4954a2d5a01a2926b9eeda821713ebd7f034` clean，manifest/generator/Python38/fmt/check/两种clippy通过；workspace编译在发现下述真实归档身份失败后主动停止，未宣称其通过，未开始原生性能。实际Source ZIP已独立解压并用当前build_identity.rs编译检查器执行resolve，exit1：source manifest coverage mismatch，证据 `exports/S5M1_FINAL_CLEAN_20261002T0338Z/first-commit-archive-probe`（这是实际Rust身份检查，不冒充完整editor-app构建）。Python源码清单已含本阶段根任务，而Rust显式根列表遗漏该文件；后续修正只同步该项、使归档fixture包含实际根任务，并在既有正/负测试中验证任务文件改动也拒绝。对应PLAN先记录本修复；不跳过清单/哈希/身份规则，不恢复unknown，不改业务/采集/阈值。新修复提交后完整final-clean验证和无Git真实app构建仍必须执行，补充源码修改供独立包/源码审核，尚不标PASS。
