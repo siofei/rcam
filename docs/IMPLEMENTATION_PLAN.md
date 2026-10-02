@@ -1,6 +1,10 @@
 # 实施计划与职责
 
-## 当前整改 INFRA2 Build Source Identity（2026-10-01，R3 源码复审 PASS，阶段收口）
+## 当前阶段 S5-M1 P100K native loop（2026-10-01，in progress）
+
+用户明确授权从INFRA2 clean 2cde95380ab9a7161713cf5f1c15a843edb47803启动；任务全文在项目根，PLAN/BASELINE/ACCEPTANCE_ADDENDUM及ADR0049冻结六项Mac局部门槛。先现有渲染原生实测再修复、冻结diff送独立复审，随后最终原生/阶段commit/clean四件套/fresh-extract/独立终审。主工作区旧改动保留，不push，不提前标PASS，不进入S5-M2。
+
+## 前置整改 INFRA2 Build Source Identity（2026-10-01，R3 源码复审 PASS，阶段收口）
 
 用户授权 S4-D2 后只整改构建来源：Git clean/dirty 与可信校验的 no-.git 归档；原文任务和 BI-01–06 见 INFRA2_BUILD_IDENTITY_PLAN.md / ADR0048。先完成实现和门禁送审，复审通过后 Git commit，再以新干净提交构建/打包/fresh-extract 验真。本轮不启动持久关联、替换、Drill、装配或其他生产化功能。Windows deferred；CircuitCAM 4.4 完整兼容按用户要求最后另立任务。
 

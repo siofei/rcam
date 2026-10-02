@@ -38,6 +38,9 @@ pub struct View {
     pub message: String,
     pub render_ppm: f64,
     pub render_viewport: Option<BoundsMm>,
+    /// No manufacturing object was omitted by the viewport query. Panning a
+    /// complete scene cannot expose uncached geometry; its LOD still applies.
+    pub render_coverage_complete: bool,
     pub display_attempt: Option<(BoundsMm, f64)>,
     pub display_transient: Option<String>,
     pub drag_hit: bool,
@@ -341,6 +344,7 @@ impl Model {
     /// Imports a small Flash+Line+Arc+Region fixture, captures it as one
     /// `BlockDefinition`, and places 5 instances at 0°/90°/37°/Mirror/
     /// Mirror+90°, matching `docs` review's `sample.rcam` fixture shape.
+    #[cfg(feature = "internal-evidence")]
     pub(crate) fn autoload_block_fixture(&mut self) -> Result<(), ServiceError> {
         const MIXED: &str = "%FSLAX26Y26*%\n%MOMM*%\n%ADD10C,0.2*%\nD10*\nX2000000Y2000000D03*\nX0Y0D02*\nG01X2000000Y0D01*\nG75*\nX1000000Y0D02*\nG03X0Y1000000I-1000000J0D01*\nG36*\nX10000000Y10000000D02*\nG01X12000000Y10000000D01*\nX12000000Y12000000D01*\nX10000000Y12000000D01*\nX10000000Y10000000D01*\nG37*\nM02*\n";
         let dir = std::env::temp_dir().join(format!(
@@ -871,6 +875,8 @@ impl Model {
             return;
         };
         self.serial += 1;
+        #[cfg(feature = "internal-evidence")]
+        crate::native_s5m1::count_rebuild(delta.is_some());
         self.view.render_ppm = self.ppm;
         // Coverage records attempted work, including a resource refusal. The UI
         // retries only when the camera/LOD changes, never on every error reply.
@@ -886,6 +892,14 @@ impl Model {
         let filtered = self
             .viewport
             .map(|(_, bounds)| self.world_index.query(snapshot, &self.view.layers, bounds));
+        let coverage_complete = filtered.as_ref().is_none_or(|subset| {
+            subset
+                .layers
+                .iter()
+                .zip(&snapshot.layers)
+                .all(|(a, b)| a.id == b.id && a.objects.len() == b.objects.len())
+        });
+        self.view.render_coverage_complete = false;
         let patched = delta.and_then(|changed| {
             self.view.scene.as_deref().and_then(|previous| {
                 Scene::patch(
@@ -901,6 +915,8 @@ impl Model {
             })
         });
         let scene = patched.unwrap_or_else(|| {
+            #[cfg(feature = "internal-evidence")]
+            crate::native_s5m1::gpu_event("geometry-full-build-call", 1);
             Scene::build_cached(
                 filtered.as_ref().unwrap_or(snapshot),
                 &self.view.layers,
@@ -913,6 +929,7 @@ impl Model {
         });
         match scene {
             Ok(scene) => {
+                self.view.render_coverage_complete = coverage_complete;
                 self.view.block_cache_stats = self.block_display_cache.stats();
                 self.view.scene = Some(Arc::new(scene));
                 self.view.blocked = None;
@@ -946,6 +963,8 @@ impl Model {
         );
     }
     fn hit(&self, point: MmPoint, tolerance: f64) -> Result<Option<ObjectInfo>, ServiceError> {
+        #[cfg(feature = "internal-evidence")]
+        let _measure = crate::native_s5m1::HitTimer::start();
         self.editable()?;
         let id = self.info()?.document_id;
         let hit = topmost_hit(&self.view.layers, |layer| {

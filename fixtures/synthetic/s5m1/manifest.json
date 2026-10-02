@@ -1,0 +1,44 @@
+{
+  "fixtures": [
+    {
+      "apertures": 4,
+      "bounds_mm": [
+        0.75,
+        0.75,
+        100.25,
+        100.25
+      ],
+      "exposure": "all Dark, source row-major order",
+      "objects": 10000,
+      "path": "fixtures/synthetic/s5m1/P10K_CROP.gbr",
+      "sha256": "97b50c1af6fce5ab740455f0657bd011cd7871a49e3564ae6b89b97f26eb7b30",
+      "shapes": {
+        "C": 2500,
+        "O": 2500,
+        "P": 2500,
+        "R": 2500
+      }
+    },
+    {
+      "apertures": 1,
+      "bounds_mm": [
+        0.75,
+        0.75,
+        1000.25,
+        100.25
+      ],
+      "exposure": "all Dark, source row-major order",
+      "objects": 100000,
+      "path": "fixtures/synthetic/s2b3_2/P100K_CIRCLES.gbr",
+      "sha256": "8111ecada7a66defe30f614cd3851a328d861bbab4c595cb12ee3131fa465a31",
+      "shapes": {
+        "C": 100000
+      }
+    }
+  ],
+  "generator": "scripts/generate_s5m1.py v1",
+  "generator_sha256": "b3c8ae387fc93a084c07f60bfc38f016495dc135c16d789e902b8a3a467bb67e",
+  "independent_truth": "integer source position arithmetic and analytic aperture extents; IDs verified in source exposure order, no renderer output as truth",
+  "protocol_sha256": "196a7888ec13936e0f1fbd1fcc5bf266a7b22216e84147c2e580077d318e290e",
+  "schema_version": 2
+}

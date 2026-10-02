@@ -33,6 +33,11 @@ def verify(root):
     imported=records['import-uncalibrated'];reg=records['registered'];focus=records['search-bottom-focus-overlay']
     assert imported['component_count']==3 and imported['board']['registration'] is None
     assert records['uncalibrated-focus-warning']['focus']['world_position'] is None
+    if 'expected-unregistered-candidate-zero-mutation' in records:
+        rejected=records['expected-unregistered-candidate-zero-mutation'];prior=records['uncalibrated-focus-warning']
+        assert rejected['error_code']=='REGISTRATION_REQUIRED' and rejected['board']['registration'] is None
+        assert rejected['focus']['world_position'] is None
+        for key in ['revision','dirty','project_dirty','undo','redo','geometry_sha256','component_count']:assert rejected[key]==prior[key],key
     assert records['search-top-two-results']['query_results']==2
     assert imported['dirty']==baseline['dirty'] and imported['project_dirty'] is True
     assert imported['undo']==baseline['undo']+1

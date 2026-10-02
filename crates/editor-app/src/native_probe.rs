@@ -214,6 +214,10 @@ pub struct Probe {
 
 impl Probe {
     pub fn from_env() -> Option<Self> {
+        if !cfg!(feature = "internal-evidence") {
+            return None;
+        }
+
         let dir = PathBuf::from(std::env::var_os("RCAM_NATIVE_PROBE_DIR")?);
         std::fs::create_dir_all(dir.join("screens")).ok()?;
         let fixture_sha256 = fixture_sha256();

@@ -66,6 +66,10 @@ struct Pending {
 }
 impl NativeBench {
     pub fn from_env(device: wgpu::Device) -> Option<Self> {
+        if !cfg!(feature = "internal-evidence") {
+            return None;
+        }
+
         if std::env::var("RCAM_NATIVE_BENCH").ok().as_deref() != Some("s2b32") {
             return None;
         }

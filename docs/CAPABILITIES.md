@@ -1,6 +1,8 @@
 # 能力与实施状态
 
-当前阶段状态：S4-C1 Full Object Snap、INFRA1 Runtime Diagnostics、S4-C2 Grip Editing v1、S4-C3 Block Editor v1 均为 **PASS（Mac-first bounded）**。S4-C4 Alignment / Distribution 已按 Mac-first bounded 完成验收。本项目仍不是双平台 V1 编辑器；Windows deferred / not executed，完整 V1、CORE10 10/10 与 P100K 均未通过。完整产品边界继续以 DESIGN_V1 第4节为准。
+当前阶段：S5-M1 P100K native loop **in progress**，基线INFRA2 2cde953（Mac-first bounded PASS），D1/D2已按各自限定范围通过；六项Mac性能已有pre-review实测，最终clean身份及独立复审仍待验，见S5_M1_PLAN/BASELINE/ACCEPTANCE_ADDENDUM。复用生产有序world-bins，不新增业务operation，Windows/完整V1/CORE10仍未完成。下文明确保留各阶段历史摘要，旧资源数字以D1已批准政策修订为准。
+
+历史C4摘要：S4-C1 Full Object Snap、INFRA1 Runtime Diagnostics、S4-C2 Grip Editing v1、S4-C3 Block Editor v1 均为 **PASS（Mac-first bounded）**。S4-C4 Alignment / Distribution 已按 Mac-first bounded 完成验收。本项目仍不是双平台 V1 编辑器；Windows deferred / not executed，完整 V1、CORE10 10/10 与 P100K 均未通过。完整产品边界继续以 DESIGN_V1 第4节为准。
 以下段落按阶段保留历史实施状态；本节末列出当前阶段能力与限制。
 
 ## S0 历史技术验证

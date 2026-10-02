@@ -117,7 +117,48 @@ impl Run {
             self.finish(app);
             return;
         }
-        if app.view.error.is_some() && !matches!(self.phase, 5 | 6) {
+        let expected_unregistered_candidate = self.phase == 8
+            && app
+                .view
+                .error
+                .as_ref()
+                .is_some_and(|e| e.code == "REGISTRATION_REQUIRED");
+        if expected_unregistered_candidate {
+            let current = self.observation(app, "expected-unregistered-candidate-zero-mutation");
+            let baseline = self.records.last().unwrap();
+            if baseline["label"] != "uncalibrated-focus-warning"
+                || [
+                    "revision",
+                    "dirty",
+                    "project_dirty",
+                    "undo",
+                    "redo",
+                    "geometry_sha256",
+                    "component_count",
+                ]
+                .iter()
+                .any(|key| current[*key] != baseline[*key])
+                || !app.view.selected.ordered.is_empty()
+                || app
+                    .view
+                    .board
+                    .as_ref()
+                    .is_none_or(|b| b.registration.is_some())
+                || app
+                    .components
+                    .focused
+                    .as_ref()
+                    .is_none_or(|f| f.world_position.is_some())
+            {
+                self.fail(app, "unregistered-candidate-query-mutated-or-wrong-state");
+                return;
+            }
+            self.record(app, "expected-unregistered-candidate-zero-mutation");
+        }
+        if app.view.error.is_some()
+            && !matches!(self.phase, 5 | 6)
+            && !expected_unregistered_candidate
+        {
             self.fail(app, "unexpected-worker-error");
             return;
         }

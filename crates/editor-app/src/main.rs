@@ -27,12 +27,16 @@ mod native_d1;
 #[cfg(feature = "internal-evidence")]
 mod native_d2;
 mod native_probe;
+#[cfg(feature = "internal-evidence")]
+mod native_s5m1;
 mod object_snap;
 mod platform;
 mod preferences;
 mod project_ui;
 mod recovery;
 mod render_index;
+#[cfg(test)]
+mod s5m1_tests;
 mod selection;
 mod state;
 mod text_panel;
@@ -149,6 +153,8 @@ struct EditorApp {
     drag: Option<drag::Gesture>,
     grip: Option<grip::Session>,
     bench: Option<native_bench::NativeBench>,
+    #[cfg(feature = "internal-evidence")]
+    s5m1: Option<native_s5m1::Run>,
     /// Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR`); observation only.
     probe: Option<native_probe::Probe>,
     row_probes: std::cell::RefCell<Vec<serde_json::Value>>,
@@ -160,6 +166,17 @@ struct EditorApp {
     ime_active: bool,
     reported_ppp: f32,
 }
+fn viewport_requires_rebase(scene: &display::Scene, camera: Camera) -> bool {
+    // Complete geometry coverage does not waive the existing local-f32
+    // precision envelope. Re-anchor through the normal viewport worker.
+    scene
+        .scalar(camera.center.x_mm - scene.anchor.x_mm)
+        .is_err()
+        || scene
+            .scalar(camera.center.y_mm - scene.anchor.y_mm)
+            .is_err()
+}
+
 impl EditorApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
@@ -194,6 +211,7 @@ impl EditorApp {
             // Dev-only native GUI smoke path (S4-B2 Final Closeout, task
             // §17): no Block Editor GUI ships this phase, so a synthetic
             // Block fixture is loaded this way instead of through the UI.
+            #[cfg(feature = "internal-evidence")]
             if std::env::var_os("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE").is_some() {
                 match model.autoload_block_fixture() {
                     Ok(()) => {
@@ -208,7 +226,11 @@ impl EditorApp {
             }
             while let Ok((id, source, action)) = request.recv() {
                 let start = Instant::now();
+                #[cfg(feature = "internal-evidence")]
+                let measured_action = native_s5m1::action_label(&action);
                 rcam_diagnostics::with_source(source, || model.run(action));
+                #[cfg(feature = "internal-evidence")]
+                native_s5m1::worker_result(id, measured_action, start, &model.view);
                 if start.elapsed().as_millis() > 100 {
                     rcam_diagnostics::runtime_event(
                         rcam_diagnostics::Level::Warn,
@@ -219,6 +241,8 @@ impl EditorApp {
                     break;
                 }
                 ctx.request_repaint();
+                #[cfg(feature = "internal-evidence")]
+                native_s5m1::gpu_event("worker-request-repaint", 1);
             }
         });
         let gpu = cc
@@ -316,6 +340,8 @@ impl EditorApp {
             drag: None,
             grip: None,
             bench: native_bench::NativeBench::from_env(gpu.device.clone()),
+            #[cfg(feature = "internal-evidence")]
+            s5m1: native_s5m1::Run::from_env(gpu.device.clone()),
             probe: native_probe::Probe::from_env(),
             row_probes: Default::default(),
             layer_panel_rect: egui::Rect::NOTHING,
@@ -852,6 +878,11 @@ impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         #[cfg(feature = "internal-evidence")]
         self.closeout_raw_input(raw);
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.s5m1.take() {
+            run.input(self, ctx, raw);
+            self.s5m1 = Some(run);
+        }
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
         self.ime_event =
@@ -2204,14 +2235,16 @@ impl eframe::App for EditorApp {
                 let coverage = self.view.render_viewport;
                 let lo = self.camera.world(rect.left_bottom(), rect);
                 let hi = self.camera.world(rect.right_top(), rect);
-                let outside = coverage.is_none_or(|b| {
+                let outside = !self.view.render_coverage_complete && coverage.is_none_or(|b| {
                     lo.x_mm < b.min_x_mm
                         || lo.y_mm < b.min_y_mm
                         || hi.x_mm > b.max_x_mm
                         || hi.y_mm > b.max_y_mm
                 });
+                let rebase = self.view.scene.as_ref().is_some_and(|scene| viewport_requires_rebase(scene, self.camera));
                 let needs_lod = self.view.info.is_some()
                     && (outside
+                        || rebase
                         || ppm > self.view.render_ppm
                         || ppm < self.view.render_ppm / display::LOD_MAX_ZOOM_OUT);
                 let attempted = self.view.display_attempt.is_some_and(|(b, scale)| {
@@ -2247,6 +2280,10 @@ impl eframe::App for EditorApp {
                     ) {
                         Ok(mut prepared) => {
                             prepared.stats.cpu_prepare_ms += validation_ms;
+                            #[cfg(feature = "internal-evidence")]
+                            if let Some(run) = &mut self.s5m1 {
+                                run.prepare(&prepared.stats);
+                            }
                             if let Some(mut bench) = self.bench.take() {
                                 bench.record(self, &prepared.stats, ctx.pixels_per_point(), now);
                                 self.bench = Some(bench);
@@ -2281,7 +2318,13 @@ impl eframe::App for EditorApp {
                     painter.add(egui_wgpu::Callback::new_paint_callback(
                         rect,
                         gpu::Callback {
-                            painted: self.bench.as_ref().map(|b| (b.painted.clone(), b.frame_id)),
+                            painted: {
+                                #[cfg(feature = "internal-evidence")]
+                                let s5 = self.s5m1.as_ref().map(|r| (r.painted.clone(), r.frame_id));
+                                #[cfg(not(feature = "internal-evidence"))]
+                                let s5 = None;
+                                s5.or_else(|| self.bench.as_ref().map(|b| (b.painted.clone(), b.frame_id)))
+                            },
                             index: last.index.clone(),
                             scene: last.scene.clone(),
                             selected: last.selected.clone(),
@@ -2451,6 +2494,11 @@ impl eframe::App for EditorApp {
             self.layer_dialogs(ctx);
         }
         self.probe_frame(ctx);
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.s5m1.take() {
+            run.tick(self, ctx);
+            self.s5m1 = Some(run);
+        }
         #[cfg(feature = "internal-evidence")]
         if let Some(mut native) = self.components.native.take() {
             native.tick(self, ctx);
@@ -2648,7 +2696,10 @@ fn main() -> eframe::Result {
         rcam_diagnostics::Runtime::start(
             {
                 #[cfg(feature = "internal-evidence")]
-                if let Some(dir) = native_d2::directory().or_else(native_d1::directory) {
+                if let Some(dir) = native_s5m1::directory()
+                    .or_else(native_d2::directory)
+                    .or_else(native_d1::directory)
+                {
                     dir.join("logs")
                 } else {
                     std::path::PathBuf::from(home).join("Library/Logs/RCam")
@@ -2684,7 +2735,9 @@ fn main() -> eframe::Result {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([1280., 800.])
                 .with_min_inner_size(
-                    if std::env::var("RCAM_NATIVE_BENCH").ok().as_deref() == Some("s2b32") {
+                    if cfg!(feature = "internal-evidence")
+                        && std::env::var("RCAM_NATIVE_BENCH").ok().as_deref() == Some("s2b32")
+                    {
                         [800., 400.]
                     } else {
                         [980., 620.]
@@ -2694,7 +2747,9 @@ fn main() -> eframe::Result {
         },
         Box::new(|cc| Ok(Box::new(EditorApp::new(cc)))),
     );
-    if std::env::var("RCAM_NATIVE_BENCH").ok().as_deref() == Some("s2b32") {
+    if cfg!(feature = "internal-evidence")
+        && std::env::var("RCAM_NATIVE_BENCH").ok().as_deref() == Some("s2b32")
+    {
         let passed = std::env::var_os("RCAM_BENCH_OUT")
             .and_then(|p| {
                 std::fs::read(std::path::PathBuf::from(p).join("native-results.json")).ok()

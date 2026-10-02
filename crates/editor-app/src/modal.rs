@@ -347,6 +347,8 @@ pub(crate) mod tests {
             drag: None,
             grip: None,
             bench: None,
+            #[cfg(feature = "internal-evidence")]
+            s5m1: None,
             probe: None,
             row_probes: Default::default(),
             layer_panel_rect: eframe::egui::Rect::NOTHING,

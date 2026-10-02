@@ -574,7 +574,7 @@ impl Resources {
             multiview: None,
             cache: None,
         });
-        Self {
+        let resources = Self {
             pipeline,
             uniform,
             selected,
@@ -587,7 +587,24 @@ impl Resources {
             objects,
             shapes,
             points,
+        };
+        #[cfg(feature = "internal-evidence")]
+        {
+            crate::native_s5m1::gpu_event(
+                "geometry-storage-init-upload",
+                [
+                    &resources.objects,
+                    &resources.shapes,
+                    &resources.points,
+                    &resources.bins,
+                ]
+                .iter()
+                .map(|b| b.size())
+                .sum(),
+            );
+            crate::native_s5m1::gpu_device_allocation(device);
         }
+        resources
     }
 }
 pub struct Callback {
@@ -612,9 +629,13 @@ impl egui_wgpu::CallbackTrait for Callback {
             .is_none_or(|r| r.serial != self.scene.serial)
         {
             resources.insert(Resources::new(device, self.format, &self.scene));
+            #[cfg(feature = "internal-evidence")]
+            crate::native_s5m1::gpu_event("scene-allocation", 1);
         }
         if let Some(r) = resources.get_mut::<Resources>() {
             if !Arc::ptr_eq(&r.index, &self.index) {
+                #[cfg(feature = "internal-evidence")]
+                crate::native_s5m1::gpu_event("index-allocation", 1);
                 r.bins = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("preview-world-bins"),
                     contents: bytemuck::cast_slice(&self.index.data),
@@ -640,18 +661,40 @@ impl egui_wgpu::CallbackTrait for Callback {
                     layout: &r.layout,
                     entries: &entries,
                 });
+                #[cfg(feature = "internal-evidence")]
+                crate::native_s5m1::gpu_event("index-storage-init-upload", r.bins.size());
                 r.index = self.index.clone();
             }
             queue.write_buffer(&r.uniform, 0, bytemuck::bytes_of(&self.uniforms));
+            #[cfg(feature = "internal-evidence")]
+            crate::native_s5m1::gpu_event("uniform-upload", std::mem::size_of::<Uniforms>() as u64);
             if !self.selected.is_empty()
                 && r.selection_identity
                     .as_ref()
                     .is_none_or(|v| !Arc::ptr_eq(v, &self.selected))
             {
                 queue.write_buffer(&r.selected, 0, bytemuck::cast_slice(&self.selected));
+                #[cfg(feature = "internal-evidence")]
+                crate::native_s5m1::gpu_event("selection-upload", (self.selected.len() * 4) as u64);
                 r.selection_identity = Some(self.selected.clone());
             }
+            #[cfg(feature = "internal-evidence")]
+            crate::native_s5m1::gpu_bytes(
+                [
+                    &r.uniform,
+                    &r.objects,
+                    &r.shapes,
+                    &r.points,
+                    &r.selected,
+                    &r.bins,
+                ]
+                .iter()
+                .map(|b| b.size())
+                .sum(),
+            );
         }
+        #[cfg(feature = "internal-evidence")]
+        crate::native_s5m1::gpu_device_allocation(device);
         vec![]
     }
     fn paint(
@@ -674,6 +717,8 @@ impl egui_wgpu::CallbackTrait for Callback {
             pass.set_pipeline(&r.pipeline);
             pass.set_bind_group(0, &r.bind, &[]);
             pass.draw(0..3, 0..1);
+            #[cfg(feature = "internal-evidence")]
+            crate::native_s5m1::gpu_event("draw", 1);
             if let Some((stamp, id)) = &self.painted {
                 stamp.store(*id, std::sync::atomic::Ordering::Release);
             }
