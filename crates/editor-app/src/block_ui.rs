@@ -5,6 +5,7 @@ use crate::{
     state::{Action, Classifier, Model, View},
     tools::ActiveTool,
 };
+use editor_core::command::CommandDispatcher;
 use editor_core::{
     MmPoint, RegionEdge, SemanticGeometry,
     block::BlockTransform,
@@ -395,7 +396,7 @@ impl EditorApp {
             self.tool = ActiveTool::Select;
         }
     }
-    fn selected_instance(&self) -> Option<(String, String, String, BlockTransform)> {
+    pub(crate) fn selected_instance(&self) -> Option<(String, String, String, BlockTransform)> {
         if self.view.selected.ordered.len() != 1 {
             return None;
         }
@@ -525,34 +526,22 @@ impl EditorApp {
         true
     }
     pub(crate) fn block_entries(&mut self, ui: &mut egui::Ui) {
-        for (label, id, enabled) in [
-            (
-                "创建 Block…",
-                ids::BLOCK_CREATE,
-                !self.view.selected.ordered.is_empty(),
-            ),
-            (
-                "拆解 Block…",
-                ids::BLOCK_EXPLODE,
-                self.selected_instance().is_some(),
-            ),
-        ] {
-            if ui
-                .add_enabled(self.usable() && enabled, egui::Button::new(label))
-                .clicked()
-            {
-                self.block_command(id);
-                ui.close();
-            }
-        }
+        self.command_entries(
+            ui,
+            &[
+                ("创建 Block…", ids::BLOCK_CREATE),
+                ("拆解 Block…", ids::BLOCK_EXPLODE),
+            ],
+            true,
+        );
     }
     pub(crate) fn block_library(&mut self, ui: &mut egui::Ui) {
         ui.heading("Block Library");
-        if ui
-            .add_enabled(self.usable(), egui::Button::new("从选择创建 Block…"))
+        if self
+            .command_button(ui, ids::BLOCK_CREATE, "从选择创建 Block…")
             .clicked()
         {
-            self.block_command(ids::BLOCK_CREATE);
+            self.dispatch(ids::BLOCK_CREATE);
         }
         let count = self.view.block_definitions.len();
         if count == 0 {
@@ -586,12 +575,22 @@ impl EditorApp {
                                 ("删除定义…", ids::BLOCK_DELETE),
                                 ("选择实例", ids::BLOCK_SELECT),
                             ] {
-                                if ui
-                                    .add_enabled(!self.busy, egui::Button::new(label))
-                                    .clicked()
+                                if crate::ui::command_widgets::button_labeled(
+                                    ui,
+                                    command,
+                                    label,
+                                    crate::ui::command_widgets::CommandState::enabled(
+                                        self.command_enabled_for(
+                                            command,
+                                            self.layer.as_deref(),
+                                            Some(&id),
+                                        ),
+                                    ),
+                                )
+                                .clicked()
                                 {
                                     self.block.definition = Some(id.clone());
-                                    self.block_command(command);
+                                    self.dispatch(command);
                                     ui.close();
                                 }
                             }
@@ -617,14 +616,11 @@ impl EditorApp {
                 d.revision
             ));
         }
-        if ui
-            .add_enabled(
-                self.usable() && crate::drag::editable_selection(&self.view),
-                egui::Button::new("实例 X / Y / 角度 / 镜像…"),
-            )
+        if self
+            .command_button(ui, ids::BLOCK_TRANSFORM, "实例 X / Y / 角度 / 镜像…")
             .clicked()
         {
-            self.block_command(ids::BLOCK_TRANSFORM);
+            self.dispatch(ids::BLOCK_TRANSFORM);
         }
     }
     pub(crate) fn block_modal(&mut self, ui: &mut egui::Ui, modal: ActiveModal) {

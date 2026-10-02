@@ -74,6 +74,7 @@ pub enum CommandCategory {
 
 /// Logical modifiers: `Primary` is Cmd on macOS and Ctrl on Windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Modifiers {
     pub primary: bool,
     pub secondary: bool,
@@ -163,6 +164,7 @@ pub enum Key {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Shortcut {
     pub modifiers: Modifiers,
     pub key: Key,
@@ -504,6 +506,14 @@ impl Keymap {
         });
         Self {
             defaults,
+            overrides: Vec::new(),
+        }
+    }
+
+    /// Install a complete, already validated set; never sequentially overwrite conflicts.
+    pub fn from_bindings(bindings: Vec<Binding>) -> Self {
+        Self {
+            defaults: bindings,
             overrides: Vec::new(),
         }
     }

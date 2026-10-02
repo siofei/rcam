@@ -1,5 +1,9 @@
 # 能力与实施状态
 
+## 2026-10-02 · S5-K1 快捷键设置 / 迁移（candidate，未提交）
+
+最终 S5-M1 基线 `0f3ec046640c4293b53e402305ad3e7f47000929`；41 项现有可配置命令、完整版本化 JSON、独立用户配置、单项自动保存、完整替换预览和默认恢复。焦点/IME/录制保护仍需原生门禁，实际状态见 S5_SHORTCUT_REVIEW 与 versioned exports。Windows 原生未执行；不启动 S5-M2、不增加 Command Palette 或制造 API。后续段落保留历史阶段状态。
+
 当前阶段：S5-M1 P100K native loop **in progress**，基线INFRA2 2cde953（Mac-first bounded PASS），D1/D2已按各自限定范围通过；六项Mac性能已有pre-review实测，最终clean身份及独立复审仍待验，见S5_M1_PLAN/BASELINE/ACCEPTANCE_ADDENDUM。复用生产有序world-bins，不新增业务operation，Windows/完整V1/CORE10仍未完成。下文明确保留各阶段历史摘要，旧资源数字以D1已批准政策修订为准。
 
 历史C4摘要：S4-C1 Full Object Snap、INFRA1 Runtime Diagnostics、S4-C2 Grip Editing v1、S4-C3 Block Editor v1 均为 **PASS（Mac-first bounded）**。S4-C4 Alignment / Distribution 已按 Mac-first bounded 完成验收。本项目仍不是双平台 V1 编辑器；Windows deferred / not executed，完整 V1、CORE10 10/10 与 P100K 均未通过。完整产品边界继续以 DESIGN_V1 第4节为准。

@@ -740,7 +740,7 @@ impl EditorApp {
                 let Some(board)=self.view.board.clone() else {ui.label("未导入 PnP");return;};
                 ui.label(format!("{} 个组件 · {}",board.components.len(),if board.registration.is_some(){"已校准"}else{"未校准；不提供绝对定位"}));
                 let mut search_enter=false;
-                ui.horizontal(|ui|{ui.label("RefDes");let response=ui.text_edit_singleline(&mut self.components.query);search_enter=response.lost_focus()&&ui.input(|i|i.key_pressed(egui::Key::Enter));});
+                ui.horizontal(|ui|{ui.label("RefDes");let response=ui.text_edit_singleline(&mut self.components.query);search_enter=!self.ime_event&&!self.ime_active&&response.lost_focus()&&ui.input(|i|i.key_pressed(egui::Key::Enter));});
                 ui.horizontal(|ui|{ui.selectable_value(&mut self.components.mode,RefdesMatch::Exact,"精确");ui.selectable_value(&mut self.components.mode,RefdesMatch::Prefix,"前缀");ui.selectable_value(&mut self.components.mode,RefdesMatch::Substring,"子串");});
                 ui.horizontal(|ui|{ui.selectable_value(&mut self.components.side,None,"全部 Side");ui.selectable_value(&mut self.components.side,Some(BoardSide::Top),"Top");ui.selectable_value(&mut self.components.side,Some(BoardSide::Bottom),"Bottom");});
                 ui.horizontal(|ui|{ui.label("Footprint（精确，可留空）");ui.text_edit_singleline(&mut self.components.footprint);});
@@ -788,7 +788,12 @@ impl EditorApp {
         rect: egui::Rect,
     ) {
         if let Some(i) = self.components.pick {
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if !self.text_input_at_event
+                && !ctx.wants_keyboard_input()
+                && !self.ime_event
+                && !self.ime_active
+                && ctx.input(|i| i.key_pressed(egui::Key::Escape))
+            {
                 self.components.pick = None;
                 return;
             }

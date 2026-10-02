@@ -117,7 +117,7 @@ S4-C1、INFRA1、S4-C2、S4-C3 均已按各自证据完成 Mac-first bounded clo
 6. **Object Snap / Grip**：统一 SnapFeatureProvider / SnapQuery / SnapCandidate / SnapFeatureId / SnapResolver；以 Manufacturing Boundary 为真值，
    不得从 GPU/tessellation/像素反推。S4-C2 Grip v1 另用稳定 GripFeatureId 表示可编辑制造参数/节点，单对象纯预览，释放时经 ApplicationService 一次事务；尺寸 Grip 对共享光圈写时复制，目标捕捉复用 S4-C1 Resolver。
 7. **Shortcut Architecture**：CommandId/Registry + Keymap + ShortcutContext（IME/TextInput > Modal > Tool > Canvas > Global）；
-   Menu/Toolbar/Context Menu/Shortcut 共用 Command；逻辑修饰键 Primary/Secondary/Shift/Alt；用户 keymap 属于 AppPreferences；Automation 仍调用 ApplicationService，不模拟快捷键。
+   Menu/Toolbar/Context Menu/Shortcut 共用 Command；逻辑修饰键 Primary/Secondary/Shift/Alt；用户 keymap 属于应用偏好域（S5-K1 独立 shortcuts.json，与 AppPreferences 同目录）；Automation 仍调用 ApplicationService，不模拟快捷键。
 8. **Layer View State**：颜色、Visible、Selectable、Locked、Z-order、Filled/Outline/ZeroWidth、category styles、面板宽度均不得改变 Gerber Writer 输出，也不产生制造 revision。
 9. **Layer Delete**：空层可低风险直接删除；非空强确认；dirty/generated 更强确认；必须 one transaction + Undo（恢复同一 LayerId、z-order、样式）；允许删除最后一层；headless `remove_layer` 非空需 `allow_non_empty`。
 10. **No global snap-point database**：Snap 使用屏幕半径 → 空间索引 → 附近对象 lazy features。
@@ -195,3 +195,8 @@ The user requested real XLSX/TXT parsing and a manual table-mapping workflow aft
 ### S4-D2 RefDes-assisted manufacturing candidate selection (PASS, Mac-first bounded; 2026-10-02)
 
 S4-D2 is PASS (Mac-first bounded; 2026-10-02). Registered component-local rectangle queries use explicit Gerber layers and shared f64 WorldIndex, preserve Dark/Clear and object type, aggregate whole text groups and atomic blocks, and provide deterministic revision-fenced bounded pages. Candidate != Association, final Boolean opening or footprint ownership. GUI highlight/focus/Replace/Add selection are transient and follow existing permissions/edit paths. No project schema change, footprint guess or persistent link. See S4_D2_PLAN, S4_D2_ACCEPTANCE_ADDENDUM, S4_D2_REVIEW and ADR0047 (0043 was occupied by D1 input compatibility). Windows/full V1/CORE10/P100K deferred. Stop after D2.
+
+
+### S5-K1 Shortcut settings / migration（candidate，2026-10-02）
+
+独立基线 `0f3ec046640c4293b53e402305ad3e7f47000929`，41 项现有命令完整 schema v1 快照；独立 shortcuts.json，不进入工程/制造历史。正式任务、PLAN、addendum、ADR0050 与 versioned review 控制范围，原生验收及终审未完成前不得标 PASS。Windows deferred / not executed；停止于本阶段，不启动 S5-M2 或 Command Palette。

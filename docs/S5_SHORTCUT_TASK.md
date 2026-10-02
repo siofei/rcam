@@ -1,0 +1,5 @@
+# S5-K1 唯一任务书入口
+
+本地草稿已被[正式整合任务](RCam_S5K1_SHORTCUT_SETTINGS_MIGRATION_NEXT_TASK.md)全部取代。Library libfile_15e55d6db2e08191be7c886edc51ccf8、version0、67770bytes，SHA25622d6d76c7549021c6e73883856eafb195dafc0d8f00957502bd632a1b1247b60。完整54节、42命令库存及56项矩阵是唯一要求。
+
+采用schema1完整快照、单项确认即原子持久保存；没有稀疏overrides/全局Draft-Apply。六项未接GUI默认不激活。基线0f3ec046640c4293b53e402305ad3e7f47000929，分支codex/s5-shortcut-settings。按本次主任务明确覆盖的提交安排：所有代码先保持未提交供独立审核，后续由主任务安排已授权阶段commit与final clean四件套；不push。

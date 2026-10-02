@@ -1,7 +1,5 @@
 use crate::{EditorApp, state::Action, tools};
-use editor_core::command::{
-    CommandId, Key, Keymap, Modifiers, Resolution, Shortcut, ShortcutContext, ShortcutResolver, ids,
-};
+use editor_core::command::{CommandId, ids};
 use eframe::egui;
 use std::path::PathBuf;
 
@@ -16,7 +14,7 @@ pub(crate) enum Transition {
 impl EditorApp {
     pub(crate) fn dispatch_file_command(&mut self, id: CommandId) {
         match id {
-            ids::FILE_NEW_PROJECT => self.new_workspace(),
+            ids::FILE_NEW | ids::FILE_NEW_PROJECT => self.new_workspace(),
             ids::FILE_OPEN_PROJECT => self.choose_open_project(),
             ids::FILE_SAVE_PROJECT => {
                 self.save_project(false);
@@ -31,19 +29,6 @@ impl EditorApp {
         }
     }
 
-    pub(crate) fn file_shortcut(&mut self, key: char, shift: bool) {
-        let modifiers = if shift {
-            Modifiers::PRIMARY_SHIFT
-        } else {
-            Modifiers::PRIMARY
-        };
-        let shortcut = Shortcut::new(modifiers, Key::Char(key));
-        if let Resolution::Command(id) =
-            ShortcutResolver::resolve(&Keymap::standard(), &[ShortcutContext::Global], shortcut)
-        {
-            self.dispatch_file_command(id);
-        }
-    }
     pub(crate) fn begin_transition(&mut self, transition: Transition) {
         self.modal = None;
         self.text.cancel();

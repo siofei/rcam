@@ -283,6 +283,7 @@ pub(crate) mod tests {
             busy: false,
             viewport_sequence: None,
             sequence: 0,
+            request_failure_serial: 0,
             camera: crate::camera::Camera::default(),
             last_good: None,
             grid: Default::default(),
@@ -318,6 +319,10 @@ pub(crate) mod tests {
             pending_summary: None,
             recent_colors: Vec::new(),
             prefs: crate::preferences::AppPreferences::default(),
+            shortcuts: crate::shortcut_settings::Settings::load(
+                None,
+                editor_core::command::Platform::current(),
+            ),
             recovery_candidate: None,
             recovery_prompt_reported: None,
             recovery_attempted_identity: None,

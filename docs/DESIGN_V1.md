@@ -1010,7 +1010,7 @@ S4-C1 的产品规则为：Manufacturing Boundary 默认开启、Original Path �
 
 建立 `CommandRegistry/CommandId/Keymap/ShortcutContext/ShortcutResolver/CommandDispatcher`。Menu/Toolbar/Context Menu/Shortcut 全部调用同一个
 CommandId。Context 优先级：IME/TextInput > Modal > Tool > Canvas > Global。逻辑修饰键 Primary/Secondary/Shift/Alt（macOS Cmd / Windows Ctrl）。
-用户 keymap override 属于 AppPreferences，不属于 `.rcam`。Automation API 不模拟快捷键，仍直接调用 ApplicationService。
+快捷键属于应用级用户配置，不属于 `.rcam`。S5-K1 使用与 AppPreferences 同目录但独立的 `shortcuts.json` 完整快照，旧 preferences 中 placeholder keymap 仅兼容读取并告警，不猜测迁移。契约见 ADR0050 和 SHORTCUT_SETTINGS；设置修改不改变制造 revision、dirty 或 Undo。Automation API 不模拟快捷键，仍直接调用 ApplicationService。
 
 ### 22.8 阶段归属
 

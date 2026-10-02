@@ -1,0 +1,346 @@
+{
+  "format": "rcam-shortcuts",
+  "schema_version": 1,
+  "modifier_encoding": "logical-v1",
+  "source_platform": "macos",
+  "bindings": [
+    {
+      "command_id": "block.create_from_selection",
+      "shortcuts": []
+    },
+    {
+      "command_id": "block.delete_definition",
+      "shortcuts": []
+    },
+    {
+      "command_id": "block.explode",
+      "shortcuts": []
+    },
+    {
+      "command_id": "block.place",
+      "shortcuts": []
+    },
+    {
+      "command_id": "block.rename",
+      "shortcuts": []
+    },
+    {
+      "command_id": "block.select_instances",
+      "shortcuts": []
+    },
+    {
+      "command_id": "block.transform",
+      "shortcuts": []
+    },
+    {
+      "command_id": "edit.delete",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": false,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": "Delete"
+        },
+        {
+          "modifiers": {
+            "primary": false,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": "Backspace"
+        }
+      ]
+    },
+    {
+      "command_id": "edit.duplicate",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "d"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "edit.redo",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": true,
+            "alt": false
+          },
+          "key": {
+            "Char": "z"
+          }
+        },
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "y"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "edit.undo",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "z"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "file.close_project",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "w"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "file.export_gerber",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": true,
+            "alt": false
+          },
+          "key": {
+            "Char": "e"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "file.import_gerber",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "i"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "file.new",
+      "shortcuts": []
+    },
+    {
+      "command_id": "file.new_project",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "n"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "file.open_project",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "o"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "file.save_project",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "s"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "file.save_project_as",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": true,
+            "secondary": false,
+            "shift": true,
+            "alt": false
+          },
+          "key": {
+            "Char": "s"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "layer.create",
+      "shortcuts": []
+    },
+    {
+      "command_id": "layer.delete",
+      "shortcuts": []
+    },
+    {
+      "command_id": "layer.solo",
+      "shortcuts": []
+    },
+    {
+      "command_id": "object.mirror",
+      "shortcuts": []
+    },
+    {
+      "command_id": "object.move",
+      "shortcuts": []
+    },
+    {
+      "command_id": "object.rotate",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.align_bottom",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.align_hcenter",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.align_left",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.align_right",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.align_top",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.align_vcenter",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.array_rectangular",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.distribute_horizontal",
+      "shortcuts": []
+    },
+    {
+      "command_id": "objects.distribute_vertical",
+      "shortcuts": []
+    },
+    {
+      "command_id": "snap.toggle",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": false,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "F": 3
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "tool.measure",
+      "shortcuts": []
+    },
+    {
+      "command_id": "tool.select",
+      "shortcuts": []
+    },
+    {
+      "command_id": "tool.text",
+      "shortcuts": []
+    },
+    {
+      "command_id": "view.fit",
+      "shortcuts": [
+        {
+          "modifiers": {
+            "primary": false,
+            "secondary": false,
+            "shift": false,
+            "alt": false
+          },
+          "key": {
+            "Char": "f"
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "view.fit_active_layer",
+      "shortcuts": []
+    },
+    {
+      "command_id": "view.grid.toggle",
+      "shortcuts": []
+    }
+  ]
+}

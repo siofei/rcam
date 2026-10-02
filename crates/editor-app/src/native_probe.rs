@@ -998,6 +998,7 @@ impl EditorApp {
         observation["array"] = self.view.array_preview.as_ref().map(|p| json!({"rows":p.request.params.rows,"columns":p.request.params.columns,"cells":p.estimate.cell_count,"created_objects":p.estimate.created_object_count,"preview_paths":p.paths.len(),"preview_build_us":p.build_us,"simplified":p.simplified,"modal_open":self.modal==Some(crate::modal::ActiveModal::Array)})).unwrap_or(Value::Null);
         observation["display_unit"] = json!(self.display_unit.suffix());
         observation["grid_visible"] = json!(self.grid.visible);
+        observation["shortcuts"] = json!({"schema_version": 2, "snapshot_sha256": self.shortcuts.current.config.bytes().ok().map(|bytes| editor_core::hash::sha256_hex(&bytes)), "generation": self.shortcuts.generation, "settings_open": self.shortcuts.open, "recording": self.shortcuts.recording, "ime_active": self.ime_active, "ime_event": self.ime_event, "event_text_owner": self.text_input_at_event, "protected": self.shortcuts.protected, "io_pending": self.shortcuts.pending.is_some(), "warning": self.shortcuts.warning.is_some()});
         observation["grid_spacing_mm"] = json!(self.grid.spacing_mm);
         observation["object_snap"] = json!({
             "enabled": self.object_snap.enabled,

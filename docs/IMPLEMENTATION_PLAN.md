@@ -1,5 +1,9 @@
 # 实施计划与职责
 
+## 2026-10-02 · S5-K1 快捷键设置 / 迁移（candidate，未提交）
+
+最终 S5-M1 基线 `0f3ec046640c4293b53e402305ad3e7f47000929`；41 项现有可配置命令、完整版本化 JSON、独立用户配置、单项自动保存、完整替换预览和默认恢复。焦点/IME/录制保护仍需原生门禁，实际状态见 S5_SHORTCUT_REVIEW 与 versioned exports。Windows 原生未执行；不启动 S5-M2、不增加 Command Palette 或制造 API。后续段落保留历史阶段状态。
+
 ## 当前阶段 S5-M1 P100K native loop（2026-10-01，in progress）
 
 用户明确授权从INFRA2 clean 2cde95380ab9a7161713cf5f1c15a843edb47803启动；任务全文在项目根，PLAN/BASELINE/ACCEPTANCE_ADDENDUM及ADR0049冻结六项Mac局部门槛。先现有渲染原生实测再修复、冻结diff送独立复审，随后最终原生/阶段commit/clean四件套/fresh-extract/独立终审。主工作区旧改动保留，不push，不提前标PASS，不进入S5-M2。

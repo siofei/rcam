@@ -21,12 +21,16 @@ pub(crate) struct AppPreferences {
 impl AppPreferences {
     pub fn path() -> Option<PathBuf> {
         #[cfg(feature = "internal-evidence")]
-        if let Some(dir) = crate::native_s5m1::directory()
+        if let Some(dir) = crate::shortcut_store::native_directory()
+            .or_else(crate::native_s5m1::directory)
             .or_else(crate::native_d2::directory)
             .or_else(crate::native_d1::directory)
         {
             return Some(dir.join("state/preferences.json"));
         }
+        #[cfg(target_os = "windows")]
+        return Some(PathBuf::from(std::env::var_os("APPDATA")?).join("RCam/preferences.json"));
+        #[cfg(target_os = "macos")]
         Some(
             PathBuf::from(std::env::var_os("HOME")?)
                 .join("Library/Application Support/RCam/preferences.json"),

@@ -38,6 +38,9 @@ mod render_index;
 #[cfg(test)]
 mod s5m1_tests;
 mod selection;
+mod shortcut_config;
+mod shortcut_settings;
+mod shortcut_store;
 mod state;
 mod text_panel;
 mod text_tool;
@@ -50,8 +53,8 @@ mod world_index;
 
 use camera::Camera;
 use editor_core::command::{
-    CommandDispatcher, CommandId, Key, Keymap, Modifiers, Resolution, Shortcut, ShortcutContext,
-    ShortcutResolver, ids as command_ids,
+    CommandDispatcher, CommandId, Resolution, Shortcut, ShortcutContext, ShortcutResolver,
+    ids as command_ids,
 };
 use editor_service::{AlignmentMode, DistributionAxis};
 use eframe::egui::{self, Color32, RichText, Vec2};
@@ -86,6 +89,7 @@ struct EditorApp {
     busy: bool,
     viewport_sequence: Option<u64>,
     sequence: u64,
+    request_failure_serial: u64,
     camera: Camera,
     last_good: Option<LastFrame>,
     grid: tools::GridSettings,
@@ -122,6 +126,7 @@ struct EditorApp {
     /// Recently committed layer/category colours (session-only UI preference).
     recent_colors: Vec<String>,
     prefs: preferences::AppPreferences,
+    shortcuts: shortcut_settings::Settings,
     recovery_candidate: Option<recovery::RecoveryMetadata>,
     recovery_prompt_reported: Option<String>,
     recovery_attempted_identity: Option<String>,
@@ -266,6 +271,12 @@ impl EditorApp {
             });
         let recovery_candidate =
             recovery::directory().and_then(|dir| recovery::discover(&dir).into_iter().next());
+        let shortcuts = shortcut_settings::Settings::load_background(
+            &cc.egui_ctx,
+            shortcut_store::path(),
+            editor_core::command::Platform::current(),
+            !prefs.shortcut_overrides.is_empty(),
+        );
         let mut app = Self {
             block: Default::default(),
             operation_source: rcam_diagnostics::Source::System,
@@ -276,6 +287,7 @@ impl EditorApp {
             busy: false,
             viewport_sequence: None,
             sequence: 0,
+            request_failure_serial: 0,
             camera: Camera::default(),
             last_good: None,
             grid: Default::default(),
@@ -310,6 +322,7 @@ impl EditorApp {
             layer_dialog_close_on_success: false,
             pending_summary: None,
             recent_colors: prefs.recent_colors.clone(),
+            shortcuts,
             prefs,
             recovery_candidate,
             recovery_prompt_reported: None,
@@ -416,10 +429,176 @@ impl EditorApp {
                 self.ui_error = None;
             }
             Err(e) => {
+                self.request_failure_serial = self.request_failure_serial.wrapping_add(1);
                 self.sequence = previous_sequence;
                 self.modal_pending = None;
                 self.ui_error = Some(format!("后台任务不可用：{e}"));
             }
+        }
+    }
+    fn route_shortcuts(&mut self, ctx: &egui::Context, text_focus: bool, modal_open: bool) {
+        let presses = std::mem::take(&mut self.shortcuts.presses);
+        if drag::shortcuts_allowed(
+            text_focus || self.ime_event || self.ime_active,
+            self.busy,
+            modal_open
+                || self.text.floating.is_some()
+                || self.block.session.is_some()
+                || self.shortcuts.popup_at_event
+                || egui::Popup::is_any_open(ctx),
+        ) && ctx.input(|i| i.focused)
+        {
+            // egui recalculates repeat from keys_down. Retain each original backend press
+            // in event order; ownership is checked after this frame's UI takes focus.
+            for (key, modifiers) in presses {
+                if self.command_context_blocked() {
+                    break;
+                }
+                let failure_serial = self.request_failure_serial;
+                if let Some(key) = shortcut_settings::key_from_egui(key)
+                    && let Resolution::Command(command) = ShortcutResolver::resolve(
+                        &self.shortcuts.current.keymap,
+                        &[
+                            ShortcutContext::Global,
+                            ShortcutContext::Canvas,
+                            ShortcutContext::ObjectEdit,
+                        ],
+                        Shortcut::new(
+                            shortcut_settings::logical(
+                                modifiers,
+                                editor_core::command::Platform::current(),
+                            ),
+                            key,
+                        ),
+                    )
+                    && self.command_enabled(command)
+                {
+                    self.dispatch(command);
+                    ctx.input_mut(|i| i.events.retain(|event| !matches!(event, egui::Event::Key { key: event_key, pressed: true, modifiers: event_modifiers, .. } if shortcut_settings::key_from_egui(*event_key) == Some(key) && *event_modifiers == modifiers)));
+                    if self.command_context_blocked()
+                        || self.request_failure_serial != failure_serial
+                        || !ctx.input(|i| i.focused)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    fn command_context_blocked(&self) -> bool {
+        self.busy
+            || self.shortcuts.loading
+            || self.shortcuts.open
+            || self.modal.is_some()
+            || self.layer_dialog.is_some()
+            || self.close_prompt
+            || self.replace_project_path.is_some()
+            || self.project_error.is_some()
+            || self.recovery_candidate.is_some()
+            || self.text.floating.is_some()
+            || self.block.session.is_some()
+            || self.view.error.as_ref().is_some_and(|e| {
+                e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
+            })
+    }
+    fn command_state(&self, command: CommandId) -> crate::ui::command_widgets::CommandState {
+        crate::ui::command_widgets::CommandState::enabled(self.command_enabled(command))
+    }
+    fn command_button(&self, ui: &mut egui::Ui, command: CommandId, label: &str) -> egui::Response {
+        crate::ui::command_widgets::button_labeled(ui, command, label, self.command_state(command))
+    }
+    fn command_enabled(&self, command: CommandId) -> bool {
+        self.command_enabled_for(
+            command,
+            self.layer.as_deref(),
+            self.block.definition.as_deref(),
+        )
+    }
+    fn command_enabled_for(
+        &self,
+        command: CommandId,
+        layer: Option<&str>,
+        definition: Option<&str>,
+    ) -> bool {
+        if command == command_ids::GRIP_CANCEL {
+            return self.grip.is_some();
+        }
+        if self.command_context_blocked() {
+            return false;
+        }
+        let doc = self.view.info.as_ref();
+        let editable = self.usable() && drag::editable_selection(&self.view);
+        match command {
+            command_ids::FILE_NEW
+            | command_ids::FILE_NEW_PROJECT
+            | command_ids::FILE_OPEN_PROJECT
+            | command_ids::FILE_IMPORT_GERBER
+            | command_ids::LAYER_CREATE => true,
+            command_ids::FILE_SAVE_PROJECT
+            | command_ids::FILE_SAVE_PROJECT_AS
+            | command_ids::FILE_CLOSE_PROJECT => doc.is_some(),
+            command_ids::FILE_EXPORT_GERBER => self.usable() && layer.is_some(),
+            command_ids::EDIT_UNDO => doc.is_some_and(|d| d.undo_entries > 0),
+            command_ids::EDIT_REDO => doc.is_some_and(|d| d.redo_entries > 0),
+            command_ids::EDIT_DUPLICATE
+            | command_ids::EDIT_DELETE
+            | command_ids::OBJECT_MOVE
+            | command_ids::OBJECT_ROTATE
+            | command_ids::OBJECT_MIRROR => editable,
+            command_ids::OBJECT_ARRAY_RECTANGULAR => {
+                self.usable() && array_ui::eligible(&self.view)
+            }
+            command_ids::OBJECT_ALIGN_LEFT
+            | command_ids::OBJECT_ALIGN_RIGHT
+            | command_ids::OBJECT_ALIGN_TOP
+            | command_ids::OBJECT_ALIGN_BOTTOM
+            | command_ids::OBJECT_ALIGN_HCENTER
+            | command_ids::OBJECT_ALIGN_VCENTER => {
+                self.usable() && state::arrangement_eligibility(&self.view).align
+            }
+            command_ids::OBJECT_DISTRIBUTE_HORIZONTAL | command_ids::OBJECT_DISTRIBUTE_VERTICAL => {
+                self.usable() && state::arrangement_eligibility(&self.view).distribute
+            }
+            command_ids::VIEW_FIT => self.view.scene.is_some(),
+            command_ids::VIEW_FIT_ACTIVE_LAYER
+            | command_ids::LAYER_DELETE
+            | command_ids::LAYER_SOLO => {
+                layer.is_some_and(|id| self.view.layers.iter().any(|l| l.layer_id == id))
+            }
+            command_ids::VIEW_GRID_TOGGLE
+            | command_ids::SNAP_TOGGLE
+            | command_ids::TOOL_SELECT
+            | command_ids::TOOL_MEASURE => true,
+            command_ids::TOOL_TEXT => self.usable(),
+            command_ids::BLOCK_CREATE => {
+                self.usable() && block_ui::create_targets(&self.view).is_ok()
+            }
+            command_ids::BLOCK_EXPLODE | command_ids::BLOCK_TRANSFORM => {
+                editable && self.selected_instance().is_some()
+            }
+            command_ids::BLOCK_PLACE => {
+                doc.is_some()
+                    && definition
+                        .is_some_and(|id| self.view.block_definitions.iter().any(|d| d.id.0 == id))
+                    && self
+                        .view
+                        .layers
+                        .iter()
+                        .any(|l| l.is_active && block_ui::target_ok(l))
+            }
+            command_ids::BLOCK_RENAME | command_ids::BLOCK_SELECT => {
+                doc.is_some()
+                    && definition
+                        .is_some_and(|id| self.view.block_definitions.iter().any(|d| d.id.0 == id))
+            }
+            command_ids::BLOCK_DELETE => {
+                doc.is_some()
+                    && definition.is_some_and(|id| {
+                        self.view.block_definitions.iter().any(|d| d.id.0 == id)
+                            && self.view.block_counts.get(id).copied().unwrap_or(0) == 0
+                    })
+            }
+            _ => false,
         }
     }
     fn usable(&self) -> bool {
@@ -477,114 +656,132 @@ impl EditorApp {
             project_ui::Transition::Close
         });
     }
-    fn object_buttons(&mut self, ui: &mut egui::Ui) {
-        let enabled = self.usable() && drag::editable_selection(&self.view);
-        if crate::ui::command_widgets::button(
-            ui,
-            command_ids::EDIT_DUPLICATE,
-            crate::ui::command_widgets::CommandState::enabled(enabled),
-        )
-        .clicked()
-        {
-            self.send(Action::Duplicate);
-        }
-        if crate::ui::command_widgets::button(
-            ui,
-            command_ids::EDIT_DELETE,
-            crate::ui::command_widgets::CommandState::enabled(enabled && !self.busy),
-        )
-        .clicked()
-        {
-            self.send(Action::Delete);
+    fn command_entries(&mut self, ui: &mut egui::Ui, entries: &[(&str, CommandId)], close: bool) {
+        for &(label, command) in entries {
+            if self.command_button(ui, command, label).clicked() {
+                self.dispatch(command);
+                if close {
+                    ui.close();
+                }
+            }
         }
     }
+    fn object_buttons(&mut self, ui: &mut egui::Ui) {
+        self.command_entries(
+            ui,
+            &[
+                ("原位复制", command_ids::EDIT_DUPLICATE),
+                ("删除对象", command_ids::EDIT_DELETE),
+            ],
+            false,
+        );
+    }
     fn arrangement_entries(&mut self, ui: &mut egui::Ui) {
-        let eligibility = state::arrangement_eligibility(&self.view);
-        let usable = self.usable();
         if self.view.selected.ordered.len() >= 2
             && let Some(anchor) = self.view.selected.primary()
         {
-            let kind = if matches!(
-                anchor.object.origin,
-                editor_core::ObjectOrigin::GeneratedText { .. }
-            ) {
-                "文字组"
-            } else {
-                "对象"
-            };
             ui.label(
                 RichText::new(format!(
-                    "锚点：{kind} {}（最后选中，保持不动）",
+                    "锚点：{}（最后选中，保持不动）",
                     anchor.object.object_id
                 ))
                 .background_color(crate::ui::tokens::selection_highlight()),
             );
             ui.separator();
         }
-        ui.menu_button("阵列", |ui| {
-            if ui
-                .add_enabled(
-                    usable && array_ui::eligible(&self.view),
-                    egui::Button::new("矩形阵列…"),
-                )
-                .clicked()
-            {
-                self.dispatch(command_ids::OBJECT_ARRAY_RECTANGULAR);
+        ui.menu_button("阵列", |ui| self.array_entries(ui));
+        ui.menu_button("对齐", |ui| self.alignment_entries(ui));
+        ui.menu_button("分布", |ui| self.distribution_entries(ui));
+    }
+    fn array_entries(&mut self, ui: &mut egui::Ui) {
+        self.command_entries(
+            ui,
+            &[("矩形阵列…", command_ids::OBJECT_ARRAY_RECTANGULAR)],
+            true,
+        );
+    }
+    fn alignment_entries(&mut self, ui: &mut egui::Ui) {
+        self.command_entries(
+            ui,
+            &[
+                ("左对齐", command_ids::OBJECT_ALIGN_LEFT),
+                ("右对齐", command_ids::OBJECT_ALIGN_RIGHT),
+                ("顶端对齐", command_ids::OBJECT_ALIGN_TOP),
+                ("底端对齐", command_ids::OBJECT_ALIGN_BOTTOM),
+                ("水平居中", command_ids::OBJECT_ALIGN_HCENTER),
+                ("垂直居中", command_ids::OBJECT_ALIGN_VCENTER),
+            ],
+            true,
+        );
+    }
+    fn distribution_entries(&mut self, ui: &mut egui::Ui) {
+        self.command_entries(
+            ui,
+            &[
+                ("水平等距分布", command_ids::OBJECT_DISTRIBUTE_HORIZONTAL),
+                ("垂直等距分布", command_ids::OBJECT_DISTRIBUTE_VERTICAL),
+            ],
+            true,
+        );
+    }
+    fn transform_entries(&mut self, ui: &mut egui::Ui, close: bool) {
+        self.command_entries(
+            ui,
+            &[
+                ("移动…", command_ids::OBJECT_MOVE),
+                ("旋转…", command_ids::OBJECT_ROTATE),
+                ("镜像…", command_ids::OBJECT_MIRROR),
+            ],
+            close,
+        );
+        if ui
+            .add_enabled(
+                self.command_enabled(command_ids::OBJECT_MOVE),
+                egui::Button::new("Flash 属性…"),
+            )
+            .clicked()
+        {
+            self.open_modal(ActiveModal::Flash);
+            if close {
                 ui.close();
             }
-        });
-        ui.menu_button("对齐", |ui| {
-            ui.add_enabled_ui(usable && eligibility.align, |ui| {
-                for (label, command) in [
-                    ("左对齐", command_ids::OBJECT_ALIGN_LEFT),
-                    ("右对齐", command_ids::OBJECT_ALIGN_RIGHT),
-                    ("顶端对齐", command_ids::OBJECT_ALIGN_TOP),
-                    ("底端对齐", command_ids::OBJECT_ALIGN_BOTTOM),
-                    ("水平居中", command_ids::OBJECT_ALIGN_HCENTER),
-                    ("垂直居中", command_ids::OBJECT_ALIGN_VCENTER),
-                ] {
-                    if ui.button(label).clicked() {
-                        self.dispatch(command);
-                        ui.close();
-                    }
+        }
+    }
+    fn tool_buttons(&mut self, ui: &mut egui::Ui, compact: bool) -> [egui::Response; 2] {
+        [
+            ("选择", command_ids::TOOL_SELECT, tools::ActiveTool::Select),
+            (
+                "测距",
+                command_ids::TOOL_MEASURE,
+                tools::ActiveTool::Measure,
+            ),
+        ]
+        .map(|(label, command, tool)| {
+            let mut state = self.command_state(command);
+            state.checked = self.tool == tool;
+            let response = if compact {
+                crate::ui::command_widgets::compact_button(ui, command, label, state)
+            } else {
+                crate::ui::command_widgets::button_labeled(ui, command, label, state)
+            };
+            if response.clicked() {
+                self.dispatch(command);
+                if !compact {
+                    ui.close();
                 }
-            });
-        });
-        ui.menu_button("分布", |ui| {
-            ui.add_enabled_ui(usable && eligibility.distribute, |ui| {
-                for (label, command) in [
-                    ("水平等距分布", command_ids::OBJECT_DISTRIBUTE_HORIZONTAL),
-                    ("垂直等距分布", command_ids::OBJECT_DISTRIBUTE_VERTICAL),
-                ] {
-                    if ui.button(label).clicked() {
-                        self.dispatch(command);
-                        ui.close();
-                    }
-                }
-            });
-        });
+            }
+            response
+        })
     }
     fn history_buttons(&mut self, ui: &mut egui::Ui) {
-        let undo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0);
-        let redo = !self.busy && self.view.info.as_ref().is_some_and(|d| d.redo_entries > 0);
-        if crate::ui::command_widgets::button(
+        self.command_entries(
             ui,
-            command_ids::EDIT_UNDO,
-            crate::ui::command_widgets::CommandState::enabled(undo),
-        )
-        .clicked()
-        {
-            self.send(Action::History(false));
-        }
-        if crate::ui::command_widgets::button(
-            ui,
-            command_ids::EDIT_REDO,
-            crate::ui::command_widgets::CommandState::enabled(redo),
-        )
-        .clicked()
-        {
-            self.send(Action::History(true));
-        }
+            &[
+                ("撤销", command_ids::EDIT_UNDO),
+                ("重做", command_ids::EDIT_REDO),
+            ],
+            false,
+        );
     }
     fn transform_controls(&mut self, ui: &mut egui::Ui) {
         let enabled = self.usable() && drag::editable_selection(&self.view);
@@ -812,6 +1009,16 @@ impl CommandDispatcher for EditorApp {
     type Outcome = bool;
 
     fn dispatch(&mut self, command: CommandId) -> Self::Outcome {
+        if !self.command_enabled(command) {
+            return false;
+        }
+        if shortcut_config::commands()
+            .iter()
+            .any(|c| c.id == command && c.category == editor_core::command::CommandCategory::File)
+        {
+            self.dispatch_file_command(command);
+            return true;
+        }
         if command == command_ids::OBJECT_ARRAY_RECTANGULAR {
             self.open_array();
             return true;
@@ -824,6 +1031,90 @@ impl CommandDispatcher for EditorApp {
             return true;
         }
         match command {
+            command_ids::EDIT_UNDO => {
+                self.send(Action::History(false));
+                true
+            }
+            command_ids::EDIT_REDO => {
+                self.send(Action::History(true));
+                true
+            }
+            command_ids::EDIT_DUPLICATE => {
+                self.send(Action::Duplicate);
+                true
+            }
+            command_ids::EDIT_DELETE => {
+                self.send(Action::Delete);
+                true
+            }
+            command_ids::OBJECT_MOVE => {
+                self.open_modal(ActiveModal::Move);
+                true
+            }
+            command_ids::OBJECT_ROTATE => {
+                self.open_modal(ActiveModal::Rotate);
+                true
+            }
+            command_ids::OBJECT_MIRROR => {
+                self.open_modal(ActiveModal::Mirror);
+                true
+            }
+            command_ids::VIEW_FIT => {
+                self.drag = None;
+                self.fit = true;
+                true
+            }
+            command_ids::VIEW_FIT_ACTIVE_LAYER => {
+                if let Some(layer) = self.layer.clone() {
+                    self.send(Action::FitLayer(layer));
+                }
+                true
+            }
+            command_ids::VIEW_GRID_TOGGLE => {
+                self.grid.visible = !self.grid.visible;
+                self.persist_project_view();
+                true
+            }
+            command_ids::LAYER_CREATE => {
+                self.create_empty_layer();
+                true
+            }
+            command_ids::LAYER_DELETE => {
+                if let Some(layer) = self.layer.clone() {
+                    self.layer_dialog = Some(layer_panel::LayerDialog::DeletePending {
+                        layer: layer.clone(),
+                    });
+                    self.send(Action::LayerSummary(layer));
+                }
+                true
+            }
+            command_ids::LAYER_SOLO => {
+                if let Some(layer) = self.layer.clone() {
+                    let solo = self
+                        .view
+                        .layers
+                        .iter()
+                        .find(|l| l.layer_id == layer)
+                        .is_some_and(|l| l.is_solo);
+                    self.send(Action::SetSoloLayer((!solo).then_some(layer)));
+                }
+                true
+            }
+            command_ids::TOOL_SELECT | command_ids::TOOL_MEASURE => {
+                self.text.cancel();
+                self.tool = if command == command_ids::TOOL_SELECT {
+                    tools::ActiveTool::Select
+                } else {
+                    tools::ActiveTool::Measure
+                };
+                self.drag = None;
+                self.measure.clear();
+                true
+            }
+            command_ids::TOOL_TEXT => {
+                self.open_modal(ActiveModal::Text);
+                true
+            }
             command_ids::GRIP_CANCEL => {
                 if self.grip.take().is_some() {
                     rcam_diagnostics::runtime_event(
@@ -885,6 +1176,7 @@ impl eframe::App for EditorApp {
         }
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
+        self.shortcuts.popup_at_event = egui::Popup::is_any_open(ctx);
         self.ime_event =
             self.ime_active || raw.events.iter().any(|e| matches!(e, egui::Event::Ime(_)));
         for event in &raw.events {
@@ -901,12 +1193,15 @@ impl eframe::App for EditorApp {
                 _ => {}
             }
         }
+        self.shortcuts.raw_input(raw, self.ime_event);
         if let Some(mut bench) = self.bench.take() {
             bench.input(self, ctx, raw);
             self.bench = Some(bench);
         }
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        self.shortcuts.poll();
+        crate::ui::command_widgets::install_shortcuts(ctx, &self.shortcuts.current.config);
         if let Some(rx) = &self.diagnostic_export {
             match rx.try_recv() {
                 Ok(Ok(())) => {
@@ -1164,7 +1459,8 @@ impl eframe::App for EditorApp {
             .err()
         });
         let validation_ms = validation_start.elapsed().as_secs_f64() * 1000.;
-        let modal_open = self.modal.is_some()
+        let modal_open = self.shortcuts.open
+            || self.modal.is_some()
             || self.layer_dialog.is_some()
             || self.close_prompt
             || self.replace_project_path.is_some()
@@ -1175,7 +1471,10 @@ impl eframe::App for EditorApp {
             });
         let cancel_drag = ctx.input(|i| {
             drag::cancelled(
-                i.key_pressed(egui::Key::Escape),
+                !self.text_input_at_event
+                    && !self.ime_event
+                    && !self.ime_active
+                    && i.key_pressed(egui::Key::Escape),
                 i.focused,
                 i.events
                     .iter()
@@ -1186,7 +1485,12 @@ impl eframe::App for EditorApp {
         });
         self.operation_source = rcam_diagnostics::Source::Shortcut;
         let text_focus = self.text_input_at_event || ctx.wants_keyboard_input();
-        if !modal_open && !self.ime_active && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if !modal_open
+            && !text_focus
+            && !self.ime_event
+            && !self.ime_active
+            && ctx.input(|i| i.key_pressed(egui::Key::Escape))
+        {
             self.cancel_block();
             self.measure.clear();
             if self.text.floating.is_some() {
@@ -1251,77 +1555,12 @@ impl eframe::App for EditorApp {
             };
             rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info, reason);
         }
-        if drag::shortcuts_allowed(
-            text_focus,
-            self.busy,
-            modal_open || self.text.floating.is_some() || self.block.session.is_some(),
-        ) {
-            ctx.input_mut(|i| {
-                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::O) && !self.busy {
-                    self.file_shortcut('o', false);
-                }
-                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::N) && !self.busy {
-                    self.file_shortcut('n', false);
-                }
-                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::I) && !self.busy {
-                    self.file_shortcut('i', false);
-                }
-                if i.consume_key(egui::Modifiers::COMMAND, egui::Key::W) && !self.busy {
-                    self.file_shortcut('w', false);
-                }
-                if i.consume_key(
-                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                    egui::Key::E,
-                ) && self.usable()
-                {
-                    self.file_shortcut('e', true);
-                }
-                if i.consume_key(
-                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                    egui::Key::S,
-                ) {
-                    self.file_shortcut('s', true);
-                } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::S) {
-                    self.file_shortcut('s', false);
-                }
-                if i.consume_key(
-                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                    egui::Key::Z,
-                ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
-                {
-                    if self.view.info.as_ref().is_some_and(|d| d.redo_entries > 0) {
-                        self.send(Action::History(true));
-                    }
-                } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)
-                    && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0)
-                {
-                    self.send(Action::History(false));
-                }
-                if self.usable() && drag::editable_selection(&self.view) {
-                    if i.consume_key(egui::Modifiers::COMMAND, egui::Key::D) {
-                        self.send(Action::Duplicate);
-                    } else if i.consume_key(egui::Modifiers::NONE, egui::Key::Delete)
-                        || i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
-                    {
-                        self.send(Action::Delete);
-                    }
-                }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::F) {
-                    self.drag = None;
-                    self.fit = true;
-                }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::F3)
-                    && let Resolution::Command(command) = ShortcutResolver::resolve(
-                        &Keymap::standard(),
-                        &[ShortcutContext::Canvas],
-                        Shortcut::new(Modifiers::NONE, Key::F(3)),
-                    )
-                {
-                    self.dispatch(command);
-                }
-            });
-        }
         self.operation_source = rcam_diagnostics::Source::Menu;
+        self.shortcuts.window(
+            ctx,
+            self.ime_event || self.ime_active,
+            self.text_input_at_event,
+        );
         self.component_window(ctx);
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             if modal_open {
@@ -1332,13 +1571,13 @@ impl eframe::App for EditorApp {
                 if ui.add_enabled(!self.busy && self.view.info.is_some(),egui::Button::new("PCB / PnP")).clicked(){self.components.open=true;}
                 ui.separator();
                 ui.menu_button("文件", |ui| {
-                    if crate::ui::command_widgets::button(ui, command_ids::FILE_NEW_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy)).clicked()
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_NEW_PROJECT, self.command_state(command_ids::FILE_NEW_PROJECT)).clicked()
                     {
-                        self.dispatch_file_command(command_ids::FILE_NEW_PROJECT);
+                        self.dispatch(command_ids::FILE_NEW_PROJECT);
                         ui.close();
                     }
-                    if crate::ui::command_widgets::button(ui, command_ids::FILE_OPEN_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy)).clicked() {
-                        self.dispatch_file_command(command_ids::FILE_OPEN_PROJECT);
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_OPEN_PROJECT, self.command_state(command_ids::FILE_OPEN_PROJECT)).clicked() {
+                        self.dispatch(command_ids::FILE_OPEN_PROJECT);
                         ui.close();
                     }
                     ui.menu_button("打开最近使用的工程", |ui| {
@@ -1357,50 +1596,39 @@ impl eframe::App for EditorApp {
                             ui.close();
                         }
                     });
-                    if crate::ui::command_widgets::button(ui, command_ids::FILE_SAVE_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy && self.view.info.is_some())).clicked() {
-                        self.dispatch_file_command(command_ids::FILE_SAVE_PROJECT);
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_SAVE_PROJECT, self.command_state(command_ids::FILE_SAVE_PROJECT)).clicked() {
+                        self.dispatch(command_ids::FILE_SAVE_PROJECT);
                         ui.close();
                     }
-                    if crate::ui::command_widgets::button(ui, command_ids::FILE_SAVE_PROJECT_AS, crate::ui::command_widgets::CommandState::enabled(!self.busy && self.view.info.is_some())).clicked() {
-                        self.dispatch_file_command(command_ids::FILE_SAVE_PROJECT_AS);
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_SAVE_PROJECT_AS, self.command_state(command_ids::FILE_SAVE_PROJECT_AS)).clicked() {
+                        self.dispatch(command_ids::FILE_SAVE_PROJECT_AS);
                         ui.close();
                     }
-                    if crate::ui::command_widgets::button(ui, command_ids::FILE_CLOSE_PROJECT, crate::ui::command_widgets::CommandState::enabled(!self.busy && self.view.info.is_some())).clicked() {
-                        self.dispatch_file_command(command_ids::FILE_CLOSE_PROJECT);
-                        ui.close();
-                    }
-                    ui.separator();
-                    if crate::ui::command_widgets::button(
-                        ui,
-                        command_ids::FILE_IMPORT_GERBER,
-                        crate::ui::command_widgets::CommandState::enabled(!self.busy),
-                    )
-                    .clicked()
-                    {
-                        self.dispatch_file_command(command_ids::FILE_IMPORT_GERBER);
-                        ui.close();
-                    }
-                    if crate::ui::command_widgets::button(
-                        ui,
-                        command_ids::LAYER_CREATE,
-                        crate::ui::command_widgets::CommandState::enabled(!self.busy),
-                    )
-                    .clicked()
-                    {
-                        self.create_empty_layer();
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_CLOSE_PROJECT, self.command_state(command_ids::FILE_CLOSE_PROJECT)).clicked() {
+                        self.dispatch(command_ids::FILE_CLOSE_PROJECT);
                         ui.close();
                     }
                     ui.separator();
-                    if crate::ui::command_widgets::button(
-                        ui,
-                        command_ids::FILE_EXPORT_GERBER,
-                        crate::ui::command_widgets::CommandState::enabled(
-                            self.usable() && self.layer.is_some(),
-                        ),
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_IMPORT_GERBER, self.command_state(command_ids::FILE_IMPORT_GERBER),
                     )
                     .clicked()
                     {
-                        self.dispatch_file_command(command_ids::FILE_EXPORT_GERBER);
+                        self.dispatch(command_ids::FILE_IMPORT_GERBER);
+                        ui.close();
+                    }
+                    if crate::ui::command_widgets::button(ui, command_ids::LAYER_CREATE, self.command_state(command_ids::LAYER_CREATE),
+                    )
+                    .clicked()
+                    {
+                        self.dispatch(command_ids::LAYER_CREATE);
+                        ui.close();
+                    }
+                    ui.separator();
+                    if crate::ui::command_widgets::button(ui, command_ids::FILE_EXPORT_GERBER, self.command_state(command_ids::FILE_EXPORT_GERBER),
+                    )
+                    .clicked()
+                    {
+                        self.dispatch(command_ids::FILE_EXPORT_GERBER);
                         ui.close();
                     }
                 });
@@ -1409,69 +1637,31 @@ impl eframe::App for EditorApp {
                     self.object_buttons(ui);
                     self.block_entries(ui);
                     ui.separator();
-                    ui.add_enabled_ui(
-                        self.usable() && drag::editable_selection(&self.view),
-                        |ui| {
-                            for (label, modal) in [
-                                ("移动…", ActiveModal::Move),
-                                ("旋转…", ActiveModal::Rotate),
-                                ("镜像…", ActiveModal::Mirror),
-                                ("Flash 属性…", ActiveModal::Flash),
-                            ] {
-                                if ui.button(label).clicked() {
-                                    self.open_modal(modal);
-                                    ui.close();
-                                }
-                            }
-                        },
-                    );
+                    self.transform_entries(ui, true);
                 });
                 ui.menu_button("排列", |ui| self.arrangement_entries(ui));
                 ui.menu_button("插入", |ui| {
-                    if crate::ui::command_widgets::button(
-                        ui,
-                        command_ids::TOOL_TEXT,
-                        crate::ui::command_widgets::CommandState::enabled(self.usable()),
+                    if crate::ui::command_widgets::button(ui, command_ids::TOOL_TEXT, self.command_state(command_ids::TOOL_TEXT),
                     )
                     .clicked()
                     {
-                        self.open_modal(ActiveModal::Text);
+                        self.dispatch(command_ids::TOOL_TEXT);
                         ui.close();
                     }
                 });
-                ui.menu_button("工具", |ui| {
-                    for (label, tool) in [
-                        ("选择", tools::ActiveTool::Select),
-                        (
-                            crate::ui::command_widgets::descriptor(command_ids::TOOL_MEASURE)
-                                .label,
-                            tools::ActiveTool::Measure,
-                        ),
-                    ] {
-                        if ui.button(label).clicked() {
-                            self.text.cancel();
-                            self.tool = tool;
-                            self.measure.clear();
-                            ui.close();
-                        }
-                    }
-                });
+                ui.menu_button("工具", |ui| { self.tool_buttons(ui, false); });
                 ui.menu_button("图层", |ui| {
-                    if crate::ui::command_widgets::button(
-                        ui,
-                        command_ids::LAYER_CREATE,
-                        crate::ui::command_widgets::CommandState::enabled(!self.busy),
+                    if crate::ui::command_widgets::button(ui, command_ids::LAYER_CREATE, self.command_state(command_ids::LAYER_CREATE),
                     )
                     .clicked()
                     {
-                        self.create_empty_layer();
+                        self.dispatch(command_ids::LAYER_CREATE);
                         ui.close();
                     }
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("导入 Gerber…"))
+                    if self.command_button(ui, command_ids::FILE_IMPORT_GERBER, "导入 Gerber…")
                         .clicked()
                     {
-                        self.import_gerbers();
+                        self.dispatch(command_ids::FILE_IMPORT_GERBER);
                         ui.close();
                     }
                     ui.separator();
@@ -1501,10 +1691,7 @@ impl eframe::App for EditorApp {
                             ui.close();
                         }
                     }
-                    if crate::ui::command_widgets::button(
-                        ui,
-                        command_ids::LAYER_DELETE,
-                        crate::ui::command_widgets::CommandState::enabled(active.is_some()),
+                    if crate::ui::command_widgets::button(ui, command_ids::LAYER_DELETE, self.command_state(command_ids::LAYER_DELETE),
                     )
                     .clicked()
                         && let Some(layer) = active
@@ -1546,12 +1733,13 @@ impl eframe::App for EditorApp {
                     }
                 });
                 ui.menu_button("视图", |ui| {
+                    let mut grid_visible = self.grid.visible;
                     if crate::ui::command_widgets::checkbox(
                         ui,
                         command_ids::VIEW_GRID_TOGGLE,
-                        &mut self.grid.visible,
-                        true,
-                    ).changed() { self.persist_project_view(); }
+                        &mut grid_visible,
+                        self.command_enabled(command_ids::VIEW_GRID_TOGGLE),
+                    ).changed() { self.dispatch(command_ids::VIEW_GRID_TOGGLE); }
                     if ui.button("网格 / 吸附设置…").clicked() {
                         self.open_modal(ActiveModal::Grid);
                         ui.close();
@@ -1561,7 +1749,7 @@ impl eframe::App for EditorApp {
                         ui,
                         command_ids::SNAP_TOGGLE,
                         &mut object_snap_enabled,
-                        true,
+                        self.command_enabled(command_ids::SNAP_TOGGLE),
                     )
                     .changed()
                     {
@@ -1572,9 +1760,14 @@ impl eframe::App for EditorApp {
                         ui.close();
                     }
                     self.unit_controls(ui);
-                    if ui.button("适合窗口  F").clicked() {
-                        self.fit = true;
+                    if crate::ui::command_widgets::button(ui, command_ids::VIEW_FIT, self.command_state(command_ids::VIEW_FIT)).clicked() {
+                        self.dispatch(command_ids::VIEW_FIT);
                         ui.close();
+                    }
+                });
+                ui.menu_button(if self.shortcuts.warning.is_some() { "设置 ⚠" } else { "设置" }, |ui| {
+                    if ui.add_enabled(!self.busy && self.modal.is_none() && self.drag.is_none() && self.grip.is_none() && self.block.session.is_none() && self.text.floating.is_none(), egui::Button::new("快捷键…")).clicked() {
+                        self.shortcuts.open = true; self.shortcuts.message = None; ui.close();
                     }
                 });
                 ui.menu_button("帮助", |ui| {
@@ -1630,32 +1823,24 @@ impl eframe::App for EditorApp {
             });
             ui.horizontal(|ui| {
                 self.operation_source = rcam_diagnostics::Source::Toolbar;
-                if crate::ui::buttons::toolbar(ui, "导入…", !self.busy).clicked() {
-                    self.import_gerbers();
+                if crate::ui::command_widgets::compact_button(ui, command_ids::FILE_IMPORT_GERBER, "导入…", self.command_state(command_ids::FILE_IMPORT_GERBER)).clicked() {
+                    self.dispatch(command_ids::FILE_IMPORT_GERBER);
                 }
-                if ui.button("适合窗口").clicked() {
-                    self.fit = true;
+                if crate::ui::command_widgets::compact_button(ui, command_ids::VIEW_FIT, "适合窗口", self.command_state(command_ids::VIEW_FIT)).clicked() {
+                    self.dispatch(command_ids::VIEW_FIT);
                 }
-                if ui
-                    .add_enabled(self.layer.is_some() && !self.busy, egui::Button::new("适合当前图层"))
-                    .clicked()
-                    && let Some(layer) = self.layer.clone()
-                {
-                    self.send(Action::FitLayer(layer));
+                if crate::ui::command_widgets::compact_button(ui, command_ids::VIEW_FIT_ACTIVE_LAYER, "适合当前图层", self.command_state(command_ids::VIEW_FIT_ACTIVE_LAYER)).clicked() {
+                    self.dispatch(command_ids::VIEW_FIT_ACTIVE_LAYER);
                 }
                 ui.separator();
                 self.history_buttons(ui);
                 ui.separator();
                 ui.label(RichText::new("几何多选").color(Color32::from_rgb(100, 206, 183)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::ui::buttons::toolbar(
-                    ui,
-                    "导出图层…",
-                    self.usable() && self.layer.is_some(),
-                )
+                if crate::ui::command_widgets::compact_button(ui, command_ids::FILE_EXPORT_GERBER, "导出图层…", self.command_state(command_ids::FILE_EXPORT_GERBER))
                 .clicked()
                 {
-                        self.save();
+                        self.dispatch(command_ids::FILE_EXPORT_GERBER);
                     }
                     if self.busy {
                         ui.spinner();
@@ -1724,16 +1909,12 @@ impl eframe::App for EditorApp {
             if let Some((text, _)) = self.toast.clone() {
                 ui.horizontal(|ui| {
                     ui.label(text);
-                    if ui
-                        .add_enabled(
-                            !self.busy
-                                && self.view.info.as_ref().is_some_and(|d| d.undo_entries > 0),
-                            egui::Button::new("撤销"),
-                        )
+                    if self
+                        .command_button(ui, command_ids::EDIT_UNDO, "撤销")
                         .clicked()
                     {
                         self.toast = None;
-                        self.send(Action::History(false));
+                        self.dispatch(command_ids::EDIT_UNDO);
                     }
                     if ui.small_button("×").clicked() {
                         self.toast = None;
@@ -1857,21 +2038,7 @@ impl eframe::App for EditorApp {
                         }
                         self.block_properties(ui);
                         ui.separator();
-                        ui.add_enabled_ui(
-                            self.usable() && drag::editable_selection(&self.view),
-                            |ui| {
-                                for (label, modal) in [
-                                    ("移动…", ActiveModal::Move),
-                                    ("旋转…", ActiveModal::Rotate),
-                                    ("镜像…", ActiveModal::Mirror),
-                                    ("Flash 属性…", ActiveModal::Flash),
-                                ] {
-                                    if ui.button(label).clicked() {
-                                        self.open_modal(modal);
-                                    }
-                                }
-                            },
-                        );
+                        self.transform_entries(ui, false);
                     } else {
                         ui.label("点击图形查看对象，并输入当前单位的位移或变换参数。");
                     }
@@ -1894,22 +2061,33 @@ impl eframe::App for EditorApp {
                 ui.disable();
             }
             ui.horizontal_wrapped(|ui| {
-                if ui.checkbox(&mut self.grid.visible, "网格").changed() {
-                    self.persist_project_view();
+                let mut grid_visible = self.grid.visible;
+                if crate::ui::command_widgets::checkbox(
+                    ui,
+                    command_ids::VIEW_GRID_TOGGLE,
+                    &mut grid_visible,
+                    self.command_enabled(command_ids::VIEW_GRID_TOGGLE),
+                )
+                .changed()
+                {
+                    self.dispatch(command_ids::VIEW_GRID_TOGGLE);
                 }
                 if ui.button("网格 / 吸附设置…").clicked() {
                     self.open_modal(ActiveModal::Grid);
                 }
-                if ui
-                    .selectable_label(
-                        self.object_snap.enabled,
-                        if self.object_snap.enabled {
-                            "Object Snap ON"
-                        } else {
-                            "Object Snap OFF"
-                        },
-                    )
-                    .clicked()
+                let mut snap_state = self.command_state(command_ids::SNAP_TOGGLE);
+                snap_state.checked = self.object_snap.enabled;
+                if crate::ui::command_widgets::compact_button(
+                    ui,
+                    command_ids::SNAP_TOGGLE,
+                    if self.object_snap.enabled {
+                        "Object Snap ON"
+                    } else {
+                        "Object Snap OFF"
+                    },
+                    snap_state,
+                )
+                .clicked()
                 {
                     self.dispatch(command_ids::SNAP_TOGGLE);
                 }
@@ -1917,21 +2095,16 @@ impl eframe::App for EditorApp {
                     self.open_modal(ActiveModal::ObjectSnap);
                 }
                 self.unit_controls(ui);
-                let old = self.tool;
-                ui.selectable_value(&mut self.tool, tools::ActiveTool::Select, "选择");
-                ui.selectable_value(&mut self.tool, tools::ActiveTool::Measure, "测距");
-                if ui
-                    .add_enabled(self.usable(), egui::Button::new("文本…"))
-                    .clicked()
+                self.tool_buttons(ui, true);
+                if crate::ui::command_widgets::compact_button(
+                    ui,
+                    command_ids::TOOL_TEXT,
+                    "文本…",
+                    self.command_state(command_ids::TOOL_TEXT),
+                )
+                .clicked()
                 {
-                    self.open_modal(ActiveModal::Text);
-                }
-                if old != self.tool {
-                    if self.tool != tools::ActiveTool::Text {
-                        self.text.cancel();
-                    }
-                    self.drag = None;
-                    self.measure.clear();
+                    self.dispatch(command_ids::TOOL_TEXT);
                 }
                 if self.tool == tools::ActiveTool::Measure {
                     ui.label(format!(
@@ -2607,6 +2780,16 @@ impl eframe::App for EditorApp {
                 },
             );
         }
+        self.operation_source = rcam_diagnostics::Source::Shortcut;
+        self.route_shortcuts(
+            ctx,
+            text_focus || ctx.wants_keyboard_input(),
+            modal_open
+                || self.shortcuts.open
+                || self.modal.is_some()
+                || self.layer_dialog.is_some(),
+        );
+        self.operation_source = rcam_diagnostics::Source::Menu;
     }
 }
 fn geometry_properties(
@@ -2696,7 +2879,8 @@ fn main() -> eframe::Result {
         rcam_diagnostics::Runtime::start(
             {
                 #[cfg(feature = "internal-evidence")]
-                if let Some(dir) = native_s5m1::directory()
+                if let Some(dir) = shortcut_store::native_directory()
+                    .or_else(native_s5m1::directory)
                     .or_else(native_d2::directory)
                     .or_else(native_d1::directory)
                 {
@@ -2816,5 +3000,250 @@ fn aperture_properties(
     };
     if let Some(h) = hole {
         ui.label(format!("局部孔径 {}", length(h)));
+    }
+}
+
+#[cfg(test)]
+mod shortcut_rc1_regressions {
+    use super::*;
+    use editor_core::command::{Key, Modifiers, Platform};
+
+    fn block_app() -> EditorApp {
+        let mut project = block_ui::fixtures::big_project(1, 1);
+        project.workspace.active_layer_id = Some("l1".into());
+        let mut model = Model::default();
+        model.run(Action::RestoreProject(
+            rcam_project::encode_v1(&project).unwrap(),
+        ));
+        assert!(model.view.error.is_none());
+        let mut app = modal::tests::app();
+        app.view = model.view;
+        app.block.definition = Some(app.view.block_definitions[0].id.0.clone());
+        app.shortcuts.current = app
+            .shortcuts
+            .current
+            .config
+            .replace(
+                command_ids::BLOCK_PLACE,
+                vec![Shortcut::new(Modifiers::NONE, Key::F(8))],
+                Platform::current(),
+            )
+            .unwrap();
+        app
+    }
+    fn route(app: &mut EditorApp) {
+        let mut raw = egui::RawInput {
+            focused: true,
+            events: [egui::Key::F8, egui::Key::F3]
+                .map(|key| egui::Event::Key {
+                    key,
+                    physical_key: Some(key),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                })
+                .to_vec(),
+            ..Default::default()
+        };
+        app.shortcuts.raw_input(&mut raw, false);
+        let _ = egui::Context::default().run(raw, |ctx| app.route_shortcuts(ctx, false, false));
+        assert!(app.shortcuts.presses.is_empty());
+    }
+    #[test]
+    fn block_placement_fences_same_frame_after_success_full_or_disconnected_queue() {
+        for queue in 0..3 {
+            let mut app = block_app();
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            if queue == 1 {
+                tx.send((99, rcam_diagnostics::Source::System, Action::NewWorkspace))
+                    .unwrap();
+            }
+            let _receiver = (queue != 2).then_some(rx);
+            app.tx = tx;
+            let snap = app.object_snap.enabled;
+            route(&mut app);
+            assert!(app.block.session.is_some());
+            assert_eq!(snap, app.object_snap.enabled);
+            assert_eq!(app.busy, queue == 0);
+            assert_eq!(app.ui_error.is_some(), queue != 0);
+            assert!(!app.dispatch(command_ids::SNAP_TOGGLE));
+            assert!(!app.dispatch(command_ids::TOOL_MEASURE));
+        }
+    }
+    #[test]
+    fn failed_enqueue_without_transient_context_also_stops_remaining_frame() {
+        let mut app = block_app();
+        app.shortcuts.current = app
+            .shortcuts
+            .current
+            .config
+            .replace(command_ids::BLOCK_PLACE, vec![], Platform::current())
+            .unwrap();
+        app.shortcuts.current = app
+            .shortcuts
+            .current
+            .config
+            .replace(
+                command_ids::LAYER_CREATE,
+                vec![Shortcut::new(Modifiers::NONE, Key::F(8))],
+                Platform::current(),
+            )
+            .unwrap();
+        let before = app.object_snap.enabled;
+        route(&mut app); // fixture receiver is disconnected
+        assert!(app.ui_error.is_some());
+        assert!(!app.busy);
+        assert!(app.block.session.is_none());
+        assert_eq!(app.object_snap.enabled, before);
+    }
+    fn render_tools(
+        app: &mut EditorApp,
+        ctx: &egui::Context,
+        compact: bool,
+        events: Vec<egui::Event>,
+    ) -> [egui::Response; 2] {
+        let mut responses = None;
+        let _ = ctx.run(
+            egui::RawInput {
+                focused: true,
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    responses = Some(app.tool_buttons(ui, compact));
+                });
+            },
+        );
+        responses.unwrap()
+    }
+    #[test]
+    fn actual_menu_and_toolbar_tools_share_busy_loading_modal_gate_and_handler() {
+        for compact in [false, true] {
+            for gate in 0..5 {
+                let mut app = modal::tests::app();
+                match gate {
+                    0 => app.busy = true,
+                    1 => app.shortcuts.loading = true,
+                    2 => app.shortcuts.open = true,
+                    3 => app.modal = Some(ActiveModal::Move),
+                    _ => app.close_prompt = true,
+                }
+                let ctx = egui::Context::default();
+                let responses = render_tools(&mut app, &ctx, compact, vec![]);
+                assert!(responses.iter().all(|r| !r.enabled()));
+                let pos = responses[1].rect.center();
+                for pressed in [true, false] {
+                    render_tools(
+                        &mut app,
+                        &ctx,
+                        compact,
+                        vec![
+                            egui::Event::PointerMoved(pos),
+                            egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                        ],
+                    );
+                }
+                assert!(app.tool == tools::ActiveTool::Select);
+                assert!(!app.dispatch(command_ids::TOOL_MEASURE));
+            }
+            let mut app = modal::tests::app();
+            let ctx = egui::Context::default();
+            let responses = render_tools(&mut app, &ctx, compact, vec![]);
+            assert!(responses.iter().all(|r| r.enabled()));
+            let pos = responses[1].rect.center();
+            for pressed in [true, false] {
+                render_tools(
+                    &mut app,
+                    &ctx,
+                    compact,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+            assert!(app.tool == tools::ActiveTool::Measure);
+        }
+    }
+    fn texts(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(text) => out.push(text.galley.job.text.clone()),
+            egui::epaint::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    texts(shape, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    #[test]
+    fn actual_existing_menu_contents_show_changed_and_cleared_hints() {
+        for (id, label) in [
+            (command_ids::OBJECT_ARRAY_RECTANGULAR, "矩形阵列…"),
+            (command_ids::OBJECT_ALIGN_LEFT, "左对齐"),
+            (command_ids::OBJECT_ALIGN_RIGHT, "右对齐"),
+            (command_ids::OBJECT_ALIGN_TOP, "顶端对齐"),
+            (command_ids::OBJECT_ALIGN_BOTTOM, "底端对齐"),
+            (command_ids::OBJECT_ALIGN_HCENTER, "水平居中"),
+            (command_ids::OBJECT_ALIGN_VCENTER, "垂直居中"),
+            (command_ids::OBJECT_DISTRIBUTE_HORIZONTAL, "水平等距分布"),
+            (command_ids::OBJECT_DISTRIBUTE_VERTICAL, "垂直等距分布"),
+            (command_ids::OBJECT_MOVE, "移动…"),
+            (command_ids::OBJECT_ROTATE, "旋转…"),
+            (command_ids::OBJECT_MIRROR, "镜像…"),
+            (command_ids::TOOL_SELECT, "选择"),
+            (command_ids::TOOL_MEASURE, "测距"),
+            (command_ids::BLOCK_CREATE, "创建 Block…"),
+            (command_ids::BLOCK_EXPLODE, "拆解 Block…"),
+        ] {
+            let mut app = modal::tests::app();
+            for bindings in [vec![Shortcut::new(Modifiers::NONE, Key::F(8))], vec![]] {
+                app.shortcuts.current = app
+                    .shortcuts
+                    .current
+                    .config
+                    .replace(id, bindings.clone(), Platform::current())
+                    .unwrap();
+                let ctx = egui::Context::default();
+                crate::ui::command_widgets::install_shortcuts(&ctx, &app.shortcuts.current.config);
+                let output = ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        app.array_entries(ui);
+                        app.alignment_entries(ui);
+                        app.distribution_entries(ui);
+                        app.transform_entries(ui, false);
+                        app.tool_buttons(ui, false);
+                        app.block_entries(ui);
+                    });
+                });
+                let mut rendered = vec![];
+                for shape in output.shapes {
+                    texts(&shape.shape, &mut rendered);
+                }
+                let expected = if bindings.is_empty() {
+                    label.to_string()
+                } else {
+                    format!("{label}  F8")
+                };
+                assert!(
+                    rendered.contains(&expected),
+                    "{id:?}: expected {expected}; got {rendered:?}"
+                );
+                if bindings.is_empty() {
+                    assert!(!rendered.contains(&format!("{label}  F8")));
+                }
+            }
+        }
     }
 }

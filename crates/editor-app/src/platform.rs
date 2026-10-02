@@ -160,3 +160,45 @@ pub fn choose_diagnostics() -> Result<Option<PathBuf>, String> {
         Err("诊断导出选择器本轮仅验收 macOS".into())
     }
 }
+
+/// Portable versioned shortcut configuration picker; I/O stays on its own worker.
+pub fn choose_shortcuts(save: bool) -> Result<Option<PathBuf>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::{NSModalResponseCancel, NSModalResponseOK, NSOpenPanel, NSSavePanel};
+        use objc2_foundation::{NSArray, NSString};
+        let mtm = MainThreadMarker::new().ok_or("文件选择器必须在UI线程运行")?;
+        let panel: objc2::rc::Retained<NSSavePanel> = if save {
+            let panel = NSSavePanel::savePanel(mtm);
+            panel.setTitle(Some(&NSString::from_str("导出快捷键文件（JSON）")));
+            panel.setNameFieldStringValue(&NSString::from_str("RCam-shortcuts"));
+            panel
+        } else {
+            let panel = NSOpenPanel::openPanel(mtm);
+            panel.setTitle(Some(&NSString::from_str("导入快捷键文件（JSON）")));
+            panel.setCanChooseDirectories(false);
+            panel.setCanChooseFiles(true);
+            panel.setAllowsMultipleSelection(false);
+            panel.into_super()
+        };
+        #[allow(deprecated)]
+        panel.setAllowedFileTypes(Some(&NSArray::from_retained_slice(&[NSString::from_str(
+            "json",
+        )])));
+        match panel.runModal() {
+            response if response == NSModalResponseOK => panel
+                .URL()
+                .and_then(|url| url.path())
+                .map(|p| Some(PathBuf::from(p.to_string())))
+                .ok_or("文件选择器没有返回路径".into()),
+            response if response == NSModalResponseCancel => Ok(None),
+            _ => Err("原生文件选择器未能完成".into()),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = save;
+        Err("快捷键原生文件选择器本轮仅在macOS实施；Windows待验收".into())
+    }
+}

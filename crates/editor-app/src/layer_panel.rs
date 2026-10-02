@@ -4,6 +4,7 @@
 //! are applied to the service through `Action`s after the frame's widgets ran.
 use crate::{EditorApp, state::Action};
 use editor_core::command::ids as command_ids;
+use editor_core::command::{CommandDispatcher, CommandId};
 use editor_core::workspace::{
     Color, ColorMode, DeleteRisk, DisplayClass, LayerDisplayMode, auto_layer_color,
 };
@@ -233,6 +234,7 @@ pub(crate) fn layer_menu(
     count: usize,
     busy: bool,
     events: &RefCell<Vec<RowEvent>>,
+    enabled: impl Fn(CommandId) -> bool,
 ) {
     let id = l.layer_id.clone();
     let mut chosen: Option<RowEvent> = None;
@@ -260,15 +262,13 @@ pub(crate) fn layer_menu(
     {
         chosen = Some(RowEvent::Categories(id.clone()));
     }
-    if ui
-        .add_enabled(
-            !busy,
-            egui::Button::new(crate::ui::command_widgets::label(
-                command_ids::LAYER_SOLO,
-                l.is_solo,
-            )),
-        )
-        .clicked()
+    if crate::ui::command_widgets::button_labeled(
+        ui,
+        command_ids::LAYER_SOLO,
+        &crate::ui::command_widgets::label(command_ids::LAYER_SOLO, l.is_solo),
+        crate::ui::command_widgets::CommandState::enabled(enabled(command_ids::LAYER_SOLO)),
+    )
+    .clicked()
     {
         chosen = Some(RowEvent::Solo(id.clone(), !l.is_solo));
     }
@@ -288,9 +288,15 @@ pub(crate) fn layer_menu(
             RowUpdate::Selectable(!l.selectable),
         ));
     }
-    if ui
-        .add_enabled(!busy, egui::Button::new("缩放到此图层"))
-        .clicked()
+    if crate::ui::command_widgets::button_labeled(
+        ui,
+        command_ids::VIEW_FIT_ACTIVE_LAYER,
+        "缩放到此图层",
+        crate::ui::command_widgets::CommandState::enabled(enabled(
+            command_ids::VIEW_FIT_ACTIVE_LAYER,
+        )),
+    )
+    .clicked()
     {
         chosen = Some(RowEvent::Fit(id.clone()));
     }
@@ -309,15 +315,23 @@ pub(crate) fn layer_menu(
         }
     }
     ui.separator();
-    if ui
-        .add_enabled(!busy, egui::Button::new("导出此图层为 Gerber…"))
-        .clicked()
+    if crate::ui::command_widgets::button_labeled(
+        ui,
+        command_ids::FILE_EXPORT_GERBER,
+        "导出此图层为 Gerber…",
+        crate::ui::command_widgets::CommandState::enabled(enabled(command_ids::FILE_EXPORT_GERBER)),
+    )
+    .clicked()
     {
         chosen = Some(RowEvent::Export(id.clone()));
     }
-    if ui
-        .add_enabled(!busy, egui::Button::new("删除图层…"))
-        .clicked()
+    if crate::ui::command_widgets::button_labeled(
+        ui,
+        command_ids::LAYER_DELETE,
+        "删除图层…",
+        crate::ui::command_widgets::CommandState::enabled(enabled(command_ids::LAYER_DELETE)),
+    )
+    .clicked()
     {
         chosen = Some(RowEvent::Delete(id));
     }
@@ -396,6 +410,16 @@ impl EditorApp {
     }
 
     fn apply_row_event(&mut self, event: RowEvent) {
+        let command = match &event {
+            RowEvent::Solo(id, _) => Some((command_ids::LAYER_SOLO, id)),
+            RowEvent::Fit(id) => Some((command_ids::VIEW_FIT_ACTIVE_LAYER, id)),
+            RowEvent::Export(id) => Some((command_ids::FILE_EXPORT_GERBER, id)),
+            RowEvent::Delete(id) => Some((command_ids::LAYER_DELETE, id)),
+            _ => None,
+        };
+        if command.is_some_and(|(command, id)| !self.command_enabled_for(command, Some(id), None)) {
+            return;
+        }
         match event {
             RowEvent::Activate(id) => self.send(Action::SetActiveLayer(Some(id))),
             RowEvent::Update(id, update) => self.send_update(&id, update),
@@ -483,7 +507,7 @@ impl EditorApp {
 
     /// The Layer panel (left side). Compact single-column rows, top layer first.
     pub(crate) fn layer_panel(&mut self, ui: &mut egui::Ui) {
-        let busy = self.busy;
+        let busy = self.command_context_blocked();
         let events: RefCell<Vec<RowEvent>> = RefCell::new(Vec::new());
         let mut new_layer = false;
         let mut import = false;
@@ -498,14 +522,21 @@ impl EditorApp {
                         if crate::ui::command_widgets::button(
                             ui,
                             command_ids::LAYER_CREATE,
-                            crate::ui::command_widgets::CommandState::enabled(true),
+                            self.command_state(command_ids::LAYER_CREATE),
                         )
                         .clicked()
                         {
                             new_layer = true;
                             ui.close();
                         }
-                        if ui.button("导入 Gerber…（可多选）").clicked() {
+                        if self
+                            .command_button(
+                                ui,
+                                command_ids::FILE_IMPORT_GERBER,
+                                "导入 Gerber…（可多选）",
+                            )
+                            .clicked()
+                        {
                             import = true;
                             ui.close();
                         }
@@ -554,10 +585,10 @@ impl EditorApp {
             self.send(Action::SetAllLayersVisible(visible));
         }
         if new_layer {
-            self.create_empty_layer();
+            self.dispatch(command_ids::LAYER_CREATE);
         }
         if import {
-            self.import_gerbers();
+            self.dispatch(command_ids::FILE_IMPORT_GERBER);
         }
         for event in events.into_inner() {
             self.apply_row_event(event);

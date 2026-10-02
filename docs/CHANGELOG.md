@@ -1,5 +1,9 @@
 # 文档变更记录
 
+## 2026-10-02 · S5-K1 快捷键设置 / 迁移（candidate，未提交）
+
+最终 S5-M1 基线 `0f3ec046640c4293b53e402305ad3e7f47000929`；41 项现有可配置命令、完整版本化 JSON、独立用户配置、单项自动保存、完整替换预览和默认恢复。焦点/IME/录制保护仍需原生门禁，实际状态见 S5_SHORTCUT_REVIEW 与 versioned exports。Windows 原生未执行；不启动 S5-M2、不增加 Command Palette 或制造 API。后续段落保留历史阶段状态。
+
 ## 2026-10-01 · S5-M1 P100K native loop（in progress，待源码复审）
 
 从已收口 INFRA2 2cde953 启动六项Mac局部性能验收。修复完整视口场景无必要缓存失效，保留部分/隐藏层/编辑/LOD/数值安全路径；增加internal-only正常输入到对应高亮/GPU完成、真实worker/CPU缓存/上传/分配/峰值采集、固定C/R/O/P P10K与既有P100K协议。已有三次导航、完整点框选、冷热载入、idle和两次20轮内存数据，失败和全部尾部保留；D1旧驱动预期未配准候选错误只做精确协议适配和零修改断言。未修改制造/core/service/Writer/API/schema/依赖/96AT，未完成独立复审/最终clean包前不标PASS，不推进S5-M2。

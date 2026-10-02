@@ -1,6 +1,6 @@
-# RCam Gerber editor — S5-M1 P100K native loop（in progress）
+# RCam Gerber editor — S5-K1 shortcut settings / migration（candidate）
 
-当前任务从 INFRA2 clean `2cde953` 启动，补齐六项 Mac 性能局部证据；实现/原生观测在独立源码送审中，未提交或标 PASS。任务、范围、实测与剩余门禁见 [S5-M1 review](docs/S5_M1_REVIEW.md)。Windows/完整V1/CORE10仍未完成，阶段结束前不进入S5-M2。以下阶段摘要保留历史语义。
+当前阶段从最终 S5-M1 基线 `0f3ec046640c4293b53e402305ad3e7f47000929` 独立启动快捷键设置与迁移，优先于尚未启动的 S5-M2。实现和证据等待独立终审及阶段提交，未标记 PASS。见 [候选审查索引](docs/S5_SHORTCUT_REVIEW.md) 与 [使用说明](docs/SHORTCUT_SETTINGS.md)。Windows/完整 V1/CORE10 仍延期。以下阶段摘要保留历史语义。
 
 S4-B3 将已有 `.rcam` v1 格式接入 File → New/Open/Save/Save As；Gerber 仍只 Import/Export。工程保存使用受控路径、同目录临时文件、完整解码校验和原子发布；项目 dirty、关闭确认、最近工程和本机恢复副本见 [S4-B3 plan](docs/S4_B3_PLAN.md) 与 [review](docs/S4_B3_REVIEW.md)。当前阶段验收以 review 中的实测门禁为准，Windows 与完整 V1 尚未完成。
 S4-B3 预冻结修正使 mm/inch/mil/µm 四种显示单位均能随 `.rcam` 保存、重开；Recovery 写失败后会按原间隔重试。

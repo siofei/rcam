@@ -192,14 +192,18 @@ impl EditorApp {
                                 .push(RowEvent::Solo(l.layer_id.clone(), !l.is_solo));
                         }
                         response.context_menu(|ui| {
-                            layer_menu(ui, l, index, count, busy, events);
+                            layer_menu(ui, l, index, count, busy, events, |id| {
+                                self.command_enabled_for(id, Some(&l.layer_id), None)
+                            });
                         });
                     },
                     |ui| {
                         ui.add_enabled_ui(!busy, |ui| {
-                            let more = ui
-                                .menu_button(crate::ui::icons::RcamIcon::More.glyph(), |ui| {
-                                    layer_menu(ui, l, index, count, busy, events)
+                            let more =
+                                ui.menu_button(crate::ui::icons::RcamIcon::More.glyph(), |ui| {
+                                    layer_menu(ui, l, index, count, busy, events, |id| {
+                                        self.command_enabled_for(id, Some(&l.layer_id), None)
+                                    })
                                 });
                             note("more", more.response.rect);
                         });
