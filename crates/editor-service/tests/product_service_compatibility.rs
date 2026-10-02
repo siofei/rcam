@@ -5,17 +5,21 @@ use editor_service::{
 };
 use gerber_io::{S1Error, parse_s1, parse_s1_compat};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
 fn fixture_import(source: &[u8]) -> (ApplicationService, String, String, Vec<String>) {
     let root = std::env::temp_dir().join(format!(
-        "rcam-product-compat-{}-{}",
+        "rcam-product-compat-{}-{}-{}",
         std::process::id(),
+        NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
     ));
-    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir(&root).unwrap();
     let path = root.join("source.gbr");
     std::fs::write(&path, source).unwrap();
     let mut service = ApplicationService::with_file_access(FileAccessPolicy::new(

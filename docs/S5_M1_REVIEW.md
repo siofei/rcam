@@ -96,3 +96,10 @@ P100K复用旧1000×100 C0.5/1mm pitch row-major/allDark，1aperture，SHA8111ec
 ### 最终执行中补齐根任务的无Git身份覆盖（2026-10-02；另待审）
 
 首个授权提交 `2dff4954a2d5a01a2926b9eeda821713ebd7f034` clean，manifest/generator/Python38/fmt/check/两种clippy通过；workspace编译在发现下述真实归档身份失败后主动停止，未宣称其通过，未开始原生性能。实际Source ZIP已独立解压并用当前build_identity.rs编译检查器执行resolve，exit1：source manifest coverage mismatch，证据 `exports/S5M1_FINAL_CLEAN_20261002T0338Z/first-commit-archive-probe`（这是实际Rust身份检查，不冒充完整editor-app构建）。Python源码清单已含本阶段根任务，而Rust显式根列表遗漏该文件；后续修正只同步该项、使归档fixture包含实际根任务，并在既有正/负测试中验证任务文件改动也拒绝。对应PLAN先记录本修复；不跳过清单/哈希/身份规则，不恢复unknown，不改业务/采集/阈值。新修复提交后完整final-clean验证和无Git真实app构建仍必须执行，补充源码修改供独立包/源码审核，尚不标PASS。
+
+
+### 最终门禁中的并行测试临时目录碰撞（2026-10-02；编码前记录）
+
+最终clean提交eea6d85的workspace --no-fail-fast真实退出101，product_service_compatibility中两项失败使用完全相同的PID/时钟纳秒目录；保留source.gbr实际内容为MI文件尾部拼接另一测试4321D03/M02尾部，确认并行fixture_import共写并截断同一文件。不是制造/兼容解析规则失败。仅允许该editor-service测试helper复用标准库AtomicU64进程内序号补齐路径唯一性，并用create_dir拒绝意外复用；所有源输入、断言、并行运行、样本与门槛保持不变。PLAN/REVIEW/manifest更新，原workspace失败及实际串行诊断日志保留；新提交后重跑完整门禁/原生/归档，另供独立审核。阶段仍非PASS。
+
+诊断原二进制串行6/0/2；修复后原测试8线程仍6/0/2，fmtcheck及manifest退出0。日志保留于exports/S5M1_FINAL_CLEAN_20261002T035724Z/test-isolation-failure与test-isolation-focused；全门禁失败为772/2/47，不能引用旧774/0/47替代。产品源代码不变，只有测试夹具隔离改动。

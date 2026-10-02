@@ -65,3 +65,10 @@ Independent source review requested two B1 evidence-validator fixes only. Allowe
 ### 最终归档身份清单补齐（2026-10-02；实测发现）
 
 首个阶段提交2dff495的真实Source ZIP中，Python显式source manifest包含根任务RCam_S5M1_P100K_NATIVE_CLOSEOUT_NEXT_TASK.md，而Rust build_identity::source_paths固定根列表未同步；直接编译实际Rust检查器对真实解压副本返回source manifest coverage mismatch。仅允许补齐 editor-app/build_identity.rs 的相同根文件项，更新 tests/build_identity.rs 真实归档fixture/源文件变异回归及本段文档/manifest。不改变制造/渲染/输入/API/schema/样本/门槛/身份拒绝强度；无Git仍须完整逐文件校验，不能跳过该任务文档。此前partial clean门禁与失败Source ZIP保留，新提交后重做最终门禁及真实无Git editor-app构建/启动/变异恢复核对。此补充修改另送独立审查，阶段仍非PASS。
+
+
+### 最终门禁中的并行测试临时目录碰撞（2026-10-02；编码前记录）
+
+最终clean提交eea6d85的workspace --no-fail-fast真实退出101，product_service_compatibility中两项失败使用完全相同的PID/时钟纳秒目录；保留source.gbr实际内容为MI文件尾部拼接另一测试4321D03/M02尾部，确认并行fixture_import共写并截断同一文件。不是制造/兼容解析规则失败。仅允许该editor-service测试helper复用标准库AtomicU64进程内序号补齐路径唯一性，并用create_dir拒绝意外复用；所有源输入、断言、并行运行、样本与门槛保持不变。PLAN/REVIEW/manifest更新，原workspace失败及实际串行诊断日志保留；新提交后重跑完整门禁/原生/归档，另供独立审核。阶段仍非PASS。
+
+诊断原二进制串行6/0/2；修复后原测试8线程仍6/0/2，fmtcheck及manifest退出0。日志保留于exports/S5M1_FINAL_CLEAN_20261002T035724Z/test-isolation-failure与test-isolation-focused；全门禁失败为772/2/47，不能引用旧774/0/47替代。产品源代码不变，只有测试夹具隔离改动。
