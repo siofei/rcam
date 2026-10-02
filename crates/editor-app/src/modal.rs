@@ -274,6 +274,8 @@ pub(crate) mod tests {
         let (tx, _requests) = std::sync::mpsc::sync_channel(1);
         let (_reply, rx) = std::sync::mpsc::sync_channel(1);
         EditorApp {
+            pending_task: None,
+            viewport_task: None,
             block: Default::default(),
             diagnostic_export: None,
             operation_source: rcam_diagnostics::Source::System,
@@ -354,6 +356,8 @@ pub(crate) mod tests {
             bench: None,
             #[cfg(feature = "internal-evidence")]
             s5m1: None,
+            #[cfg(feature = "internal-evidence")]
+            a2: None,
             probe: None,
             row_probes: Default::default(),
             layer_panel_rect: eframe::egui::Rect::NOTHING,

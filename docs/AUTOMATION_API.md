@@ -755,3 +755,12 @@ These are manufacturing *bounds candidates*, not final Boolean openings, materia
 Current capability stage: `S4-D2 RefDes-Assisted Stencil Candidate Selection v1 (Mac-first bounded)`. The final clean source/native/package binding is recorded in S4_D2_REVIEW and the versioned exports review. Windows/full V1/CORE10/P100K remain deferred.
 
 The additive capability `resource_limits.max_nearby_candidates` reports 10000 for the real service (0 in S0); it bounds both nearby physical envelopes and expanded text-group members.
+
+
+### S5-M2-A task host context (implementation in progress)
+
+Rust hosts may use `task::{TaskContext, TaskVersion, CancellationToken, TaskReceipt}` with the existing serial owner. Input identity includes document/revision/workspace revision, document generation, independent rule revision and SHA-256 of manufacturing precision. GUI task acceptance validates the current service state before dispatch. Output receipt includes the actual result version and terminal state. `STALE_TASK` rejects an obsolete identity; `TASK_STATE` rejects token reuse. These are internal task-host errors, not new JSON operations.
+
+`import_gerber_layers_with_cancel(..., Option<&CancellationToken>)` and `objects_select_rect_with_cancel(...)` reuse existing implementations; synchronous methods pass None. Host must start the token and finish with the actual result. Import arbitrates cancel versus commit immediately before history.add_layers. Selection checks cancellation per manufacturing object and returns no partial IDs. Running queries/builds are discarded on accepted cancellation, and previous usable view is retained. A committed mutation or filesystem action is never presented as cancelled. Existing synchronous APIs remain synchronous; JSON jobs.get/jobs.cancel, a persistent task registry and script runtime are not implemented by this slice.
+
+Uninterrupted parser, OS read, one complex geometry, index and metrics substeps remain explicitly bounded acceptance gaps; 2s cancellation and native feedback gates need measurements. See S5_M2_PLAN / S5_M2_REVIEW for current coverage.

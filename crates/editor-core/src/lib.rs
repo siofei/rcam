@@ -677,6 +677,7 @@ pub struct ValidationReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SemanticError {
+    Cancelled,
     Invalid(String),
     ResourceLimit {
         resource: &'static str,
@@ -690,6 +691,7 @@ pub enum SemanticError {
 impl std::fmt::Display for SemanticError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Cancelled => f.write_str("validation cancelled"),
             Self::Invalid(message) => f.write_str(message),
             Self::ResourceLimit {
                 resource,
@@ -724,6 +726,17 @@ impl SemanticDocument {
     }
 
     pub fn validate(&self) -> Result<ValidationReport, SemanticError> {
+        self.validate_cancellable(|| false)
+    }
+
+    /// Read-only validation. Cancellation drops the incomplete report.
+    pub fn validate_cancellable(
+        &self,
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Result<ValidationReport, SemanticError> {
+        if cancelled() {
+            return Err(SemanticError::Cancelled);
+        }
         if !valid_id(&self.id) || self.unit != "mm" {
             return Err(SemanticError::Invalid("document id/unit is invalid".into()));
         }
@@ -741,6 +754,9 @@ impl SemanticDocument {
         // files may both define D10 without any relation between them.
         let mut aperture_dcodes = std::collections::HashSet::new();
         for aperture in &self.apertures {
+            if cancelled() {
+                return Err(SemanticError::Cancelled);
+            }
             if !valid_id(&aperture.id)
                 || aperture.source_dcode < 10
                 || !aperture_dcodes.insert((
@@ -758,6 +774,9 @@ impl SemanticDocument {
         }
         let mut block_definition_ids = std::collections::HashSet::new();
         for definition in &self.block_definitions {
+            if cancelled() {
+                return Err(SemanticError::Cancelled);
+            }
             if !block_definition_ids.insert(definition.id.0.clone()) {
                 return Err(SemanticError::DuplicateId(definition.id.0.clone()));
             }
@@ -765,6 +784,9 @@ impl SemanticDocument {
                 SemanticError::Invalid(format!("invalid block definition {}", definition.id.0))
             })?;
             for object in &definition.objects {
+                if cancelled() {
+                    return Err(SemanticError::Cancelled);
+                }
                 let geometry: SemanticGeometry = object.geometry.clone().into();
                 validate_geometry(&geometry, &aperture_ids, &block_definition_ids)?;
             }
@@ -774,10 +796,16 @@ impl SemanticDocument {
         let mut objects = 0;
         let mut region_edges = 0;
         for layer in &self.layers {
+            if cancelled() {
+                return Err(SemanticError::Cancelled);
+            }
             if !valid_id(&layer.id) || !layer_ids.insert(layer.id.clone()) {
                 return Err(SemanticError::DuplicateId(layer.id.clone()));
             }
             for object in &layer.objects {
+                if cancelled() {
+                    return Err(SemanticError::Cancelled);
+                }
                 if !valid_id(&object.object_id) || !object_ids.insert(object.object_id.clone()) {
                     return Err(SemanticError::DuplicateId(object.object_id.clone()));
                 }
@@ -809,6 +837,9 @@ impl SemanticDocument {
                     }
                 }
             }
+        }
+        if cancelled() {
+            return Err(SemanticError::Cancelled);
         }
         Ok(ValidationReport {
             object_count: objects,

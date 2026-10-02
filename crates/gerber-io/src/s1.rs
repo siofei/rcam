@@ -86,6 +86,7 @@ pub struct S1Scene {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum S1Error {
+    Cancelled,
     InvalidUtf8,
     Empty,
     Unsupported {
@@ -127,6 +128,7 @@ impl S1Error {
 impl std::fmt::Display for S1Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Cancelled => f.write_str("import cancelled"),
             Self::InvalidUtf8 => f.write_str("input is not UTF-8"),
             Self::Empty => f.write_str("input is empty"),
             Self::Unsupported { line, feature } => {
@@ -168,13 +170,37 @@ pub fn parse_s1_with_budget(
     document_id: &str,
     budget: S1Budget,
 ) -> Result<S1Scene, S1Error> {
-    parse_s1_mode(bytes, document_id, budget, false)
+    parse_s1_mode(bytes, document_id, budget, false, &mut || false)
 }
 
 /// Import legacy geometry with explicit diagnostics. Syntax, state, bounds and
 /// resource limits remain subject to the same checks as strict parsing.
 pub fn parse_s1_compat(bytes: &[u8], document_id: &str) -> Result<S1Scene, S1Error> {
-    parse_s1_mode(bytes, document_id, S1Budget::default(), true)
+    parse_s1_mode(bytes, document_id, S1Budget::default(), true, &mut || false)
+}
+
+/// Cooperative import preparation. The callback cannot publish any partial model.
+/// Compatibility and strict paths share the same interpreter and safety checks.
+pub fn parse_s1_cancellable(
+    bytes: &[u8],
+    document_id: &str,
+    compatibility: bool,
+    mut cancelled: impl FnMut() -> bool,
+) -> Result<S1Scene, S1Error> {
+    parse_s1_mode(
+        bytes,
+        document_id,
+        S1Budget::default(),
+        compatibility,
+        &mut cancelled,
+    )
+}
+fn import_checkpoint(cancelled: &mut dyn FnMut() -> bool) -> Result<(), S1Error> {
+    if cancelled() {
+        Err(S1Error::Cancelled)
+    } else {
+        Ok(())
+    }
 }
 
 fn parse_s1_mode(
@@ -182,7 +208,9 @@ fn parse_s1_mode(
     document_id: &str,
     budget: S1Budget,
     compatibility: bool,
+    cancelled: &mut dyn FnMut() -> bool,
 ) -> Result<S1Scene, S1Error> {
+    import_checkpoint(cancelled)?;
     if bytes.len() > budget.max_source_bytes {
         return Err(S1Error::ResourceLimit {
             resource: "source_bytes",
@@ -209,8 +237,11 @@ fn parse_s1_mode(
         && source
             .trim_end_matches(|character: char| character.is_ascii_whitespace())
             .ends_with('\u{1a}');
+    let prepare_timer = crate::export_timings::Timer::new("import_prepare_us");
     let (parser_source, mut metadata, token_count, io_offset) =
         prepare_source(source_text, budget.max_commands, compatibility)?;
+    drop(prepare_timer);
+    import_checkpoint(cancelled)?;
     if dos_eof_removed {
         metadata
             .compatibility_issues
@@ -228,6 +259,7 @@ fn parse_s1_mode(
             actual: token_count,
         });
     }
+    let parse_timer = crate::export_timings::Timer::new("import_parser_us");
     let doc =
         parse(BufReader::new(Cursor::new(parser_source.as_bytes()))).map_err(|(_, error)| {
             S1Error::Syntax {
@@ -241,6 +273,8 @@ fn parse_s1_mode(
             message: format!("{error:?}"),
         });
     }
+    drop(parse_timer);
+    import_checkpoint(cancelled)?;
     let parsed_commands = doc.commands().len();
     if parsed_commands > budget.max_commands {
         return Err(S1Error::ResourceLimit {
@@ -249,7 +283,16 @@ fn parse_s1_mode(
             actual: parsed_commands,
         });
     }
-    interpret_s1(doc, document_id, metadata, io_offset, budget, compatibility)
+    let _semantic_timer = crate::export_timings::Timer::new("import_semantic_us");
+    interpret_s1(
+        doc,
+        document_id,
+        metadata,
+        io_offset,
+        budget,
+        compatibility,
+        cancelled,
+    )
 }
 
 fn prepare_source(
@@ -1136,6 +1179,7 @@ fn check_fsd_coordinate_width(line: &str, width: usize, line_no: usize) -> Resul
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn interpret_s1(
     doc: GerberDoc,
     document_id: &str,
@@ -1143,7 +1187,9 @@ fn interpret_s1(
     io_offset_raw: MmPoint,
     budget: S1Budget,
     compatibility: bool,
+    cancelled: &mut dyn FnMut() -> bool,
 ) -> Result<S1Scene, S1Error> {
+    import_checkpoint(cancelled)?;
     let format = doc.format_specification.ok_or_else(|| S1Error::Semantic {
         line: 0,
         message: "FS is required".into(),
@@ -1179,6 +1225,7 @@ fn interpret_s1(
     let mut macro_defs = HashMap::new();
     let mut macro_expansions = 0usize;
     for command in doc.commands() {
+        import_checkpoint(cancelled)?;
         if let Command::ExtendedCode(ExtendedCode::ApertureMacro(definition)) = command
             && macro_defs
                 .insert(definition.name.clone(), definition.clone())
@@ -1206,6 +1253,7 @@ fn interpret_s1(
         }
     }
     for (name, definition) in &macro_defs {
+        import_checkpoint(cancelled)?;
         let Some(formal_count) = macro_formal_counts.get(name).copied() else {
             let has_unbound =
                 validate_macro_definition(definition, 0, true, budget, compatibility)?;
@@ -1241,6 +1289,7 @@ fn interpret_s1(
     codes.sort_unstable();
     let mut apertures = Vec::with_capacity(codes.len());
     for code in codes {
+        import_checkpoint(cancelled)?;
         let source = doc.apertures.get(&code).ok_or_else(|| S1Error::Semantic {
             line: 0,
             message: format!("missing aperture D{code}"),
@@ -1277,6 +1326,7 @@ fn interpret_s1(
         io_offset_raw.x_mm * unit_scale,
         io_offset_raw.y_mm * unit_scale,
     );
+    let commands_timer = crate::export_timings::Timer::new("import_commands_us");
     interpret_commands(
         &doc,
         &mut document,
@@ -1285,18 +1335,30 @@ fn interpret_s1(
         io_offset,
         budget,
         &mut compat,
+        cancelled,
     )?;
+    drop(commands_timer);
+    import_checkpoint(cancelled)?;
     let mut diagnostics = vec!["S1 normalized semantic model".into()];
     diagnostics.extend(metadata.compatibility_issues.iter().cloned());
     diagnostics.extend(compat.diagnostics());
     metadata.compatibility_issues.extend(compat.diagnostics());
     document.source = metadata.clone();
-    document.validate().map_err(|error| {
-        semantic(
-            0,
-            format!("{error}; {:?}", document.arc_deviation_summary()),
-        )
-    })?;
+    let validate_timer = crate::export_timings::Timer::new("import_validate_us");
+    document
+        .validate_cancellable(&mut *cancelled)
+        .map_err(|error| {
+            if error == SemanticError::Cancelled {
+                S1Error::Cancelled
+            } else {
+                semantic(
+                    0,
+                    format!("{error}; {:?}", document.arc_deviation_summary()),
+                )
+            }
+        })?;
+    drop(validate_timer);
+    import_checkpoint(cancelled)?;
     Ok(S1Scene {
         document,
         metadata,
@@ -2705,6 +2767,7 @@ struct RegionState {
     source_command: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn interpret_commands(
     doc: &GerberDoc,
     document: &mut SemanticDocument,
@@ -2713,6 +2776,7 @@ fn interpret_commands(
     io_offset: MmPoint,
     budget: S1Budget,
     compat: &mut Compatibility,
+    cancelled: &mut dyn FnMut() -> bool,
 ) -> Result<(), S1Error> {
     let unit_scale = match declared_unit {
         Unit::Millimeters => 1.0,
@@ -2755,6 +2819,7 @@ fn interpret_commands(
         .collect();
 
     for (command_index, command) in doc.commands().into_iter().enumerate() {
+        import_checkpoint(cancelled)?;
         if pending_g54
             && !matches!(
                 command,
@@ -4043,7 +4108,7 @@ pub fn verify_roundtrip_with_budget(
     let actual = if expected.source.compatibility_issues.is_empty() {
         parse_s1_with_budget(bytes, &expected.id, validation_budget)?
     } else {
-        parse_s1_mode(bytes, &expected.id, validation_budget, true)?
+        parse_s1_mode(bytes, &expected.id, validation_budget, true, &mut || false)?
     };
     drop(reparse_timer);
     let _compare_timer = crate::export_timings::Timer::new("semantic_compare_us");

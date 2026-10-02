@@ -7,6 +7,7 @@ mod alignment;
 mod array;
 mod candidates;
 mod components;
+pub mod task;
 pub use candidates::*;
 mod pnp_input;
 pub use alignment::{AlignParams, AlignmentMode, DistributeParams, DistributionAxis};
@@ -36,7 +37,7 @@ use editor_core::{
     MmPoint, SemanticDocument, SemanticGeometry, SemanticObject,
 };
 pub use editor_text::{HorizontalAlign, Layout as TextLayout, VerticalAlign};
-use gerber_io::{S0Error, S0Scene, S1Error, S1Scene, export_s1_new_path, parse_s0, parse_s1};
+use gerber_io::{S0Error, S0Scene, S1Error, S1Scene, export_s1_new_path, parse_s0};
 pub use metrics::{MetricValue, MetricsItem, MetricsParams, MetricsResult, MetricsSummary};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1280,6 +1281,7 @@ impl ApplicationService {
             .map_err(|error| {
                 use editor_core::hit_test::HitTestError;
                 match error {
+                    HitTestError::Cancelled => ServiceError { code: "CANCELLED".into(), message: "任务已取消".into(), details: serde_json::json!({}) },
                     HitTestError::InvalidArgument(field) => ServiceError::invalid_field(field, "invalid hit-test parameter"),
                     HitTestError::MissingLayer(id) => ServiceError::not_found("layer", &id),
                     HitTestError::Geometry(error) => map_semantic_error(error),
@@ -1303,6 +1305,17 @@ impl ApplicationService {
         document_id: &str,
         params: SelectRectParams,
     ) -> Result<HitTestResult, ServiceError> {
+        self.objects_select_rect_with_cancel(document_id, params, None)
+    }
+    pub fn objects_select_rect_with_cancel(
+        &self,
+        document_id: &str,
+        params: SelectRectParams,
+        cancel: Option<&task::CancellationToken>,
+    ) -> Result<HitTestResult, ServiceError> {
+        if let Some(cancel) = cancel {
+            cancel.checkpoint()?;
+        }
         let record = self
             .documents
             .get(document_id)
@@ -1315,10 +1328,12 @@ impl ApplicationService {
                 object_ids: Vec::new(),
             });
         }
-        let mut object_ids = record.document.select_rect(&params.layer_id, params.rect_mm, params.mode)
+        let mut object_ids = record.document.select_rect_cancellable(&params.layer_id, params.rect_mm, params.mode,
+            || cancel.is_some_and(|c| c.checkpoint().is_err()))
             .map_err(|error| {
                 use editor_core::hit_test::HitTestError;
                 match error {
+                    HitTestError::Cancelled => ServiceError { code: "CANCELLED".into(), message: "任务已取消".into(), details: serde_json::json!({}) },
                     HitTestError::InvalidArgument(field) => ServiceError::invalid_field(field, "invalid selection parameter"),
                     HitTestError::MissingLayer(id) => ServiceError::not_found("layer", &id),
                     HitTestError::Geometry(error) => map_semantic_error(error),
@@ -4292,6 +4307,7 @@ fn map_parse_error(error: S0Error) -> ServiceError {
 
 fn map_s1_error(error: S1Error) -> ServiceError {
     let code = match &error {
+        S1Error::Cancelled => "CANCELLED",
         S1Error::Unsupported { .. } => "UNSUPPORTED_FEATURE",
         S1Error::ResourceLimit { .. } => "RESOURCE_LIMIT",
         S1Error::InvalidUtf8 | S1Error::Empty => "INVALID_ARGUMENT",

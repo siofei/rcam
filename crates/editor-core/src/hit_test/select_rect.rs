@@ -339,6 +339,19 @@ impl SemanticDocument {
         rect: BoundsMm,
         mode: SelectRectMode,
     ) -> Result<Vec<String>, HitTestError> {
+        self.select_rect_cancellable(layer_id, rect, mode, || false)
+    }
+    /// The host supplies a cooperative signal. No partial ID set is returned.
+    pub fn select_rect_cancellable(
+        &self,
+        layer_id: &str,
+        rect: BoundsMm,
+        mode: SelectRectMode,
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Result<Vec<String>, HitTestError> {
+        if cancelled() {
+            return Err(HitTestError::Cancelled);
+        }
         validate_hit_point(MmPoint::new(rect.min_x_mm, rect.min_y_mm), 0.)?;
         validate_hit_point(MmPoint::new(rect.max_x_mm, rect.max_y_mm), 0.)?;
         if rect.min_x_mm > rect.max_x_mm || rect.min_y_mm > rect.max_y_mm {
@@ -362,6 +375,9 @@ impl SemanticDocument {
         let mut budget = Budget(None);
         let mut result = Vec::new();
         for object in &layer.objects {
+            if cancelled() {
+                return Err(HitTestError::Cancelled);
+            }
             budget.charge(1)?;
             let g = &object.geometry;
             let edges = if let SemanticGeometry::BlockInstance {

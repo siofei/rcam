@@ -21,6 +21,8 @@ mod modal;
 #[cfg(test)]
 mod perf_tests;
 use modal::ActiveModal;
+#[cfg(feature = "internal-evidence")]
+mod native_a2;
 mod native_bench;
 #[cfg(feature = "internal-evidence")]
 mod native_d1;
@@ -37,6 +39,8 @@ mod recovery;
 mod render_index;
 #[cfg(test)]
 mod s5m1_tests;
+#[cfg(test)]
+mod s5m2_tests;
 mod selection;
 mod shortcut_config;
 mod shortcut_settings;
@@ -83,7 +87,14 @@ struct EditorApp {
     block: block_ui::UiState,
     operation_source: rcam_diagnostics::Source,
     diagnostic_export: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
-    tx: SyncSender<(u64, rcam_diagnostics::Source, Action)>,
+    tx: SyncSender<(
+        u64,
+        rcam_diagnostics::Source,
+        Action,
+        editor_service::task::TaskContext,
+    )>,
+    pending_task: Option<editor_service::task::TaskContext>,
+    viewport_task: Option<editor_service::task::TaskContext>,
     rx: Receiver<(u64, View)>,
     view: View,
     busy: bool,
@@ -160,6 +171,8 @@ struct EditorApp {
     bench: Option<native_bench::NativeBench>,
     #[cfg(feature = "internal-evidence")]
     s5m1: Option<native_s5m1::Run>,
+    #[cfg(feature = "internal-evidence")]
+    a2: Option<native_a2::Run>,
     /// Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR`); observation only.
     probe: Option<native_probe::Probe>,
     row_probes: std::cell::RefCell<Vec<serde_json::Value>>,
@@ -170,6 +183,33 @@ struct EditorApp {
     text_input_at_event: bool,
     ime_active: bool,
     reported_ppp: f32,
+}
+fn task_reply_matches(
+    task: &editor_service::task::TaskContext,
+    current: &View,
+    result: &View,
+) -> bool {
+    use editor_service::task::{TaskState, TaskVersion};
+    result.task_receipt.as_ref().is_some_and(|receipt| {
+        receipt.task_id == task.task_id
+            && receipt.input == task.input
+            && receipt.input
+                == TaskVersion::capture(
+                    current.info.as_ref(),
+                    current.task_generation,
+                    current.rule_revision,
+                )
+            && receipt.result_version
+                == TaskVersion::capture(
+                    result.info.as_ref(),
+                    result.task_generation,
+                    result.rule_revision,
+                )
+            && matches!(
+                receipt.state,
+                TaskState::Completed | TaskState::Cancelled | TaskState::Failed
+            )
+    })
 }
 fn viewport_requires_rebase(scene: &display::Scene, camera: Camera) -> bool {
     // Complete geometry coverage does not waive the existing local-f32
@@ -208,7 +248,12 @@ impl EditorApp {
         }
         // At most one display request plus one user operation. A read-only
         // viewport build never disables or consumes the user's next command.
-        let (tx, request) = mpsc::sync_channel::<(u64, rcam_diagnostics::Source, Action)>(2);
+        let (tx, request) = mpsc::sync_channel::<(
+            u64,
+            rcam_diagnostics::Source,
+            Action,
+            editor_service::task::TaskContext,
+        )>(2);
         let (reply, rx) = mpsc::sync_channel(1);
         let ctx = cc.egui_ctx.clone();
         std::thread::spawn(move || {
@@ -229,11 +274,15 @@ impl EditorApp {
                     Err(e) => eprintln!("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE failed: {e:?}"),
                 }
             }
-            while let Ok((id, source, action)) = request.recv() {
+            while let Ok((id, source, action, task)) = request.recv() {
                 let start = Instant::now();
                 #[cfg(feature = "internal-evidence")]
                 let measured_action = native_s5m1::action_label(&action);
-                rcam_diagnostics::with_source(source, || model.run(action));
+                #[cfg(feature = "internal-evidence")]
+                native_a2::worker_begin(&task, &model.view);
+                rcam_diagnostics::with_source(source, || model.run_task(task, action));
+                #[cfg(feature = "internal-evidence")]
+                native_a2::worker_finished(id, &model.view);
                 #[cfg(feature = "internal-evidence")]
                 native_s5m1::worker_result(id, measured_action, start, &model.view);
                 if start.elapsed().as_millis() > 100 {
@@ -242,6 +291,8 @@ impl EditorApp {
                         "gui.worker.slow",
                     );
                 }
+                #[cfg(feature = "internal-evidence")]
+                native_a2::returning(id);
                 if reply.send((id, model.view.clone())).is_err() {
                     break;
                 }
@@ -282,6 +333,8 @@ impl EditorApp {
             operation_source: rcam_diagnostics::Source::System,
             diagnostic_export: None,
             tx,
+            pending_task: None,
+            viewport_task: None,
             rx,
             view: View::default(),
             busy: false,
@@ -355,6 +408,8 @@ impl EditorApp {
             bench: native_bench::NativeBench::from_env(gpu.device.clone()),
             #[cfg(feature = "internal-evidence")]
             s5m1: native_s5m1::Run::from_env(gpu.device.clone()),
+            #[cfg(feature = "internal-evidence")]
+            a2: native_a2::Run::from_env(),
             probe: native_probe::Probe::from_env(),
             row_probes: Default::default(),
             layer_panel_rect: egui::Rect::NOTHING,
@@ -419,11 +474,24 @@ impl EditorApp {
             probe.action(&native_probe::action_text(&a));
         }
         let viewport = matches!(a, Action::Viewport(..));
-        match self.tx.try_send((self.sequence, source, a)) {
+        let task = editor_service::task::TaskContext::new(
+            self.sequence,
+            editor_service::task::TaskVersion::capture(
+                self.view.info.as_ref(),
+                self.view.task_generation,
+                self.view.rule_revision,
+            ),
+        );
+        match self.tx.try_send((self.sequence, source, a, task.clone())) {
             Ok(()) => {
                 if viewport {
                     self.viewport_sequence = Some(self.sequence);
+                    self.viewport_task = Some(task);
                 } else {
+                    if let Some(old) = &self.viewport_task {
+                        old.cancel_token.cancel();
+                    }
+                    self.pending_task = Some(task);
                     self.busy = true;
                 }
                 self.ui_error = None;
@@ -1166,6 +1234,14 @@ fn arrangement_action(command: CommandId) -> Option<Action> {
 }
 
 impl eframe::App for EditorApp {
+    fn on_exit(&mut self) {
+        for task in [&self.pending_task, &self.viewport_task]
+            .into_iter()
+            .flatten()
+        {
+            task.cancel_token.cancel();
+        }
+    }
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         #[cfg(feature = "internal-evidence")]
         self.closeout_raw_input(raw);
@@ -1173,6 +1249,11 @@ impl eframe::App for EditorApp {
         if let Some(mut run) = self.s5m1.take() {
             run.input(self, ctx, raw);
             self.s5m1 = Some(run);
+        }
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.a2.take() {
+            run.input(self, ctx, raw);
+            self.a2 = Some(run);
         }
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
@@ -1244,12 +1325,39 @@ impl eframe::App for EditorApp {
         }
         self.last_frame = now;
 
-        let reply = self.rx.try_recv().ok();
+        let mut reply = self.rx.try_recv().ok();
+        #[cfg(feature = "internal-evidence")]
+        if let Some((id, view)) = &reply {
+            native_a2::reply(
+                *id,
+                *id == self.sequence
+                    && self
+                        .pending_task
+                        .as_ref()
+                        .or(self.viewport_task.as_ref())
+                        .is_none_or(|task| task_reply_matches(task, &self.view, view)),
+            );
+        }
+        if let Some((id, view)) = &reply
+            && *id == self.sequence
+            && let Some(task) = self.pending_task.as_ref().or(self.viewport_task.as_ref())
+            && !task_reply_matches(task, &self.view, view)
+        {
+            // Release only this request's busy state; never install a stale snapshot.
+            self.ui_error = Some("后台结果身份已失效，结果未安装".into());
+            self.busy = false;
+            self.pending_task = None;
+            self.viewport_sequence = None;
+            self.viewport_task = None;
+            self.modal_pending = None;
+            reply = None;
+        }
         if reply
             .as_ref()
             .is_some_and(|(id, _)| self.viewport_sequence == Some(*id))
         {
             self.viewport_sequence = None;
+            self.viewport_task = None;
         }
         if let Some((id, view)) = reply
             && id == self.sequence
@@ -1298,6 +1406,7 @@ impl eframe::App for EditorApp {
                     gpu::selection_flags(scene, &self.view.selected.ids())
                 }));
             self.busy = false;
+            self.pending_task = None;
             if self.modal_pending == Some(id) {
                 self.modal_pending = None;
                 if self.view.error.is_none() {
@@ -1845,6 +1954,28 @@ impl eframe::App for EditorApp {
                     if self.busy {
                         ui.spinner();
                         ui.label("处理中…");
+                        if let Some(task) = &self.pending_task {
+                            use editor_service::task::{CancelOutcome, TaskState};
+                            let cancel_state = task.cancel_token.state();
+                            if matches!(cancel_state, TaskState::CancelRequested | TaskState::Cancelled) {
+                                ui.label("正在取消…");
+                            } else {
+                                if cancel_state == TaskState::Committing { ui.label("已进入提交阶段，无法取消；等待实际结果"); }
+                                let response = ui.button("取消任务");
+                                #[cfg(feature = "internal-evidence")]
+                                if let Some(run) = &mut self.a2 { run.cancel_rect = response.rect; run.cancel_state = Some(cancel_state); }
+                                if response.clicked() {
+                                let outcome = task.cancel_token.cancel();
+                                #[cfg(feature = "internal-evidence")]
+                                native_a2::cancel_clicked(task.task_id, outcome, ctx);
+                                let message = match outcome {
+                                    CancelOutcome::Requested | CancelOutcome::AlreadyCancelled => "已请求取消，等待后台释放资源",
+                                    CancelOutcome::TooLate => "任务已进入提交阶段，等待实际结果",
+                                };
+                                self.toast = Some((message.into(), Instant::now()));
+                                }
+                            }
+                        }
                     }
                 });
             });
@@ -2668,6 +2799,11 @@ impl eframe::App for EditorApp {
         }
         self.probe_frame(ctx);
         #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.a2.take() {
+            run.tick(self, ctx);
+            self.a2 = Some(run);
+        }
+        #[cfg(feature = "internal-evidence")]
         if let Some(mut run) = self.s5m1.take() {
             run.tick(self, ctx);
             self.s5m1 = Some(run);
@@ -2881,6 +3017,7 @@ fn main() -> eframe::Result {
                 #[cfg(feature = "internal-evidence")]
                 if let Some(dir) = shortcut_store::native_directory()
                     .or_else(native_s5m1::directory)
+                    .or_else(native_a2::directory)
                     .or_else(native_d2::directory)
                     .or_else(native_d1::directory)
                 {
@@ -3055,8 +3192,13 @@ mod shortcut_rc1_regressions {
             let mut app = block_app();
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
             if queue == 1 {
-                tx.send((99, rcam_diagnostics::Source::System, Action::NewWorkspace))
-                    .unwrap();
+                tx.send((
+                    99,
+                    rcam_diagnostics::Source::System,
+                    Action::NewWorkspace,
+                    editor_service::task::TaskContext::new(99, Default::default()),
+                ))
+                .unwrap();
             }
             let _receiver = (queue != 2).then_some(rx);
             app.tx = tx;

@@ -149,6 +149,7 @@ fn s4b2_block_release_performance() {
         "schema": "rcam-s4b2-block-performance/1",
         "build_profile": if cfg!(debug_assertions) { "debug" } else { "release" },
         "definition_openings": 400,
+        "snapshot_sha256": editor_core::hash::sha256_hex(&serde_json::to_vec(&snapshot).unwrap()),
         "project_instances": 100,
         "project_top_level_objects": snapshot.layers[0].objects.len(),
         "cache_entries": cache.stats().0,

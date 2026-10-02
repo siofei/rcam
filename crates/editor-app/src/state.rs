@@ -9,6 +9,9 @@ use std::{
 
 #[derive(Clone, Default)]
 pub struct View {
+    pub task_generation: u64,
+    pub rule_revision: u64,
+    pub task_receipt: Option<editor_service::task::TaskReceipt>,
     pub candidate_reply: Option<Arc<crate::candidates_ui::Reply>>,
     pub board: Option<Arc<editor_core::pnp::BoardState>>,
     pub component_indices: Arc<Vec<usize>>,
@@ -199,6 +202,7 @@ fn operation_id(origin: &editor_core::ObjectOrigin) -> Option<&str> {
     }
 }
 pub struct Model {
+    active_cancel: Option<editor_service::task::CancellationToken>,
     pub service: ApplicationService,
     pub view: View,
     snapshot: Option<Arc<RenderSnapshot>>,
@@ -290,6 +294,7 @@ pub enum Action {
 impl Default for Model {
     fn default() -> Self {
         Self {
+            active_cancel: None,
             service: ApplicationService::new(),
             view: View::default(),
             snapshot: None,
@@ -604,10 +609,7 @@ impl Model {
         if paths.is_empty() {
             return Ok(());
         }
-        if self.view.info.is_none() {
-            self.new_workspace(true)?;
-        }
-        let (document_id, revision, _) = self.workspace_revision()?;
+        let creating = self.view.info.is_none();
         let mut names = Vec::new();
         for path in paths {
             self.service.grant_file_access(path, false)?;
@@ -617,11 +619,30 @@ impl Model {
                     .to_string(),
             );
         }
-        let result = self.service.import_gerber_layers(
+        if creating {
+            self.new_workspace(true)?;
+        }
+        let (document_id, revision, _) = self.workspace_revision()?;
+        let cancel = self.active_cancel.as_ref();
+        let result = self.service.import_gerber_layers_with_cancel(
             &document_id,
             &revision,
             ImportGerberLayersParams { paths: names },
-        )?;
+            cancel,
+        );
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                if creating {
+                    self.service.close(&document_id, &revision, true)?;
+                    self.view = View::default();
+                    self.snapshot = None;
+                    self.world_index = Default::default();
+                    self.viewport = None;
+                }
+                return Err(error);
+            }
+        };
         let diagnostics: usize = result.layers.iter().map(|l| l.diagnostics.len()).sum();
         let compatibility_layers = result
             .layers
@@ -917,7 +938,7 @@ impl Model {
         let scene = patched.unwrap_or_else(|| {
             #[cfg(feature = "internal-evidence")]
             crate::native_s5m1::gpu_event("geometry-full-build-call", 1);
-            Scene::build_cached(
+            Scene::build_cached_with_cancel(
                 filtered.as_ref().unwrap_or(snapshot),
                 &self.view.layers,
                 anchor,
@@ -925,6 +946,7 @@ impl Model {
                 self.serial,
                 self.view.scene.as_deref(),
                 &mut self.block_display_cache,
+                self.active_cancel.as_ref(),
             )
         });
         match scene {
@@ -1061,7 +1083,7 @@ impl Model {
             .iter()
             .filter(|l| l.visible && l.effective_visible && l.selectable)
         {
-            let result = self.service.objects_select_rect(
+            let result = self.service.objects_select_rect_with_cancel(
                 &d.document_id,
                 SelectRectParams {
                     layer_id: l.layer_id.clone(),
@@ -1069,6 +1091,7 @@ impl Model {
                     mode,
                     selectable_only: true,
                 },
+                self.active_cancel.as_ref(),
             )?;
             if result.object_ids.is_empty() {
                 continue;
@@ -1084,6 +1107,9 @@ impl Model {
                 .map(|object| (object.object_id.as_str(), object))
                 .collect();
             for object_id in result.object_ids {
+                if let Some(cancel) = &self.active_cancel {
+                    cancel.checkpoint()?;
+                }
                 let object = objects
                     .get(object_id.as_str())
                     .ok_or_else(|| error("NOT_FOUND", "框选快照缺少对象"))?;
@@ -1417,6 +1443,88 @@ impl Model {
                 }
             }
         }
+    }
+    pub(crate) fn task_version(&self) -> Result<editor_service::task::TaskVersion, ServiceError> {
+        // Query the owner of manufacturing state, not a potentially stale GUI snapshot.
+        let info = self
+            .view
+            .info
+            .as_ref()
+            .map(|d| self.service.document_get(&d.document_id))
+            .transpose()?;
+        Ok(editor_service::task::TaskVersion::capture(
+            info.as_ref(),
+            self.view.task_generation,
+            self.view.rule_revision,
+        ))
+    }
+    pub(crate) fn run_task(&mut self, task: editor_service::task::TaskContext, action: Action) {
+        use editor_service::task::{TaskReceipt, TaskState};
+        let before = self.view.clone();
+        let old_viewport = self.viewport;
+        let old_ppm = self.ppm;
+        let readonly = matches!(
+            &action,
+            Action::Viewport(..)
+                | Action::Select(..)
+                | Action::SelectRect(..)
+                | Action::ProbeDrag(..)
+                | Action::FitLayer(..)
+                | Action::LayerSummary(..)
+                | Action::CandidateQuery(..)
+                | Action::CandidateSelect(..)
+                | Action::ComponentSearch(..)
+                | Action::ArrayPreview(..)
+                | Action::BlockPreview(..)
+                | Action::BlockSelect(..)
+                | Action::TextPreview(..)
+                | Action::TextFont(..)
+                | Action::SystemFont(..)
+                | Action::FontCatalog
+                | Action::PnpPreview(..)
+        );
+        let cancellable_import = matches!(&action, Action::ImportGerbers(..));
+        let result = (|| {
+            task.cancel_token.start()?;
+            task.validate(&self.task_version()?)?;
+            if !readonly && !cancellable_import {
+                task.cancel_token.begin_commit()?;
+                #[cfg(feature = "internal-evidence")]
+                crate::native_a2::committing(&task);
+            }
+            self.active_cancel = Some(task.cancel_token.clone());
+            self.run(action);
+            if (readonly || (cancellable_import && self.view.error.is_none()))
+                && task.cancel_token.state() != TaskState::Committing
+            {
+                task.cancel_token.begin_commit()?;
+            }
+            Ok::<(), ServiceError>(())
+        })();
+        self.active_cancel = None;
+        if let Err(error) = result {
+            if readonly && task.cancel_token.checkpoint().is_err() {
+                self.view = before.clone();
+                self.viewport = old_viewport;
+                self.ppm = old_ppm;
+                self.block_display_cache = Default::default();
+                self.metrics_identity.clear();
+            }
+            self.view.error = Some(error);
+        }
+        let changed = before.info.as_ref().map(|d| &d.document_id)
+            != self.view.info.as_ref().map(|d| &d.document_id);
+        self.view.task_generation = before.task_generation + u64::from(changed);
+        self.view.rule_revision = before.rule_revision;
+        let result_version = self.task_version().unwrap_or_default();
+        drop(before); // Release the task rollback snapshot before publishing terminal state.
+        task.cancel_token.finish(self.view.error.is_none());
+        self.view.task_receipt = Some(TaskReceipt {
+            task_id: task.task_id,
+            input: task.input,
+            result_version,
+            state: task.cancel_token.state(),
+        });
     }
     pub fn run(&mut self, action: Action) {
         let edit_timing = std::env::var_os("RCAM_EDIT_TIMING").is_some();
@@ -1799,6 +1907,9 @@ impl Model {
                 self.view = View::default();
                 self.snapshot = None;
                 self.viewport = None;
+                self.world_index = Default::default();
+                self.block_display_cache = Default::default();
+                self.metrics_identity.clear();
                 Ok(())
             }
         })();
@@ -1806,7 +1917,13 @@ impl Model {
             eprintln!("service_error {} {} {}", e.code, e.message, e.details);
             self.view.error = Some(e);
         }
-        self.refresh_metrics();
+        if self
+            .active_cancel
+            .as_ref()
+            .is_none_or(|c| c.checkpoint().is_ok())
+        {
+            self.refresh_metrics();
+        }
         if edit_timing && let Some(label) = edit_label {
             eprintln!(
                 "EDIT_ACTION operation={label} elapsed_ms={} failed={}",

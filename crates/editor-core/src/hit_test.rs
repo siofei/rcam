@@ -9,6 +9,7 @@ pub const MAX_HIT_TEST_WORK: usize = 2_000_000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HitTestError {
+    Cancelled,
     InvalidArgument(&'static str),
     MissingLayer(String),
     Geometry(SemanticError),

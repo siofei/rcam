@@ -524,7 +524,7 @@ fn performance_command(command: &str) -> bool {
     ]
     .iter()
     .any(|prefix| command.starts_with(prefix))
-        || command == "render_index.build"
+        || matches!(command, "render_index.build" | "scene.accelerate_polygons")
 }
 pub fn measurements(level: Level, command: &'static str, fields: &[(&'static str, u64)]) {
     identified_measurements(level, command, None, None, fields)

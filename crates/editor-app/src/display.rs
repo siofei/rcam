@@ -72,6 +72,10 @@ pub struct Primitive {
     pub b: [f32; 4],
     pub bounds: [f32; 4],
 }
+// Deterministic unit-test injection after real scene objects have been built.
+// Thread-local and absent from every product/internal-evidence binary.
+#[cfg(test)]
+thread_local! { pub(crate) static CANCEL_SCENE_AFTER_OBJECTS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
 #[derive(Clone)]
 pub struct Scene {
     pub serial: u64,
@@ -137,6 +141,28 @@ impl Scene {
         previous: Option<&Scene>,
         block_cache: &mut crate::block_display::BlockDisplayCache,
     ) -> Result<Self, String> {
+        Self::build_cached_with_cancel(
+            snapshot,
+            layers,
+            anchor,
+            ppm,
+            serial,
+            previous,
+            block_cache,
+            None,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_cached_with_cancel(
+        snapshot: &RenderSnapshot,
+        layers: &[LayerInfo],
+        anchor: MmPoint,
+        ppm: f64,
+        serial: u64,
+        previous: Option<&Scene>,
+        block_cache: &mut crate::block_display::BlockDisplayCache,
+        cancel: Option<&editor_service::task::CancellationToken>,
+    ) -> Result<Self, String> {
         if !ppm.is_finite() || ppm <= 0. {
             return Err("VALIDATION_FAILED: invalid display scale".into());
         }
@@ -165,6 +191,9 @@ impl Scene {
             let zero_width = ws.display_mode == LayerDisplayMode::ZeroWidth;
             // Validate hidden layers and hidden categories too: hiding cannot bypass display support checks.
             for object in &layer.objects {
+                if let Some(cancel) = cancel {
+                    cancel.checkpoint().map_err(|e| e.code)?;
+                }
                 scene.push_object(
                     object,
                     layer_index,
@@ -176,7 +205,19 @@ impl Scene {
                     &snapshot.block_definitions,
                     block_cache,
                 )?;
+                #[cfg(test)]
+                if let Some(cancel) = cancel
+                    && CANCEL_SCENE_AFTER_OBJECTS
+                        .get()
+                        .is_some_and(|n| scene.objects.len() >= n)
+                {
+                    CANCEL_SCENE_AFTER_OBJECTS.set(None);
+                    cancel.cancel();
+                }
             }
+        }
+        if let Some(cancel) = cancel {
+            cancel.checkpoint().map_err(|e| e.code)?;
         }
         scene.accelerate_polygons()?;
         scene.index = if let Some(old) = previous.filter(|old| {
@@ -703,6 +744,7 @@ impl Scene {
     /// Share the remaining fixed budget by area times edge count, so early layers
     /// cannot consume storage required by later layers. No vertices are dropped.
     fn accelerate_polygons(&mut self) -> Result<(), String> {
+        let _timing = rcam_diagnostics::Timing::start("scene.accelerate_polygons");
         let weight = |p: &Primitive, points: &[[f32; 2]]| {
             if p.meta[0] != 1 || (p.meta[3] as usize) < POLYGON_BIN_THRESHOLD {
                 return 0.;

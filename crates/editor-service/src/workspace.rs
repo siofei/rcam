@@ -763,27 +763,50 @@ impl ApplicationService {
         path: &str,
         document_id: &str,
     ) -> Result<PreparedSource, ServiceError> {
+        self.read_and_parse_with_cancel(path, document_id, None)
+    }
+    fn read_and_parse_with_cancel(
+        &self,
+        path: &str,
+        document_id: &str,
+        cancel: Option<&crate::task::CancellationToken>,
+    ) -> Result<PreparedSource, ServiceError> {
+        if let Some(cancel) = cancel {
+            cancel.checkpoint()?;
+        }
         let access = self
             .file_access
             .as_ref()
             .ok_or_else(|| ServiceError::permission(Path::new(path), "read"))?;
         let (canonical, bytes) = access.read_path(path)?;
+        if let Some(cancel) = cancel {
+            cancel.checkpoint()?;
+        }
         let sha256 = sha256_hex(&bytes);
         let parse_started = std::time::Instant::now();
         let mut compatibility = false;
-        let scene = match parse_s1(&bytes, document_id) {
-            Ok(scene) => scene,
-            Err(strict_error) if strict_error.allows_compatibility_fallback() => {
-                compatibility = true;
-                let mut scene =
-                    gerber_io::parse_s1_compat(&bytes, document_id).map_err(map_s1_error)?;
-                scene
-                    .diagnostics
-                    .insert(1, format!("标准导入失败：{strict_error}"));
-                scene
-            }
-            Err(error) => return Err(map_s1_error(error)),
-        };
+        let mut cancelled = || cancel.is_some_and(|token| token.checkpoint().is_err());
+        let scene =
+            match gerber_io::parse_s1_cancellable(&bytes, document_id, false, &mut cancelled) {
+                Ok(scene) => scene,
+                Err(strict_error) if strict_error.allows_compatibility_fallback() => {
+                    if let Some(cancel) = cancel {
+                        cancel.checkpoint()?;
+                    }
+                    compatibility = true;
+                    let mut scene =
+                        gerber_io::parse_s1_cancellable(&bytes, document_id, true, &mut cancelled)
+                            .map_err(map_s1_error)?;
+                    scene
+                        .diagnostics
+                        .insert(1, format!("标准导入失败：{strict_error}"));
+                    scene
+                }
+                Err(error) => return Err(map_s1_error(error)),
+            };
+        if let Some(cancel) = cancel {
+            cancel.checkpoint()?;
+        }
         rcam_diagnostics::identified_measurements(
             rcam_diagnostics::Level::Info,
             "gerber.import.summary",
@@ -976,6 +999,18 @@ impl ApplicationService {
         expected_revision: &str,
         params: ImportGerberLayersParams,
     ) -> Result<ImportLayersResult, ServiceError> {
+        self.import_gerber_layers_with_cancel(document_id, expected_revision, params, None)
+    }
+
+    /// The host starts the token. Cancellation is cooperative during preparation;
+    /// the atomic history transaction owns the commit decision.
+    pub fn import_gerber_layers_with_cancel(
+        &mut self,
+        document_id: &str,
+        expected_revision: &str,
+        params: ImportGerberLayersParams,
+        cancel: Option<&crate::task::CancellationToken>,
+    ) -> Result<ImportLayersResult, ServiceError> {
         let operation = rcam_diagnostics::Operation::begin_document(
             "document.import_gerber_layers",
             document_id,
@@ -983,7 +1018,8 @@ impl ApplicationService {
                 .get(document_id)
                 .map(|record| record.revision),
         );
-        let result = self.import_gerber_layers_observed(document_id, expected_revision, params);
+        let result =
+            self.import_gerber_layers_observed(document_id, expected_revision, params, cancel);
         operation.end(
             self.documents
                 .get(document_id)
@@ -998,6 +1034,7 @@ impl ApplicationService {
         document_id: &str,
         expected_revision: &str,
         params: ImportGerberLayersParams,
+        cancel: Option<&crate::task::CancellationToken>,
     ) -> Result<ImportLayersResult, ServiceError> {
         {
             let record = self.edit_record(document_id, expected_revision)?;
@@ -1020,8 +1057,11 @@ impl ApplicationService {
         let mut prepared = Vec::with_capacity(params.paths.len());
         let mut total_bytes = 0_usize;
         for (index, path) in params.paths.iter().enumerate() {
+            if let Some(cancel) = cancel {
+                cancel.checkpoint()?;
+            }
             let source = self
-                .read_and_parse(path, document_id)
+                .read_and_parse_with_cancel(path, document_id, cancel)
                 .map_err(|error| with_import_context(error, index, path))?;
             total_bytes = total_bytes.saturating_add(source.bytes);
             if total_bytes > MAX_IMPORT_BATCH_BYTES {
@@ -1060,6 +1100,9 @@ impl ApplicationService {
         let mut pending: Vec<Pending> = Vec::new();
         let mut adds: Vec<LayerAdd> = Vec::new();
         for source in prepared {
+            if let Some(cancel) = cancel {
+                cancel.checkpoint()?;
+            }
             let source_id = format!("src-{next_source}");
             let import_id = format!("import-{next_source}");
             bump(&mut next_source, "source_ids")?;
@@ -1108,6 +1151,9 @@ impl ApplicationService {
         }
         let workspace_revision = next_workspace_revision(record)?;
         // Phase 3: one transaction (fails as a whole, leaving nothing behind).
+        if let Some(cancel) = cancel {
+            cancel.begin_commit()?;
+        }
         let ids = record
             .history
             .add_layers(&mut record.document, adds)

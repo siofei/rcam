@@ -200,3 +200,7 @@ S4-D2 is PASS (Mac-first bounded; 2026-10-02). Registered component-local rectan
 ### S5-K1 Shortcut settings / migration（candidate，2026-10-02）
 
 独立基线 `0f3ec046640c4293b53e402305ad3e7f47000929`，41 项现有命令完整 schema v1 快照；独立 shortcuts.json，不进入工程/制造历史。正式任务、PLAN、addendum、ADR0050 与 versioned review 控制范围，原生验收及终审未完成前不得标 PASS。Windows deferred / not executed；停止于本阶段，不启动 S5-M2 或 Command Palette。
+
+
+### S5-M2 kickoff (2026-10-02)
+User explicitly started S5-M2 from frozen S5-K1 c6f9920. Historical stop-after-K1 instructions are superseded for this task. Implement bounded M2-A first per S5_M2_PLAN/ADR0051, then retain M2-B through native closeout as separate gates. K1 native debt remains deferred; no Windows/full-V1/CORE10 or complete M2 PASS claim.
