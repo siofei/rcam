@@ -104,10 +104,25 @@ fn halo(color:vec3<f32>)->vec3<f32> {
 }
 fn sample_scene(p:vec2<f32>)->vec3<f32> {
     var color=vec3(0.055,0.072,0.085);var layer=0u;var covered=false;var lcolor=vec3(0.);
-    let c=cell(p);
-    if c==0xffffffffu {return color;}
-    for(var cursor=bins[c];cursor<bins[c+1u];cursor++) {
-        let i=bins[cursor];
+    // Two ordered streams from the same immutable bins. No per-frame index
+    // rebuild, and no selected-last compositing that would reorder Dark/Clear.
+    let moving=any(u.preview.xy!=vec2(0.));
+    let c=cell(p);let shifted=cell(p-u.preview.xy);
+    var cursor=0u;var end=0u;var moved_cursor=0u;var moved_end=0u;
+    if c!=0xffffffffu {cursor=bins[c];end=bins[c+1u];}
+    if moving && shifted!=0xffffffffu {moved_cursor=bins[shifted];moved_end=bins[shifted+1u];}
+    loop {
+        if moving {
+            loop {if cursor>=end {break;} if selected[bins[cursor]]==0u {break;} cursor++;}
+            loop {if moved_cursor>=moved_end {break;} if selected[bins[moved_cursor]]!=0u {break;} moved_cursor++;}
+        }
+        var stationary=u.counts.x;var translated=u.counts.x;
+        if cursor<end {stationary=bins[cursor];}
+        if moved_cursor<moved_end {translated=bins[moved_cursor];}
+        let i=min(stationary,translated);
+        if i==u.counts.x {break;}
+        if stationary==i {cursor++;}
+        if translated==i {moved_cursor++;}
         let o=objects[i];if o.tag.w==0u {continue;}
         if o.style.y!=0u && o.tag.z==0u {continue;}
         if o.tag.w!=layer {if covered {color=mix(color,lcolor,0.90);}layer=o.tag.w;covered=false;}
@@ -130,7 +145,7 @@ fn sample_scene(p:vec2<f32>)->vec3<f32> {
     let queries=array<vec2<f32>,4>(p+vec2(e,0.),p-vec2(e,0.),p+vec2(0.,e),p-vec2(0.,e));
     var cursors:array<u32,4>;
     var ends:array<u32,4>;
-    for(var k=0u;k<4u;k++) {let c=cell(queries[k]);if c!=0xffffffffu {cursors[k]=bins[c];ends[k]=bins[c+1u];}}
+    for(var k=0u;k<4u;k++) {let c=cell(queries[k]-u.preview.xy);if c!=0xffffffffu {cursors[k]=bins[c];ends[k]=bins[c+1u];}}
     loop {
         var i=u.counts.x;
         for(var k=0u;k<4u;k++) {if cursors[k]<ends[k] {i=min(i,bins[cursors[k]]);}}

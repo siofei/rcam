@@ -153,6 +153,10 @@ impl Gesture {
             },
         }
     }
+    #[cfg(feature = "internal-evidence")]
+    pub fn evidence_dragging(&self) -> bool {
+        self.object_drag.as_ref().is_some_and(|d| d.dragging)
+    }
     pub fn snap_exclusions(&self) -> Option<&HashSet<String>> {
         self.object_drag
             .as_ref()

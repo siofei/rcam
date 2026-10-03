@@ -204,3 +204,10 @@ S4-D2 is PASS (Mac-first bounded; 2026-10-02). Registered component-local rectan
 
 ### S5-M2 kickoff (2026-10-02)
 User explicitly started S5-M2 from frozen S5-K1 c6f9920. Historical stop-after-K1 instructions are superseded for this task. Implement bounded M2-A first per S5_M2_PLAN/ADR0051, then retain M2-B through native closeout as separate gates. K1 native debt remains deferred; no Windows/full-V1/CORE10 or complete M2 PASS claim.
+
+### S5-M2-B batch drag kickoff (2026-10-02)
+
+User explicitly started M2-B after A2 final independent PASS at 03576c5. Work in
+an isolated branch per S5_M2_B_PLAN / ADR0052. Freeze A2 lifecycle; do not reopen
+K1 native debt. M2-B is IN_PROGRESS until candidate review, same-commit clean
+build/native packages and final independent audit. No M2-C or broader PASS claim.

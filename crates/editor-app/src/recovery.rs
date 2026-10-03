@@ -43,6 +43,7 @@ pub(crate) fn directory() -> Option<PathBuf> {
     if let Some(dir) = crate::shortcut_store::native_directory()
         .or_else(crate::native_s5m1::directory)
         .or_else(crate::native_a2::directory)
+        .or_else(crate::native_batch_drag::directory)
         .or_else(crate::native_d2::directory)
         .or_else(crate::native_d1::directory)
     {

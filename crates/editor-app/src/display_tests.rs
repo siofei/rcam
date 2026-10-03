@@ -1187,8 +1187,23 @@ fn assert_parity_cameras(rig: &ParityRig, scene: &Scene, name: &str, render_ppm:
             b
         },
     );
-    for selection in [0, 1, scene.ids.len()] {
-        for delta in [MmPoint::new(0., 0.), MmPoint::new(3., -2.)] {
+    let selections = if name.contains("BATCH_DRAG") {
+        vec![1, usize::MAX, scene.ids.len()]
+    } else {
+        vec![0, 1, scene.ids.len()]
+    };
+    let deltas = if name.contains("BATCH_DRAG") {
+        vec![
+            MmPoint::new(0., 0.),
+            MmPoint::new(3., -2.),
+            MmPoint::new(128., -128.),
+            MmPoint::new(10000., -20000.),
+        ]
+    } else {
+        vec![MmPoint::new(0., 0.), MmPoint::new(3., -2.)]
+    };
+    for selection in selections {
+        for delta in deltas.iter().copied() {
             for view_mode in 0..3 {
                 let mut camera = crate::camera::Camera {
                     center: MmPoint::new(
@@ -1221,13 +1236,24 @@ fn assert_parity_cameras(rig: &ParityRig, scene: &Scene, name: &str, render_ppm:
                         }
                     }
                 }
+                if name.contains("BATCH_DRAG") && view_mode == 2 {
+                    camera.center.x_mm += delta.x_mm;
+                    camera.center.y_mm += delta.y_mm;
+                }
                 let ids: Vec<_> = scene
                     .ids
                     .iter()
-                    .take(selection)
-                    .map(String::as_str)
+                    .enumerate()
+                    .filter(|(i, _)| {
+                        if selection == usize::MAX {
+                            i % 2 == 0
+                        } else {
+                            *i < selection
+                        }
+                    })
+                    .map(|(_, id)| id.as_str())
                     .collect();
-                let (uniform, index) = crate::gpu::prepare(
+                let prepared = crate::gpu::prepare(
                     scene,
                     camera,
                     eframe::egui::Rect::from_min_size(
@@ -1237,8 +1263,22 @@ fn assert_parity_cameras(rig: &ParityRig, scene: &Scene, name: &str, render_ppm:
                     1.,
                     &crate::gpu::selection_flags(scene, &ids),
                     delta,
-                )
-                .unwrap();
+                );
+                // Keep the oversized delta as a safety-rejection assertion: at
+                // this scene's 1000 ppm it cannot meet the existing 0.1px bound.
+                // The additional 128mm delta exercises out-of-world rendering
+                // inside that unchanged bound, with both old and moved cameras.
+                if name.contains("BATCH_DRAG") && delta.x_mm == 10000. {
+                    assert!(matches!(prepared, Err(ref e) if e.starts_with("DISPLAY_PRECISION:")));
+                    println!(
+                        "PASS precision refusal {name} selection={selection} view={view_mode}"
+                    );
+                    continue;
+                }
+                if name.contains("BATCH_DRAG") && delta.x_mm == 128. {
+                    assert!(b[0] + 128. > b[2] && b[3] - 128. < b[1]);
+                }
+                let (uniform, index) = prepared.unwrap();
                 let flags = crate::gpu::selection_flags(scene, &ids);
                 let buf = |data: &[u8], usage| {
                     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -2207,5 +2247,19 @@ fn native_metal_p1k_offscreen_timing() {
             frames.len(),
             p95 <= 50.
         );
+    }
+}
+
+#[test]
+#[ignore = "native Metal batch subset/exposure/outside-world parity"]
+fn native_metal_batch_drag_subset_and_outside_world() {
+    let rig = parity_rig();
+    for file in [
+        "s2a3/gui_primitives.gbr",
+        "s1a/ordered_local_hole.gbr",
+        "s1a/standard_hole_over_line.gbr",
+    ] {
+        let scene = workspace_scene(&[file, file], |_, _| {}, 1000.);
+        assert_parity(&rig, &scene, &format!("BATCH_DRAG-{file}"));
     }
 }

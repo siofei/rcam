@@ -1262,3 +1262,12 @@ S4-D2 is PASS (Mac-first bounded; 2026-10-02). Registered component-local rectan
 
 ### S5-M2 kickoff (2026-10-02)
 用户启动 Mixed Workload / Stress / Recovery；M2-A 实施范围和剩余门禁见 S5_M2_PLAN 与 ADR0051。S5-K1 基线 c6f9920 冻结，原生完整补验按用户延期；本轮不以历史 evidence 冒充新验收。
+
+### S5-M2-B batch drag kickoff (2026-10-02)
+
+A2 is independently frozen at clean 03576c5 (Mac-first bounded). The user has
+started M2-B in an isolated branch: 100/500/1000/5000 selection drag, immutable
+preview delta and one objects.move transaction/Undo/Redo. ADR0052 and
+S5_M2_B_PLAN freeze the static-index display method, workloads and local gates.
+The original AT-075 PMIX and dual-platform thresholds remain unchanged. K1
+native debt is deferred; PMIX/PPOL/PSTRESS/Recovery are separate later stages.

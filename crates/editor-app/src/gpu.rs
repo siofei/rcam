@@ -238,23 +238,34 @@ pub fn prepare_measured(
     let ppm = camera.scale * f64::from(ppp);
     let cx = camera.center.x_mm - scene.anchor.x_mm;
     let cy = camera.center.y_mm - scene.anchor.y_mm;
-    let index = if delta.x_mm == 0. && delta.y_mm == 0. {
-        scene.index.clone()
-    } else {
-        let start = std::time::Instant::now();
-        let index = Arc::new(crate::render_index::RenderIndex::build(
-            &scene.objects,
-            selected_flags,
-            [preview[0], preview[1]],
-        )?);
-        stats.preview_index_ms = start.elapsed().as_secs_f64() * 1000.;
-        index
-    };
-    let viewport = index.viewport(bounds);
-    stats.candidate_count = viewport.ordered_candidate_ids.len();
+    // Immutable bins serve both stationary and translated objects. Query the
+    // original coordinates, then merge by scene ID to preserve exposure order.
+    let index = scene.index.clone();
+    let mut viewport = index.viewport(bounds);
+    let mut work = index.sample_candidate_work(&viewport, ppm);
     stats.max_candidates_in_view = viewport.max_candidates_in_view;
     stats.cell_references_visited = viewport.cell_references_visited;
-    let mut work = index.sample_candidate_work(&viewport, ppm);
+    if preview[0] != 0. || preview[1] != 0. {
+        viewport
+            .ordered_candidate_ids
+            .retain(|id| selected[*id as usize] == 0);
+        let shifted = index.viewport(std::array::from_fn(|k| {
+            bounds[k] - f64::from(preview[k % 2])
+        }));
+        work += index.sample_candidate_work(&shifted, ppm);
+        stats.max_candidates_in_view += shifted.max_candidates_in_view;
+        stats.cell_references_visited += shifted.cell_references_visited;
+        viewport.ordered_candidate_ids.extend(
+            shifted
+                .ordered_candidate_ids
+                .into_iter()
+                .filter(|id| selected[*id as usize] != 0),
+        );
+        viewport.ordered_candidate_ids.sort_unstable();
+        // Streams are disjoint, but retain set semantics for future index queries.
+        viewport.ordered_candidate_ids.dedup();
+    }
+    stats.candidate_count = viewport.ordered_candidate_ids.len();
     let mut selection_bounds = [
         f32::INFINITY,
         f32::INFINITY,
@@ -277,11 +288,11 @@ pub fn prepare_measured(
         // need an additional halo beyond the shader's pixel early-out box.
         let selected_view = index.viewport(std::array::from_fn(|k| {
             let v = f64::from(selection_bounds[k]) + if k < 2 { -4. / ppm } else { 4. / ppm };
-            if k < 2 {
+            (if k < 2 {
                 v.max(bounds[k])
             } else {
                 v.min(bounds[k])
-            }
+            }) - f64::from(preview[k % 2])
         }));
         work += index.sample_candidate_work(&selected_view, ppm);
         for (k, v) in selection_bounds.iter_mut().enumerate() {

@@ -21,8 +21,12 @@ mod modal;
 #[cfg(test)]
 mod perf_tests;
 use modal::ActiveModal;
+#[cfg(test)]
+mod batch_drag_tests;
 #[cfg(feature = "internal-evidence")]
 mod native_a2;
+#[cfg(feature = "internal-evidence")]
+mod native_batch_drag;
 mod native_bench;
 #[cfg(feature = "internal-evidence")]
 mod native_d1;
@@ -173,6 +177,8 @@ struct EditorApp {
     s5m1: Option<native_s5m1::Run>,
     #[cfg(feature = "internal-evidence")]
     a2: Option<native_a2::Run>,
+    #[cfg(feature = "internal-evidence")]
+    batch_drag: Option<native_batch_drag::Run>,
     /// Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR`); observation only.
     probe: Option<native_probe::Probe>,
     row_probes: std::cell::RefCell<Vec<serde_json::Value>>,
@@ -410,6 +416,8 @@ impl EditorApp {
             s5m1: native_s5m1::Run::from_env(gpu.device.clone()),
             #[cfg(feature = "internal-evidence")]
             a2: native_a2::Run::from_env(),
+            #[cfg(feature = "internal-evidence")]
+            batch_drag: native_batch_drag::Run::from_env(gpu.device.clone()),
             probe: native_probe::Probe::from_env(),
             row_probes: Default::default(),
             layer_panel_rect: egui::Rect::NOTHING,
@@ -1254,6 +1262,11 @@ impl eframe::App for EditorApp {
         if let Some(mut run) = self.a2.take() {
             run.input(self, ctx, raw);
             self.a2 = Some(run);
+        }
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.batch_drag.take() {
+            run.input(self, ctx, raw);
+            self.batch_drag = Some(run);
         }
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
@@ -2484,16 +2497,10 @@ impl eframe::App for EditorApp {
                     (!drag.released)
                         .then(|| ctx.input(|input| input.pointer.interact_pos()))
                         .flatten()
-                        .map(|position| {
-                            (
-                                position,
-                                drag.snap_exclusions().cloned().unwrap_or_default(),
-                            )
-                        })
                 });
                 let (snapped_drag, drag_snap_error) = drag_update.as_ref().map_or(
                     (None, None),
-                    |(position, excluded)| {
+                    |position| {
                         let raw = self.camera.world(*position, rect);
                         match self.object_snap_runtime.resolve(
                         raw,
@@ -2504,7 +2511,7 @@ impl eframe::App for EditorApp {
                         self.view.snap_snapshot.as_deref(),
                         &self.view.snap_index,
                         &self.view.layers,
-                        Some(excluded),
+                        self.drag.as_ref().and_then(drag::Gesture::snap_exclusions),
                         ctx.input(|input| input.modifiers.alt),
                     ) {
                         Ok(resolution) => (Some(resolution.point), None),
@@ -2516,7 +2523,7 @@ impl eframe::App for EditorApp {
                     },
                 );
                 if let Some(drag) = &mut self.drag {
-                    if let Some((position, _)) = drag_update {
+                    if let Some(position) = drag_update {
                         drag.set_snap_error(drag_snap_error);
                         drag.update_snapped(position, snapped_drag);
                     }
@@ -2585,6 +2592,8 @@ impl eframe::App for EditorApp {
                         Ok(mut prepared) => {
                             prepared.stats.cpu_prepare_ms += validation_ms;
                             #[cfg(feature = "internal-evidence")]
+                            if let Some(run) = &mut self.batch_drag { run.prepare(&prepared.stats); }
+                            #[cfg(feature = "internal-evidence")]
                             if let Some(run) = &mut self.s5m1 {
                                 run.prepare(&prepared.stats);
                             }
@@ -2624,7 +2633,8 @@ impl eframe::App for EditorApp {
                         gpu::Callback {
                             painted: {
                                 #[cfg(feature = "internal-evidence")]
-                                let s5 = self.s5m1.as_ref().map(|r| (r.painted.clone(), r.frame_id));
+                                let s5 = self.s5m1.as_ref().map(|r| (r.painted.clone(), r.frame_id))
+                                    .or_else(|| self.batch_drag.as_ref().map(|r| (r.painted.clone(), r.frame_id)));
                                 #[cfg(not(feature = "internal-evidence"))]
                                 let s5 = None;
                                 s5.or_else(|| self.bench.as_ref().map(|b| (b.painted.clone(), b.frame_id)))
@@ -2798,6 +2808,11 @@ impl eframe::App for EditorApp {
             self.layer_dialogs(ctx);
         }
         self.probe_frame(ctx);
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.batch_drag.take() {
+            run.tick(self, ctx);
+            self.batch_drag = Some(run);
+        }
         #[cfg(feature = "internal-evidence")]
         if let Some(mut run) = self.a2.take() {
             run.tick(self, ctx);
@@ -3018,6 +3033,7 @@ fn main() -> eframe::Result {
                 if let Some(dir) = shortcut_store::native_directory()
                     .or_else(native_s5m1::directory)
                     .or_else(native_a2::directory)
+                    .or_else(native_batch_drag::directory)
                     .or_else(native_d2::directory)
                     .or_else(native_d1::directory)
                 {

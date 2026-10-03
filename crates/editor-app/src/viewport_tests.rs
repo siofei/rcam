@@ -237,3 +237,23 @@ fn display_precision_failure_preserves_last_good_scene_and_manufacturing() {
         snapshot
     );
 }
+
+#[test]
+fn batch_drag_reuses_static_index_and_queries_moved_objects_outside_world() {
+    let s = scene(vec![o([0., 0., 1., 1.]), o([40., 0., 41., 1.])]);
+    let camera = Camera {
+        center: MmPoint::new(100., 0.),
+        scale: 100.,
+    };
+    let p = gpu::prepare_measured(&s, camera, rect(), 1., &[1, 0], MmPoint::new(100., 0.)).unwrap();
+    assert!(
+        Arc::ptr_eq(&s.index, &p.index),
+        "preview must never rebuild bins"
+    );
+    assert_eq!(p.stats.preview_index_ms, 0.);
+    assert_eq!(
+        p.stats.candidate_count, 1,
+        "moved object outside original world must be queried"
+    );
+    assert_eq!(p.stats.object_visits, 1);
+}

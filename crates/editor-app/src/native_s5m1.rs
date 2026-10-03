@@ -30,6 +30,15 @@ pub fn directory() -> Option<PathBuf> {
         && dir.file_name()?.to_str()?.starts_with("rcam-s5m1-native-"))
     .then_some(dir)
 }
+pub fn activate_counters() {
+    ACTIVE.store(true, Ordering::Relaxed);
+}
+pub fn counter_snapshot() -> Value {
+    counters()
+}
+pub fn worker_snapshot() -> Value {
+    json!(*WORKER.lock().unwrap())
+}
 pub fn gpu_event(label: &'static str, n: u64) {
     if ACTIVE.load(Ordering::Relaxed) {
         *COUNTERS.lock().unwrap().entry(label).or_default() += n;
@@ -99,12 +108,14 @@ impl Drop for HitTimer {
 pub fn action_label(action: &Action) -> &'static str {
     match action {
         Action::Open(_) => "open",
+        Action::DiscardNewWorkspace => "new-project",
         Action::Viewport(..) => "viewport",
         Action::ProbeDrag(..) => "probe-drag",
         Action::Select(..) => "select",
         Action::SelectRect(..) => "select-rect",
         Action::Close(..) => "close",
         Action::Move(..) => "move",
+        Action::DragMove(..) => "drag-move",
         Action::History(false) => "undo",
         Action::History(true) => "redo",
         Action::Save(..) => "export",
@@ -121,7 +132,7 @@ pub fn worker_result(id: u64, label: &str, start: Instant, view: &View) {
             },
             1,
         );
-        WORKER.lock().unwrap().push(json!({"sequence":id,"action":label,"elapsed_ms":start.elapsed().as_secs_f64()*1000.,"selected_count":view.selected.ordered.len(),"scene_count":view.scene.as_ref().map(|s|s.ids.len()),"error":view.error.as_ref().map(|e|&e.code)}));
+        WORKER.lock().unwrap().push(json!({"sequence":id,"action":label,"elapsed_ms":start.elapsed().as_secs_f64()*1000.,"selected_count":view.selected.ordered.len(),"scene_count":view.scene.as_ref().map(|s|s.ids.len()),"error":view.error.as_ref().map(|e|&e.code),"batch":crate::native_batch_drag::worker_observation(start, view)}));
     }
 }
 fn counters() -> Value {
