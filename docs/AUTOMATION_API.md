@@ -768,3 +768,12 @@ Uninterrupted parser, OS read, one complex geometry, index and metrics substeps 
 ## S5-I1 additive objects.edit_selection（实施中）
 
 显式 `groups: [{layer_id, object_ids}]` 与 `operation`（tag `kind`: move/rotate/mirror/duplicate/delete；数值为 f64 mm/deg），顶层沿用 document_id/expected_revision。单调用全量预校验、一次事务/revision，失败零 mutation。结果含 EditResult 和按原层分组的 changed groups；Duplicate 返回副本ID，Delete 返回删除ID。锁定/隐藏/不可选和不完整文字组整组拒绝，合计10000目标。现有单层接口不变；不接受文件I/O或第三方AST。详见ADR0054。
+
+
+## S5-I2-A selection geometry query (implemented candidate; review pending)
+
+`geometry.selection_centers` is a typed and JSON read-only query. The envelope requires document_id and expected_revision; params are `{groups: [{layer_id, object_ids}], semantics: "selected_layer_composite"}` with unknown fields/semantics rejected. Values are f64 mm/mm²/mm³. The result contains document_id, computed_revision, resolution_mm, optional bounds_mm/bounding_center_mm, selected_count and cache_hit. `material` is `{status:"computed", value:{status:"ready", area_mm2, perimeter_mm, first_moment_x_mm3, first_moment_y_mm3, centroid_mm, centroid_error_mm, area_error_mm2, perimeter_error_mm}}`, `{status:"computed", value:{status:"zero_area"}}`, or `{status:"unavailable", error:{code, reason?}}`.
+
+The selected material semantics, source-order Block expansion and local transparency are frozen in ADR0055. Geometry queries do not mutate manufacturing revision, dirty baseline, selection or Undo. Error categories are invalid_argument, unsupported_geometry, precision_uncertain, numeric_overflow, resource_limit and cancelled; cancellation/invalid targets/revision conflict use normal structured service errors, while a material-only failure can retain usable bounds. There is no AABB fallback for area center. Cold calculation and preparation share one two-second deadline. Source admission, 10k selection/100k expanded limits and bounded 64-entry/64 MiB LRU are described in S5_I2_PLAN. Synchronous methods remain synchronous; cancellable typed callers supply an explicit callback. No JSON task registry, new script runtime, window/GPU resources or mutable references.
+
+This foundation has real directed service/JSON/export-reopen tests; independent review and whole I2 B/C/native acceptance are pending. See S5_I2_A_CANDIDATE_REVIEW and the frozen candidate's raw gate records.

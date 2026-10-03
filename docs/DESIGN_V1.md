@@ -1275,3 +1275,8 @@ native debt is deferred; PMIX/PPOL/PSTRESS/Recovery are separate later stages.
 ## S5-I1 用户授权交互补正（2026-10-03，实施中）
 
 跨层基础编辑及点选循环按 ADR0054、S5_I1_PLAN 和 S5_I1_ACCEPTANCE_ADDENDUM 实施，替代旧跨层查看限制的范围仅为 Move/Rotate/Mirror/Duplicate/Delete。未验收。
+
+
+## S5-I2 unified base point and selected-material metrics
+
+Implementation authorized from I1 f1939fd; validation pending. [Plan](S5_I2_PLAN.md), [ADR 0055](adr/0055-unified-base-point-composite-metrics.md) and [additional cases](S5_I2_ACCEPTANCE_ADDENDUM.md) freeze selected-only ordered per-layer area/moments/perimeter, distinct envelope/area centers, common point input and persistent interaction UX. Not a PASS or V1/platform scope change.

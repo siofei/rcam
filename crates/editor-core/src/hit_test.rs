@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 mod material;
 mod select_rect;
+pub mod selection_geometry;
 pub use select_rect::SelectRectMode;
 pub const MAX_HIT_TEST_WORK: usize = 2_000_000;
 

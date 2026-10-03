@@ -19,6 +19,10 @@ pub struct View {
     pub pnp_preview: Option<Arc<crate::components_ui::PreviewReply>>,
     pub project_workspace: Option<rcam_project::WorkspaceProjectState>,
     pub text_reply: Option<Arc<crate::text_tool::Reply>>,
+    pub selection_epoch: u64,
+    pub selection_geometry: Option<Arc<SelectionCentersResult>>,
+    pub selection_geometry_identity: String,
+    pub selection_geometry_error: Option<String>,
     pub metrics: Vec<MetricsItem>,
     pub metrics_error: Option<String>,
     pub info: Option<DocumentInfo>,
@@ -226,6 +230,7 @@ pub enum MirrorDirection {
     Vertical,
 }
 pub enum Action {
+    SelectionCenters(String, SelectionCentersParams),
     PnpPreview(crate::components_ui::PreviewRequest),
     PnpImport(crate::block_ui::Context, ImportPnpParams),
     BoardRegistration(
@@ -339,6 +344,19 @@ pub fn selected_bounds(view: &View) -> Result<BoundsMm, ServiceError> {
     )
     .map_err(|cause| error("VALIDATION_FAILED", &format!("选择集制造边界无效：{cause}")))?
     .ok_or_else(|| error("INVALID_ARGUMENT", "选择集没有可用的制造边界"))
+}
+
+pub(crate) fn selection_geometry_identity(view: &View) -> String {
+    format!(
+        "{:?}:{:?}:{:?}",
+        editor_service::task::TaskVersion::capture(
+            view.info.as_ref(),
+            view.task_generation,
+            view.rule_revision
+        ),
+        view.selection_epoch,
+        "selected-material-v1"
+    )
 }
 
 pub fn selected_center(view: &View) -> Result<MmPoint, ServiceError> {
@@ -1620,17 +1638,23 @@ impl Model {
     }
     fn refresh_metrics(&mut self) {
         let identity = format!(
-            "{:?}:{:?}",
-            self.view
-                .info
-                .as_ref()
-                .map(|d| (&d.document_id, &d.revision)),
-            self.view.selected.ids()
+            "{:?}:{:?}:{:?}",
+            editor_service::task::TaskVersion::capture(
+                self.view.info.as_ref(),
+                self.view.task_generation,
+                self.view.rule_revision
+            ),
+            self.view.selected.ids(),
+            self.view.selected.primary().map(|o| &o.object.object_id)
         );
         if self.metrics_identity == identity {
             return;
         }
         self.metrics_identity = identity;
+        self.view.selection_epoch = self.view.selection_epoch.wrapping_add(1);
+        self.view.selection_geometry = None;
+        self.view.selection_geometry_identity.clear();
+        self.view.selection_geometry_error = None;
         self.view.metrics.clear();
         self.view.metrics_error = None;
         let Some(d) = &self.view.info else {
@@ -1681,7 +1705,8 @@ impl Model {
         let old_ppm = self.ppm;
         let readonly = matches!(
             &action,
-            Action::Viewport(..)
+            Action::SelectionCenters(..)
+                | Action::Viewport(..)
                 | Action::Select(..)
                 | Action::CanvasSelect(..)
                 | Action::SelectRect(..)
@@ -1746,7 +1771,8 @@ impl Model {
     pub fn run(&mut self, action: Action) {
         let reset_cycle = !matches!(
             &action,
-            Action::CanvasSelect(..)
+            Action::SelectionCenters(..)
+                | Action::CanvasSelect(..)
                 | Action::ProbeDrag(..)
                 | Action::Viewport(..)
                 | Action::RecoveryWrite(..)
@@ -1771,6 +1797,39 @@ impl Model {
         self.view.removed = None;
         self.view.focus_bounds = None;
         let result = (|| match action {
+            Action::SelectionCenters(identity, params) => {
+                if identity != selection_geometry_identity(&self.view)
+                    || params.groups != self.view.selected.groups()
+                {
+                    return Err(error("STALE_TASK", "选择几何请求上下文已失效"));
+                }
+                let d = self.info()?;
+                let token = self.active_cancel.clone();
+                let result = self.service.geometry_selection_centers_cancellable(
+                    &d.document_id,
+                    &d.revision,
+                    params,
+                    || token.as_ref().is_some_and(|t| t.checkpoint().is_err()),
+                );
+                self.view.selection_geometry_identity = identity;
+                match result {
+                    Ok(value) => {
+                        self.view.selection_geometry = Some(Arc::new(value));
+                        self.view.selection_geometry_error = None;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        self.view.selection_geometry = None;
+                        self.view.selection_geometry_error =
+                            Some(format!("{}: {}", e.code, e.message));
+                        if e.code == "CANCELLED" {
+                            Err(e)
+                        } else {
+                            Ok(())
+                        }
+                    }
+                }
+            }
             Action::PnpPreview(request) => self.pnp_preview(request),
             Action::PnpImport(context, params) => self.pnp_import(context, params),
             Action::BoardRegistration(context, input) => self.registration_apply(context, input),

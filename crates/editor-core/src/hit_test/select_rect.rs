@@ -66,7 +66,7 @@ fn capsule(a: MmPoint, b: MmPoint, r: f64) -> Vec<RegionEdge> {
         }),
     ]
 }
-fn aperture_edges(shape: &ApertureShape, include_hole: bool) -> Vec<RegionEdge> {
+pub(super) fn aperture_edges(shape: &ApertureShape, include_hole: bool) -> Vec<RegionEdge> {
     let zero = MmPoint::new(0., 0.);
     let (mut edges, hole) = match shape {
         ApertureShape::Circle {
@@ -123,7 +123,7 @@ fn aperture_edges(shape: &ApertureShape, include_hole: bool) -> Vec<RegionEdge> 
     }
     edges
 }
-fn transform_edge(e: RegionEdge, c: MmPoint, t: LocalTransform) -> RegionEdge {
+pub(super) fn transform_edge(e: RegionEdge, c: MmPoint, t: LocalTransform) -> RegionEdge {
     let point = |mut p: MmPoint| {
         if matches!(t.mirror, Mirror::X | Mirror::Xy) {
             p.x_mm = -p.x_mm;
@@ -153,7 +153,7 @@ fn transform_edge(e: RegionEdge, c: MmPoint, t: LocalTransform) -> RegionEdge {
         }
     }
 }
-fn geometry_edges(
+pub(super) fn geometry_edges(
     g: &SemanticGeometry,
     budget: &mut Budget,
 ) -> Result<Vec<RegionEdge>, HitTestError> {

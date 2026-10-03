@@ -101,6 +101,8 @@ struct EditorApp {
     )>,
     pending_task: Option<editor_service::task::TaskContext>,
     viewport_task: Option<editor_service::task::TaskContext>,
+    geometry_task: Option<editor_service::task::TaskContext>,
+    geometry_context: Option<String>,
     rx: Receiver<(u64, View)>,
     view: View,
     busy: bool,
@@ -221,6 +223,35 @@ fn task_reply_matches(
                 TaskState::Completed | TaskState::Cancelled | TaskState::Failed
             )
     })
+}
+fn geometry_reply_matches(
+    task: &editor_service::task::TaskContext,
+    current: &View,
+    result: &View,
+    context: &str,
+) -> bool {
+    context == state::selection_geometry_identity(current)
+        && result.selection_geometry_identity == context
+        && result.selection_epoch == current.selection_epoch
+        && editor_service::task::TaskVersion::capture(
+            result.info.as_ref(),
+            result.task_generation,
+            result.rule_revision,
+        ) == task.input
+        && result.selection_geometry.as_ref().is_none_or(|value| {
+            current.info.as_ref().is_some_and(|info| {
+                value.document_id == info.document_id
+                    && value.computed_revision == info.revision
+                    && value.resolution_mm.to_bits()
+                        == info.manufacturing_precision.resolution_mm.to_bits()
+                    && value.selected_count == current.selected.ordered.len()
+            })
+        })
+        && task_reply_matches(task, current, result)
+        && result
+            .task_receipt
+            .as_ref()
+            .is_some_and(|r| r.state == editor_service::task::TaskState::Completed)
 }
 fn viewport_requires_rebase(scene: &display::Scene, camera: Camera) -> bool {
     // Complete geometry coverage does not waive the existing local-f32
@@ -346,6 +377,8 @@ impl EditorApp {
             tx,
             pending_task: None,
             viewport_task: None,
+            geometry_task: None,
+            geometry_context: None,
             rx,
             view: View::default(),
             busy: false,
@@ -460,12 +493,19 @@ impl EditorApp {
         if self.busy || (matches!(a, Action::Viewport(..)) && self.viewport_sequence.is_some()) {
             return;
         }
+        // A background measurement must not supersede a pending viewport reply
+        // or replace another measurement's task identity.
+        if matches!(a, Action::SelectionCenters(..))
+            && (self.viewport_sequence.is_some() || self.geometry_task.is_some())
+        {
+            return;
+        }
         self.pending_project_error_title = match &a {
             Action::OpenProject(..) | Action::RestoreProject(..) => Some("无法打开工程"),
             Action::SaveProject(..) => Some("无法保存工程"),
             _ => None,
         };
-        if !matches!(a, Action::ProbeDrag(..)) {
+        if !matches!(a, Action::ProbeDrag(..) | Action::SelectionCenters(..)) {
             self.drag = None;
         }
         #[cfg(feature = "internal-evidence")]
@@ -491,6 +531,12 @@ impl EditorApp {
         if let Some(probe) = &self.probe {
             probe.action(&native_probe::action_text(&a));
         }
+        let geometry = matches!(a, Action::SelectionCenters(..));
+        let geometry_context = if let Action::SelectionCenters(identity, _) = &a {
+            Some(identity.clone())
+        } else {
+            None
+        };
         let viewport = matches!(a, Action::Viewport(..));
         let task = editor_service::task::TaskContext::new(
             self.sequence,
@@ -504,10 +550,19 @@ impl EditorApp {
             Ok(()) => {
                 #[cfg(feature = "internal-evidence")]
                 native_i1::accepted_action(i1_action, self.sequence);
-                if viewport {
+                if geometry {
+                    self.geometry_task = Some(task);
+                    self.geometry_context = geometry_context;
+                } else if viewport {
+                    if let Some(old) = &self.geometry_task {
+                        old.cancel_token.cancel();
+                    }
                     self.viewport_sequence = Some(self.sequence);
                     self.viewport_task = Some(task);
                 } else {
+                    if let Some(old) = &self.geometry_task {
+                        old.cancel_token.cancel();
+                    }
                     if let Some(old) = &self.viewport_task {
                         old.cancel_token.cancel();
                     }
@@ -1356,6 +1411,27 @@ impl eframe::App for EditorApp {
         self.last_frame = now;
 
         let mut reply = self.rx.try_recv().ok();
+        if let Some((id, view)) = &reply
+            && self
+                .geometry_task
+                .as_ref()
+                .is_some_and(|t| t.task_id == *id)
+        {
+            let task = self.geometry_task.take().unwrap();
+            let accepted = self
+                .geometry_context
+                .as_deref()
+                .is_some_and(|context| geometry_reply_matches(&task, &self.view, view, context));
+            if accepted {
+                self.view.selection_geometry = view.selection_geometry.clone();
+                self.view.selection_geometry_identity = view.selection_geometry_identity.clone();
+                self.view.selection_geometry_error = view.selection_geometry_error.clone();
+            }
+            self.geometry_context = None;
+            #[cfg(feature = "internal-evidence")]
+            native_a2::reply(*id, accepted);
+            reply = None;
+        }
         #[cfg(feature = "internal-evidence")]
         if let Some((id, view)) = &reply {
             native_a2::reply(
@@ -1700,6 +1776,20 @@ impl eframe::App for EditorApp {
             self.text_input_at_event,
         );
         self.component_window(ctx);
+        if !self.busy
+            && self.geometry_task.is_none()
+            && self.viewport_sequence.is_none()
+            && !self.view.selected.ordered.is_empty()
+            && self.view.selection_geometry_identity
+                != state::selection_geometry_identity(&self.view)
+        {
+            let identity = state::selection_geometry_identity(&self.view);
+            let params = editor_service::SelectionCentersParams {
+                groups: self.view.selected.groups(),
+                semantics: editor_service::SelectionMaterialSemantics::SelectedLayerComposite,
+            };
+            self.send(Action::SelectionCenters(identity, params));
+        }
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             if modal_open {
                 ui.disable();
@@ -3441,3 +3531,6 @@ mod shortcut_rc1_regressions {
 
 #[cfg(test)]
 mod i1_tests;
+
+#[cfg(test)]
+mod selection_geometry_tests;

@@ -3,6 +3,8 @@
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+mod selection_geometry;
+pub use selection_geometry::*;
 mod selection_edit;
 pub use selection_edit::*;
 mod alignment;
@@ -905,6 +907,7 @@ impl std::fmt::Display for ServiceError {
 impl std::error::Error for ServiceError {}
 
 pub struct ApplicationService {
+    selection_centers_cache: selection_geometry::SelectionCentersCache,
     scenes: HashMap<String, S0Scene>,
     documents: HashMap<String, S1DocumentRecord>,
     file_access: Option<FileAccessPolicy>,
@@ -922,6 +925,7 @@ impl Default for ApplicationService {
 impl ApplicationService {
     pub fn new() -> Self {
         Self {
+            selection_centers_cache: Default::default(),
             scenes: HashMap::new(),
             documents: HashMap::new(),
             file_access: None,
@@ -1043,6 +1047,7 @@ impl ApplicationService {
                 "objects.hit_test".into(),
                 "objects.select_rect".into(),
                 "objects.metrics".into(),
+                "geometry.selection_centers".into(),
                 "layer.bounds".into(),
                 "document.bounds".into(),
                 "objects.query".into(),
@@ -3030,6 +3035,21 @@ impl ApplicationService {
                 let document_id = required_document_id(request)?;
                 let layers = self.layers_list(document_id)?;
                 serde_json::to_value(layers).map_err(serialize_error)?
+            }
+            "geometry.selection_centers" => {
+                let id = required_document_id(request)?;
+                let revision = request.expected_revision.as_deref().ok_or_else(|| {
+                    ServiceError::invalid_field(
+                        "expected_revision",
+                        "required for selection geometry query",
+                    )
+                })?;
+                serde_json::to_value(self.geometry_selection_centers(
+                    id,
+                    revision,
+                    parse_params(&request.params)?,
+                )?)
+                .map_err(serialize_error)?
             }
             "objects.metrics" => {
                 if request.expected_revision.is_some() {

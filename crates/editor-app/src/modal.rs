@@ -276,6 +276,8 @@ pub(crate) mod tests {
         EditorApp {
             pending_task: None,
             viewport_task: None,
+            geometry_task: None,
+            geometry_context: None,
             block: Default::default(),
             diagnostic_export: None,
             operation_source: rcam_diagnostics::Source::System,
