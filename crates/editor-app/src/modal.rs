@@ -287,6 +287,7 @@ pub(crate) mod tests {
             sequence: 0,
             request_failure_serial: 0,
             camera: crate::camera::Camera::default(),
+            click_navigation: Default::default(),
             last_good: None,
             grid: Default::default(),
             grid_visual: Default::default(),
@@ -360,6 +361,8 @@ pub(crate) mod tests {
             a2: None,
             #[cfg(feature = "internal-evidence")]
             batch_drag: None,
+            #[cfg(feature = "internal-evidence")]
+            i1: None,
             probe: None,
             row_probes: Default::default(),
             layer_panel_rect: eframe::egui::Rect::NOTHING,

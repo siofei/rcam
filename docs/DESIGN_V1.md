@@ -1271,3 +1271,7 @@ preview delta and one objects.move transaction/Undo/Redo. ADR0052 and
 S5_M2_B_PLAN freeze the static-index display method, workloads and local gates.
 The original AT-075 PMIX and dual-platform thresholds remain unchanged. K1
 native debt is deferred; PMIX/PPOL/PSTRESS/Recovery are separate later stages.
+
+## S5-I1 用户授权交互补正（2026-10-03，实施中）
+
+跨层基础编辑及点选循环按 ADR0054、S5_I1_PLAN 和 S5_I1_ACCEPTANCE_ADDENDUM 实施，替代旧跨层查看限制的范围仅为 Move/Rotate/Mirror/Duplicate/Delete。未验收。

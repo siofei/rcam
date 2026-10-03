@@ -44,6 +44,7 @@ pub(crate) fn directory() -> Option<PathBuf> {
         .or_else(crate::native_s5m1::directory)
         .or_else(crate::native_a2::directory)
         .or_else(crate::native_batch_drag::directory)
+        .or_else(crate::native_i1::directory)
         .or_else(crate::native_d2::directory)
         .or_else(crate::native_d1::directory)
     {
@@ -257,6 +258,8 @@ impl EditorApp {
             self.dirty_since = now;
         }
         if self.busy
+            || self.drag.is_some()
+            || self.grip.is_some()
             || self.close_prompt
             || self.recovery_candidate.is_some()
             || self.modal.is_some()

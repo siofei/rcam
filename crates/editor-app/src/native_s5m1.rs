@@ -111,7 +111,7 @@ pub fn action_label(action: &Action) -> &'static str {
         Action::DiscardNewWorkspace => "new-project",
         Action::Viewport(..) => "viewport",
         Action::ProbeDrag(..) => "probe-drag",
-        Action::Select(..) => "select",
+        Action::Select(..) | Action::CanvasSelect(..) => "select",
         Action::SelectRect(..) => "select-rect",
         Action::Close(..) => "close",
         Action::Move(..) => "move",

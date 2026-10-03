@@ -32,6 +32,8 @@ mod native_bench;
 mod native_d1;
 #[cfg(feature = "internal-evidence")]
 mod native_d2;
+#[cfg(feature = "internal-evidence")]
+mod native_i1;
 mod native_probe;
 #[cfg(feature = "internal-evidence")]
 mod native_s5m1;
@@ -106,6 +108,7 @@ struct EditorApp {
     sequence: u64,
     request_failure_serial: u64,
     camera: Camera,
+    click_navigation: selection::ClickNavigation,
     last_good: Option<LastFrame>,
     grid: tools::GridSettings,
     grid_visual: tools::GridVisualState,
@@ -179,6 +182,8 @@ struct EditorApp {
     a2: Option<native_a2::Run>,
     #[cfg(feature = "internal-evidence")]
     batch_drag: Option<native_batch_drag::Run>,
+    #[cfg(feature = "internal-evidence")]
+    i1: Option<native_i1::Run>,
     /// Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR`); observation only.
     probe: Option<native_probe::Probe>,
     row_probes: std::cell::RefCell<Vec<serde_json::Value>>,
@@ -348,6 +353,7 @@ impl EditorApp {
             sequence: 0,
             request_failure_serial: 0,
             camera: Camera::default(),
+            click_navigation: Default::default(),
             last_good: None,
             grid: Default::default(),
             grid_visual: Default::default(),
@@ -418,6 +424,8 @@ impl EditorApp {
             a2: native_a2::Run::from_env(),
             #[cfg(feature = "internal-evidence")]
             batch_drag: native_batch_drag::Run::from_env(gpu.device.clone()),
+            #[cfg(feature = "internal-evidence")]
+            i1: native_i1::Run::from_env(gpu.device.clone()),
             probe: native_probe::Probe::from_env(),
             row_probes: Default::default(),
             layer_panel_rect: egui::Rect::NOTHING,
@@ -460,6 +468,8 @@ impl EditorApp {
         if !matches!(a, Action::ProbeDrag(..)) {
             self.drag = None;
         }
+        #[cfg(feature = "internal-evidence")]
+        let i1_action = native_i1::action_detail(&a);
         let previous_sequence = self.sequence;
         self.sequence += 1;
         if self.modal.is_some()
@@ -492,6 +502,8 @@ impl EditorApp {
         );
         match self.tx.try_send((self.sequence, source, a, task.clone())) {
             Ok(()) => {
+                #[cfg(feature = "internal-evidence")]
+                native_i1::accepted_action(i1_action, self.sequence);
                 if viewport {
                     self.viewport_sequence = Some(self.sequence);
                     self.viewport_task = Some(task);
@@ -1268,6 +1280,11 @@ impl eframe::App for EditorApp {
             run.input(self, ctx, raw);
             self.batch_drag = Some(run);
         }
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.i1.take() {
+            run.input(self, ctx, raw);
+            self.i1 = Some(run);
+        }
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
         self.shortcuts.popup_at_event = egui::Popup::is_any_open(ctx);
@@ -1502,7 +1519,6 @@ impl eframe::App for EditorApp {
             }
             self.last_structure_serial = self.view.structure_serial;
         }
-        self.tick_recovery(now);
         if self
             .view
             .info
@@ -2141,7 +2157,7 @@ impl eframe::App for EditorApp {
                     if !self.view.selected.ordered.is_empty()
                         && !drag::editable_selection(&self.view)
                     {
-                        ui.label("选择含锁定层或跨层：整组编辑禁止（仅可查看）");
+                        ui.label("选择含锁定或不可编辑对象：整组编辑禁止（仅可查看）");
                     }
                     for line in metrics_panel::lines(
                         &self.view,
@@ -2414,7 +2430,7 @@ impl eframe::App for EditorApp {
                         && !modal_open
                         && rect.contains(press)
                     {
-                        let feature = grip::features(&self.view).ok().and_then(|features| grip::hit(&features, press, self.camera, rect, ctx.pixels_per_point()));
+                        let feature = (selection::SelectionMode::from_modifiers(modifiers)==selection::SelectionMode::Replace).then(||grip::features(&self.view).ok().and_then(|features| grip::hit(&features, press, self.camera, rect, ctx.pixels_per_point()))).flatten();
                         if let Some(id) = feature {
                             self.grip = grip::Session::arm(&self.view, id);
                             if let Some(session) = &mut self.grip { session.pressed = Some(press); }
@@ -2428,7 +2444,7 @@ impl eframe::App for EditorApp {
                             rect,
                             ctx.pixels_per_point(),
                             selection::SelectionMode::from_modifiers(modifiers),
-                        ));
+                        ).with_navigation_epoch(self.click_navigation.observe(self.camera,rect,ctx.pixels_per_point())));
                         if self.drag.is_some() {
                             self.send(Action::ProbeDrag(
                                 self.camera.world(press, rect),
@@ -2438,6 +2454,7 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
+                self.click_navigation.observe(self.camera,rect,ctx.pixels_per_point());
                 if self.block.session.is_some() && !modal_open && !text_focus { self.block_canvas(ctx, &r, rect); }
                 if self.tool == tools::ActiveTool::Select && !modal_open {
                     r.context_menu(|ui| {
@@ -2461,7 +2478,7 @@ impl eframe::App for EditorApp {
                     let release_raw_target =
                         pointer_position.map(|position| self.camera.world(position, rect));
                     if let Some(position) = pointer_position
-                        && (grip.moved || grip.pressed.is_some_and(|p| p.distance(position)*ctx.pixels_per_point() >= 2.)) {
+                        && (grip.moved || grip.pressed.is_some_and(|p| p.distance(position)*ctx.pixels_per_point() >= drag::THRESHOLD_PX)) {
                         let raw = self.camera.world(position, rect);
                         match self.object_snap_runtime.resolve(raw, &self.object_snap, self.grid, self.camera,
                             ctx.pixels_per_point(), self.view.snap_snapshot.as_deref(), &self.view.snap_index,
@@ -2485,11 +2502,17 @@ impl eframe::App for EditorApp {
                                 self.object_snap_runtime.current.as_ref(),
                             );
                         }
+                        let click = (!session.moved).then_some(session.pressed).flatten().map(|press| {
+                            let mut context=selection::ClickContext::new(press,self.camera,rect,ctx.pixels_per_point());
+                            context.navigation_epoch=self.click_navigation.observe(self.camera,rect,ctx.pixels_per_point());
+                            Action::CanvasSelect(context,selection::SelectionMode::Replace)
+                        });
                         if let Some(action) = session.release() {
                             let snap = self.object_snap_runtime.current.as_ref();
                             rcam_diagnostics::measurements(rcam_diagnostics::Level::Info,"grip.commit_target",&[("grid",u64::from(snap.is_some_and(|s|s.from_grid))),("object_snap",u64::from(snap.is_some_and(|s|s.kind.is_some())))]);
                             self.send(action);
                         }
+                        else if let Some(action)=click {self.send(action);}
                         else { rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Info, "grip.cancel"); }
                     }
                 }
@@ -2634,7 +2657,8 @@ impl eframe::App for EditorApp {
                             painted: {
                                 #[cfg(feature = "internal-evidence")]
                                 let s5 = self.s5m1.as_ref().map(|r| (r.painted.clone(), r.frame_id))
-                                    .or_else(|| self.batch_drag.as_ref().map(|r| (r.painted.clone(), r.frame_id)));
+                                    .or_else(|| self.batch_drag.as_ref().map(|r| (r.painted.clone(), r.frame_id)))
+                                    .or_else(|| self.i1.as_ref().map(|r| (r.painted.clone(), r.frame_id)));
                                 #[cfg(not(feature = "internal-evidence"))]
                                 let s5 = None;
                                 s5.or_else(|| self.bench.as_ref().map(|b| (b.painted.clone(), b.frame_id)))
@@ -2941,6 +2965,14 @@ impl eframe::App for EditorApp {
                 || self.layer_dialog.is_some(),
         );
         self.operation_source = rcam_diagnostics::Source::Menu;
+        // User input must claim the worker before an idle recovery write. In
+        // particular, a same-frame press must not lose its ProbeDrag to busy.
+        self.tick_recovery(now);
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.i1.take() {
+            run.tick(self, ctx);
+            self.i1 = Some(run);
+        }
     }
 }
 fn geometry_properties(
@@ -3034,6 +3066,7 @@ fn main() -> eframe::Result {
                     .or_else(native_s5m1::directory)
                     .or_else(native_a2::directory)
                     .or_else(native_batch_drag::directory)
+                    .or_else(native_i1::directory)
                     .or_else(native_d2::directory)
                     .or_else(native_d1::directory)
                 {
@@ -3405,3 +3438,6 @@ mod shortcut_rc1_regressions {
         }
     }
 }
+
+#[cfg(test)]
+mod i1_tests;

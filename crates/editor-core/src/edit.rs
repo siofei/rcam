@@ -6,6 +6,10 @@ use std::mem::size_of;
 pub use crate::alignment::{AlignmentMode, DistributionAxis};
 #[path = "array.rs"]
 mod array;
+#[path = "selection_edit.rs"]
+mod selection_edit;
+pub use selection_edit::{SelectionEdit, SelectionGroup};
+
 pub use array::{ArrayEstimate, MAX_ARRAY_CELLS, RectangularArray};
 
 /// World axes: horizontal y=coordinate_mm, vertical x=coordinate_mm.
@@ -93,6 +97,7 @@ enum Operation {
         before: Option<std::sync::Arc<crate::pnp::BoardState>>,
         after: Option<std::sync::Arc<crate::pnp::BoardState>>,
     },
+    Selection(Vec<Transaction>),
     Modify(Vec<Change>),
     Insert(Vec<IndexedObject>),
     Delete(Vec<IndexedObject>),
@@ -2369,6 +2374,12 @@ fn check_transaction(
         // Verified by `LayerMove::{insert_into, extract_from}` before mutation.
         return Ok(());
     }
+    if let Operation::Selection(parts) = &tx.operation {
+        for part in parts {
+            check_transaction(document, part, forward)?;
+        }
+        return Ok(());
+    }
     // Definition-only operations do not reference a layer at all.
     if let Operation::RenameBlockDefinition {
         index,
@@ -2404,6 +2415,7 @@ fn check_transaction(
         .filter(|l| l.id == tx.layer_id)
         .ok_or(EditError::InvalidArgument)?;
     match &tx.operation {
+        Operation::Selection(_) => unreachable!("checked before layer lookup"),
         Operation::Board { .. } => return Err(EditError::InvalidArgument),
         Operation::Layers(_) => {}
         Operation::RenameBlockDefinition { .. } | Operation::RemoveBlockDefinition { .. } => {
@@ -2568,6 +2580,10 @@ fn check_transaction(
 
 fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Vec<String> {
     match &tx.operation {
+        Operation::Selection(parts) => parts
+            .iter()
+            .flat_map(|part| apply(document, part, forward))
+            .collect(),
         // Layer moves mutate the transaction itself and never reach this path.
         Operation::Board { .. } | Operation::Layers(_) => Vec::new(),
         Operation::Modify(changes) => {
@@ -2691,6 +2707,9 @@ fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Ve
 
 fn operation_changes_shape(operation: &Operation) -> bool {
     match operation {
+        Operation::Selection(parts) => parts
+            .iter()
+            .any(|part| operation_changes_shape(&part.operation)),
         Operation::ApertureResize(_) => true,
         Operation::Batch(batch) => !batch.inserted_apertures.is_empty(),
         Operation::ReplaceObjects(op) => op.definition_insert.is_some(),

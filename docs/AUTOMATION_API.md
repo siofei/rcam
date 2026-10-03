@@ -764,3 +764,7 @@ Rust hosts may use `task::{TaskContext, TaskVersion, CancellationToken, TaskRece
 `import_gerber_layers_with_cancel(..., Option<&CancellationToken>)` and `objects_select_rect_with_cancel(...)` reuse existing implementations; synchronous methods pass None. Host must start the token and finish with the actual result. Import arbitrates cancel versus commit immediately before history.add_layers. Selection checks cancellation per manufacturing object and returns no partial IDs. Running queries/builds are discarded on accepted cancellation, and previous usable view is retained. A committed mutation or filesystem action is never presented as cancelled. Existing synchronous APIs remain synchronous; JSON jobs.get/jobs.cancel, a persistent task registry and script runtime are not implemented by this slice.
 
 Uninterrupted parser, OS read, one complex geometry, index and metrics substeps remain explicitly bounded acceptance gaps; 2s cancellation and native feedback gates need measurements. See S5_M2_PLAN / S5_M2_REVIEW for current coverage.
+
+## S5-I1 additive objects.edit_selection（实施中）
+
+显式 `groups: [{layer_id, object_ids}]` 与 `operation`（tag `kind`: move/rotate/mirror/duplicate/delete；数值为 f64 mm/deg），顶层沿用 document_id/expected_revision。单调用全量预校验、一次事务/revision，失败零 mutation。结果含 EditResult 和按原层分组的 changed groups；Duplicate 返回副本ID，Delete 返回删除ID。锁定/隐藏/不可选和不完整文字组整组拒绝，合计10000目标。现有单层接口不变；不接受文件I/O或第三方AST。详见ADR0054。

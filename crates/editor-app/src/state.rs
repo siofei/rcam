@@ -34,6 +34,7 @@ pub struct View {
     pub snap_snapshot: Option<Arc<RenderSnapshot>>,
     pub snap_index: Arc<crate::world_index::WorldIndex>,
     pub selected: crate::selection::SelectionSet,
+    pub click_cycle: Option<crate::selection::ClickCycle>,
     pub bounds: Option<BoundsMm>,
     pub scene: Option<Arc<Scene>>,
     pub blocked: Option<String>,
@@ -196,9 +197,9 @@ pub fn arrangement_eligibility(view: &View) -> ArrangementEligibility {
 
 fn operation_id(origin: &editor_core::ObjectOrigin) -> Option<&str> {
     match origin {
-        editor_core::ObjectOrigin::Generated { operation_id }
-        | editor_core::ObjectOrigin::GeneratedText { operation_id } => Some(operation_id),
-        editor_core::ObjectOrigin::Imported { .. } => None,
+        editor_core::ObjectOrigin::GeneratedText { operation_id } => Some(operation_id),
+        editor_core::ObjectOrigin::Imported { .. }
+        | editor_core::ObjectOrigin::Generated { .. } => None,
     }
 }
 pub struct Model {
@@ -270,6 +271,10 @@ pub enum Action {
     TextPreview(crate::text_tool::Request),
     TextCreate(crate::text_tool::Request),
     Select(MmPoint, f64, crate::selection::SelectionMode),
+    CanvasSelect(
+        crate::selection::ClickContext,
+        crate::selection::SelectionMode,
+    ),
     SelectRect(BoundsMm, editor_core::hit_test::SelectRectMode),
     Move(String, String),
     Align(AlignmentMode),
@@ -1024,41 +1029,183 @@ impl Model {
         mode: crate::selection::SelectionMode,
     ) -> Result<(), ServiceError> {
         let hit = self.hit(point, tolerance)?;
+        self.select_hit(hit, mode)?;
+        self.view.click_cycle = None;
+        Ok(())
+    }
+    fn select_hit(
+        &mut self,
+        hit: Option<ObjectInfo>,
+        mode: crate::selection::SelectionMode,
+    ) -> Result<(), ServiceError> {
+        let mut selection = self.view.selected.clone();
         if let Some(hit) = &hit
             && let Some(operation_id) = operation_id(&hit.object.origin)
             && let Some(snapshot) = &self.snapshot
         {
-            let ids: Vec<_> = snapshot
-                .layers
-                .iter()
-                .filter(|l| l.id == hit.layer_id)
-                .flat_map(|l| &l.objects)
-                .filter(|o| self::operation_id(&o.origin) == Some(operation_id))
-                .map(|o| o.object_id.clone())
-                .collect();
-            if mode == crate::selection::SelectionMode::Replace {
-                self.view.selected.ordered.clear();
+            let mut objects = Vec::new();
+            for layer in snapshot.layers.iter().filter(|l| l.id == hit.layer_id) {
+                for (index, object) in layer.objects.iter().enumerate() {
+                    if index % 256 == 0
+                        && let Some(cancel) = &self.active_cancel
+                    {
+                        cancel.checkpoint()?;
+                    }
+                    if self::operation_id(&object.origin) == Some(operation_id) {
+                        objects.push(ObjectInfo {
+                            layer_id: layer.id.clone(),
+                            object: object.clone(),
+                        });
+                    }
+                }
             }
-            for id in ids {
-                let object = self.service.objects_get(
-                    &self.info()?.document_id,
-                    ObjectParams {
-                        layer_id: hit.layer_id.clone(),
-                        object_id: id,
-                    },
-                )?;
-                self.view.selected.click(
-                    Some(object),
-                    if mode == crate::selection::SelectionMode::Remove {
-                        mode
-                    } else {
-                        crate::selection::SelectionMode::Add
-                    },
-                );
+            match mode {
+                crate::selection::SelectionMode::Replace => selection.ordered = objects,
+                crate::selection::SelectionMode::Add => {
+                    let mut existing: std::collections::HashSet<_> = selection
+                        .ordered
+                        .iter()
+                        .map(|o| (o.layer_id.clone(), o.object.object_id.clone()))
+                        .collect();
+                    selection.ordered.extend(objects.into_iter().filter(|o| {
+                        existing.insert((o.layer_id.clone(), o.object.object_id.clone()))
+                    }));
+                }
+                crate::selection::SelectionMode::Remove => {
+                    let ids: std::collections::HashSet<_> = objects
+                        .iter()
+                        .map(|o| o.object.object_id.as_str())
+                        .collect();
+                    selection.ordered.retain(|o| {
+                        o.layer_id != hit.layer_id || !ids.contains(o.object.object_id.as_str())
+                    });
+                }
             }
         } else {
-            self.view.selected.click(hit, mode);
+            selection.click(hit, mode);
         }
+        self.view.selected = selection;
+        Ok(())
+    }
+    fn canvas_select(
+        &mut self,
+        context: crate::selection::ClickContext,
+        mode: crate::selection::SelectionMode,
+    ) -> Result<(), ServiceError> {
+        #[cfg(feature = "internal-evidence")]
+        let _measure = crate::native_s5m1::HitTimer::start();
+        self.editable()?;
+        let document = self.info()?;
+        let mut candidates = Vec::new();
+        let mut logical = std::collections::HashSet::new();
+        for layer in self
+            .view
+            .layers
+            .iter()
+            .filter(|l| l.visible && l.effective_visible && l.selectable)
+        {
+            if let Some(cancel) = &self.active_cancel {
+                cancel.checkpoint()?;
+            }
+            let hits = self.service.objects_hit_test(
+                &document.document_id,
+                HitTestParams {
+                    layer_id: layer.layer_id.clone(),
+                    point: HitTestPoint {
+                        x_mm: context.world.x_mm,
+                        y_mm: context.world.y_mm,
+                    },
+                    tolerance_mm: context.tolerance,
+                    selectable_only: true,
+                },
+            )?;
+            if hits.object_ids.is_empty() {
+                continue;
+            }
+            let wanted: std::collections::HashSet<_> =
+                hits.object_ids.iter().map(String::as_str).collect();
+            let source = self
+                .snapshot
+                .as_ref()
+                .and_then(|s| s.layers.iter().find(|l| l.id == layer.layer_id))
+                .ok_or_else(|| error("NOT_FOUND", "点选快照缺少图层"))?;
+            let mut found = std::collections::HashMap::with_capacity(wanted.len());
+            for (index, object) in source.objects.iter().enumerate() {
+                if index % 256 == 0
+                    && let Some(cancel) = &self.active_cancel
+                {
+                    cancel.checkpoint()?;
+                }
+                if wanted.contains(object.object_id.as_str()) {
+                    found.insert(object.object_id.as_str(), object);
+                }
+            }
+            for id in hits.object_ids.iter().rev() {
+                if let Some(cancel) = &self.active_cancel {
+                    cancel.checkpoint()?;
+                }
+                let object = found
+                    .get(id.as_str())
+                    .ok_or_else(|| error("NOT_FOUND", "点选快照缺少对象"))?;
+                let key = match &object.origin {
+                    editor_core::ObjectOrigin::GeneratedText { operation_id } => {
+                        (layer.layer_id.clone(), true, operation_id.clone())
+                    }
+                    _ => (layer.layer_id.clone(), false, id.clone()),
+                };
+                if logical.insert(key) {
+                    candidates.push((layer.layer_id.clone(), id.clone()));
+                }
+                if candidates.len() > editor_core::edit::MAX_MOVE_OBJECTS {
+                    return Err(error("RESOURCE_LIMIT", "点选候选过多"));
+                }
+            }
+        }
+        let previous = self.view.click_cycle.as_ref().filter(|c| {
+            c.context.same_place(&context)
+                && c.document == document.document_id
+                && c.revision == document.revision
+                && c.workspace == document.workspace_revision
+                && c.candidates == candidates
+        });
+        let index = previous.map_or(0, |c| {
+            if mode == crate::selection::SelectionMode::Replace {
+                (c.index + 1) % candidates.len().max(1)
+            } else {
+                c.index
+            }
+        });
+        // Keep the original screen anchor to prevent incremental clicks drifting arbitrarily.
+        let anchor = previous.map_or(context.clone(), |c| c.context.clone());
+        let hit = candidates
+            .get(index)
+            .map(|(layer_id, object_id)| {
+                self.service.objects_get(
+                    &document.document_id,
+                    ObjectParams {
+                        layer_id: layer_id.clone(),
+                        object_id: object_id.clone(),
+                    },
+                )
+            })
+            .transpose()?;
+        if let Some(cancel) = &self.active_cancel {
+            cancel.checkpoint()?;
+        }
+        self.select_hit(hit, mode)?;
+        self.view.click_cycle =
+            if candidates.is_empty() || mode != crate::selection::SelectionMode::Replace {
+                None
+            } else {
+                Some(crate::selection::ClickCycle {
+                    context: anchor,
+                    document: document.document_id,
+                    revision: document.revision,
+                    workspace: document.workspace_revision,
+                    candidates,
+                    index,
+                })
+            };
         Ok(())
     }
     fn select_rect(
@@ -1122,9 +1269,8 @@ impl Model {
         self.view.selected.ordered = selected;
         Ok(())
     }
-    fn edit_targets(&self) -> Result<(String, Vec<String>), ServiceError> {
-        let primary = self
-            .view
+    fn edit_groups(&self) -> Result<Vec<SelectionGroup>, ServiceError> {
+        self.view
             .selected
             .primary()
             .ok_or_else(|| error("NOT_FOUND", "请先选择对象"))?;
@@ -1149,22 +1295,100 @@ impl Model {
                     "选择包含隐藏或不可选对象，整组操作已拒绝",
                 ));
             }
-            if o.layer_id != primary.layer_id {
-                return Err(error(
-                    "UNSUPPORTED_FEATURE",
-                    "本阶段只支持同层多对象编辑；跨层选择仅供查看，整组操作已拒绝",
-                ));
-            }
         }
-        Ok((
-            primary.layer_id.clone(),
-            self.view
-                .selected
-                .ordered
-                .iter()
-                .map(|o| o.object.object_id.clone())
-                .collect(),
-        ))
+        Ok(self.view.selected.groups())
+    }
+    fn edit_targets(&self) -> Result<(String, Vec<String>), ServiceError> {
+        let mut groups = self.edit_groups()?;
+        if groups.len() != 1 {
+            return Err(error(
+                "CROSS_LAYER_EDIT_UNSUPPORTED",
+                "此操作要求同层对象，整组操作已拒绝",
+            ));
+        }
+        let group = groups.remove(0);
+        Ok((group.layer_id, group.object_ids))
+    }
+    fn submit_selection(
+        &mut self,
+        document: &str,
+        revision: &str,
+        groups: Vec<SelectionGroup>,
+        operation: SelectionEdit,
+    ) -> Result<Vec<SelectionGroup>, ServiceError> {
+        if groups.len() != 1 {
+            return self
+                .service
+                .objects_edit_selection(
+                    document,
+                    revision,
+                    EditSelectionParams { groups, operation },
+                )
+                .map(|r| r.groups);
+        }
+        // Preserve the accepted single-layer command/cache fast path.
+        let group = &groups[0];
+        let layer_id = group.layer_id.clone();
+        let object_ids = group.object_ids.clone();
+        let result = match operation {
+            SelectionEdit::Move { dx_mm, dy_mm } => self.service.objects_move(
+                document,
+                revision,
+                MoveParams {
+                    layer_id: layer_id.clone(),
+                    object_ids,
+                    dx_mm,
+                    dy_mm,
+                },
+            ),
+            SelectionEdit::Rotate {
+                angle_deg,
+                pivot_mm,
+            } => self.service.objects_rotate(
+                document,
+                revision,
+                RotateParams {
+                    layer_id: layer_id.clone(),
+                    object_ids,
+                    angle_deg,
+                    pivot_mm: PivotMm {
+                        x_mm: pivot_mm.x_mm,
+                        y_mm: pivot_mm.y_mm,
+                    },
+                },
+            ),
+            SelectionEdit::Mirror { axis } => self.service.objects_mirror(
+                document,
+                revision,
+                MirrorParams {
+                    layer_id: layer_id.clone(),
+                    object_ids,
+                    axis,
+                },
+            ),
+            SelectionEdit::Duplicate { dx_mm, dy_mm } => self.service.objects_duplicate(
+                document,
+                revision,
+                DuplicateParams {
+                    layer_id: layer_id.clone(),
+                    object_ids,
+                    dx_mm,
+                    dy_mm,
+                },
+            ),
+            SelectionEdit::Delete => self.service.objects_delete(
+                document,
+                revision,
+                DeleteParams {
+                    layer_id: layer_id.clone(),
+                    object_ids,
+                },
+            ),
+        }?;
+        Ok(vec![SelectionGroup {
+            layer_id,
+            object_ids: result.changed_object_ids,
+        }])
     }
     pub fn numeric_move(&mut self, dx: &str, dy: &str) -> Result<(), ServiceError> {
         self.editable()?;
@@ -1174,13 +1398,12 @@ impl Model {
             return Ok(());
         }
         let d = self.info()?;
-        let (layer_id, object_ids) = self.edit_targets()?;
-        self.service.objects_move(
+        let groups = self.edit_groups()?;
+        self.submit_selection(
             &d.document_id,
             &d.revision,
-            MoveParams {
-                layer_id,
-                object_ids,
+            groups,
+            SelectionEdit::Move {
                 dx_mm: dx,
                 dy_mm: dy,
             },
@@ -1261,7 +1484,7 @@ impl Model {
     pub fn numeric_rotate(&mut self, angle: &str, pivot: PivotInput) -> Result<(), ServiceError> {
         self.editable()?;
         let angle_deg = finite(angle, "旋转角度")?;
-        let (layer_id, object_ids) = self.edit_targets()?;
+        let groups = self.edit_groups()?;
         let pivot = match pivot {
             PivotInput::SelectionCenter => selected_center(&self.view)?,
             PivotInput::WorldOrigin => MmPoint::new(0., 0.),
@@ -1270,17 +1493,13 @@ impl Model {
             }
         };
         let document = self.info()?;
-        self.service.objects_rotate(
+        self.submit_selection(
             &document.document_id,
             &document.revision,
-            RotateParams {
-                layer_id,
-                object_ids,
+            groups,
+            SelectionEdit::Rotate {
                 angle_deg,
-                pivot_mm: PivotMm {
-                    x_mm: pivot.x_mm,
-                    y_mm: pivot.y_mm,
-                },
+                pivot_mm: pivot,
             },
         )?;
         self.view.message = format!("已旋转 {angle_deg}°");
@@ -1309,7 +1528,7 @@ impl Model {
     }
     pub fn mirror_selection(&mut self, direction: MirrorDirection) -> Result<(), ServiceError> {
         self.editable()?;
-        let (layer_id, object_ids) = self.edit_targets()?;
+        let groups = self.edit_groups()?;
         let center = selected_center(&self.view)?;
         let (axis, label) = match direction {
             MirrorDirection::Horizontal => (
@@ -1326,14 +1545,11 @@ impl Model {
             ),
         };
         let document = self.info()?;
-        self.service.objects_mirror(
+        self.submit_selection(
             &document.document_id,
             &document.revision,
-            MirrorParams {
-                layer_id,
-                object_ids,
-                axis,
-            },
+            groups,
+            SelectionEdit::Mirror { axis },
         )?;
         self.view.message = format!("已关于{label}镜像");
         self.refresh(true)
@@ -1467,6 +1683,7 @@ impl Model {
             &action,
             Action::Viewport(..)
                 | Action::Select(..)
+                | Action::CanvasSelect(..)
                 | Action::SelectRect(..)
                 | Action::ProbeDrag(..)
                 | Action::FitLayer(..)
@@ -1527,6 +1744,13 @@ impl Model {
         });
     }
     pub fn run(&mut self, action: Action) {
+        let reset_cycle = !matches!(
+            &action,
+            Action::CanvasSelect(..)
+                | Action::ProbeDrag(..)
+                | Action::Viewport(..)
+                | Action::RecoveryWrite(..)
+        );
         let edit_timing = std::env::var_os("RCAM_EDIT_TIMING").is_some();
         let edit_label = match &action {
             Action::Move(..) => Some("move"),
@@ -1752,6 +1976,7 @@ impl Model {
                 self.refresh(true)
             }
             Action::Select(p, t, mode) => self.select(p, t, mode),
+            Action::CanvasSelect(context, mode) => self.canvas_select(context, mode),
             Action::SelectRect(r, m) => self.select_rect(r, m),
             Action::Move(dx, dy) => self.numeric_move(&dx, &dy),
             Action::Align(mode) => self.align_selection(mode),
@@ -1775,23 +2000,28 @@ impl Model {
                 self.view.press_hit = self.hit(p, tolerance_mm)?;
                 if crate::drag::editable_selection(&self.view) {
                     let d = self.info()?;
-                    let layer_id = self.view.selected.primary().unwrap().layer_id.clone();
-                    let hits = self.service.objects_hit_test(
-                        &d.document_id,
-                        HitTestParams {
-                            layer_id: layer_id.clone(),
-                            point: HitTestPoint {
-                                x_mm: p.x_mm,
-                                y_mm: p.y_mm,
+                    for group in self.view.selected.groups() {
+                        let hits = self.service.objects_hit_test(
+                            &d.document_id,
+                            HitTestParams {
+                                layer_id: group.layer_id.clone(),
+                                point: HitTestPoint {
+                                    x_mm: p.x_mm,
+                                    y_mm: p.y_mm,
+                                },
+                                tolerance_mm,
+                                selectable_only: true,
                             },
-                            tolerance_mm,
-                            selectable_only: true,
-                        },
-                    )?;
-                    self.view.drag_hit = hits
-                        .object_ids
-                        .iter()
-                        .any(|id| self.view.selected.contains(&layer_id, id));
+                        )?;
+                        if hits
+                            .object_ids
+                            .iter()
+                            .any(|id| self.view.selected.contains(&group.layer_id, id))
+                        {
+                            self.view.drag_hit = true;
+                            break;
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -1812,16 +2042,23 @@ impl Model {
             }
             Action::DragMove(drag) => {
                 self.editable()?;
-                let (layer, objects) = self.edit_targets()?;
-                if layer != drag.layer || objects != drag.objects {
+                let groups = self.edit_groups()?;
+                if groups != drag.groups
+                    || self
+                        .view
+                        .selected
+                        .ids()
+                        .iter()
+                        .copied()
+                        .ne(drag.objects.iter().map(String::as_str))
+                {
                     return Err(error("INVALID_ARGUMENT", "拖动期间选择已改变"));
                 }
-                self.service.objects_move(
+                self.submit_selection(
                     &drag.document,
                     &drag.revision,
-                    MoveParams {
-                        layer_id: drag.layer,
-                        object_ids: drag.objects,
+                    groups,
+                    SelectionEdit::Move {
                         dx_mm: drag.delta.x_mm,
                         dy_mm: drag.delta.y_mm,
                     },
@@ -1832,42 +2069,42 @@ impl Model {
             Action::Duplicate | Action::Delete => {
                 self.editable()?;
                 let d = self.info()?;
-                let (layer_id, object_ids) = self.edit_targets()?;
-                if matches!(action, Action::Duplicate) {
-                    let result = self.service.objects_duplicate(
-                        &d.document_id,
-                        &d.revision,
-                        DuplicateParams {
-                            layer_id: layer_id.clone(),
-                            object_ids,
+                let groups = self.edit_groups()?;
+                let duplicate = matches!(action, Action::Duplicate);
+                let groups = self.submit_selection(
+                    &d.document_id,
+                    &d.revision,
+                    groups,
+                    if duplicate {
+                        SelectionEdit::Duplicate {
                             dx_mm: 0.,
                             dy_mm: 0.,
-                        },
-                    )?;
-                    let mut selected = Vec::new();
-                    for object_id in result.changed_object_ids {
-                        selected.push(self.service.objects_get(
-                            &d.document_id,
-                            ObjectParams {
-                                layer_id: layer_id.clone(),
-                                object_id,
-                            },
-                        )?);
+                        }
+                    } else {
+                        SelectionEdit::Delete
+                    },
+                )?;
+                let mut selected = Vec::new();
+                if duplicate {
+                    for group in groups {
+                        for object_id in group.object_ids {
+                            selected.push(self.service.objects_get(
+                                &d.document_id,
+                                ObjectParams {
+                                    layer_id: group.layer_id.clone(),
+                                    object_id,
+                                },
+                            )?);
+                        }
                     }
-                    self.view.selected.ordered = selected;
-                    self.view.message = "已原位复制，可拖动副本".into();
-                } else {
-                    self.service.objects_delete(
-                        &d.document_id,
-                        &d.revision,
-                        DeleteParams {
-                            layer_id,
-                            object_ids,
-                        },
-                    )?;
-                    self.view.selected.ordered.clear();
-                    self.view.message = "已删除对象".into();
                 }
+                self.view.selected.ordered = selected;
+                self.view.message = if duplicate {
+                    "已原位复制，可拖动副本"
+                } else {
+                    "已删除对象"
+                }
+                .into();
                 self.refresh(true)
             }
             Action::History(redo) => {
@@ -1913,6 +2150,9 @@ impl Model {
                 Ok(())
             }
         })();
+        if result.is_ok() && reset_cycle {
+            self.view.click_cycle = None;
+        }
         if let Err(e) = result {
             eprintln!("service_error {} {} {}", e.code, e.message, e.details);
             self.view.error = Some(e);

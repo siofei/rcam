@@ -1327,7 +1327,7 @@ fn selection_cleanup_after_delete_undo_redo() {
     assert!(m.view.selected.ordered.is_empty());
 }
 #[test]
-fn cross_layer_selection_refuses_whole_edit() {
+fn nonexistent_layer_selection_refuses_whole_edit() {
     let (mut m, _) = setup();
     multiselect(&mut m);
     let mut layer = m.view.layers[0].clone();
@@ -1344,7 +1344,7 @@ fn cross_layer_selection_refuses_whole_edit() {
         Action::Delete,
     ] {
         m.run(action);
-        assert_eq!(m.view.error.as_ref().unwrap().code, "UNSUPPORTED_FEATURE");
+        assert_eq!(m.view.error.as_ref().unwrap().code, "NOT_FOUND");
         assert_eq!(m.view.info, before);
         assert_eq!(m.view.selected, selected);
     }
@@ -1412,19 +1412,29 @@ fn modifier_click_gestures_preserve_press_intent_without_starting_move() {
             Remove,
         ),
     ] {
-        let mut g = crate::drag::Gesture::arm(
-            &m.view,
-            pos2(300., 0.),
-            crate::camera::Camera::default(),
-            Rect::from_min_max(pos2(0., 0.), pos2(400., 400.)),
-            1.,
-            SelectionMode::from_modifiers(modifiers),
-        );
-        m.run(Action::ProbeDrag(MmPoint::new(10., 20.), 0.));
-        g.confirm(&m.view);
-        g.update(pos2(310., 5.));
-        assert!(matches!(g.release(), Some(Action::Select(_, _, mode)) if mode == expected));
-        assert_eq!(m.view.info, before);
+        for (position, is_click) in [(pos2(301., 1.), true), (pos2(310., 5.), false)] {
+            let mut g = crate::drag::Gesture::arm(
+                &m.view,
+                pos2(300., 0.),
+                crate::camera::Camera::default(),
+                Rect::from_min_max(pos2(0., 0.), pos2(400., 400.)),
+                1.,
+                SelectionMode::from_modifiers(modifiers),
+            );
+            m.run(Action::ProbeDrag(MmPoint::new(10., 20.), 0.));
+            g.confirm(&m.view);
+            g.update(position);
+            let released = g.release();
+            if is_click {
+                assert!(matches!(released,Some(Action::CanvasSelect(_,mode)) if mode==expected));
+            } else {
+                assert!(
+                    released.is_none(),
+                    "ADR0054: modifier movement beyond threshold does not edit or advance selection"
+                );
+            }
+            assert_eq!(m.view.info, before);
+        }
     }
 }
 

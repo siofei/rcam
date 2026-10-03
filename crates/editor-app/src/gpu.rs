@@ -732,6 +732,8 @@ impl egui_wgpu::CallbackTrait for Callback {
             crate::native_s5m1::gpu_event("draw", 1);
             if let Some((stamp, id)) = &self.painted {
                 stamp.store(*id, std::sync::atomic::Ordering::Release);
+                #[cfg(feature = "internal-evidence")]
+                crate::native_i1::paint(*id);
             }
         }
     }

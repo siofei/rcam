@@ -3,6 +3,8 @@
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+mod selection_edit;
+pub use selection_edit::*;
 mod alignment;
 mod array;
 mod candidates;
@@ -964,6 +966,7 @@ impl ApplicationService {
                 ],
                 unsupported_operations: vec![
                     "objects.move".into(),
+                    "objects.edit_selection".into(),
                     "objects.duplicate".into(),
                     "objects.delete".into(),
                     "history.undo".into(),
@@ -1019,6 +1022,7 @@ impl ApplicationService {
                 "render.snapshot".into(),
                 "document.close".into(),
                 "objects.move".into(),
+                    "objects.edit_selection".into(),
                 "objects.rotate".into(),
                 "objects.mirror".into(),
                 "objects.duplicate".into(),
@@ -3162,6 +3166,7 @@ impl ApplicationService {
             | "layers.set_solo"
             | "layers.update_many"
             | "layers.reset_colors"
+            | "objects.edit_selection"
             | "objects.move"
             | "objects.array_rectangular"
             | "objects.align"
@@ -3237,6 +3242,12 @@ impl ApplicationService {
                     )?)
                     .map_err(serialize_error)?,
                     "layers.reset_colors" => serde_json::to_value(self.layers_reset_colors(
+                        id,
+                        revision,
+                        parse_params(&request.params)?,
+                    )?)
+                    .map_err(serialize_error)?,
+                    "objects.edit_selection" => serde_json::to_value(self.objects_edit_selection(
                         id,
                         revision,
                         parse_params(&request.params)?,

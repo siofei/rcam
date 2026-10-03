@@ -12,7 +12,7 @@ pub const THRESHOLD_PX: f32 = 4.;
 pub struct Drag {
     pub document: String,
     pub revision: String,
-    pub layer: String,
+    pub groups: Vec<editor_service::SelectionGroup>,
     pub objects: Vec<String>,
     excluded_snap_objects: HashSet<String>,
     start: Pos2,
@@ -30,13 +30,11 @@ pub fn editable_selection(view: &View) -> bool {
     view.blocked.is_none()
         && view.scene.is_some()
         && !view.selected.ordered.is_empty()
-        && view.selected.ordered.iter().all(|o| {
-            view.selected
-                .primary()
-                .is_some_and(|p| p.layer_id == o.layer_id)
-                && classifier.selectable(o)
-                && classifier.edit_refusal(o).is_none()
-        })
+        && view
+            .selected
+            .ordered
+            .iter()
+            .all(|o| classifier.selectable(o) && classifier.edit_refusal(o).is_none())
 }
 impl Drag {
     pub fn arm(view: &View, start: Pos2, camera: Camera, rect: Rect, ppp: f32) -> Option<Self> {
@@ -44,7 +42,7 @@ impl Drag {
             return None;
         }
         let d = view.info.as_ref()?;
-        let o = view.selected.primary()?;
+        view.selected.primary()?;
         let objects: Vec<_> = view
             .selected
             .ordered
@@ -54,7 +52,7 @@ impl Drag {
         Some(Self {
             document: d.document_id.clone(),
             revision: d.revision.clone(),
-            layer: o.layer_id.clone(),
+            groups: view.selected.groups(),
             excluded_snap_objects: objects.iter().cloned().collect(),
             objects,
             start,
@@ -123,6 +121,7 @@ pub struct Gesture {
     rect: Rect,
     ppp: f32,
     mode: crate::selection::SelectionMode,
+    navigation_epoch: u64,
     object_drag: Option<Drag>,
 }
 impl Gesture {
@@ -146,6 +145,7 @@ impl Gesture {
             rect,
             ppp,
             mode,
+            navigation_epoch: 0,
             object_drag: if mode != crate::selection::SelectionMode::Replace {
                 None
             } else {
@@ -153,9 +153,17 @@ impl Gesture {
             },
         }
     }
+    pub fn with_navigation_epoch(mut self, epoch: u64) -> Self {
+        self.navigation_epoch = epoch;
+        self
+    }
     #[cfg(feature = "internal-evidence")]
     pub fn evidence_dragging(&self) -> bool {
         self.object_drag.as_ref().is_some_and(|d| d.dragging)
+    }
+    #[cfg(feature = "internal-evidence")]
+    pub fn evidence_state(&self) -> serde_json::Value {
+        serde_json::json!({"start":[self.start.x,self.start.y],"last":[self.last.x,self.last.y],"moved":self.moved,"confirmed":self.confirmed,"released":self.released,"mode":format!("{:?}",self.mode),"box_select":self.box_select,"object_drag":self.object_drag.as_ref().map(|d|serde_json::json!({"dragging":d.dragging,"confirmed":d.confirmed,"error":d.error}))})
     }
     pub fn snap_exclusions(&self) -> Option<&HashSet<String>> {
         self.object_drag
@@ -224,10 +232,12 @@ impl Gesture {
         {
             return d.release();
         }
-        Some(Action::Select(
-            self.camera.world(self.start, self.rect),
-            self.camera.tolerance(self.ppp),
-            self.mode,
-        ))
+        if self.moved {
+            return None;
+        }
+        let mut context =
+            crate::selection::ClickContext::new(self.start, self.camera, self.rect, self.ppp);
+        context.navigation_epoch = self.navigation_epoch;
+        Some(Action::CanvasSelect(context, self.mode))
     }
 }
