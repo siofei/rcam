@@ -29,6 +29,8 @@ pub struct View {
     pub layers: Vec<LayerInfo>,
     pub apertures: Vec<editor_core::ApertureDefinition>,
     pub block_cache_stats: (usize, usize),
+    pub definition_centers: Option<Arc<crate::point_adapter::DefinitionReply>>,
+    pub point_preview: Option<Arc<crate::point_transform::Preview>>,
     pub array_preview: Option<Arc<crate::array_ui::Preview>>,
     pub block_preview: Option<Arc<crate::block_ui::Preview>>,
     pub block_counts: std::collections::HashMap<String, usize>,
@@ -207,7 +209,7 @@ fn operation_id(origin: &editor_core::ObjectOrigin) -> Option<&str> {
     }
 }
 pub struct Model {
-    active_cancel: Option<editor_service::task::CancellationToken>,
+    pub(crate) active_cancel: Option<editor_service::task::CancellationToken>,
     pub service: ApplicationService,
     pub view: View,
     snapshot: Option<Arc<RenderSnapshot>>,
@@ -219,17 +221,22 @@ pub struct Model {
     pub(crate) block_display_cache: crate::block_display::BlockDisplayCache,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // Legacy worker actions retained for native/regression callers.
 pub enum PivotInput {
     SelectionCenter,
     WorldOrigin,
     Custom(String, String),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // Legacy worker actions retained for native/regression callers.
 pub enum MirrorDirection {
     Horizontal,
     Vertical,
 }
 pub enum Action {
+    DefinitionCenters(crate::point_input::Context, String),
+    PointPreview(Box<crate::point_transform::Request>),
+    PointApply(Box<crate::point_transform::Request>),
     SelectionCenters(String, SelectionCentersParams),
     PnpPreview(crate::components_ui::PreviewRequest),
     PnpImport(crate::block_ui::Context, ImportPnpParams),
@@ -447,13 +454,13 @@ impl Model {
         }
         self.refresh(true)
     }
-    fn info(&self) -> Result<DocumentInfo, ServiceError> {
+    pub(crate) fn info(&self) -> Result<DocumentInfo, ServiceError> {
         self.view
             .info
             .clone()
             .ok_or_else(|| error("NOT_FOUND", "尚未打开文件"))
     }
-    fn editable(&self) -> Result<(), ServiceError> {
+    pub(crate) fn editable(&self) -> Result<(), ServiceError> {
         if self.view.blocked.is_some() || self.view.scene.is_none() {
             Err(error("VALIDATION_FAILED", "无法安全显示，编辑和导出已停止"))
         } else {
@@ -1287,7 +1294,7 @@ impl Model {
         self.view.selected.ordered = selected;
         Ok(())
     }
-    fn edit_groups(&self) -> Result<Vec<SelectionGroup>, ServiceError> {
+    pub(crate) fn edit_groups(&self) -> Result<Vec<SelectionGroup>, ServiceError> {
         self.view
             .selected
             .primary()
@@ -1327,7 +1334,7 @@ impl Model {
         let group = groups.remove(0);
         Ok((group.layer_id, group.object_ids))
     }
-    fn submit_selection(
+    pub(crate) fn submit_selection(
         &mut self,
         document: &str,
         revision: &str,
@@ -1706,6 +1713,8 @@ impl Model {
         let readonly = matches!(
             &action,
             Action::SelectionCenters(..)
+                | Action::PointPreview(..)
+                | Action::DefinitionCenters(..)
                 | Action::Viewport(..)
                 | Action::Select(..)
                 | Action::CanvasSelect(..)
@@ -1772,6 +1781,8 @@ impl Model {
         let reset_cycle = !matches!(
             &action,
             Action::SelectionCenters(..)
+                | Action::PointPreview(..)
+                | Action::DefinitionCenters(..)
                 | Action::CanvasSelect(..)
                 | Action::ProbeDrag(..)
                 | Action::Viewport(..)
@@ -1797,6 +1808,11 @@ impl Model {
         self.view.removed = None;
         self.view.focus_bounds = None;
         let result = (|| match action {
+            Action::DefinitionCenters(context, definition) => {
+                self.definition_centers(context, definition)
+            }
+            Action::PointPreview(request) => self.point_preview(*request),
+            Action::PointApply(request) => self.point_apply(*request),
             Action::SelectionCenters(identity, params) => {
                 if identity != selection_geometry_identity(&self.view)
                     || params.groups != self.view.selected.groups()

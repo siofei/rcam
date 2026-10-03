@@ -440,6 +440,8 @@ impl EditorApp {
             ids::BLOCK_CREATE => match create_targets(&self.view) {
                 Ok(_) => {
                     self.block.name = "Block".into();
+                    self.block.x = "0".into();
+                    self.block.y = "0".into();
                     self.open_modal(ActiveModal::BlockCreate);
                 }
                 Err(e) => self.ui_error = Some(e),
@@ -457,6 +459,7 @@ impl EditorApp {
                     self.ui_error = Some("请选择可见、可选、未锁定的活动图层及 Block 类别".into());
                     return true;
                 };
+                self.block_point_reference = MmPoint::new(0., 0.);
                 self.block.session = Some(Session {
                     context: context.clone(),
                     layer: layer.layer_id.clone(),
@@ -635,6 +638,50 @@ impl EditorApp {
             ActiveModal::BlockCreate | ActiveModal::BlockRename => {
                 ui.label("名称（1–128 字符，允许重名）");
                 ui.text_edit_singleline(&mut self.block.name);
+                if modal == ActiveModal::BlockCreate {
+                    ui.label(format!(
+                        "定义基点：X {} / Y {} {}",
+                        self.block.x,
+                        self.block.y,
+                        self.display_unit.suffix()
+                    ));
+                    let origin = ui.button("基点：数值 / 拾取 / 双中心…");
+                    #[cfg(feature = "internal-evidence")]
+                    crate::native_i1::widget("block-origin", &origin);
+                    if origin.clicked() {
+                        let point = MmPoint::new(
+                            self.display_unit.parse_length(&self.block.x).unwrap_or(0.),
+                            self.display_unit.parse_length(&self.block.y).unwrap_or(0.),
+                        );
+                        self.open_point_adapter(crate::point_adapter::Adapter::BlockCreate, point);
+                    }
+                    let create = ui.button("以此基点创建 Block");
+                    #[cfg(feature = "internal-evidence")]
+                    crate::native_i1::widget("block-create", &create);
+                    if create.clicked()
+                        && let Ok((layer_id, object_ids)) = create_targets(&self.view)
+                    {
+                        match self.display_unit.parse_length(&self.block.x).and_then(|x| {
+                            self.display_unit
+                                .parse_length(&self.block.y)
+                                .map(|y| MmPoint::new(x, y))
+                        }) {
+                            Ok(point) => self.send(Action::BlockEdit(Box::new(Request {
+                                context: context.clone(),
+                                edit: Edit::Create(CreateBlockDefinitionParams {
+                                    layer_id,
+                                    object_ids,
+                                    local_origin_mm: PivotMm {
+                                        x_mm: point.x_mm,
+                                        y_mm: point.y_mm,
+                                    },
+                                    name: self.block.name.clone(),
+                                }),
+                            }))),
+                            Err(error) => self.ui_error = Some(error),
+                        }
+                    }
+                }
                 let valid = !self.block.name.trim().is_empty()
                     && self.block.name.trim().chars().count() <= 128;
                 if ui
@@ -754,7 +801,7 @@ impl EditorApp {
         self.object_snap_runtime
             .resolve(
                 raw,
-                &self.object_snap,
+                &self.object_snap.contour(),
                 self.grid,
                 self.camera,
                 ppp,
@@ -832,7 +879,14 @@ impl EditorApp {
                 }
             };
         if let Some(s) = &mut self.block.session {
-            s.point = Some(point);
+            s.point = Some(if matches!(s.kind, SessionKind::Place { .. }) {
+                MmPoint::new(
+                    point.x_mm - self.block_point_reference.x_mm,
+                    point.y_mm - self.block_point_reference.y_mm,
+                )
+            } else {
+                point
+            });
         }
         if response.clicked_by(egui::PointerButton::Primary) && self.usable() {
             let ready = self.block.session.as_ref().is_some_and(|s| {

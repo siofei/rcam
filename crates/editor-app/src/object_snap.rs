@@ -39,6 +39,26 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Dedicated point/transform policy, never persisted to global preferences.
+    pub fn contour(&self) -> Self {
+        Self {
+            enabled: true,
+            enabled_kinds: vec![
+                SnapKind::Endpoint,
+                SnapKind::Vertex,
+                SnapKind::Intersection,
+                SnapKind::Midpoint,
+                SnapKind::Quadrant,
+                SnapKind::Center,
+                SnapKind::ArcCenter,
+                SnapKind::Nearest,
+            ],
+            radius_px: 8.,
+            manufacturing_boundary: true,
+            original_path: false,
+        }
+    }
+
     pub fn from_project(value: &rcam_project::SnapSettingsState) -> Self {
         Self {
             enabled: value.enabled,
@@ -79,6 +99,7 @@ pub struct Stats {
 #[derive(Default)]
 pub struct Runtime {
     cache: SnapGeometryCache,
+    navigation: Option<[f64; 4]>,
     previous: Option<editor_core::snap::SnapCandidateId>,
     pub current: Option<SnapResolution>,
     pub stats: Stats,
@@ -91,6 +112,84 @@ struct Nearby {
 }
 
 impl Runtime {
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_definition(
+        &mut self,
+        raw: MmPoint,
+        definition: &editor_core::block::BlockDefinition,
+        apertures: &[editor_core::ApertureDefinition],
+        camera: Camera,
+        ppp: f32,
+        grid: tools::GridSettings,
+        alt: bool,
+    ) -> Result<SnapResolution, String> {
+        let navigation = [
+            camera.center.x_mm,
+            camera.center.y_mm,
+            camera.scale,
+            f64::from(ppp),
+        ];
+        if self.navigation != Some(navigation) {
+            self.reset();
+            self.navigation = Some(navigation);
+        }
+        if alt {
+            self.reset();
+            return Ok(raw_resolution(raw));
+        }
+        let resolver = SnapResolver::default();
+        let query = SnapQuery::from_screen(
+            raw,
+            SnapRadiiPx {
+                acquire: 8.,
+                candidate: 11.,
+            },
+            camera.scale,
+            f64::from(ppp),
+            Settings::default().contour().enabled_kinds,
+            true,
+            false,
+        )
+        .ok_or("定义局部拾取缩放无效")?;
+        let instance = editor_core::SemanticGeometry::BlockInstance {
+            definition_id: definition.id.clone(),
+            transform: editor_core::block::BlockTransform {
+                translation: MmPoint::new(0., 0.),
+                rotation_deg: 0.,
+                mirror: false,
+            },
+        };
+        let geometry = self
+            .cache
+            .geometry_for(&instance, apertures, std::slice::from_ref(definition))
+            .map_err(|e| e.to_string())?;
+        let candidates: Vec<_> = geometry
+            .snap_features(&query)
+            .into_iter()
+            .map(|feature| SnapCandidate {
+                layer_id: "definition-local".into(),
+                object_id: definition.id.0.clone(),
+                related_object_id: None,
+                distance_mm: raw.distance_mm(feature.point),
+                feature,
+            })
+            .collect();
+        let value = resolver.resolve(
+            raw,
+            camera.scale * f64::from(ppp),
+            8.,
+            &candidates,
+            if grid.snap_enabled {
+                Some(grid.point(raw)?)
+            } else {
+                None
+            },
+            self.previous.as_ref(),
+        );
+        self.previous = value.candidate.clone();
+        self.current = Some(value.clone());
+        Ok(value)
+    }
     pub fn reset(&mut self) {
         self.previous = None;
         self.current = None;
@@ -116,6 +215,16 @@ impl Runtime {
         excluded: Option<&HashSet<String>>,
         temporarily_disabled: bool,
     ) -> Result<SnapResolution, String> {
+        let navigation = [
+            camera.center.x_mm,
+            camera.center.y_mm,
+            camera.scale,
+            f64::from(pixels_per_point),
+        ];
+        if self.navigation != Some(navigation) {
+            self.reset();
+            self.navigation = Some(navigation);
+        }
         let started = Instant::now();
         if !raw.is_finite() {
             return Err("坐标不是有限值".into());

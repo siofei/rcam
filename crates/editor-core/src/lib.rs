@@ -55,7 +55,7 @@ impl MmPoint {
         (self.x_mm - other.x_mm).hypot(self.y_mm - other.y_mm)
     }
 
-    fn is_valid_geometry(self) -> bool {
+    pub fn is_valid_geometry(self) -> bool {
         self.is_finite() && self.x_mm.abs() <= MAX_GEOMETRY_MM && self.y_mm.abs() <= MAX_GEOMETRY_MM
     }
 }

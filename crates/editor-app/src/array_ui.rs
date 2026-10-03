@@ -218,7 +218,7 @@ impl Model {
         Ok(())
     }
 }
-fn source_outline_cost(view: &View) -> usize {
+pub(crate) fn source_outline_cost(view: &View) -> usize {
     use editor_core::block::BlockObjectGeometry;
     let edges = |contours: &[editor_core::RegionContour]| {
         contours
@@ -265,6 +265,7 @@ impl EditorApp {
         if self.modal != Some(ActiveModal::Array) {
             return;
         }
+        self.array_point_base = None;
         self.array = Draft {
             source,
             pitch_x: self.display_unit.input(10.),
@@ -340,6 +341,26 @@ impl EditorApp {
             });
         }
         ui.label("Pitch 为格子原点间距；负 X 向左，负 Y 向下。原对象保持不动。");
+        ui.horizontal(|ui| {
+            if ui.button("Pitch 基点 B…").clicked() {
+                self.open_point_adapter(
+                    crate::point_adapter::Adapter::ArrayBase,
+                    self.array_point_base.unwrap_or(MmPoint::new(0., 0.)),
+                );
+            }
+            if ui
+                .add_enabled(
+                    self.array_point_base.is_some(),
+                    egui::Button::new("Pitch 目标 T…"),
+                )
+                .clicked()
+            {
+                self.open_point_adapter(
+                    crate::point_adapter::Adapter::ArrayTarget,
+                    self.array_point_base.unwrap(),
+                );
+            }
+        });
         if self
             .view
             .selected

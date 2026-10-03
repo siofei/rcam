@@ -1280,3 +1280,5 @@ native debt is deferred; PMIX/PPOL/PSTRESS/Recovery are separate later stages.
 ## S5-I2 unified base point and selected-material metrics
 
 Implementation authorized from I1 f1939fd; validation pending. [Plan](S5_I2_PLAN.md), [ADR 0055](adr/0055-unified-base-point-composite-metrics.md) and [additional cases](S5_I2_ACCEPTANCE_ADDENDUM.md) freeze selected-only ordered per-layer area/moments/perimeter, distinct envelope/area centers, common point input and persistent interaction UX. Not a PASS or V1/platform scope change.
+
+S5-I2-B implementation contract: transient world point/session, selected-only A centers and dedicated analytic contour/standard-hole Snap; see S5_I2_B_PLAN and ADR 0056. A final is Mac-first bounded; B/C not accepted. No schema/platform/precision threshold change.

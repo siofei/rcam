@@ -1044,12 +1044,12 @@ mod tests {
                 .iter()
                 .filter(|f| f.kind == SnapKind::Quadrant)
                 .count(),
-            4
+            8
         );
         assert_eq!(
             built.edges.len(),
-            1,
-            "standard hole boundary is intentionally excluded in S4-C1"
+            2,
+            "S5-I2-B includes analytic standard hole contours"
         );
     }
 

@@ -3,6 +3,7 @@
 //! S0 compatibility remains read-only; the host-authorized S1-A path adds
 //! semantic queries, atomic Move/Undo/Redo, validation and safe new-path export.
 
+mod definition_centers;
 mod selection_geometry;
 pub use selection_geometry::*;
 mod selection_edit;

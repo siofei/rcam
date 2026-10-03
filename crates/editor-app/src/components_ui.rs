@@ -765,7 +765,7 @@ impl EditorApp {
                         ui.horizontal(|ui|{ui.label("CCW °");ui.add(egui::DragValue::new(&mut self.components.angle));});
                         ui.label("平移 mm");point_controls(ui,&mut self.components.translation);
                     }else{
-                        for i in 0..2{ui.label(format!("Board 点 {}（mm）",i+1));point_controls(ui,&mut self.components.board_points[i]);ui.label(format!("World 点 {}（mm）",i+1));point_controls(ui,&mut self.components.world_points[i]);if ui.button(format!("在 Canvas 捕捉 World 点 {}",i+1)).clicked(){self.components.pick=Some(i);self.drag=None;self.grip=None;self.tool=crate::tools::ActiveTool::Select;self.components.registration_confirmed=false;}}
+                        for i in 0..2{ui.label(format!("Board 点 {}（mm）",i+1));point_controls(ui,&mut self.components.board_points[i]);ui.label(format!("World 点 {}（mm）",i+1));point_controls(ui,&mut self.components.world_points[i]);if ui.button(format!("在 Canvas 捕捉 World 点 {}",i+1)).clicked(){self.open_point_adapter(crate::point_adapter::Adapter::BoardWorld(i),editor_core::MmPoint::new(self.components.world_points[i][0],self.components.world_points[i][1]));}}
                     }
                     let candidate=registration(self.components.registration_input());
                     match &candidate{Ok(r)=>{ui.label(format!("Board distance {:?} mm · World distance {:?} mm · residual {:.6} mm",r.board_distance_mm,r.world_distance_mm,r.residual_mm));},Err(e)=>{ui.colored_label(egui::Color32::LIGHT_RED,*e);}}

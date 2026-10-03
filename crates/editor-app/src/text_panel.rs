@@ -554,16 +554,12 @@ impl EditorApp {
                     &format!("ΔY {}", self.display_unit.suffix()),
                     &mut self.text.dy,
                 );
-                if ui
-                    .button(if self.text.pick_reference {
-                        "请点击画布基点…"
-                    } else {
-                        "拾取基点"
-                    })
-                    .clicked()
-                {
-                    self.text.pick_reference = true;
-                    self.modal = None;
+                if ui.button("共同基点：数值 / 拾取 / 双中心…").clicked() {
+                    let point = editor_core::MmPoint::new(
+                        self.display_unit.parse_length(&self.text.rx).unwrap_or(0.),
+                        self.display_unit.parse_length(&self.text.ry).unwrap_or(0.),
+                    );
+                    self.open_point_adapter(crate::point_adapter::Adapter::TextReference, point);
                 }
             }
         }

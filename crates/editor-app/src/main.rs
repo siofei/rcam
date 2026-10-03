@@ -39,6 +39,11 @@ mod native_probe;
 mod native_s5m1;
 mod object_snap;
 mod platform;
+mod point_adapter;
+mod point_input;
+mod point_transform;
+#[cfg(test)]
+mod point_transform_tests;
 mod preferences;
 mod project_ui;
 mod recovery;
@@ -68,19 +73,11 @@ use editor_core::command::{
 };
 use editor_service::{AlignmentMode, DistributionAxis};
 use eframe::egui::{self, Color32, RichText, Vec2};
-use state::{Action, MirrorDirection, Model, PivotInput, View};
+use state::{Action, Model, View};
 use std::{
     sync::mpsc::{self, Receiver, SyncSender},
     time::Instant,
 };
-
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum PivotMode {
-    #[default]
-    SelectionCenter,
-    WorldOrigin,
-    Custom,
-}
 
 struct LastFrame {
     scene: std::sync::Arc<display::Scene>,
@@ -121,6 +118,14 @@ struct EditorApp {
     tool: tools::ActiveTool,
     text: text_tool::Draft,
     array: array_ui::Draft,
+    point_adapter: Option<point_adapter::Session>,
+    array_point_base: Option<editor_core::MmPoint>,
+    block_point_reference: editor_core::MmPoint,
+    point_transform: Option<point_transform::Session>,
+    point_pick: Option<point_transform::Pick>,
+    point_input_frame: Option<u64>,
+    point_input_cancelled: bool,
+    point_commit_blocked: bool,
     modal: Option<ActiveModal>,
     modal_pending: Option<u64>,
     draft_snap: bool,
@@ -129,11 +134,6 @@ struct EditorApp {
     fit: bool,
     dx: String,
     dy: String,
-    angle: String,
-    pivot_mode: PivotMode,
-    mirror_direction: MirrorDirection,
-    pivot_x: String,
-    pivot_y: String,
     size_aperture_id: Option<String>,
     size_width: String,
     size_height: String,
@@ -398,6 +398,14 @@ impl EditorApp {
             text: Default::default(),
             components: components_ui::UiState::default(),
             array: array_ui::Draft::default(),
+            point_adapter: None,
+            array_point_base: None,
+            block_point_reference: editor_core::MmPoint::new(0., 0.),
+            point_transform: None,
+            point_pick: None,
+            point_input_frame: None,
+            point_input_cancelled: false,
+            point_commit_blocked: false,
             modal: None,
             modal_pending: None,
             draft_snap: false,
@@ -406,11 +414,6 @@ impl EditorApp {
             fit: false,
             dx: "0".into(),
             dy: "0".into(),
-            angle: "90".into(),
-            pivot_mode: PivotMode::SelectionCenter,
-            mirror_direction: MirrorDirection::Horizontal,
-            pivot_x: "0".into(),
-            pivot_y: "0".into(),
             size_aperture_id: None,
             size_width: String::new(),
             size_height: String::new(),
@@ -474,6 +477,19 @@ impl EditorApp {
         app
     }
     fn send(&mut self, a: Action) {
+        if self.point_commit_blocked
+            && matches!(
+                &a,
+                Action::PointApply(..)
+                    | Action::GripEdit(..)
+                    | Action::BlockEdit(..)
+                    | Action::Move(..)
+                    | Action::Rotate(..)
+                    | Action::Mirror(..)
+            )
+        {
+            return;
+        }
         let source = if matches!(&a, Action::RestoreProject(..) | Action::RecoveryWrite(..)) {
             rcam_diagnostics::Source::Recovery
         } else if matches!(&a, Action::ArrayApply(..)) {
@@ -518,6 +534,7 @@ impl EditorApp {
                 Action::ArrayApply(..)
                     | Action::BlockEdit(..)
                     | Action::Move(..)
+                    | Action::PointApply(..)
                     | Action::Rotate(..)
                     | Action::Mirror(..)
                     | Action::SetFlashSize(..)
@@ -587,6 +604,7 @@ impl EditorApp {
             modal_open
                 || self.text.floating.is_some()
                 || self.block.session.is_some()
+                || self.point_pick.is_some()
                 || self.shortcuts.popup_at_event
                 || egui::Popup::is_any_open(ctx),
         ) && ctx.input(|i| i.focused)
@@ -640,6 +658,7 @@ impl EditorApp {
             || self.recovery_candidate.is_some()
             || self.text.floating.is_some()
             || self.block.session.is_some()
+            || self.point_pick.is_some()
             || self.view.error.as_ref().is_some_and(|e| {
                 e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
             })
@@ -927,119 +946,7 @@ impl EditorApp {
         );
     }
     fn transform_controls(&mut self, ui: &mut egui::Ui) {
-        let enabled = self.usable() && drag::editable_selection(&self.view);
-        let center = state::selected_center(&self.view).ok();
-        ui.separator();
-        ui.strong("变换");
-        ui.label("制造坐标 f64；不经过 Grid Snap");
-        if self.modal == Some(ActiveModal::Rotate) {
-            ui.add_enabled_ui(enabled, |ui| {
-                ui.label("旋转角度 · °");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.angle)
-                        .id(egui::Id::new("transform-angle"))
-                        .desired_width(f32::INFINITY),
-                );
-                ui.label("Pivot");
-                ui.radio_value(
-                    &mut self.pivot_mode,
-                    PivotMode::SelectionCenter,
-                    "选择集制造边界中心",
-                );
-                if let Some(center) = center {
-                    ui.label(
-                        self.display_unit
-                            .point_label(center, self.precision().resolution_mm),
-                    );
-                } else {
-                    ui.colored_label(Color32::YELLOW, "选择集中心不可用，请使用明确 Pivot");
-                }
-                ui.radio_value(
-                    &mut self.pivot_mode,
-                    PivotMode::WorldOrigin,
-                    "世界原点 (0, 0)",
-                );
-                ui.radio_value(
-                    &mut self.pivot_mode,
-                    PivotMode::Custom,
-                    format!("自定义 X / Y {}", self.display_unit.suffix()),
-                );
-                if self.pivot_mode == PivotMode::Custom {
-                    ui.horizontal(|ui| {
-                        ui.label("X");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.pivot_x)
-                                .id(egui::Id::new("transform-pivot-x")),
-                        );
-                        ui.label("Y");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.pivot_y)
-                                .id(egui::Id::new("transform-pivot-y")),
-                        );
-                    });
-                }
-            });
-            let pivot_ready = self.pivot_mode != PivotMode::SelectionCenter || center.is_some();
-            let mut rotate = None;
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(enabled && pivot_ready, egui::Button::new("-90°"))
-                    .clicked()
-                {
-                    rotate = Some("-90".into());
-                }
-                if ui
-                    .add_enabled(enabled && pivot_ready, egui::Button::new("+90°"))
-                    .clicked()
-                {
-                    rotate = Some("90".into());
-                }
-                if ui
-                    .add_enabled(enabled && pivot_ready, egui::Button::new("应用旋转"))
-                    .clicked()
-                {
-                    rotate = Some(self.angle.clone());
-                }
-            });
-            if self.dialog_enter(ui) && enabled && pivot_ready {
-                rotate = Some(self.angle.clone());
-            }
-            if let Some(angle) = rotate {
-                let pivot = match self.pivot_mode {
-                    PivotMode::SelectionCenter => PivotInput::SelectionCenter,
-                    PivotMode::WorldOrigin => PivotInput::WorldOrigin,
-                    PivotMode::Custom => {
-                        PivotInput::Custom(self.pivot_x.clone(), self.pivot_y.clone())
-                    }
-                };
-                self.send(Action::Rotate(angle, pivot));
-            }
-        }
-        if self.modal == Some(ActiveModal::Mirror) {
-            ui.add_space(crate::ui::tokens::SPACING_LG);
-            ui.label("镜像轴（选择集制造边界中心）");
-            if let Some(center) = center {
-                let horizontal = format!("水平镜像 · y = {}", self.length(center.y_mm));
-                let vertical = format!("垂直镜像 · x = {}", self.length(center.x_mm));
-                ui.radio_value(
-                    &mut self.mirror_direction,
-                    MirrorDirection::Horizontal,
-                    horizontal,
-                );
-                ui.radio_value(
-                    &mut self.mirror_direction,
-                    MirrorDirection::Vertical,
-                    vertical,
-                );
-                if ui
-                    .add_enabled(enabled, egui::Button::new("应用镜像"))
-                    .clicked()
-                    || (enabled && self.dialog_enter(ui))
-                {
-                    self.send(Action::Mirror(self.mirror_direction));
-                }
-            }
-        }
+        self.unified_transform_controls(ui);
     }
     fn sync_size_fields(&mut self) {
         let Some(primary) = self.view.selected.primary() else {
@@ -1244,6 +1151,11 @@ impl CommandDispatcher for EditorApp {
                 true
             }
             command_ids::TOOL_SELECT | command_ids::TOOL_MEASURE => {
+                self.point_pick = None;
+                self.point_transform = None;
+                self.point_adapter = None;
+                self.view.point_preview = None;
+                self.modal = None;
                 self.text.cancel();
                 self.tool = if command == command_ids::TOOL_SELECT {
                     tools::ActiveTool::Select
@@ -1338,6 +1250,7 @@ impl eframe::App for EditorApp {
         #[cfg(feature = "internal-evidence")]
         if let Some(mut run) = self.i1.take() {
             run.input(self, ctx, raw);
+            run.record_delivery(self, raw);
             self.i1 = Some(run);
         }
         // egui clears text focus on Escape before update; retain its event-time owner.
@@ -1366,6 +1279,7 @@ impl eframe::App for EditorApp {
         }
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        self.arbitrate_point_input_frame(ctx);
         self.shortcuts.poll();
         crate::ui::command_widgets::install_shortcuts(ctx, &self.shortcuts.current.config);
         if let Some(rx) = &self.diagnostic_export {
@@ -1517,6 +1431,8 @@ impl eframe::App for EditorApp {
                 self.modal_pending = None;
                 if self.view.error.is_none() {
                     self.modal = None;
+                    self.point_transform = None;
+                    self.view.point_preview = None;
                 }
             }
             self.accept_text_reply();
@@ -1572,10 +1488,6 @@ impl eframe::App for EditorApp {
                 self.toast = None;
                 self.dx = "0".into();
                 self.dy = "0".into();
-                self.angle = "90".into();
-                self.pivot_mode = PivotMode::SelectionCenter;
-                self.pivot_x = "0".into();
-                self.pivot_y = "0".into();
                 self.size_aperture_id = None;
                 self.size_width.clear();
                 self.size_height.clear();
@@ -1673,6 +1585,36 @@ impl eframe::App for EditorApp {
             .err()
         });
         let validation_ms = validation_start.elapsed().as_secs_f64() * 1000.;
+        if self
+            .point_adapter
+            .as_ref()
+            .is_some_and(|s| !s.context.valid(&self.view))
+        {
+            self.point_adapter = None;
+            self.point_pick = None;
+            if self.modal == Some(ActiveModal::PointInput) {
+                self.modal = None;
+            }
+        }
+        if (self.point_transform.is_some()
+            || self.point_pick.is_some()
+            || self.point_adapter.is_some())
+            && ctx.input(|i| {
+                !i.focused
+                    || i.events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::PointerGone))
+            })
+        {
+            self.point_transform = None;
+            self.point_pick = None;
+            self.point_adapter = None;
+            self.view.point_preview = None;
+            self.modal = None;
+            if let Some(task) = &self.pending_task {
+                task.cancel_token.cancel();
+            }
+        }
         let modal_open = self.shortcuts.open
             || self.modal.is_some()
             || self.layer_dialog.is_some()
@@ -1697,6 +1639,15 @@ impl eframe::App for EditorApp {
                 i.pointer.primary_released(),
             )
         });
+        if self
+            .point_transform
+            .as_ref()
+            .is_some_and(|s| !s.context.valid(&self.view))
+        {
+            self.point_transform = None;
+            self.point_pick = None;
+            self.view.point_preview = None;
+        }
         self.operation_source = rcam_diagnostics::Source::Shortcut;
         let text_focus = self.text_input_at_event || ctx.wants_keyboard_input();
         if !modal_open
@@ -1705,8 +1656,10 @@ impl eframe::App for EditorApp {
             && !self.ime_active
             && ctx.input(|i| i.key_pressed(egui::Key::Escape))
         {
-            self.cancel_block();
-            self.measure.clear();
+            if self.point_pick.is_none() {
+                self.cancel_block();
+                self.measure.clear();
+            }
             if self.text.floating.is_some() {
                 self.text.resume_dialog();
                 self.modal = Some(ActiveModal::Text);
@@ -1724,7 +1677,14 @@ impl eframe::App for EditorApp {
             .as_ref()
             .is_some_and(|s| !s.valid(&self.view))
             || (self.block.session.is_some()
-                && (modal_open
+                && ((modal_open
+                    && !self.point_adapter.as_ref().is_some_and(|s| {
+                        matches!(
+                            s.target,
+                            point_adapter::Adapter::BlockLocal(_)
+                                | point_adapter::Adapter::BlockTarget
+                        )
+                    }))
                     || self.tool != tools::ActiveTool::Block
                     || !ctx.input(|i| i.focused)))
         {
@@ -2249,6 +2209,21 @@ impl eframe::App for EditorApp {
                     {
                         ui.label("选择含锁定或不可编辑对象：整组编辑禁止（仅可查看）");
                     }
+                    if self.tool==tools::ActiveTool::Measure && ui.button("测距端点：数值 / 拾取 / 双中心…").clicked() {self.open_point_adapter(point_adapter::Adapter::Measure,editor_core::MmPoint::new(0.,0.));}
+                    if self.tool==tools::ActiveTool::Block && let Some(s)=&self.block.session && let block_ui::SessionKind::Place {definition}=&s.kind {
+                        let definition=definition.clone();
+                        let local=ui.button("定义局部参考点…");
+                        #[cfg(feature="internal-evidence")]
+                        native_i1::widget("block-local",&local);
+                        if local.clicked() {self.open_point_adapter(point_adapter::Adapter::BlockLocal(definition),self.block_point_reference);}
+                        let target=ui.button("放置目标：数值 / 拾取 / 双中心…");
+                        #[cfg(feature="internal-evidence")]
+                        native_i1::widget("block-target",&target);
+                        if target.clicked() {self.open_point_adapter(point_adapter::Adapter::BlockTarget,editor_core::MmPoint::new(0.,0.));}
+                    }
+                    if self.tool==tools::ActiveTool::Select && let Ok(features)=grip::features(&self.view) {
+                        ui.menu_button("Grip 目标点…",|ui|{for feature in features {if ui.button(format!("{:?}",feature.id)).clicked(){self.open_point_adapter(point_adapter::Adapter::Grip(feature.id),feature.position_mm);ui.close();}}});
+                    }
                     for line in metrics_panel::lines(
                         &self.view,
                         self.display_unit,
@@ -2375,9 +2350,13 @@ impl eframe::App for EditorApp {
                 let (r, painter) =
                     ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
                 let rect = r.rect;
+                // Keep ownership through the confirmation/back release frame.
+                // point_canvas may resume a modal and clear point_pick below.
+                let point_child_owns_frame = self.point_pick.is_some() || self.point_input_cancelled;
                 if self.canvas_rect != rect || self.fit {
                     self.drag = None;
                     self.grip = None;
+                    self.object_snap_runtime.reset();
                 }
                 self.canvas_rect = rect;
                 if self.fit {
@@ -2426,6 +2405,7 @@ impl eframe::App for EditorApp {
                     }
                 }
                 if !modal_open
+                    && !point_child_owns_frame
                     && r.hovered()
                     && let Some(pos) = r.hover_pos()
                 {
@@ -2503,7 +2483,7 @@ impl eframe::App for EditorApp {
                             Err(e) => self.ui_error = Some(e),
                         }
                     }
-                    if let Some((press, modifiers)) = ctx.input(|i| {
+                    if self.point_pick.is_none() && let Some((press, modifiers)) = ctx.input(|i| {
                         i.events.iter().find_map(|e| match e {
                             egui::Event::PointerButton {
                                 pos,
@@ -2545,8 +2525,9 @@ impl eframe::App for EditorApp {
                     }
                 }
                 self.click_navigation.observe(self.camera,rect,ctx.pixels_per_point());
-                if self.block.session.is_some() && !modal_open && !text_focus { self.block_canvas(ctx, &r, rect); }
-                if self.tool == tools::ActiveTool::Select && !modal_open {
+                if self.point_pick.is_some() {self.point_canvas(ctx,&r,rect);}
+                if !point_child_owns_frame && self.modal.is_none() && self.block.session.is_some() && !modal_open && !text_focus { self.block_canvas(ctx, &r, rect); }
+                if !point_child_owns_frame && self.tool == tools::ActiveTool::Select && !modal_open {
                     r.context_menu(|ui| {
                         self.operation_source = rcam_diagnostics::Source::Context;
                         ui.menu_button("排列 / 阵列", |ui| self.arrangement_entries(ui));
@@ -2554,7 +2535,7 @@ impl eframe::App for EditorApp {
                         self.block_entries(ui);
                     });
                 }
-                if !modal_open {self.component_canvas(ctx,&r,rect);}
+                if !point_child_owns_frame && self.modal.is_none() && !modal_open {self.component_canvas(ctx,&r,rect);}
                 self.closeout_context_transition();
                 // Tool/menu input above can change context in this same frame.
                 // Recheck before release, rather than waiting for the next frame.
@@ -2570,7 +2551,7 @@ impl eframe::App for EditorApp {
                     if let Some(position) = pointer_position
                         && (grip.moved || grip.pressed.is_some_and(|p| p.distance(position)*ctx.pixels_per_point() >= drag::THRESHOLD_PX)) {
                         let raw = self.camera.world(position, rect);
-                        match self.object_snap_runtime.resolve(raw, &self.object_snap, self.grid, self.camera,
+                        match self.object_snap_runtime.resolve(raw, &self.object_snap.contour(), self.grid, self.camera,
                             ctx.pixels_per_point(), self.view.snap_snapshot.as_deref(), &self.view.snap_index,
                             &self.view.layers, Some(&grip.excluded), ctx.input(|i| i.modifiers.alt)) {
                             Ok(resolution) => grip.update(resolution.point),
@@ -2617,7 +2598,7 @@ impl eframe::App for EditorApp {
                         let raw = self.camera.world(*position, rect);
                         match self.object_snap_runtime.resolve(
                         raw,
-                        &self.object_snap,
+                        &self.object_snap.contour(),
                         self.grid,
                         self.camera,
                         ctx.pixels_per_point(),
@@ -2761,7 +2742,9 @@ impl eframe::App for EditorApp {
                         },
                     ));
                 }
-                if self.tool == tools::ActiveTool::Select && !modal_open {
+                self.paint_point_transform(&painter,rect,ctx.pixels_per_point());
+                self.paint_adapter_point(&painter,rect,ctx.pixels_per_point());
+                if self.point_pick.is_none() && self.tool == tools::ActiveTool::Select && !modal_open {
                     match self.grip.as_ref().map_or_else(|| grip::features(&self.view), grip::Session::features) {
                         Ok(features) => {
                             let hover = ctx.input(|i| i.pointer.hover_pos()).and_then(|p| grip::hit(&features,p,self.camera,rect,ctx.pixels_per_point()));

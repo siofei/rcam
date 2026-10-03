@@ -1,8 +1,9 @@
 //! One parameter dialog owns focus and draft state at a time.
-use crate::{EditorApp, PivotMode, state::Action, tools};
+use crate::{EditorApp, state::Action, tools};
 use eframe::egui;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ActiveModal {
+    PointInput,
     Pnp,
     Array,
     Text,
@@ -22,6 +23,7 @@ pub(crate) enum ActiveModal {
 impl ActiveModal {
     fn title(self) -> &'static str {
         match self {
+            Self::PointInput => "共同点输入",
             Self::BlockCreate => "创建 Block",
             Self::BlockRename => "重命名 Block",
             Self::BlockDelete => "删除 Block 定义",
@@ -41,6 +43,79 @@ impl ActiveModal {
     }
 }
 impl EditorApp {
+    /// Decide cancellation before any widget can enqueue a manufacturing edit.
+    /// The latch survives child Back and all later handlers in this egui frame.
+    pub(crate) fn arbitrate_point_input_frame(&mut self, ctx: &egui::Context) -> bool {
+        let frame = ctx.cumulative_frame_nr();
+        if self.point_input_frame != Some(frame) {
+            self.point_input_frame = Some(frame);
+            self.point_input_cancelled = false;
+            self.point_commit_blocked = false;
+        }
+        if self.point_input_cancelled {
+            return false;
+        }
+        let (lost, escape, ime) = ctx.input(|i| {
+            (
+                !i.focused
+                    || i.events.iter().any(|e| {
+                        matches!(
+                            e,
+                            egui::Event::PointerGone | egui::Event::WindowFocused(false)
+                        )
+                    }),
+                i.events.iter().any(|e| {
+                    matches!(
+                        e,
+                        egui::Event::Key {
+                            key: egui::Key::Escape,
+                            pressed: true,
+                            ..
+                        }
+                    )
+                }),
+                i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))),
+            )
+        });
+        self.point_commit_blocked |= self.ime_active || self.ime_event || ime;
+        let active = self.point_pick.is_some()
+            || self.point_transform.is_some()
+            || self.point_adapter.is_some();
+        if active && (lost || (escape && !self.point_commit_blocked)) {
+            self.point_input_cancelled = true;
+            self.point_commit_blocked = true;
+            if let Some(task) = &self.pending_task {
+                task.cancel_token.cancel();
+            }
+            if lost {
+                self.point_pick = None;
+                self.point_transform = None;
+                self.point_adapter = None;
+                self.view.point_preview = None;
+                self.modal = None;
+                self.object_snap_runtime.reset();
+            } else if self.point_pick.is_some() {
+                self.finish_point_pick(None);
+            } else {
+                self.cancel_modal();
+            }
+            // No Enter or pointer release may be interpreted by another handler.
+            ctx.input_mut(|i| {
+                i.events.retain(|e| {
+                    !matches!(
+                        e,
+                        egui::Event::Key { .. }
+                            | egui::Event::PointerButton { .. }
+                            | egui::Event::Text(_)
+                    )
+                });
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
+            });
+            return false;
+        }
+        true
+    }
     pub(crate) fn open_modal(&mut self, modal: ActiveModal) {
         if self.busy || self.close_prompt || self.modal.is_some() {
             return;
@@ -60,9 +135,18 @@ impl EditorApp {
         };
         self.ui_error = None;
         self.view.error = None;
+        self.point_pick = None;
+        self.point_adapter = None;
+        self.point_transform = match modal {
+            ActiveModal::Move => Some(crate::point_transform::Mode::Move),
+            ActiveModal::Rotate => Some(crate::point_transform::Mode::Rotate),
+            ActiveModal::Mirror => Some(crate::point_transform::Mode::HorizontalMirror),
+            _ => None,
+        }
+        .map(|mode| crate::point_transform::Session::new(&self.view, mode, self.display_unit));
+        self.view.point_preview = None;
         self.modal = Some(modal);
         self.modal_pending = None;
-        self.mirror_direction = crate::state::MirrorDirection::Horizontal;
         self.spacing = if modal == ActiveModal::Units {
             (self.precision().resolution_mm * 1000.).to_string()
         } else {
@@ -80,19 +164,33 @@ impl EditorApp {
         self.draft_object_snap = self.object_snap.clone();
         self.dx = "0".into();
         self.dy = "0".into();
-        self.angle = "90".into();
-        self.pivot_mode = PivotMode::SelectionCenter;
-        self.pivot_x = "0".into();
-        self.pivot_y = "0".into();
         self.size_aperture_id = None;
         self.sync_size_fields();
     }
     pub(crate) fn cancel_modal(&mut self) {
+        if (self.point_transform.is_some() || self.point_adapter.is_some())
+            && self.modal_pending.is_none()
+            && let Some(task) = &self.pending_task
+        {
+            task.cancel_token.cancel();
+        }
+        if self.modal == Some(ActiveModal::PointInput)
+            && let Some(session) = self.point_adapter.take()
+        {
+            self.modal = session.resume;
+            self.point_pick = None;
+            self.ui_error = None;
+            return;
+        }
         let keep_measure =
             self.modal == Some(ActiveModal::Units) && self.tool == tools::ActiveTool::Measure;
         self.view.pnp_preview = None;
         self.array.requested = None;
         self.view.array_preview = None;
+        self.point_pick = None;
+        self.point_transform = None;
+        self.point_adapter = None;
+        self.view.point_preview = None;
         self.modal = None;
         self.modal_pending = None;
         self.text.cancel();
@@ -104,11 +202,15 @@ impl EditorApp {
     }
     pub(crate) fn dialog_enter(&self, ui: &egui::Ui) -> bool {
         !self.busy
+            && !self.point_commit_blocked
             && !self.ime_active
             && !self.ime_event
             && ui.input(|i| i.key_pressed(egui::Key::Enter))
     }
     pub(crate) fn parameter_modal(&mut self, ctx: &egui::Context) {
+        if !self.arbitrate_point_input_frame(ctx) {
+            return;
+        }
         let Some(modal) = self.modal else {
             return;
         };
@@ -133,6 +235,7 @@ impl EditorApp {
                                     && self.modal_pending.is_none()
                                     && self.text.pending_apply.is_none()),
                             |ui| match modal {
+                                ActiveModal::PointInput => self.point_adapter_modal(ui),
                                 ActiveModal::BlockCreate
                                 | ActiveModal::BlockRename
                                 | ActiveModal::BlockDelete
@@ -147,6 +250,9 @@ impl EditorApp {
                                 }
                                 ActiveModal::Flash => self.flash_size_controls(ui),
                                 ActiveModal::Move => {
+                                    self.unified_transform_controls(ui);
+                                    ui.separator();
+                                    ui.label("或使用现有数值位移");
                                     ui.label(format!("ΔX {}", self.display_unit.suffix()));
                                     ui.text_edit_singleline(&mut self.dx);
                                     ui.label(format!("ΔY {}", self.display_unit.suffix()));
@@ -301,6 +407,14 @@ pub(crate) mod tests {
             text: Default::default(),
             components: crate::components_ui::UiState::default(),
             array: crate::array_ui::Draft::default(),
+            point_adapter: None,
+            array_point_base: None,
+            block_point_reference: editor_core::MmPoint::new(0., 0.),
+            point_transform: None,
+            point_pick: None,
+            point_input_frame: None,
+            point_input_cancelled: false,
+            point_commit_blocked: false,
             modal: None,
             modal_pending: None,
             draft_snap: false,
@@ -309,11 +423,6 @@ pub(crate) mod tests {
             fit: false,
             dx: "0".into(),
             dy: "0".into(),
-            angle: "90".into(),
-            pivot_mode: crate::PivotMode::SelectionCenter,
-            mirror_direction: crate::state::MirrorDirection::Horizontal,
-            pivot_x: "0".into(),
-            pivot_y: "0".into(),
             size_aperture_id: None,
             size_width: String::new(),
             size_height: String::new(),

@@ -3,12 +3,15 @@ use crate::{
     EditorApp,
     state::{Action, MirrorDirection, PivotInput},
 };
+use editor_core::command::CommandDispatcher;
 use editor_core::{MmPoint, hash::sha256_hex};
 use eframe::egui::{self, Pos2};
 use egui_wgpu::wgpu;
 use serde_json::{Value, json};
 use std::{
+    io::Write,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -19,10 +22,23 @@ use std::{
 // The ledger is written separately from the per-frame report, never derived from it.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static TRACE: OnceLock<Mutex<Value>> = OnceLock::new();
+static CLOCK: OnceLock<Instant> = OnceLock::new();
+fn now_ns() -> u64 {
+    CLOCK.get().unwrap().elapsed().as_nanos() as u64
+}
 fn trace() -> &'static Mutex<Value> {
     TRACE.get_or_init(|| {
-        Mutex::new(json!({"input_ids":[],"update_ids":[],"paint_ids":[],"actions":[],"frame":0}))
+        Mutex::new(json!({"input_ids":[],"update_ids":[],"paint_ids":[],"paint_records":[],"delivered_inputs":[],"surface_callbacks":[],"actions":[],"frame":0}))
     })
+}
+pub fn widget(name: &str, response: &egui::Response) {
+    if ACTIVE.load(Ordering::Relaxed) {
+        let mut t = trace().lock().unwrap();
+        if t.get("widgets").is_none() {
+            t["widgets"] = json!({});
+        }
+        t["widgets"][name] = json!({"rect":[response.rect.min.x,response.rect.min.y,response.rect.max.x,response.rect.max.y],"enabled":response.enabled(),"frame":t["frame"]});
+    }
 }
 pub fn paint(id: u64) {
     if ACTIVE.load(Ordering::Relaxed) {
@@ -30,6 +46,10 @@ pub fn paint(id: u64) {
             .as_array_mut()
             .unwrap()
             .push(json!(id));
+        trace().lock().unwrap()["paint_records"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"frame_id":id,"paint_ns":now_ns()}));
     }
 }
 pub fn action_detail(action: &Action) -> Option<Value> {
@@ -37,6 +57,15 @@ pub fn action_detail(action: &Action) -> Option<Value> {
         return None;
     }
     let detail = match action {
+        Action::GripEdit(g) => json!({"kind":"grip_edit","target":g.target}),
+        Action::BlockEdit(_) => json!({"kind":"block_edit"}),
+        Action::Move(..) | Action::Rotate(..) | Action::Mirror(..) => {
+            json!({"kind":"legacy_transform"})
+        }
+        Action::PointApply(r) => {
+            json!({"kind":"point_apply","operation":r.operation,"context":format!("{:?}",r.context)})
+        }
+        Action::PointPreview(r) => json!({"kind":"point_preview","operation":r.operation}),
         Action::ProbeDrag(p, tolerance) => {
             json!({"kind":"probe","world":[p.x_mm,p.y_mm],"tolerance":tolerance})
         }
@@ -71,15 +100,29 @@ fn events(events: &[egui::Event]) -> Vec<Value> {
         egui::Event::PointerMoved(p) => json!({"kind":"move","position":[p.x,p.y]}),
         egui::Event::PointerButton{pos,button,pressed,modifiers:m} => json!({"kind":"button","position":[pos.x,pos.y],"button":format!("{button:?}"),"pressed":pressed,"modifiers":modifiers(*m)}),
         egui::Event::PointerGone => json!({"kind":"gone"}),
-        egui::Event::Key{key,pressed,modifiers:m,..} => json!({"kind":"key","key":format!("{key:?}"),"pressed":pressed,"modifiers":modifiers(*m)}),
+        egui::Event::Key{key,pressed,repeat,modifiers:m,..} => json!({"kind":"key","key":format!("{key:?}"),"pressed":pressed,"repeat":repeat,"modifiers":modifiers(*m)}),
         egui::Event::WindowFocused(f) => json!({"kind":"focus","focused":f}),
+        egui::Event::Text(t) => json!({"kind":"text","value":t}),
+        egui::Event::Ime(t) => json!({"kind":"ime","debug":format!("{t:?}")}),
         _ => json!({"kind":"other","debug":format!("{e:?}")}),
     })).collect()
 }
 pub fn directory() -> Option<PathBuf> {
-    let p = std::fs::canonicalize(std::env::var_os("RCAM_I1_NATIVE_DIR")?).ok()?;
-    (p.parent() == Some(Path::new("/private/tmp"))
-        && p.file_name()?.to_str()?.starts_with("rcam-i1-native-"))
+    let p = std::fs::canonicalize(
+        std::env::var_os("RCAM_I2_B_NATIVE_DIR")
+            .or_else(|| std::env::var_os("RCAM_I1_NATIVE_DIR"))?,
+    )
+    .ok()?;
+    let explicit_root =
+        std::env::var_os("RCAM_I2_B_NATIVE_ROOT").and_then(|r| std::fs::canonicalize(r).ok());
+    let allowed_root = p.parent() == Some(Path::new("/private/tmp"))
+        || (std::env::var_os("RCAM_I2_B_NATIVE_DIR").is_some()
+            && explicit_root
+                .as_deref()
+                .is_some_and(|r| p.parent() == Some(r)));
+    (allowed_root
+        && (p.file_name()?.to_str()?.starts_with("rcam-i1-native-")
+            || p.file_name()?.to_str()?.starts_with("rcam-i2-b-native-")))
     .then_some(p)
 }
 pub struct Run {
@@ -100,18 +143,99 @@ pub struct Run {
     input_before: Value,
     diagnostic_injected: bool,
     held_frames: u64,
+    delivered_input: Value,
+    feedback_pending: Option<Value>,
+    feedback: Vec<Value>,
 }
 fn state(app: &EditorApp) -> Value {
     let cycle = app.view.click_cycle.as_ref().map(|c| json!({"index":c.index,"candidates":c.candidates,"document":c.document,"revision":c.revision,"workspace":c.workspace,"point":[c.context.point.x,c.context.point.y],"world":[c.context.world.x_mm,c.context.world.y_mm],"camera":c.context.camera,"canvas":[c.context.rect.min.x,c.context.rect.min.y,c.context.rect.max.x,c.context.rect.max.y],"ppp":c.context.ppp,"navigation_epoch":c.context.navigation_epoch}));
-    json!({"info":app.view.info,"selected":app.view.selected.ordered,"click_cycle":cycle,"task_receipt":app.view.task_receipt,"navigation_epoch":app.click_navigation.evidence_epoch(),"error":app.view.error,"scene_serial":app.view.scene.as_ref().map(|s|s.serial),"layers":app.view.layers,"camera":[app.camera.center.x_mm,app.camera.center.y_mm,app.camera.scale],"canvas":[app.canvas_rect.min.x,app.canvas_rect.min.y,app.canvas_rect.max.x,app.canvas_rect.max.y],"ppp":app.reported_ppp,"busy":app.busy,"display_pending":app.display_pending})
+    let point=app.point_transform.as_ref().map(|s|json!({"mode":format!("{:?}",s.mode),"angle":s.angle,"base":s.base.resolve(app.display_unit).ok().map(|p|json!({"world":[p.world_mm.x_mm,p.world_mm.y_mm],"source":format!("{:?}",p.source)})),"target":s.target.resolve(app.display_unit).ok().map(|p|json!({"world":[p.world_mm.x_mm,p.world_mm.y_mm],"source":format!("{:?}",p.source)})),"operation":s.operation(&app.view,app.display_unit).ok(),"preview":app.view.point_preview.as_ref().map(|p|json!({"operation":p.request.operation,"bounds":p.bounds,"simplified":p.simplified,"path_count":p.paths.len()}))}));
+    json!({"info":app.view.info,"selected":app.view.selected.ordered,"point_transform":point,"point_pick":app.point_pick.as_ref().map(|p|format!("{:?}",p.field)),"point_adapter":app.point_adapter.as_ref().map(|s|json!({"target":format!("{:?}",s.target),"world":s.draft.resolve(app.display_unit).ok().map(|p|[p.world_mm.x_mm,p.world_mm.y_mm]),"block_translation":s.block_translation,"grip_target":s.grip_preview.as_ref().map(|g|g.target),"grip_preview":s.grip_preview.as_ref().and_then(|g|g.preview.as_ref().ok()).map(|p|json!({"geometry":p.geometry,"aperture_shape":p.aperture_shape}))})),"modal":app.modal.map(|m|format!("{m:?}")),"tool":match app.tool {crate::tools::ActiveTool::Select=>"Select",crate::tools::ActiveTool::Measure=>"Measure",crate::tools::ActiveTool::Text=>"Text",crate::tools::ActiveTool::Block=>"Block"},"measure":{"a":app.measure.a,"b":app.measure.b,"values":app.measure.values(),"completed":app.measure.completed.len()},"text_reference":{"x":app.text.rx,"y":app.text.ry,"enabled":app.text.has_reference},"array_pitch":[app.array.pitch_x,app.array.pitch_y],"array_base":app.array_point_base,"block_reference":app.block_point_reference,"block_origin":[app.block.x,app.block.y],"board_world":app.components.world_points,"snap_marker":app.object_snap_runtime.current.as_ref().map(|r|json!({"world":[r.point.x_mm,r.point.y_mm],"kind":format!("{:?}",r.kind)})),"click_cycle":cycle,"task_receipt":app.view.task_receipt,"navigation_epoch":app.click_navigation.evidence_epoch(),"error":app.view.error,"ui_error":app.ui_error,"scene_serial":app.view.scene.as_ref().map(|s|s.serial),"layers":app.view.layers,"camera":[app.camera.center.x_mm,app.camera.center.y_mm,app.camera.scale],"canvas":[app.canvas_rect.min.x,app.canvas_rect.min.y,app.canvas_rect.max.x,app.canvas_rect.max.y],"ppp":app.reported_ppp,"busy":app.busy,"display_pending":app.display_pending})
 }
 impl Run {
+    pub fn record_delivery(&mut self, app: &EditorApp, raw: &egui::RawInput) {
+        self.delivered_input = json!({"frame_id":self.frame_id,"step":self.step,"phase":self.phase,"t0_ns":now_ns(),"focused":raw.focused,"events":events(&raw.events),"modifiers":modifiers(raw.modifiers),"camera":[app.camera.center.x_mm,app.camera.center.y_mm,app.camera.scale],"canvas":[app.canvas_rect.min.x,app.canvas_rect.min.y,app.canvas_rect.max.x,app.canvas_rect.max.y],"ppp":app.reported_ppp});
+        let step = &self.request["steps"][self.step];
+        if let Some(name) = step["name"].as_str() {
+            self.delivered_input["widget"] = trace().lock().unwrap()["widgets"][name].clone();
+        }
+        trace().lock().unwrap()["delivered_inputs"]
+            .as_array_mut()
+            .unwrap()
+            .push(self.delivered_input.clone());
+    }
+    fn capture_feedback(&mut self, image: &egui::ColorImage, label: &str) {
+        let t1 = now_ns();
+        let mut sample = self
+            .feedback_pending
+            .take()
+            .expect("unsolicited feedback image");
+        assert_eq!(sample["label"], label);
+        let x = sample["pixel"][0].as_u64().unwrap() as usize;
+        let y = sample["pixel"][1].as_u64().unwrap() as usize;
+        assert!(x >= 12 && y >= 12 && x + 12 < image.size[0] && y + 12 < image.size[1]);
+        let mut crop = b"P6\n25 25\n255\n".to_vec();
+        for row in y - 12..=y + 12 {
+            for col in x - 12..=x + 12 {
+                let p = image.pixels[row * image.size[0] + col];
+                crop.extend([p.r(), p.g(), p.b()]);
+            }
+        }
+        let path = format!("{label}.ppm");
+        std::fs::write(self.dir.join(&path), &crop).unwrap();
+        sample["t1_ns"] = json!(t1);
+        sample["callback_frame_id"] = json!(self.frame_id + 1);
+        sample["crop"] = json!(path);
+        sample["crop_origin_px"] = json!([x - 12, y - 12]);
+        sample["crop_sha256"] = json!(sha256_hex(&crop));
+        sample["surface_size_px"] = json!(image.size);
+        sample["latency_ms"] = json!((t1 - sample["t0_ns"].as_u64().unwrap()) as f64 / 1e6);
+        trace().lock().unwrap()["surface_callbacks"].as_array_mut().unwrap().push(json!({"label":label,"callback_frame_id":self.frame_id+1,"t1_ns":t1,"crop_sha256":sample["crop_sha256"]}));
+        self.feedback.push(sample);
+    }
     pub fn from_env(device: wgpu::Device) -> Option<Self> {
         let dir = directory()?;
         assert!(!cfg!(debug_assertions));
         let request: Value =
             serde_json::from_slice(&std::fs::read(dir.join("request.json")).ok()?).ok()?;
-        assert!(request["steps"].as_array()?.len() <= 200);
+        assert!(
+            request["steps"].as_array()?.len()
+                <= if request["stage"] == "S5-I2-B" {
+                    400
+                } else {
+                    200
+                }
+        );
+        if request["stage"] == "S5-I2-B" {
+            assert_eq!(
+                request["source_manifest_sha256"].as_str().unwrap(),
+                sha256_hex(include_bytes!("../../../MANIFEST.sha256"))
+            );
+            for name in ["layer_a.gbr", "layer_b.gbr", "layer_c.gbr"] {
+                let bytes = std::fs::read(
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../fixtures/synthetic/s5i2b")
+                        .join(name),
+                )
+                .unwrap();
+                assert_eq!(
+                    request["fixtures"][name].as_str().unwrap(),
+                    sha256_hex(&bytes)
+                );
+            }
+        }
+        let started = *CLOCK.get_or_init(Instant::now);
+        if request["role"] == "feedback" {
+            let bytes = std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/synthetic/s2b3_2/P100K_CIRCLES.gbr"),
+            )
+            .unwrap();
+            assert_eq!(
+                request["performance_fixture_sha256"].as_str().unwrap(),
+                sha256_hex(&bytes)
+            );
+        }
         ACTIVE.store(true, Ordering::Relaxed);
         Some(Self {
             dir,
@@ -119,7 +243,7 @@ impl Run {
             step: 0,
             phase: 0,
             since: Instant::now(),
-            started: Instant::now(),
+            started,
             device,
             painted: Arc::new(AtomicU64::new(0)),
             frame_id: 0,
@@ -131,6 +255,9 @@ impl Run {
             input_before: Value::Null,
             diagnostic_injected: false,
             held_frames: 0,
+            delivered_input: Value::Null,
+            feedback_pending: None,
+            feedback: vec![],
         })
     }
     fn position(app: &EditorApp, value: &Value, key: &str) -> Pos2 {
@@ -196,10 +323,38 @@ impl Run {
                     .as_ref()
                     .and_then(|d| d.downcast_ref::<String>())
             {
+                if label.starts_with("feedback-") {
+                    self.capture_feedback(image, label);
+                    continue;
+                }
                 let mut bytes =
                     format!("P6\n{} {}\n255\n", image.size[0], image.size[1]).into_bytes();
                 bytes.extend(image.pixels.iter().flat_map(|p| [p.r(), p.g(), p.b()]));
-                std::fs::write(self.dir.join(format!("{label}.ppm")), bytes).unwrap();
+                if self.request["stage"] == "S5-I2-B" {
+                    // Preserve every P6 byte without duplicating multi-GB
+                    // uncompressed windows. Feedback ROI timing bypasses this.
+                    let mut child = Command::new("/usr/bin/gzip")
+                        .args(["-n", "-c"])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
+                        .spawn()
+                        .unwrap();
+                    let mut stdin = child.stdin.take().unwrap();
+                    let output = std::thread::scope(|scope| {
+                        let writer = scope.spawn(move || stdin.write_all(&bytes));
+                        let output = child.wait_with_output().unwrap();
+                        writer.join().unwrap().unwrap();
+                        output
+                    });
+                    assert!(
+                        output.status.success(),
+                        "lossless native surface compression failed"
+                    );
+                    std::fs::write(self.dir.join(format!("{label}.ppm.gz")), output.stdout)
+                        .unwrap();
+                } else {
+                    std::fs::write(self.dir.join(format!("{label}.ppm")), bytes).unwrap();
+                }
             }
         }
         self.complete = None;
@@ -263,6 +418,185 @@ impl Run {
                 self.input_before["recovery_collision_due"] = json!(true);
             }
             match kind {
+                "b_tool_select" => {
+                    app.dispatch(editor_core::command::ids::TOOL_SELECT);
+                }
+                "b_active_last" => {
+                    app.send(Action::SetActiveLayer(Some(
+                        app.view.layers.last().unwrap().layer_id.clone(),
+                    )));
+                }
+                "b_select_one" => {
+                    app.send(Action::Select(
+                        MmPoint::new(20., 4.),
+                        0.01,
+                        crate::selection::SelectionMode::Replace,
+                    ));
+                }
+                "b_block_create" => {
+                    app.block_command(editor_core::command::ids::BLOCK_CREATE);
+                }
+                "b_block_place" => {
+                    app.block.definition = Some(app.view.block_definitions[0].id.0.clone());
+                    app.block_command(editor_core::command::ids::BLOCK_PLACE);
+                }
+                "b_import" => app.send(Action::ImportGerbers(
+                    ["layer_a.gbr", "layer_b.gbr", "layer_c.gbr"]
+                        .map(|n| {
+                            Path::new(env!("CARGO_MANIFEST_DIR"))
+                                .join("../../fixtures/synthetic/s5i2b")
+                                .join(n)
+                        })
+                        .to_vec(),
+                )),
+                "b_select_all" => app.send(Action::SelectRect(
+                    editor_core::BoundsMm {
+                        min_x_mm: -2.,
+                        min_y_mm: -2.,
+                        max_x_mm: 22.,
+                        max_y_mm: 6.,
+                    },
+                    editor_core::hit_test::SelectRectMode::Window,
+                )),
+                "b_modal" => {
+                    app.open_modal(match step["tool"].as_str().unwrap() {
+                        "move" => crate::modal::ActiveModal::Move,
+                        "rotate" => crate::modal::ActiveModal::Rotate,
+                        "mirror" | "vertical" => crate::modal::ActiveModal::Mirror,
+                        "copy" => crate::modal::ActiveModal::Move,
+                        _ => panic!("invalid point tool"),
+                    });
+                    if let Some(session) = &mut app.point_transform {
+                        if step["tool"] == "copy" {
+                            session.mode = crate::point_transform::Mode::Copy;
+                        }
+                        if step["tool"] == "vertical" {
+                            session.mode = crate::point_transform::Mode::VerticalMirror;
+                        }
+                    }
+                }
+                "b_adapter" => app.open_point_adapter(
+                    match step["tool"].as_str().unwrap() {
+                        "measure" => crate::point_adapter::Adapter::Measure,
+                        "text" => crate::point_adapter::Adapter::TextReference,
+                        "array_base" => crate::point_adapter::Adapter::ArrayBase,
+                        "array_target" => crate::point_adapter::Adapter::ArrayTarget,
+                        "board" => crate::point_adapter::Adapter::BoardWorld(0),
+                        "grip" => crate::point_adapter::Adapter::Grip(
+                            editor_core::grip::GripFeatureId::Right,
+                        ),
+                        _ => panic!("invalid point adapter"),
+                    },
+                    if step["tool"] == "grip" {
+                        MmPoint::new(20.5, 4.)
+                    } else {
+                        MmPoint::new(0., 0.)
+                    },
+                ),
+                "widget" | "cancel_conflict" if kind == "widget" || step["via"] == "button" => {
+                    let t = trace().lock().unwrap();
+                    let w = &t["widgets"][step["name"].as_str().unwrap()];
+                    assert!(
+                        w["frame"]
+                            .as_u64()
+                            .is_some_and(|f| f + 1 >= self.frame_id && f <= self.frame_id),
+                        "requested widget is stale: {step}"
+                    );
+                    assert_eq!(w["enabled"], true, "requested widget disabled: {step}");
+                    let p = Pos2::new(
+                        ((w["rect"][0].as_f64().unwrap() + w["rect"][2].as_f64().unwrap()) / 2.)
+                            as f32,
+                        ((w["rect"][1].as_f64().unwrap() + w["rect"][3].as_f64().unwrap()) / 2.)
+                            as f32,
+                    );
+                    Self::pointer(raw, p, Some(true), modifiers);
+                    self.enter(1);
+                    return;
+                }
+                "cancel_conflict" => {
+                    for key in [egui::Key::Escape, egui::Key::Enter] {
+                        for pressed in [true, false] {
+                            raw.events.push(egui::Event::Key {
+                                key,
+                                physical_key: Some(key),
+                                pressed,
+                                repeat: step["repeat"] == true,
+                                modifiers: Default::default(),
+                            });
+                        }
+                    }
+                }
+                "b_feedback_import" => app.send(Action::ImportGerbers(vec![
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../fixtures/synthetic/s2b3_2/P100K_CIRCLES.gbr"),
+                ])),
+                "b_feedback_select" => {
+                    assert_eq!(
+                        app.view
+                            .layers
+                            .iter()
+                            .map(|l| l.object_count)
+                            .sum::<usize>(),
+                        100000
+                    );
+                    app.send(Action::Select(
+                        MmPoint::new(10., 1.),
+                        0.01,
+                        crate::selection::SelectionMode::Replace,
+                    ));
+                }
+                "feedback_move" => {
+                    Self::pointer(raw, Self::position(app, &step, "from"), None, modifiers);
+                }
+                "text" => {
+                    let primary = egui::Modifiers {
+                        command: true,
+                        mac_cmd: true,
+                        ..Default::default()
+                    };
+                    for pressed in [true, false] {
+                        raw.events.push(egui::Event::Key {
+                            key: egui::Key::A,
+                            physical_key: Some(egui::Key::A),
+                            pressed,
+                            repeat: false,
+                            modifiers: primary,
+                        });
+                    }
+                    raw.events.push(egui::Event::Text(
+                        step["value"].as_str().unwrap().to_owned(),
+                    ));
+                }
+                "ime_end" => raw.events.push(egui::Event::Ime(egui::ImeEvent::Disabled)),
+                "escape" => {
+                    for pressed in [true, false] {
+                        raw.events.push(egui::Event::Key {
+                            key: egui::Key::Escape,
+                            physical_key: Some(egui::Key::Escape),
+                            pressed,
+                            repeat: false,
+                            modifiers: Default::default(),
+                        });
+                    }
+                }
+                "b_feedback_camera" => {
+                    app.display_unit = editor_core::units::DisplayUnit::Millimeter;
+                    app.camera = crate::camera::Camera {
+                        center: MmPoint::new(10., 1.),
+                        scale: 40.,
+                    };
+                    app.fit = false;
+                    app.grid.snap_enabled = false;
+                }
+                "b_camera" => {
+                    app.display_unit = editor_core::units::DisplayUnit::Millimeter;
+                    app.camera = crate::camera::Camera {
+                        center: MmPoint::new(10., 1.),
+                        scale: 30.,
+                    };
+                    app.fit = false;
+                    app.grid.snap_enabled = false;
+                }
                 "new" => app.send(Action::NewWorkspace),
                 "import" => app.send(Action::ImportGerbers(
                     ["lower.gbr", "upper.gbr"]
@@ -287,7 +621,14 @@ impl Run {
                     app.grid.snap_enabled = false;
                     app.object_snap.enabled = false;
                 }
-                "click" | "drag" => {
+                "click" | "drag" | "point_click" => {
+                    if kind == "point_click" {
+                        assert_eq!(
+                            app.canvas_rect.contains(Self::position(app, &step, "from")),
+                            step["outside"] != true,
+                            "point input fixture screen/world mismatch: {step}"
+                        );
+                    }
                     Self::pointer(
                         raw,
                         Self::position(app, &step, "from"),
@@ -383,17 +724,52 @@ impl Run {
                 && (app.drag.as_ref().is_some_and(|g| g.confirmed) || app.grip.is_some()))
                 || (self.step == 6 && self.request["diagnostic"] == "early_release")
                 || (self.diagnostic_injected && self.held_frames >= 2))
+            || self.phase == 1
+                && matches!(kind, "widget" | "point_click" | "cancel_conflict")
+                && self.held_frames >= 1
         {
             if kind == "drag" {
                 Self::pointer(raw, Self::position(app, &step, "to"), None, modifiers);
                 self.enter(2);
             } else {
-                Self::pointer(
-                    raw,
-                    Self::position(app, &step, "from"),
-                    Some(false),
-                    modifiers,
-                );
+                let pos = if kind == "widget" || kind == "cancel_conflict" {
+                    ctx.input(|i| i.pointer.interact_pos()).unwrap()
+                } else {
+                    Self::position(app, &step, "from")
+                };
+                Self::pointer(raw, pos, Some(false), modifiers);
+                if kind == "cancel_conflict" {
+                    match step["cancel"].as_str().unwrap() {
+                        "escape" => {
+                            for key in [egui::Key::Escape, egui::Key::Enter] {
+                                raw.events.push(egui::Event::Key {
+                                    key,
+                                    physical_key: Some(key),
+                                    pressed: true,
+                                    repeat: false,
+                                    modifiers: Default::default(),
+                                });
+                            }
+                        }
+                        "blur" => {
+                            raw.focused = false;
+                            raw.events.push(egui::Event::WindowFocused(false));
+                        }
+                        "gone" => raw.events.push(egui::Event::PointerGone),
+                        "ime" => {
+                            raw.events
+                                .push(egui::Event::Ime(egui::ImeEvent::Preedit("输入中".into())));
+                            raw.events.push(egui::Event::Key {
+                                key: egui::Key::Enter,
+                                physical_key: Some(egui::Key::Enter),
+                                pressed: true,
+                                repeat: false,
+                                modifiers: Default::default(),
+                            });
+                        }
+                        _ => panic!("unknown cancellation conflict"),
+                    }
+                }
                 self.enter(4);
             }
         } else if self.phase == 2 && self.since.elapsed() > Duration::from_millis(250) {
@@ -414,7 +790,11 @@ impl Run {
             );
             self.enter(4);
         }
-        ctx.request_repaint();
+        if self.request["stage"] == "S5-I2-B" {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        } else {
+            ctx.request_repaint();
+        }
     }
     pub fn tick(&mut self, app: &mut EditorApp, ctx: &egui::Context) {
         if self.finished {
@@ -429,7 +809,7 @@ impl Run {
         let current = state(app);
         self.previous = Some((
             self.frame_id,
-            json!({"frame_id":self.frame_id,"step":self.step,"phase":self.phase,"state":current,"input_ns":self.started.elapsed().as_nanos() as u64,"pass_index":ctx.current_pass_index(),"input_before":self.input_before,"grip_after":app.grip.is_some(),"sequence":app.sequence,"gesture_after":app.drag.as_ref().map(crate::drag::Gesture::evidence_state),"input":ctx.input(|i|json!({"events":events(&i.events),"position":i.pointer.interact_pos().map(|p|[p.x,p.y]),"down":i.pointer.primary_down(),"released":i.pointer.primary_released(),"focused":i.focused,"modifiers":modifiers(i.modifiers)}))}),
+            json!({"frame_id":self.frame_id,"step":self.step,"phase":self.phase,"state":current,"input_ns":self.started.elapsed().as_nanos() as u64,"pass_index":ctx.current_pass_index(),"delivered_input":self.delivered_input,"input_before":self.input_before,"grip_after":app.grip.is_some(),"sequence":app.sequence,"gesture_after":app.drag.as_ref().map(crate::drag::Gesture::evidence_state),"input":ctx.input(|i|json!({"events":events(&i.events),"position":i.pointer.interact_pos().map(|p|[p.x,p.y]),"down":i.pointer.primary_down(),"released":i.pointer.primary_released(),"focused":i.focused,"modifiers":modifiers(i.modifiers)}))}),
         ));
         if self.started.elapsed() > Duration::from_secs(180) {
             self.finish(app, ctx, Some("native timeout"));
@@ -449,6 +829,27 @@ impl Run {
             }
             return;
         }
+        if self.request["role"] == "feedback"
+            && self.phase == 4
+            && self.feedback_pending.is_none()
+            && self.request["steps"][self.step]["kind"] == "feedback_move"
+            && self.feedback.iter().all(|s| s["step"] != self.step)
+        {
+            let marker = app
+                .object_snap_runtime
+                .current
+                .as_ref()
+                .expect("feedback marker missing");
+            let point = app.camera.screen(marker.point, app.canvas_rect);
+            let sample = self.request["steps"][self.step]["sample"].as_u64().unwrap();
+            let label = format!("feedback-{sample:02}-{}", self.frame_id);
+            self.feedback_pending = Some(
+                json!({"sample":sample,"step":self.step,"frame_id":self.frame_id,"label":label,"t0_ns":self.delivered_input["t0_ns"],"state":current,"pixel":[(point.x*ctx.pixels_per_point()).round() as usize,(point.y*ctx.pixels_per_point()).round() as usize]}),
+            );
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
+                label,
+            )));
+        }
         let no_document = app.view.info.is_none() || app.view.layers.is_empty();
         let completed = self
             .complete
@@ -461,17 +862,23 @@ impl Run {
             && app.grip.is_none()
             && self.since.elapsed() > Duration::from_millis(400)
             && (no_document || completed.is_some())
+            && self.feedback_pending.is_none()
         {
             let label = format!("step-{:02}", self.step);
-            let snapshot = app
-                .view
-                .snap_snapshot
-                .as_ref()
-                .map(|s| serde_json::to_value(s.as_ref()).unwrap());
+            let snapshot = if self.request["role"] == "feedback" {
+                None
+            } else {
+                app.view
+                    .snap_snapshot
+                    .as_ref()
+                    .map(|s| serde_json::to_value(s.as_ref()).unwrap())
+            };
             std::fs::write(self.dir.join(format!("{label}.json")),serde_json::to_vec_pretty(&json!({"input":self.request["steps"][self.step],"state":current,"snapshot":snapshot,"completed_frame":completed})).unwrap()).unwrap();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
-                label.clone(),
-            )));
+            if self.request["role"] != "feedback" {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
+                    label.clone(),
+                )));
+            }
             self.records.push(json!({"step":self.step,"path":format!("{label}.json"),"elapsed_ms":self.since.elapsed().as_secs_f64()*1000.}));
             self.step += 1;
             self.enter(0);
@@ -491,7 +898,28 @@ impl Run {
             serde_json::to_vec_pretty(&ledger).unwrap(),
         )
         .unwrap();
-        std::fs::write(self.dir.join("observations.json"),serde_json::to_vec_pretty(&json!({"schema_version":2,"stage":"S5-I1","request":self.request,"records":self.records,"frames":self.frames,"error":error,"adapter":app.adapter,"profile":"release","commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"measurement_scope":"synthetic egui input, real worker and production Metal completion fence; functional evidence, no physical latency or PMIX claim"})).unwrap()).unwrap();
+        let mut observation = json!({"schema_version":2,"stage":self.request.get("stage").cloned().unwrap_or(json!("S5-I1")),"request":self.request,"records":self.records,"frames":self.frames,"error":error,"adapter":app.adapter,"profile":"release","commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"measurement_scope":"synthetic egui input, real worker and production Metal completion fence; functional evidence, no physical latency or PMIX claim"});
+        if self.request["stage"] == "S5-I2-B" {
+            let mut shards = Vec::new();
+            for (n, frames) in self.frames.chunks(2000).enumerate() {
+                let path = format!("frames-{n:03}.json");
+                let bytes = serde_json::to_vec(frames).unwrap();
+                assert!(bytes.len() <= 128 * 1024 * 1024);
+                std::fs::write(self.dir.join(&path), &bytes).unwrap();
+                shards.push(json!({"path":path,"count":frames.len(),"sha256":sha256_hex(&bytes)}));
+            }
+            observation.as_object_mut().unwrap().remove("frames");
+            observation["frame_files"] = json!(shards);
+            observation["evidence_version"] = json!(3);
+            observation["feedback"] = json!(self.feedback);
+        }
+        let bytes = if self.request["stage"] == "S5-I2-B" {
+            serde_json::to_vec(&observation)
+        } else {
+            serde_json::to_vec_pretty(&observation)
+        }
+        .unwrap();
+        std::fs::write(self.dir.join("observations.json"), bytes).unwrap();
         self.finished = true;
         app.allow_quit = true;
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);

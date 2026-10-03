@@ -30,6 +30,37 @@ pub enum SelectionEdit {
     Delete,
 }
 
+impl SelectionEdit {
+    /// Read-only preview uses the same rigid transform/translation as commit.
+    /// No history, IDs, aperture changes or display geometry participates.
+    pub fn preview_geometry(
+        &self,
+        geometry: &SemanticGeometry,
+    ) -> Result<SemanticGeometry, EditError> {
+        let mut result = geometry.clone();
+        match self {
+            Self::Move { dx_mm, dy_mm } | Self::Duplicate { dx_mm, dy_mm } => {
+                if !MmPoint::new(*dx_mm, *dy_mm).is_valid_geometry() {
+                    return Err(EditError::InvalidArgument);
+                }
+                crate::edit::translate(&mut result, *dx_mm, *dy_mm)?;
+            }
+            Self::Rotate {
+                angle_deg,
+                pivot_mm,
+            } => {
+                crate::transform::WorldTransform::rotation(*angle_deg, *pivot_mm)?
+                    .apply(&mut result)?;
+            }
+            Self::Mirror { axis } => {
+                crate::transform::WorldTransform::reflection(*axis)?.apply(&mut result)?;
+            }
+            Self::Delete => return Err(EditError::InvalidArgument),
+        }
+        Ok(result)
+    }
+}
+
 impl EditHistory {
     pub fn edit_selection(
         &mut self,

@@ -57,9 +57,8 @@ pub fn validate_hit_point(point: MmPoint, tolerance: f64) -> Result<(), HitTestE
 }
 
 /// Reuse the exact analytic material boundary used by hit-test/selection.
-/// Snap deliberately excludes standard aperture holes in its first product
-/// version; macro Clear primitives and Region hole contours remain part of
-/// their stored manufacturing boundary.
+/// Analytic Snap boundary, including standard aperture holes (S5-I2-B).
+/// Macro local Clear and Region holes retain their manufacturing semantics.
 pub(crate) fn manufacturing_boundary_edges(
     geometry: &SemanticGeometry,
     apertures: &[ApertureDefinition],
@@ -70,7 +69,7 @@ pub(crate) fn manufacturing_boundary_edges(
         .collect();
     let mut macros = HashMap::new();
     let mut budget = Budget(Some(MAX_HIT_TEST_WORK));
-    select_rect::edges_for(geometry, &apertures, &mut macros, &mut budget, false)
+    select_rect::edges_for(geometry, &apertures, &mut macros, &mut budget, true)
 }
 
 /// Read-only analytic boundaries for a transient display overlay. Includes
