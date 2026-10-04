@@ -2263,3 +2263,35 @@ fn native_metal_batch_drag_subset_and_outside_world() {
         assert_parity(&rig, &scene, &format!("BATCH_DRAG-{file}"));
     }
 }
+
+#[test]
+#[ignore = "S5-M2-C requires native Metal production/reference mixed geometry parity"]
+fn native_metal_pmix_reference_parity() {
+    let rig = parity_rig();
+    for name in ["s5m2c/MIX_BASE.gbr", "s5m2c/MIX_UPPER.gbr"] {
+        let (snapshot, layers) = fixture(name);
+        let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 1000., 1).unwrap();
+        assert_parity(&rig, &scene, name);
+    }
+    // Exact canonical performance geometry, including both Region templates.
+    // Reference cost is deliberately bounded to the first 20 true source objects.
+    let (mut snapshot, layers) = fixture("s5m2c/PMIX.gbr");
+    snapshot.layers[0].objects.truncate(20);
+    let scene = Scene::build(&snapshot, &layers, MmPoint::new(0., 0.), 1000., 2).unwrap();
+    assert_parity(&rig, &scene, "PMIX-first20");
+    let mut m = crate::state::Model::default();
+    m.run(crate::state::Action::OpenProject(
+        crate::pmix_tests::fixture("MIX_WORKFLOW.rcam"),
+        true,
+    ));
+    assert!(m.view.error.is_none(), "{:?}", m.view.error);
+    let scene = Scene::build(
+        m.view.snap_snapshot.as_ref().unwrap(),
+        &m.view.layers,
+        MmPoint::new(0., 0.),
+        1000.,
+        3,
+    )
+    .unwrap();
+    assert_parity(&rig, &scene, "PMIX-workflow");
+}

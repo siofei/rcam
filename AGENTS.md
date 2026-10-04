@@ -211,3 +211,12 @@ User explicitly started M2-B after A2 final independent PASS at 03576c5. Work in
 an isolated branch per S5_M2_B_PLAN / ADR0052. Freeze A2 lifecycle; do not reopen
 K1 native debt. M2-B is IN_PROGRESS until candidate review, same-commit clean
 build/native packages and final independent audit. No M2-C or broader PASS claim.
+
+
+### S5-M2-C PMIX resumed (2026-10-04)
+
+PMIX resumes on independently accepted I2-C 34ccaa42, preserving I1/I2 contracts,
+paused dirty source/binary and all failures. See S5_M2_C_PLAN, addendum and ADR0053.
+Full frozen 100k/three-round performance gates remain unchanged. IN PROGRESS;
+no resumed native acceptance yet. Noncanvas flicker OPEN; whole I2 not all PASS.
+Windows/K1 native deferred. No PPOL/PSTRESS/Recovery or M2 scope expansion.

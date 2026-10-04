@@ -1286,3 +1286,12 @@ S5-I2-B implementation contract: transient world point/session, selected-only A 
 ### S5-I2-C interaction/status implementation scope (2026-10-04)
 
 App-only persisted independent drag/Grip switches and canvas cursor; fixed status consumes the frozen A selected-only composed material area/perimeter with stale fencing. See S5_I2_C_PLAN and ADR0057. Menu flicker remains OPEN pending candidate release ROI investigation; C not accepted. Windows/K1 deferred; PMIX paused.
+
+
+### S5-M2-C PMIX resumed (2026-10-04)
+
+PMIX resumes on independently accepted I2-C 34ccaa42, preserving I1/I2 contracts,
+paused dirty source/binary and all failures. See S5_M2_C_PLAN, addendum and ADR0053.
+Full frozen 100k/three-round performance gates remain unchanged. IN PROGRESS;
+no resumed native acceptance yet. Noncanvas flicker OPEN; whole I2 not all PASS.
+Windows/K1 native deferred. No PPOL/PSTRESS/Recovery or M2 scope expansion.

@@ -21,6 +21,8 @@ mod metrics_panel;
 mod modal;
 #[cfg(test)]
 mod perf_tests;
+#[cfg(test)]
+mod pmix_tests;
 mod status_bar;
 use modal::ActiveModal;
 #[cfg(test)]
@@ -36,6 +38,8 @@ mod native_d1;
 mod native_d2;
 #[cfg(feature = "internal-evidence")]
 mod native_i1;
+#[cfg(feature = "internal-evidence")]
+mod native_pmix;
 mod native_probe;
 #[cfg(feature = "internal-evidence")]
 mod native_s5m1;
@@ -190,6 +194,8 @@ struct EditorApp {
     batch_drag: Option<native_batch_drag::Run>,
     #[cfg(feature = "internal-evidence")]
     i1: Option<native_i1::Run>,
+    #[cfg(feature = "internal-evidence")]
+    pmix: Option<native_pmix::Run>,
     /// Opt-in native evidence probe (`RCAM_NATIVE_PROBE_DIR`); observation only.
     probe: Option<native_probe::Probe>,
     row_probes: std::cell::RefCell<Vec<serde_json::Value>>,
@@ -325,12 +331,16 @@ impl EditorApp {
                 #[cfg(feature = "internal-evidence")]
                 let measured_action = native_s5m1::action_label(&action);
                 #[cfg(feature = "internal-evidence")]
+                let pmix_action = native_pmix::action_label(&action);
+                #[cfg(feature = "internal-evidence")]
                 native_a2::worker_begin(&task, &model.view);
                 rcam_diagnostics::with_source(source, || model.run_task(task, action));
                 #[cfg(feature = "internal-evidence")]
                 native_a2::worker_finished(id, &model.view);
                 #[cfg(feature = "internal-evidence")]
                 native_s5m1::worker_result(id, measured_action, start, &model.view);
+                #[cfg(feature = "internal-evidence")]
+                native_pmix::worker_result(id, pmix_action, start, &model.view);
                 if start.elapsed().as_millis() > 100 {
                     rcam_diagnostics::runtime_event(
                         rcam_diagnostics::Level::Warn,
@@ -466,6 +476,8 @@ impl EditorApp {
             batch_drag: native_batch_drag::Run::from_env(gpu.device.clone()),
             #[cfg(feature = "internal-evidence")]
             i1: native_i1::Run::from_env(gpu.device.clone()),
+            #[cfg(feature = "internal-evidence")]
+            pmix: native_pmix::Run::from_env(gpu.device.clone()),
             probe: native_probe::Probe::from_env(),
             row_probes: Default::default(),
             layer_panel_rect: egui::Rect::NOTHING,
@@ -567,10 +579,14 @@ impl EditorApp {
                 self.view.rule_revision,
             ),
         );
+        #[cfg(feature = "internal-evidence")]
+        let pmix_input = native_pmix::request_input(&task, &self.view, &a);
         match self.tx.try_send((self.sequence, source, a, task.clone())) {
             Ok(()) => {
                 #[cfg(feature = "internal-evidence")]
                 native_i1::accepted_action(i1_action, self.sequence);
+                #[cfg(feature = "internal-evidence")]
+                native_pmix::accepted_request(pmix_input);
                 if geometry {
                     #[cfg(feature = "internal-evidence")]
                     native_ui::geometry_request(
@@ -1266,6 +1282,11 @@ impl eframe::App for EditorApp {
         }
         #[cfg(feature = "internal-evidence")]
         native_ui::raw_input(raw);
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.pmix.take() {
+            run.input(self, ctx, raw);
+            self.pmix = Some(run);
+        }
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
         self.shortcuts.popup_at_event = egui::Popup::is_any_open(ctx);
@@ -2705,6 +2726,8 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                             #[cfg(feature = "internal-evidence")]
                             if let Some(run) = &mut self.batch_drag { run.prepare(&prepared.stats); }
                             #[cfg(feature = "internal-evidence")]
+                            if let Some(run) = &mut self.pmix { run.prepare(&prepared.stats); }
+                            #[cfg(feature = "internal-evidence")]
                             if let Some(run) = &mut self.s5m1 {
                                 run.prepare(&prepared.stats);
                             }
@@ -2746,7 +2769,8 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                                 #[cfg(feature = "internal-evidence")]
                                 let s5 = self.s5m1.as_ref().map(|r| (r.painted.clone(), r.frame_id))
                                     .or_else(|| self.batch_drag.as_ref().map(|r| (r.painted.clone(), r.frame_id)))
-                                    .or_else(|| self.i1.as_ref().map(|r| (r.painted.clone(), r.frame_id)));
+                                    .or_else(|| self.i1.as_ref().map(|r| (r.painted.clone(), r.frame_id)))
+                                    .or_else(|| self.pmix.as_ref().map(|r| (r.painted.clone(), r.frame_id)));
                                 #[cfg(not(feature = "internal-evidence"))]
                                 let s5 = None;
                                 s5.or_else(|| self.bench.as_ref().map(|b| (b.painted.clone(), b.frame_id)))
@@ -2933,6 +2957,11 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
         if let Some(mut run) = self.batch_drag.take() {
             run.tick(self, ctx);
             self.batch_drag = Some(run);
+        }
+        #[cfg(feature = "internal-evidence")]
+        if let Some(mut run) = self.pmix.take() {
+            run.tick(self, ctx);
+            self.pmix = Some(run);
         }
         #[cfg(feature = "internal-evidence")]
         if let Some(mut run) = self.a2.take() {
@@ -3164,6 +3193,7 @@ fn main() -> eframe::Result {
                     .or_else(native_a2::directory)
                     .or_else(native_batch_drag::directory)
                     .or_else(native_i1::directory)
+                    .or_else(native_pmix::directory)
                     .or_else(native_d2::directory)
                     .or_else(native_d1::directory)
                 {

@@ -1016,6 +1016,8 @@ impl Model {
     }
     fn hit(&self, point: MmPoint, tolerance: f64) -> Result<Option<ObjectInfo>, ServiceError> {
         #[cfg(feature = "internal-evidence")]
+        let _pmix_measure = crate::native_pmix::HitTimer::start(point, tolerance);
+        #[cfg(feature = "internal-evidence")]
         let _measure = crate::native_s5m1::HitTimer::start();
         self.editable()?;
         let id = self.info()?.document_id;
@@ -1117,6 +1119,8 @@ impl Model {
         context: crate::selection::ClickContext,
         mode: crate::selection::SelectionMode,
     ) -> Result<(), ServiceError> {
+        #[cfg(feature = "internal-evidence")]
+        let _pmix_measure = crate::native_pmix::HitTimer::start(context.world, context.tolerance);
         #[cfg(feature = "internal-evidence")]
         let _measure = crate::native_s5m1::HitTimer::start();
         self.editable()?;

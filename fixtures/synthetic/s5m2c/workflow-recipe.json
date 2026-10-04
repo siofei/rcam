@@ -1,0 +1,75 @@
+{
+  "block_origin_mm": [
+    0,
+    0
+  ],
+  "block_source_ordinals": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "canonical_fixture_metadata": {
+    "imported_at": "2000-01-01T00:00:00Z",
+    "project_id": "project-0000000000000000000000000000c053"
+  },
+  "first_layer_source_objects": 15,
+  "geometry_source": "real ApplicationService actions; only detached fixture project ID/import timestamps canonicalized",
+  "instances": [
+    {
+      "mirror": false,
+      "rotation_deg": 0,
+      "translation_mm": [
+        40,
+        0
+      ]
+    },
+    {
+      "mirror": false,
+      "rotation_deg": 37,
+      "translation_mm": [
+        80,
+        0
+      ]
+    },
+    {
+      "mirror": true,
+      "rotation_deg": 90,
+      "translation_mm": [
+        120,
+        0
+      ]
+    }
+  ],
+  "schema_version": 2,
+  "scope": "bounded two-layer correctness/workflow, not PPOL or performance replacement",
+  "second_layer_source_objects": 2,
+  "source_files": [
+    {
+      "bytes": 1135,
+      "path": "fixtures/synthetic/s5m2c/MIX_BASE.gbr",
+      "sha256": "c147b4b28ab8915afebc8f41d6ff296488709a0ae83d7740ce9bdb7d370fa0ef"
+    },
+    {
+      "bytes": 193,
+      "path": "fixtures/synthetic/s5m2c/MIX_UPPER.gbr",
+      "sha256": "445d090f3d339a52e97c0f33f9d315abeb276d18aa59ed38405ec21a4eb4d72e"
+    }
+  ],
+  "text": {
+    "font": "builtin:rcam-stroke-v1",
+    "height_mm": 3,
+    "position_mm": [
+      0,
+      18
+    ],
+    "string": "PMIX 8B",
+    "stroke_width_mm": 0.15
+  }
+}

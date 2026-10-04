@@ -474,6 +474,8 @@ pub(crate) mod tests {
             batch_drag: None,
             #[cfg(feature = "internal-evidence")]
             i1: None,
+            #[cfg(feature = "internal-evidence")]
+            pmix: None,
             probe: None,
             row_probes: Default::default(),
             layer_panel_rect: eframe::egui::Rect::NOTHING,

@@ -1,0 +1,17 @@
+{
+  "block_definitions": 1,
+  "block_instances": 4,
+  "builtin_text": "PMIX 8B",
+  "bytes": 3883,
+  "fixture": "MIX_WORKFLOW.rcam",
+  "layer_object_counts": [
+    49,
+    2
+  ],
+  "normalization": "Detached project ID/import timestamps only; generated twice through Model/ApplicationService with exact codec roundtrip before measurement",
+  "other_base_objects": 5,
+  "recipe_sha256": "788f17cde0c168d74029e44978eafe85175beb784185cf3b65c3de1b87ea814f",
+  "schema_version": 2,
+  "sha256": "161f7b2a1566243d98596f3860352d87b35705f143e117e1803b3066482b0461",
+  "text_objects": 40
+}
