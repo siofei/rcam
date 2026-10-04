@@ -13,6 +13,7 @@ mod drag;
 mod font_catalog;
 mod gpu;
 mod grip;
+mod interaction;
 mod layer_panel;
 #[cfg(test)]
 mod layer_tests;
@@ -20,6 +21,7 @@ mod metrics_panel;
 mod modal;
 #[cfg(test)]
 mod perf_tests;
+mod status_bar;
 use modal::ActiveModal;
 #[cfg(test)]
 mod batch_drag_tests;
@@ -37,6 +39,8 @@ mod native_i1;
 mod native_probe;
 #[cfg(feature = "internal-evidence")]
 mod native_s5m1;
+#[cfg(feature = "internal-evidence")]
+mod native_ui;
 mod object_snap;
 mod platform;
 mod point_adapter;
@@ -568,6 +572,11 @@ impl EditorApp {
                 #[cfg(feature = "internal-evidence")]
                 native_i1::accepted_action(i1_action, self.sequence);
                 if geometry {
+                    #[cfg(feature = "internal-evidence")]
+                    native_ui::geometry_request(
+                        self.sequence,
+                        geometry_context.as_deref().unwrap(),
+                    );
                     self.geometry_task = Some(task);
                     self.geometry_context = geometry_context;
                 } else if viewport {
@@ -1222,6 +1231,8 @@ fn arrangement_action(command: CommandId) -> Option<Action> {
 
 impl eframe::App for EditorApp {
     fn on_exit(&mut self) {
+        #[cfg(feature = "internal-evidence")]
+        native_ui::finish();
         for task in [&self.pending_task, &self.viewport_task]
             .into_iter()
             .flatten()
@@ -1253,6 +1264,8 @@ impl eframe::App for EditorApp {
             run.record_delivery(self, raw);
             self.i1 = Some(run);
         }
+        #[cfg(feature = "internal-evidence")]
+        native_ui::raw_input(raw);
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
         self.shortcuts.popup_at_event = egui::Popup::is_any_open(ctx);
@@ -1625,20 +1638,23 @@ impl eframe::App for EditorApp {
             || self.view.error.as_ref().is_some_and(|e| {
                 e.code == "CONFIRMATION_REQUIRED" && e.details.get("categories").is_some()
             });
-        let cancel_drag = ctx.input(|i| {
-            drag::cancelled(
-                !self.text_input_at_event
-                    && !self.ime_event
-                    && !self.ime_active
-                    && i.key_pressed(egui::Key::Escape),
-                i.focused,
-                i.events
-                    .iter()
-                    .any(|e| matches!(e, egui::Event::PointerGone)),
-                i.pointer.primary_down() || self.drag.as_ref().is_some_and(|d| d.released),
-                i.pointer.primary_released(),
-            )
-        });
+        let cancel_drag = self.text_input_at_event
+            || self.ime_event
+            || self.ime_active
+            || ctx.input(|i| {
+                drag::cancelled(
+                    !self.text_input_at_event
+                        && !self.ime_event
+                        && !self.ime_active
+                        && i.key_pressed(egui::Key::Escape),
+                    i.focused,
+                    i.events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::PointerGone)),
+                    i.pointer.primary_down() || self.drag.as_ref().is_some_and(|d| d.released),
+                    i.pointer.primary_released(),
+                )
+            });
         if self
             .point_transform
             .as_ref()
@@ -1699,6 +1715,7 @@ impl eframe::App for EditorApp {
         {
             self.cancel_block();
         }
+        self.fence_mouse_preferences();
         if cancel_drag || modal_open || self.display_error.is_some() {
             self.drag = None;
         }
@@ -1750,6 +1767,8 @@ impl eframe::App for EditorApp {
             };
             self.send(Action::SelectionCenters(identity, params));
         }
+        #[cfg(feature = "internal-evidence")]
+        native_ui::profile("pre-toolbar");
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             if modal_open {
                 ui.disable();
@@ -1758,7 +1777,7 @@ impl eframe::App for EditorApp {
                 ui.strong("RCam");
                 if ui.add_enabled(!self.busy && self.view.info.is_some(),egui::Button::new("PCB / PnP")).clicked(){self.components.open=true;}
                 ui.separator();
-                ui.menu_button("文件", |ui| {
+                let _menu_file=ui.menu_button("文件", |ui| {
                     if crate::ui::command_widgets::button(ui, command_ids::FILE_NEW_PROJECT, self.command_state(command_ids::FILE_NEW_PROJECT)).clicked()
                     {
                         self.dispatch(command_ids::FILE_NEW_PROJECT);
@@ -1820,15 +1839,21 @@ impl eframe::App for EditorApp {
                         ui.close();
                     }
                 });
-                ui.menu_button("编辑", |ui| {
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("file",&_menu_file.response);native_i1::widget("menu-file",&_menu_file.response);}
+                let _menu_edit=ui.menu_button("编辑", |ui| {
                     self.history_buttons(ui);
                     self.object_buttons(ui);
                     self.block_entries(ui);
                     ui.separator();
                     self.transform_entries(ui, true);
                 });
-                ui.menu_button("排列", |ui| self.arrangement_entries(ui));
-                ui.menu_button("插入", |ui| {
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("edit",&_menu_edit.response);native_i1::widget("menu-edit",&_menu_edit.response);}
+                let _menu_arrange=ui.menu_button("排列", |ui| self.arrangement_entries(ui));
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("arrange",&_menu_arrange.response);native_i1::widget("menu-arrange",&_menu_arrange.response);}
+                let _menu_insert=ui.menu_button("插入", |ui| {
                     if crate::ui::command_widgets::button(ui, command_ids::TOOL_TEXT, self.command_state(command_ids::TOOL_TEXT),
                     )
                     .clicked()
@@ -1837,8 +1862,12 @@ impl eframe::App for EditorApp {
                         ui.close();
                     }
                 });
-                ui.menu_button("工具", |ui| { self.tool_buttons(ui, false); });
-                ui.menu_button("图层", |ui| {
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("insert",&_menu_insert.response);native_i1::widget("menu-insert",&_menu_insert.response);}
+                let _menu_tools=ui.menu_button("工具", |ui| { self.tool_buttons(ui, false); });
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("tools",&_menu_tools.response);native_i1::widget("menu-tools",&_menu_tools.response);}
+                let _menu_layer=ui.menu_button("图层", |ui| {
                     if crate::ui::command_widgets::button(ui, command_ids::LAYER_CREATE, self.command_state(command_ids::LAYER_CREATE),
                     )
                     .clicked()
@@ -1920,7 +1949,9 @@ impl eframe::App for EditorApp {
                         ui.close();
                     }
                 });
-                ui.menu_button("视图", |ui| {
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("layer",&_menu_layer.response);native_i1::widget("menu-layer",&_menu_layer.response);}
+                let _menu_view=ui.menu_button("视图", |ui| {
                     let mut grid_visible = self.grid.visible;
                     if crate::ui::command_widgets::checkbox(
                         ui,
@@ -1947,18 +1978,23 @@ impl eframe::App for EditorApp {
                         self.open_modal(ActiveModal::ObjectSnap);
                         ui.close();
                     }
+                    let _interaction_menu=ui.menu_button("画布交互", |ui| self.interaction_controls(ui));
+#[cfg(feature = "internal-evidence")]
+native_i1::widget("menu-interaction",&_interaction_menu.response);
                     self.unit_controls(ui);
                     if crate::ui::command_widgets::button(ui, command_ids::VIEW_FIT, self.command_state(command_ids::VIEW_FIT)).clicked() {
                         self.dispatch(command_ids::VIEW_FIT);
                         ui.close();
                     }
                 });
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("view",&_menu_view.response);native_i1::widget("menu-view",&_menu_view.response);}
                 ui.menu_button(if self.shortcuts.warning.is_some() { "设置 ⚠" } else { "设置" }, |ui| {
                     if ui.add_enabled(!self.busy && self.modal.is_none() && self.drag.is_none() && self.grip.is_none() && self.block.session.is_none() && self.text.floating.is_none(), egui::Button::new("快捷键…")).clicked() {
                         self.shortcuts.open = true; self.shortcuts.message = None; ui.close();
                     }
                 });
-                ui.menu_button("帮助", |ui| {
+                let _menu_help=ui.menu_button("帮助", |ui| {
                     ui.label("S4-B1 · 多 Gerber 图层工作区");
                     ui.label(
                         "几何选择包括 Clear；Ctrl 点击加选，Shift 点击减选，双向框选，整组编辑。",
@@ -2008,6 +2044,8 @@ impl eframe::App for EditorApp {
                     } else { ui.label("本次日志不可用：无法打开本机日志目录。"); }
 
                 });
+#[cfg(feature = "internal-evidence")]
+{native_ui::menu("help",&_menu_help.response);native_i1::widget("menu-help",&_menu_help.response);}
             });
             ui.horizontal(|ui| {
                 self.operation_source = rcam_diagnostics::Source::Toolbar;
@@ -2059,96 +2097,68 @@ impl eframe::App for EditorApp {
                 });
             });
         });
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                if let Some(d) = &self.view.info {
-                    ui.label(format!(
-                        "制造版本 {}  ·  工作区 {}",
-                        d.revision, d.workspace_revision
-                    ));
-                    ui.separator();
-                }
-                ui.label(format!(
-                    "{:.2} 点/{}",
-                    self.camera.scale * self.display_unit.mm_per_unit(),
-                    self.display_unit.suffix()
-                ));
-                ui.label(format!("网格 {}", self.length(self.grid.spacing_mm)));
-                ui.label(if self.object_snap.enabled {
-                    "Object Snap ON"
-                } else {
-                    "Object Snap OFF"
-                });
-                if let Some(resolution) = &self.object_snap_runtime.current
-                    && let Some(kind) = resolution.kind
-                {
-                    ui.label(format!(
-                        "{}  X {}  Y {}",
-                        object_snap::kind_label(kind),
-                        self.length(resolution.point.x_mm),
-                        self.length(resolution.point.y_mm)
-                    ));
-                }
-                if let Some(o) = self.view.selected.primary() {
-                    ui.label(format!("选中 {}", o.object.object_id));
-                    if self.view.selected.ordered.len() >= 2 {
-                        let kind = if matches!(
-                            o.object.origin,
-                            editor_core::ObjectOrigin::GeneratedText { .. }
-                        ) {
-                            "文字组"
-                        } else {
-                            "对象"
-                        };
-                        ui.label(
-                            RichText::new(format!(
-                                "对齐锚点：{kind} {}（最后选中）",
-                                o.object.object_id
-                            ))
-                            .background_color(crate::ui::tokens::selection_highlight()),
-                        );
-                    }
-                }
-                ui.label(&self.view.message);
-                // Display-transient diagnostics keep the last-good frame on screen and
-                // are reported here instead of covering the canvas.
-                if let (Some(e), Some(_)) = (&self.display_error, &self.last_good) {
-                    ui.label(RichText::new(format!("显示诊断：{e}")).weak());
-                }
-            });
-            if let Some((text, _)) = self.toast.clone() {
+        #[cfg(feature = "internal-evidence")]
+        native_ui::profile("toolbar");
+        egui::TopBottomPanel::bottom("status")
+            .exact_height(52.)
+            .show(ctx, |ui| {
+                let fields = status_bar::fields(
+                    &self.view,
+                    self.display_unit,
+                    self.precision().resolution_mm,
+                );
+                let coordinates = ctx
+                    .input(|i| i.pointer.hover_pos())
+                    .filter(|p| self.canvas_rect.contains(*p))
+                    .map(|p| {
+                        let w = self.camera.world(p, self.canvas_rect);
+                        format!("X {}  Y {}", self.length(w.x_mm), self.length(w.y_mm))
+                    })
+                    .unwrap_or_else(|| format!("X —  Y — {}", self.display_unit.suffix()));
+                let _slots = status_bar::paint(ui, &fields, &coordinates);
+                #[cfg(feature = "internal-evidence")]
+                native_i1::status(&fields, _slots);
                 ui.horizontal(|ui| {
-                    ui.label(text);
-                    if self
-                        .command_button(ui, command_ids::EDIT_UNDO, "撤销")
-                        .clicked()
+                    let message = self
+                        .ui_error
+                        .clone()
+                        .or_else(|| {
+                            self.view
+                                .error
+                                .as_ref()
+                                .map(|e| format!("{} · {}", e.code, e.message))
+                        })
+                        .or_else(|| self.toast.as_ref().map(|(text, _)| text.clone()))
+                        .or_else(|| self.display_error.clone())
+                        .unwrap_or_else(|| self.view.message.clone());
+                    let width = (ui.available_width() - 120.).max(0.);
+                    ui.add_sized(
+                        [width, 20.],
+                        egui::Label::new(status_bar::display_line(&message)).truncate(),
+                    )
+                    .on_hover_text(&message);
+                    if self.toast.is_some()
+                        && self
+                            .command_button(ui, command_ids::EDIT_UNDO, "撤销")
+                            .clicked()
                     {
                         self.toast = None;
                         self.dispatch(command_ids::EDIT_UNDO);
                     }
-                    if ui.small_button("×").clicked() {
+                    if (self.ui_error.is_some() || self.toast.is_some())
+                        && ui.small_button("关闭提示").clicked()
+                    {
+                        self.ui_error = None;
                         self.toast = None;
                     }
-                });
-            }
-            if let Some(error) = &self.view.error {
-                ui.colored_label(
-                    Color32::LIGHT_RED,
-                    format!("{} · {}", error.code, error.message),
-                );
-                ui.collapsing("错误详情", |ui| {
-                    ui.label(error.details.to_string());
-                });
-            }
-            if let Some(e) = self.ui_error.clone() {
-                ui.horizontal_wrapped(|ui| {
-                    ui.colored_label(Color32::LIGHT_RED, e);
-                    if ui.small_button("关闭提示").clicked() {
-                        self.ui_error = None;
+                    if let Some(error) = &self.view.error {
+                        ui.small_button("详情")
+                            .on_hover_text(error.details.to_string());
                     }
                 });
-            }
-        });
+            });
+        #[cfg(feature = "internal-evidence")]
+        native_ui::profile("status");
         self.operation_source = rcam_diagnostics::Source::Menu;
         let layer_panel = egui::SidePanel::left("layers")
             .resizable(true)
@@ -2187,6 +2197,8 @@ impl eframe::App for EditorApp {
                 let _ = self.prefs.save(&path);
             }
         }
+        #[cfg(feature = "internal-evidence")]
+        native_ui::profile("layers");
         self.operation_source = rcam_diagnostics::Source::Modal;
         egui::SidePanel::right("properties")
             .default_width(260.)
@@ -2280,6 +2292,8 @@ impl eframe::App for EditorApp {
                     }
                 });
             });
+        #[cfg(feature = "internal-evidence")]
+        native_ui::profile("properties");
         self.operation_source = rcam_diagnostics::Source::Toolbar;
         egui::TopBottomPanel::top("grid-tools").show(ctx, |ui| {
             if modal_open {
@@ -2339,6 +2353,8 @@ impl eframe::App for EditorApp {
                 }
             });
         });
+        #[cfg(feature = "internal-evidence")]
+        native_ui::profile("grid-tools");
         let modal_open = modal_open || self.modal.is_some();
         self.operation_source = rcam_diagnostics::Source::Canvas;
         egui::CentralPanel::default()
@@ -2500,7 +2516,7 @@ impl eframe::App for EditorApp {
                         && !modal_open
                         && rect.contains(press)
                     {
-                        let feature = (selection::SelectionMode::from_modifiers(modifiers)==selection::SelectionMode::Replace).then(||grip::features(&self.view).ok().and_then(|features| grip::hit(&features, press, self.camera, rect, ctx.pixels_per_point()))).flatten();
+                        let feature = (self.prefs.interaction.grip_edit && selection::SelectionMode::from_modifiers(modifiers)==selection::SelectionMode::Replace).then(||grip::features(&self.view).ok().and_then(|features| grip::hit(&features, press, self.camera, rect, ctx.pixels_per_point()))).flatten();
                         if let Some(id) = feature {
                             self.grip = grip::Session::arm(&self.view, id);
                             if let Some(session) = &mut self.grip { session.pressed = Some(press); }
@@ -2514,7 +2530,7 @@ impl eframe::App for EditorApp {
                             rect,
                             ctx.pixels_per_point(),
                             selection::SelectionMode::from_modifiers(modifiers),
-                        ).with_navigation_epoch(self.click_navigation.observe(self.camera,rect,ctx.pixels_per_point())));
+                        ).with_movement_enabled(self.prefs.interaction.drag_move).with_navigation_epoch(self.click_navigation.observe(self.camera,rect,ctx.pixels_per_point())));
                         if self.drag.is_some() {
                             self.send(Action::ProbeDrag(
                                 self.camera.world(press, rect),
@@ -2539,6 +2555,7 @@ impl eframe::App for EditorApp {
                 self.closeout_context_transition();
                 // Tool/menu input above can change context in this same frame.
                 // Recheck before release, rather than waiting for the next frame.
+                self.fence_mouse_preferences();
                 if self.grip.is_some() && (self.tool != tools::ActiveTool::Select
                     || self.modal.is_some() || self.layer_dialog.is_some() || self.close_prompt) {
                     self.grip = None;
@@ -2744,7 +2761,7 @@ impl eframe::App for EditorApp {
                 }
                 self.paint_point_transform(&painter,rect,ctx.pixels_per_point());
                 self.paint_adapter_point(&painter,rect,ctx.pixels_per_point());
-                if self.point_pick.is_none() && self.tool == tools::ActiveTool::Select && !modal_open {
+                if self.prefs.interaction.grip_edit && self.point_pick.is_none() && self.tool == tools::ActiveTool::Select && !modal_open {
                     match self.grip.as_ref().map_or_else(|| grip::features(&self.view), grip::Session::features) {
                         Ok(features) => {
                             let hover = ctx.input(|i| i.pointer.hover_pos()).and_then(|p| grip::hit(&features,p,self.camera,rect,ctx.pixels_per_point()));
@@ -2754,6 +2771,9 @@ impl eframe::App for EditorApp {
                     }
                     if let Some(grip) = &self.grip { grip.paint(&painter,self.camera,rect,ctx.pixels_per_point()); }
                 }
+                let _custom_cursor=interaction::paint_cursor(ctx,&r,&painter,self.prefs.interaction.cursor,modal_open || self.modal.is_some() || self.shortcuts.open);
+                #[cfg(feature = "internal-evidence")]
+                native_i1::cursor(_custom_cursor);
                 self.paint_component(&painter,rect,ctx.pixels_per_point());
                 self.paint_candidates(&painter,rect,ctx.pixels_per_point());
                 self.paint_block(&painter, rect, ctx.pixels_per_point());
@@ -2898,6 +2918,8 @@ impl eframe::App for EditorApp {
             bench.ensure_record(self, ctx.pixels_per_point(), now);
             self.bench = Some(bench);
         }
+        #[cfg(feature = "internal-evidence")]
+        native_ui::profile("canvas");
         self.project_prompts(ctx);
         self.recovery_prompt(ctx);
         if !self.close_prompt {
@@ -2905,6 +2927,8 @@ impl eframe::App for EditorApp {
             self.layer_dialogs(ctx);
         }
         self.probe_frame(ctx);
+        #[cfg(feature = "internal-evidence")]
+        native_ui::frame(self, ctx);
         #[cfg(feature = "internal-evidence")]
         if let Some(mut run) = self.batch_drag.take() {
             run.tick(self, ctx);
@@ -3517,3 +3541,6 @@ mod i1_tests;
 
 #[cfg(test)]
 mod selection_geometry_tests;
+
+#[cfg(test)]
+mod interaction_tests;

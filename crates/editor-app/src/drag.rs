@@ -157,6 +157,17 @@ impl Gesture {
         self.navigation_epoch = epoch;
         self
     }
+    /// Suppress movement arming without disabling click or box selection.
+    /// Enabling the preference later cannot retroactively arm this press.
+    pub fn with_movement_enabled(mut self, enabled: bool) -> Self {
+        if !enabled {
+            self.object_drag = None;
+        }
+        self
+    }
+    pub fn movement_armed(&self) -> bool {
+        self.object_drag.is_some()
+    }
     #[cfg(feature = "internal-evidence")]
     pub fn evidence_dragging(&self) -> bool {
         self.object_drag.as_ref().is_some_and(|d| d.dragging)

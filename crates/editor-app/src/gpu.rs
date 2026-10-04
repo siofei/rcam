@@ -714,6 +714,8 @@ impl egui_wgpu::CallbackTrait for Callback {
         pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources,
     ) {
+        #[cfg(feature = "internal-evidence")]
+        crate::native_ui::callback(&info);
         let v = info.viewport_in_pixels();
         let c = info.clip_rect_in_pixels();
         let x = v.left_px.max(c.left_px).max(0) as u32;

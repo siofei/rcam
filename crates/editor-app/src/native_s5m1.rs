@@ -107,6 +107,7 @@ impl Drop for HitTimer {
 }
 pub fn action_label(action: &Action) -> &'static str {
     match action {
+        Action::NewWorkspace if crate::native_batch_drag::c_investigation() => "new-workspace",
         Action::Open(_) => "open",
         Action::DiscardNewWorkspace => "new-project",
         Action::Viewport(..) => "viewport",
@@ -119,6 +120,9 @@ pub fn action_label(action: &Action) -> &'static str {
         Action::History(false) => "undo",
         Action::History(true) => "redo",
         Action::Save(..) => "export",
+        Action::SelectionCenters(..) if crate::native_batch_drag::c_investigation() => {
+            "selection-centers"
+        }
         _ => "other",
     }
 }

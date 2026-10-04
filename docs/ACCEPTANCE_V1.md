@@ -1896,3 +1896,7 @@ Closeout 额外要求真实 app Runtime 在 11 physical px 生成候选、8 px �
 ### INFRA1 局部诊断验证
 
 R16/R17/R18/R19/R20/R21/R22、AT-063/066/069/077/082/083/086/090/097：追加有界日志、操作修订号、失败零修改、隐私白名单、panic child-process、分段计时与原生诊断包检查。维持 96 个有效用例、既有 required_platforms 和 schema_version=2；当前实施状态见 INFRA1_RUNTIME_DIAGNOSTICS_REVIEW，不替代双平台验收。
+
+### S5-I2-C local interaction/status verification (2026-10-04)
+
+R08/R09/R10/R11/R13/R16/R17/R18/R19 and applicable AT025–045/065–069/074–075/086–092 local coverage: four drag/Grip preference combinations and live cancellation, canvas-only cursor, composed material area/perimeter, stable narrow status and candidate-native menu ROI. Directed C01–12 and inherited B regression are in S5_I2_C_PLAN; initially NOT_EXECUTED. Existing 96 case identities/platforms and thresholds unchanged. Flicker report remains OPEN; no Windows/fullI2/fullV1 claim.

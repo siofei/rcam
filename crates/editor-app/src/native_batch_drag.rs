@@ -10,17 +10,21 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 
 static ORIGIN: OnceLock<Instant> = OnceLock::new();
+static C_INVESTIGATION: AtomicBool = AtomicBool::new(false);
+pub fn c_investigation() -> bool {
+    C_INVESTIGATION.load(Ordering::Acquire)
+}
 pub fn worker_observation(start: Instant, view: &crate::state::View) -> Option<Value> {
     let origin = *ORIGIN.get()?;
     let d = view.info.as_ref();
     Some(
-        json!({"started_ns":start.checked_duration_since(origin)?.as_nanos() as u64,"finished_ns":origin.elapsed().as_nanos() as u64,"state":{"document_id":d.map(|d|&d.document_id),"revision":d.map(|d|&d.revision),"workspace_revision":d.map(|d|&d.workspace_revision),"dirty":d.map(|d|d.dirty),"project_dirty":d.map(|d|d.project_dirty),"undo":d.map(|d|d.undo_entries),"redo":d.map(|d|d.redo_entries),"selected":view.selected.ordered.len(),"scene_serial":view.scene.as_ref().map(|s|s.serial),"scene_objects":view.scene.as_ref().map_or(0,|s|s.objects.len())}}),
+        json!({"receipt":view.task_receipt,"started_ns":start.checked_duration_since(origin)?.as_nanos() as u64,"finished_ns":origin.elapsed().as_nanos() as u64,"state":{"document_id":d.map(|d|&d.document_id),"revision":d.map(|d|&d.revision),"workspace_revision":d.map(|d|&d.workspace_revision),"dirty":d.map(|d|d.dirty),"project_dirty":d.map(|d|d.project_dirty),"undo":d.map(|d|d.undo_entries),"redo":d.map(|d|d.redo_entries),"selected":view.selected.ordered.len(),"scene_serial":view.scene.as_ref().map(|s|s.serial),"scene_objects":view.scene.as_ref().map_or(0,|s|s.objects.len())}}),
     )
 }
 fn view_parameters(app: &EditorApp) -> Value {
@@ -115,6 +119,10 @@ impl Run {
         assert!(!cfg!(debug_assertions));
         let mode = request["mode"].as_str()?.to_owned();
         assert!(["move", "escape", "blur", "pointergone", "new-project"].contains(&mode.as_str()));
+        C_INVESTIGATION.store(
+            request["stage"] == "S5-I2-C-menu-investigation",
+            Ordering::Release,
+        );
         crate::native_s5m1::activate_counters();
         let started = *ORIGIN.get_or_init(Instant::now);
         Some(Self {
@@ -169,7 +177,7 @@ impl Run {
                 pos: p,
                 button: egui::PointerButton::Primary,
                 pressed,
-                modifiers: egui::Modifiers::NONE,
+                modifiers: raw.modifiers,
             });
         }
     }
@@ -225,6 +233,10 @@ impl Run {
             if let egui::Event::Screenshot {
                 image, user_data, ..
             } = e
+                && user_data
+                    .data
+                    .as_ref()
+                    .is_some_and(|data| data.is::<Value>())
             {
                 let name = format!("surface-{}.ppm", self.frame_id);
                 let mut bytes =
@@ -237,6 +249,15 @@ impl Run {
         self.frame_id += 1;
         self.input_at = Instant::now();
         self.focused = raw.focused;
+        // C retains B's dedicated contour policy. This explicitly declared
+        // benchmark input uses the existing Alt bypass for a free trajectory.
+        // Ordinary B/M2 requests and product settings are unchanged.
+        let c_alt_bypass = self.request["stage"] == "S5-I2-C-menu-investigation"
+            && self.request["alt_bypass"] == true;
+        if c_alt_bypass {
+            raw.modifiers = egui::Modifiers::NONE;
+            raw.modifiers.alt = (4..=7).contains(&self.phase);
+        }
         match self.phase {
             4 => {
                 Self::pointer(raw, self.press, Some(true));
@@ -287,7 +308,7 @@ impl Run {
             }
             _ => {}
         }
-        self.injected = json!({"view":view_parameters(app),"pointer":raw.events.iter().rev().find_map(|e|if let egui::Event::PointerMoved(p)=e {Some([p.x,p.y])} else {None}),"pressed":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:true,..})),"released":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:false,..})),"escape":raw.events.iter().any(|e|matches!(e,egui::Event::Key {key:egui::Key::Escape,pressed:true,..})),"pointer_gone":raw.events.iter().any(|e|matches!(e,egui::Event::PointerGone)),"focused":raw.focused,"trajectory_origin_ns":self.trajectory_origin.map(|t|t.duration_since(self.started).as_nanos() as u64)});
+        self.injected = json!({"modifiers":{"alt":raw.modifiers.alt,"ctrl":raw.modifiers.ctrl,"shift":raw.modifiers.shift,"command":raw.modifiers.command},"button_alt":raw.events.iter().filter_map(|e|if let egui::Event::PointerButton {modifiers,..}=e {Some(modifiers.alt)} else {None}).collect::<Vec<_>>(),"view":view_parameters(app),"pointer":raw.events.iter().rev().find_map(|e|if let egui::Event::PointerMoved(p)=e {Some([p.x,p.y])} else {None}),"pressed":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:true,..})),"released":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:false,..})),"escape":raw.events.iter().any(|e|matches!(e,egui::Event::Key {key:egui::Key::Escape,pressed:true,..})),"pointer_gone":raw.events.iter().any(|e|matches!(e,egui::Event::PointerGone)),"focused":raw.focused,"trajectory_origin_ns":self.trajectory_origin.map(|t|t.duration_since(self.started).as_nanos() as u64)});
         // Frame interval includes recorder overhead, scheduling and preceding
         // GPU completion; CPU update time below explicitly excludes recorder.
         self.frame_interval = self
@@ -352,7 +373,12 @@ impl Run {
         self.finished = true;
         let binary = std::fs::read(std::env::current_exe().unwrap()).unwrap();
         let fixture = Path::new(self.request["fixture"].as_str().unwrap());
-        let report = json!({"schema_version":2,"stage":"S5-M2-B","profile":"release","observation_version":2,"last_observed_frame_id":self.frame_id-1,"request":self.request,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"fixture_sha256":sha256_hex(&std::fs::read(fixture).unwrap()),"protocol_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2b/protocol.json")),"adapter":app.adapter,"frames":self.frames,"events":self.events,"snapshots":self.snapshot_files,"worker":crate::native_s5m1::worker_snapshot(),"failures":self.failures,"counters":crate::native_s5m1::counter_snapshot(),"measurement_scope":"synthetic egui input; production Metal callback completion upper bound, no physical input/scanout claim; UI allocator only raw-input-end to tick-start; RSS/CPU externally sampled"});
+        let resource_scope = if c_investigation() {
+            "RSS/CPU measured by wait4 for exact owned child lifetime; kernel peak RSS; total/average CPU, no periodic maximum"
+        } else {
+            "RSS/CPU externally sampled"
+        };
+        let report = json!({"schema_version":2,"stage":"S5-M2-B","profile":"release","observation_version":2,"last_observed_frame_id":self.frame_id-1,"request":self.request,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"fixture_sha256":sha256_hex(&std::fs::read(fixture).unwrap()),"protocol_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2b/protocol.json")),"adapter":app.adapter,"frames":self.frames,"events":self.events,"snapshots":self.snapshot_files,"worker":crate::native_s5m1::worker_snapshot(),"failures":self.failures,"counters":crate::native_s5m1::counter_snapshot(),"measurement_scope":format!("synthetic egui input; production Metal callback completion upper bound, no physical input/scanout claim; UI allocator only raw-input-end to tick-start; {resource_scope}")});
         std::fs::write(
             self.dir.join("observations.json"),
             serde_json::to_vec_pretty(&report).unwrap(),

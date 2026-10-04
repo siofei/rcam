@@ -51,6 +51,47 @@ def worker_elapsed_ms(w):
     require(-1e-6<=derived-legacy<=1.,'worker elapsed/shared-clock mismatch')
     return derived
 
+def verify_c_centers(w, preceding):
+    receipt=w['batch']['receipt'];version=receipt['input'];state=w['batch']['state']
+    require(w['action']=='selection-centers' and type(receipt['task_id']) is int
+            and receipt['task_id']==w['sequence'] and receipt['state']=='completed'
+            and receipt['input']==receipt['result_version'],'C read-only full task receipt')
+    require(set(version)=={'document_id','document_revision','workspace_revision','generation','rule_revision','geometry_policy_hash'}
+            and version['document_id']==state['document_id'] and version['document_revision']==state['revision']
+            and version['workspace_revision']==state['workspace_revision'],'C read-only TaskVersion/state binding')
+    require(type(version['generation']) is int and version['generation']==2
+            and type(version['rule_revision']) is int and version['rule_revision']==0
+            and version['geometry_policy_hash']==hashlib.sha256(b'{"resolution_mm":0.0001}').hexdigest(),
+            'C fixed-scene generation/rule/manufacturing precision fencing')
+    require(preceding is not None and state==preceding['batch']['state'],
+            'C read-only query changed manufacturing/selection/scene/history')
+
+C_WORKER_PATH = ['new-workspace','open','viewport','select-rect','selection-centers',
+                 'probe-drag','drag-move','selection-centers','undo','selection-centers',
+                 'redo','selection-centers']
+
+def verify_c_worker_path(workers, release_input):
+    # Classify setup too: an initial query relabelled "other" must not escape
+    # the same complete TaskVersion/read-only-state checks as later queries.
+    require([w['action'] for w in workers]==C_WORKER_PATH,
+            'C complete typed setup/manufacturing/read-only worker sequence')
+    require([w['action'] for w in workers if w['batch']['started_ns']>=release_input]
+            ==C_WORKER_PATH[6:], 'C exact post-release worker boundary')
+
+def verify_c_usage(runner, owned):
+    usage=runner['owned_child_rusage']
+    require(usage['method']=='macOS wait4 exact owned application child; ru_maxrss bytes; CPU seconds'
+            and type(usage['pid']) is int and usage['pid']>0 and usage['pid']==owned['pid'],
+            'C exact owned child completion/resource accounting')
+    rss=usage['rss_peak_bytes'];elapsed=usage['child_elapsed_s']
+    require(type(rss) is int and rss>0 and type(elapsed) in (int,float)
+            and math.isfinite(elapsed) and elapsed>0,'C kernel peak RSS/elapsed invalid')
+    times=[usage['user_cpu_s'],usage['system_cpu_s']]
+    require(all(type(v) in (int,float) and math.isfinite(v) and v>=0 for v in times)
+            and sum(times)>0,'C actual child CPU accounting invalid')
+    return rss,{'cpu_total_s':sum(times),'cpu_percent_average':sum(times)/elapsed*100,
+                'rss_method':usage['method'],'resource_scope':'exact owned child lifetime; no periodic CPU maximum claim'}
+
 def bind_frames(r,p):
     require(r['observation_version']==2,'missing input/completion observations')
     all_frames=r['frames'];require(bool(all_frames),'missing frames')
@@ -137,7 +178,7 @@ def bind_completion(r,events,indexed,label,origin,action):
     for k,v in b['state'].items():require(v==f['state'][k],'worker/result state mismatch: '+k)
     require(w['selected_count']==f['state']['selected'] and w['scene_count']==f['state']['scene_objects'],'worker result counts mismatch')
 
-def verify(directory):
+def verify(directory, *, c_investigation=False):
     p=strict_load(PROTOCOL); r=strict_load(directory/'observations.json')
     request=strict_load(directory/'request.json'); runner=strict_load(directory/'runner.json')
     require(type(r['schema_version']) is int and r['schema_version']==2 and r['stage']=='S5-M2-B','stage/schema')
@@ -166,7 +207,22 @@ def verify(directory):
     for a,b in zip(r['worker'],r['worker'][1:]):require(a['batch']['finished_ns']<=b['batch']['started_ns'],'overlapping/out-of-order worker results')
     release_input=indexed[by['release']['frame_id']]['input_ns']
     after=[w['action'] for w in r['worker'] if w.get('batch') and w['batch']['started_ns']>=release_input]
-    require(after==(['drag-move','undo','redo'] if mode=='move' else (['new-project'] if mode=='new-project' else [])),'unexpected post-release worker path')
+    if c_investigation:
+        require(request['stage']=='S5-I2-C-menu-investigation' and request['alt_bypass'] is True
+                and n==5000 and mode=='move','C investigation frozen scene/Alt declaration')
+        verify_c_worker_path(r['worker'],release_input)
+        for frame in r['frames']:
+            inp=frame['injected']
+            if 5<=frame['phase']<=7 and inp['pointer'] is not None:
+                require(inp['modifiers']=={'alt':True,'ctrl':False,'shift':False,'command':False}
+                        and all(inp['button_alt']),'C actual Alt bypass input omitted')
+        preceding=None
+        for w in r['worker']:
+            if w['action']=='selection-centers':
+                verify_c_centers(w,preceding)
+            preceding=w
+    else:
+        require(after==(['drag-move','undo','redo'] if mode=='move' else (['new-project'] if mode=='new-project' else [])),'unexpected post-release worker path')
     for a,b in zip(r['frames'],r['frames'][1:]):
         require(a['id']<b['id'] and a['input_ns']<b['input_ns'],'frame order')
         for k in ('scene-allocation','index-allocation','geometry-storage-init-upload','index-storage-init-upload','selection-upload','uniform-upload'):
@@ -190,7 +246,11 @@ def verify(directory):
     for k in ('scene-allocation','index-allocation','geometry-storage-init-upload','index-storage-init-upload','selection-upload','geometry-patch-attempt','geometry-full-build-attempt'):
         require(last.get(k,0)==first.get(k,0),'steady preview work: '+k)
     require(last.get('uniform-upload',0)>first.get('uniform-upload',0),'missing uniform uploads')
-    samples=strict_load(directory/'process-samples.json');require(len(samples)>10,'missing RSS/CPU')
+    if c_investigation:
+        rss,resource_summary=verify_c_usage(runner,strict_load(directory/'owned-process.json'))
+        samples=None
+    else:
+        samples=strict_load(directory/'process-samples.json');require(len(samples)>10,'missing RSS/CPU')
     # macOS ps(1): Z is a zombie; the E modifier means trying to exit.
     # Keep these samples, but require the completed native report to have existed
     # at sampling time. A running/unfinished process must always have positive RSS.
@@ -199,9 +259,12 @@ def verify(directory):
         exiting=state.startswith('Z') or 'E' in state[1:]
         terminal_zero=v['rss_bytes']==0 and exiting and v.get('completed_report_present') is True
         return (v['rss_bytes']>0 or terminal_zero) and math.isfinite(v['cpu_percent'])
-    require(all(valid_sample(v) for v in samples),'invalid process metrics')
-    require(sum(v['rss_bytes']>0 for v in samples)>10,'missing live process metrics')
-    rss=max(v['rss_bytes'] for v in samples);require(rss<=p['rss_peak_bytes_max'],'RSS budget')
+    if not c_investigation:
+        require(all(valid_sample(v) for v in samples),'invalid process metrics')
+        require(sum(v['rss_bytes']>0 for v in samples)>10,'missing live process metrics')
+        rss=max(v['rss_bytes'] for v in samples)
+        resource_summary={'cpu_percent_max':max(v['cpu_percent'] for v in samples)}
+    require(rss<=p['rss_peak_bytes_max'],'RSS budget')
     require(r['counters']['custom-buffer-largest-observed-bytes']<=p['custom_gpu_bytes_max'],'GPU budget')
     require(mode=='move' or mode in p['interruptions'],'unsupported mode')
     snapshot_events={'before':'baseline'}
@@ -217,7 +280,8 @@ def verify(directory):
         data=file.read_bytes();require(len(data)==s['count']*16,'snapshot size');return list(struct.iter_unpack('<dd',data))
     before=coords('before');require(len(before)==100000,'baseline count')
     require(all(x==i%1000+1 and y==i//1000+1 for i,(x,y) in enumerate(before)),'fixture manufacturing truth')
-    summary={'selected':n,'mode':mode,'frames':len(frames),'rss_peak_bytes':rss,'cpu_percent_max':max(v['cpu_percent'] for v in samples),'ui_allocation_count_max':max(f['ui_allocation_count_bytes'][0] for f in frames)}
+    summary={'selected':n,'mode':mode,'frames':len(frames),'rss_peak_bytes':rss,
+             **resource_summary,'ui_allocation_count_max':max(f['ui_allocation_count_bytes'][0] for f in frames)}
     if mode=='move':
         require((by['release']['at_ns']-by['confirmed']['at_ns'])/1e9>=p['drag_seconds'],'drag too short')
         require(len(frames)>=100,'insufficient performance samples')

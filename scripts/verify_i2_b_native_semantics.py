@@ -31,6 +31,10 @@ def verify_trace(request, obs, ledger, frames):
     role=request['role']
     need(role in ('functional','feedback') and type(request['copy']) is bool and type(obs['evidence_version']) is int and type(request['evidence_version']) is int and obs['evidence_version']==request['evidence_version']==3,'native evidence protocol version/role')
     expected=feedback_steps() if role=='feedback' else steps(request['copy'])
+    return verify_input_trace(expected, request, obs, ledger, frames)
+
+
+def verify_input_trace(expected, request, obs, ledger, frames):
     need(request['steps']==expected,'frozen native mandatory trajectory changed/omitted')
     delivered=ledger['delivered_inputs'];by_input={r['frame_id']:r for r in delivered}
     need(len(by_input)==len(delivered) and list(by_input)==ledger['input_ids'],'independent delivered input producer sequence')

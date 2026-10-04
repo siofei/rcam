@@ -16,6 +16,7 @@ pub(crate) struct AppPreferences {
     pub shortcut_overrides: std::collections::BTreeMap<String, String>,
     pub panel_width: Option<f32>,
     pub recent_colors: Vec<String>,
+    pub interaction: crate::interaction::Preferences,
 }
 
 impl AppPreferences {

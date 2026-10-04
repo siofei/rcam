@@ -350,3 +350,7 @@ fixture as an exact success regression (ADR0046). Final acceptance pending.
 ### S4-D2 RefDes-assisted manufacturing candidate selection (PASS, Mac-first bounded; 2026-10-02)
 
 S4-D2 is PASS (Mac-first bounded; 2026-10-02). Registered component-local rectangle queries use explicit Gerber layers and shared f64 WorldIndex, preserve Dark/Clear and object type, aggregate whole text groups and atomic blocks, and provide deterministic revision-fenced bounded pages. Candidate != Association, final Boolean opening or footprint ownership. GUI highlight/focus/Replace/Add selection are transient and follow existing permissions/edit paths. No project schema change, footprint guess or persistent link. See S4_D2_PLAN, S4_D2_ACCEPTANCE_ADDENDUM, S4_D2_REVIEW and ADR0047 (0043 was occupied by D1 input compatibility). Windows/full V1/CORE10/P100K deferred. Stop after D2.
+
+## 2026-10-04 · S5-I2-C started
+
+After B clean final independent PASS cf806b8f, isolated C covers independent persisted mouse drag/Grip preferences, canvas cursor, fixed composited area/perimeter status and actual menu-flicker investigation. Defaults preserve old enabled behavior (implementation choice). Plan/ADR0057 freeze scope; C NOT_ACCEPTED, flicker OPEN, Windows/K1 deferred, PMIX paused.

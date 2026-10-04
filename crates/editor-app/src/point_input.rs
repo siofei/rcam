@@ -78,7 +78,7 @@ impl Draft {
         })
     }
 }
-pub fn center(view: &View, area: bool) -> Result<Point, String> {
+pub fn current_centers(view: &View) -> Result<&editor_service::SelectionCentersResult, String> {
     if view.selection_geometry_identity != selection_geometry_identity(view) {
         return Err("正在等待当前选区中心；旧结果不可用".into());
     }
@@ -94,7 +94,10 @@ pub fn center(view: &View, area: bool) -> Result<Point, String> {
     {
         return Err("选区中心已过期".into());
     }
-    from_centers(result, area)
+    Ok(result)
+}
+pub fn center(view: &View, area: bool) -> Result<Point, String> {
+    from_centers(current_centers(view)?, area)
 }
 pub fn from_centers(
     result: &editor_service::SelectionCentersResult,

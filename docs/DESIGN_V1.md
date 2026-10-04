@@ -1282,3 +1282,7 @@ native debt is deferred; PMIX/PPOL/PSTRESS/Recovery are separate later stages.
 Implementation authorized from I1 f1939fd; validation pending. [Plan](S5_I2_PLAN.md), [ADR 0055](adr/0055-unified-base-point-composite-metrics.md) and [additional cases](S5_I2_ACCEPTANCE_ADDENDUM.md) freeze selected-only ordered per-layer area/moments/perimeter, distinct envelope/area centers, common point input and persistent interaction UX. Not a PASS or V1/platform scope change.
 
 S5-I2-B implementation contract: transient world point/session, selected-only A centers and dedicated analytic contour/standard-hole Snap; see S5_I2_B_PLAN and ADR 0056. A final is Mac-first bounded; B/C not accepted. No schema/platform/precision threshold change.
+
+### S5-I2-C interaction/status implementation scope (2026-10-04)
+
+App-only persisted independent drag/Grip switches and canvas cursor; fixed status consumes the frozen A selected-only composed material area/perimeter with stale fencing. See S5_I2_C_PLAN and ADR0057. Menu flicker remains OPEN pending candidate release ROI investigation; C not accepted. Windows/K1 deferred; PMIX paused.

@@ -40,6 +40,16 @@ pub fn widget(name: &str, response: &egui::Response) {
         t["widgets"][name] = json!({"rect":[response.rect.min.x,response.rect.min.y,response.rect.max.x,response.rect.max.y],"enabled":response.enabled(),"frame":t["frame"]});
     }
 }
+pub fn status(fields: &crate::status_bar::Fields, slots: [Option<egui::Rect>; 4]) {
+    if ACTIVE.load(Ordering::Relaxed) {
+        trace().lock().unwrap()["status"] = json!({"selection":fields.selection,"area":fields.area,"perimeter":fields.perimeter,"state":fields.state,"tooltip":fields.tooltip,"slots":slots.map(|s|s.map(|r|[r.min.x,r.min.y,r.max.x,r.max.y]))});
+    }
+}
+pub fn cursor(shown: bool) {
+    if ACTIVE.load(Ordering::Relaxed) {
+        trace().lock().unwrap()["cursor_shown"] = json!(shown);
+    }
+}
 pub fn paint(id: u64) {
     if ACTIVE.load(Ordering::Relaxed) {
         trace().lock().unwrap()["paint_ids"]
@@ -109,19 +119,23 @@ fn events(events: &[egui::Event]) -> Vec<Value> {
 }
 pub fn directory() -> Option<PathBuf> {
     let p = std::fs::canonicalize(
-        std::env::var_os("RCAM_I2_B_NATIVE_DIR")
+        std::env::var_os("RCAM_I2_C_NATIVE_DIR")
+            .or_else(|| std::env::var_os("RCAM_I2_B_NATIVE_DIR"))
             .or_else(|| std::env::var_os("RCAM_I1_NATIVE_DIR"))?,
     )
     .ok()?;
-    let explicit_root =
-        std::env::var_os("RCAM_I2_B_NATIVE_ROOT").and_then(|r| std::fs::canonicalize(r).ok());
+    let explicit_root = std::env::var_os("RCAM_I2_C_NATIVE_ROOT")
+        .or_else(|| std::env::var_os("RCAM_I2_B_NATIVE_ROOT"))
+        .and_then(|r| std::fs::canonicalize(r).ok());
     let allowed_root = p.parent() == Some(Path::new("/private/tmp"))
-        || (std::env::var_os("RCAM_I2_B_NATIVE_DIR").is_some()
+        || ((std::env::var_os("RCAM_I2_C_NATIVE_DIR").is_some()
+            || std::env::var_os("RCAM_I2_B_NATIVE_DIR").is_some())
             && explicit_root
                 .as_deref()
                 .is_some_and(|r| p.parent() == Some(r)));
     (allowed_root
-        && (p.file_name()?.to_str()?.starts_with("rcam-i1-native-")
+        && (p.file_name()?.to_str()?.starts_with("rcam-i2-c-native-")
+            || p.file_name()?.to_str()?.starts_with("rcam-i1-native-")
             || p.file_name()?.to_str()?.starts_with("rcam-i2-b-native-")))
     .then_some(p)
 }
@@ -148,9 +162,21 @@ pub struct Run {
     feedback: Vec<Value>,
 }
 fn state(app: &EditorApp) -> Value {
+    let (status, cursor_shown) = {
+        let t = trace().lock().unwrap();
+        (t["status"].clone(), t["cursor_shown"].clone())
+    };
     let cycle = app.view.click_cycle.as_ref().map(|c| json!({"index":c.index,"candidates":c.candidates,"document":c.document,"revision":c.revision,"workspace":c.workspace,"point":[c.context.point.x,c.context.point.y],"world":[c.context.world.x_mm,c.context.world.y_mm],"camera":c.context.camera,"canvas":[c.context.rect.min.x,c.context.rect.min.y,c.context.rect.max.x,c.context.rect.max.y],"ppp":c.context.ppp,"navigation_epoch":c.context.navigation_epoch}));
     let point=app.point_transform.as_ref().map(|s|json!({"mode":format!("{:?}",s.mode),"angle":s.angle,"base":s.base.resolve(app.display_unit).ok().map(|p|json!({"world":[p.world_mm.x_mm,p.world_mm.y_mm],"source":format!("{:?}",p.source)})),"target":s.target.resolve(app.display_unit).ok().map(|p|json!({"world":[p.world_mm.x_mm,p.world_mm.y_mm],"source":format!("{:?}",p.source)})),"operation":s.operation(&app.view,app.display_unit).ok(),"preview":app.view.point_preview.as_ref().map(|p|json!({"operation":p.request.operation,"bounds":p.bounds,"simplified":p.simplified,"path_count":p.paths.len()}))}));
-    json!({"info":app.view.info,"selected":app.view.selected.ordered,"point_transform":point,"point_pick":app.point_pick.as_ref().map(|p|format!("{:?}",p.field)),"point_adapter":app.point_adapter.as_ref().map(|s|json!({"target":format!("{:?}",s.target),"world":s.draft.resolve(app.display_unit).ok().map(|p|[p.world_mm.x_mm,p.world_mm.y_mm]),"block_translation":s.block_translation,"grip_target":s.grip_preview.as_ref().map(|g|g.target),"grip_preview":s.grip_preview.as_ref().and_then(|g|g.preview.as_ref().ok()).map(|p|json!({"geometry":p.geometry,"aperture_shape":p.aperture_shape}))})),"modal":app.modal.map(|m|format!("{m:?}")),"tool":match app.tool {crate::tools::ActiveTool::Select=>"Select",crate::tools::ActiveTool::Measure=>"Measure",crate::tools::ActiveTool::Text=>"Text",crate::tools::ActiveTool::Block=>"Block"},"measure":{"a":app.measure.a,"b":app.measure.b,"values":app.measure.values(),"completed":app.measure.completed.len()},"text_reference":{"x":app.text.rx,"y":app.text.ry,"enabled":app.text.has_reference},"array_pitch":[app.array.pitch_x,app.array.pitch_y],"array_base":app.array_point_base,"block_reference":app.block_point_reference,"block_origin":[app.block.x,app.block.y],"board_world":app.components.world_points,"snap_marker":app.object_snap_runtime.current.as_ref().map(|r|json!({"world":[r.point.x_mm,r.point.y_mm],"kind":format!("{:?}",r.kind)})),"click_cycle":cycle,"task_receipt":app.view.task_receipt,"navigation_epoch":app.click_navigation.evidence_epoch(),"error":app.view.error,"ui_error":app.ui_error,"scene_serial":app.view.scene.as_ref().map(|s|s.serial),"layers":app.view.layers,"camera":[app.camera.center.x_mm,app.camera.center.y_mm,app.camera.scale],"canvas":[app.canvas_rect.min.x,app.canvas_rect.min.y,app.canvas_rect.max.x,app.canvas_rect.max.y],"ppp":app.reported_ppp,"busy":app.busy,"display_pending":app.display_pending})
+    json!({"mouse_grip":app.grip.as_ref().map(|g|json!({"id":g.id,"moved":g.moved,"target":g.target,"original":g.object,"preview":g.preview.as_ref().ok().map(|p|json!({"geometry":p.geometry,"aperture_shape":p.aperture_shape}))})),"interaction":app.prefs.interaction,"status":status,"cursor_shown":cursor_shown,"info":app.view.info,"selected":app.view.selected.ordered,"point_transform":point,"point_pick":app.point_pick.as_ref().map(|p|format!("{:?}",p.field)),"point_adapter":app.point_adapter.as_ref().map(|s|json!({"target":format!("{:?}",s.target),"world":s.draft.resolve(app.display_unit).ok().map(|p|[p.world_mm.x_mm,p.world_mm.y_mm]),"block_translation":s.block_translation,"grip_target":s.grip_preview.as_ref().map(|g|g.target),"grip_preview":s.grip_preview.as_ref().and_then(|g|g.preview.as_ref().ok()).map(|p|json!({"geometry":p.geometry,"aperture_shape":p.aperture_shape}))})),"modal":app.modal.map(|m|format!("{m:?}")),"tool":match app.tool {crate::tools::ActiveTool::Select=>"Select",crate::tools::ActiveTool::Measure=>"Measure",crate::tools::ActiveTool::Text=>"Text",crate::tools::ActiveTool::Block=>"Block"},"measure":{"a":app.measure.a,"b":app.measure.b,"values":app.measure.values(),"completed":app.measure.completed.len()},"text_reference":{"x":app.text.rx,"y":app.text.ry,"enabled":app.text.has_reference},"array_pitch":[app.array.pitch_x,app.array.pitch_y],"array_base":app.array_point_base,"block_reference":app.block_point_reference,"block_origin":[app.block.x,app.block.y],"board_world":app.components.world_points,"snap_marker":app.object_snap_runtime.current.as_ref().map(|r|json!({"world":[r.point.x_mm,r.point.y_mm],"kind":format!("{:?}",r.kind)})),"click_cycle":cycle,"task_receipt":app.view.task_receipt,"navigation_epoch":app.click_navigation.evidence_epoch(),"error":app.view.error,"ui_error":app.ui_error,"scene_serial":app.view.scene.as_ref().map(|s|s.serial),"layers":app.view.layers,"camera":[app.camera.center.x_mm,app.camera.center.y_mm,app.camera.scale],"canvas":[app.canvas_rect.min.x,app.canvas_rect.min.y,app.canvas_rect.max.x,app.canvas_rect.max.y],"ppp":app.reported_ppp,"busy":app.busy,"display_pending":app.display_pending})
+}
+pub(crate) fn block_place_definition(view: &crate::state::View) -> Result<String, &'static str> {
+    view.block_definitions
+        .first()
+        .map(|definition| definition.id.0.clone())
+        .ok_or(
+            "native setup precondition failed: b_block_place requires a committed Block definition",
+        )
 }
 impl Run {
     pub fn record_delivery(&mut self, app: &EditorApp, raw: &egui::RawInput) {
@@ -200,13 +226,13 @@ impl Run {
             serde_json::from_slice(&std::fs::read(dir.join("request.json")).ok()?).ok()?;
         assert!(
             request["steps"].as_array()?.len()
-                <= if request["stage"] == "S5-I2-B" {
+                <= if matches!(request["stage"].as_str(), Some("S5-I2-B" | "S5-I2-C")) {
                     400
                 } else {
                     200
                 }
         );
-        if request["stage"] == "S5-I2-B" {
+        if matches!(request["stage"].as_str(), Some("S5-I2-B" | "S5-I2-C")) {
             assert_eq!(
                 request["source_manifest_sha256"].as_str().unwrap(),
                 sha256_hex(include_bytes!("../../../MANIFEST.sha256"))
@@ -330,7 +356,7 @@ impl Run {
                 let mut bytes =
                     format!("P6\n{} {}\n255\n", image.size[0], image.size[1]).into_bytes();
                 bytes.extend(image.pixels.iter().flat_map(|p| [p.r(), p.g(), p.b()]));
-                if self.request["stage"] == "S5-I2-B" {
+                if matches!(self.request["stage"].as_str(), Some("S5-I2-B" | "S5-I2-C")) {
                     // Preserve every P6 byte without duplicating multi-GB
                     // uncompressed windows. Feedback ROI timing bypasses this.
                     let mut child = Command::new("/usr/bin/gzip")
@@ -418,6 +444,48 @@ impl Run {
                 self.input_before["recovery_collision_due"] = json!(true);
             }
             match kind {
+                "c_new" => app.send(Action::DiscardNewWorkspace),
+                "c_preferences" => {
+                    let preferences = serde_json::from_value(step["value"].clone()).unwrap();
+                    app.set_interaction_preferences(preferences);
+                }
+                "c_reload_preferences" => {
+                    let path = crate::preferences::AppPreferences::path().unwrap();
+                    app.prefs = crate::preferences::AppPreferences::load(&path);
+                    app.fence_mouse_preferences();
+                }
+                "c_hover" => {
+                    Self::pointer(raw, Self::position(app, &step, "from"), None, modifiers);
+                }
+                "c_hover_menu" => {
+                    let t = trace().lock().unwrap();
+                    let w = &t["widgets"][step["name"].as_str().unwrap()];
+                    let r = &w["rect"];
+                    let p = Pos2::new(
+                        ((r[0].as_f64().unwrap() + r[2].as_f64().unwrap()) / 2.) as f32,
+                        ((r[1].as_f64().unwrap() + r[3].as_f64().unwrap()) / 2.) as f32,
+                    );
+                    Self::pointer(raw, p, None, modifiers);
+                }
+                "c_resize" => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                        step["size"][0].as_f64().unwrap() as f32,
+                        step["size"][1].as_f64().unwrap() as f32,
+                    )));
+                }
+                "c_complex_import" => app.send(Action::ImportGerbers(vec![
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../fixtures/synthetic/s5i2c/material.gbr"),
+                ])),
+                "c_complex_select" => app.send(Action::SelectRect(
+                    editor_core::BoundsMm {
+                        min_x_mm: -10.,
+                        min_y_mm: -10.,
+                        max_x_mm: 30.,
+                        max_y_mm: 30.,
+                    },
+                    editor_core::hit_test::SelectRectMode::Window,
+                )),
                 "b_tool_select" => {
                     app.dispatch(editor_core::command::ids::TOOL_SELECT);
                 }
@@ -437,7 +505,14 @@ impl Run {
                     app.block_command(editor_core::command::ids::BLOCK_CREATE);
                 }
                 "b_block_place" => {
-                    app.block.definition = Some(app.view.block_definitions[0].id.0.clone());
+                    let definition = match block_place_definition(&app.view) {
+                        Ok(definition) => definition,
+                        Err(error) => {
+                            self.finish(app, ctx, Some(error));
+                            return;
+                        }
+                    };
+                    app.block.definition = Some(definition);
                     app.block_command(editor_core::command::ids::BLOCK_PLACE);
                 }
                 "b_import" => app.send(Action::ImportGerbers(
@@ -773,6 +848,38 @@ impl Run {
                 self.enter(4);
             }
         } else if self.phase == 2 && self.since.elapsed() > Duration::from_millis(250) {
+            if let Some(value) = step.get("switch_off") {
+                let mut p = app.prefs.interaction;
+                if value == "drag" {
+                    p.drag_move = false;
+                } else {
+                    p.grip_edit = false;
+                }
+                app.set_interaction_preferences(p);
+            }
+
+            match step["cancel"].as_str() {
+                Some("escape" | "repeat") => {
+                    for key in [egui::Key::Escape, egui::Key::Enter] {
+                        raw.events.push(egui::Event::Key {
+                            key,
+                            physical_key: Some(key),
+                            pressed: true,
+                            repeat: step["cancel"] == "repeat",
+                            modifiers: Default::default(),
+                        });
+                    }
+                }
+                Some("blur") => {
+                    raw.focused = false;
+                    raw.events.push(egui::Event::WindowFocused(false));
+                }
+                Some("gone") => raw.events.push(egui::Event::PointerGone),
+                Some("ime") => raw
+                    .events
+                    .push(egui::Event::Ime(egui::ImeEvent::Preedit("输入中".into()))),
+                _ => {}
+            }
             if step["escape"] == true {
                 raw.events.push(egui::Event::Key {
                     key: egui::Key::Escape,
@@ -790,7 +897,7 @@ impl Run {
             );
             self.enter(4);
         }
-        if self.request["stage"] == "S5-I2-B" {
+        if matches!(self.request["stage"].as_str(), Some("S5-I2-B" | "S5-I2-C")) {
             ctx.request_repaint_after(Duration::from_millis(16));
         } else {
             ctx.request_repaint();
@@ -899,7 +1006,10 @@ impl Run {
         )
         .unwrap();
         let mut observation = json!({"schema_version":2,"stage":self.request.get("stage").cloned().unwrap_or(json!("S5-I1")),"request":self.request,"records":self.records,"frames":self.frames,"error":error,"adapter":app.adapter,"profile":"release","commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"measurement_scope":"synthetic egui input, real worker and production Metal completion fence; functional evidence, no physical latency or PMIX claim"});
-        if self.request["stage"] == "S5-I2-B" {
+        if error.is_some() {
+            observation["failure_context"] = json!({"step":self.step,"phase":self.phase,"request_step":self.request["steps"].get(self.step),"input_before":self.input_before,"state":state(app)});
+        }
+        if matches!(self.request["stage"].as_str(), Some("S5-I2-B" | "S5-I2-C")) {
             let mut shards = Vec::new();
             for (n, frames) in self.frames.chunks(2000).enumerate() {
                 let path = format!("frames-{n:03}.json");
@@ -913,7 +1023,7 @@ impl Run {
             observation["evidence_version"] = json!(3);
             observation["feedback"] = json!(self.feedback);
         }
-        let bytes = if self.request["stage"] == "S5-I2-B" {
+        let bytes = if matches!(self.request["stage"].as_str(), Some("S5-I2-B" | "S5-I2-C")) {
             serde_json::to_vec(&observation)
         } else {
             serde_json::to_vec_pretty(&observation)
