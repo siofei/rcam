@@ -9,7 +9,7 @@ from verify_pmix_workflow import verify_workflow,verify_cross_layer_workflow,dec
 from verify_i2_c_ui_roi import analyze as analyze_roi, rows as roi_rows
 from verify_pmix_capture import capture_receipts
 from pmix_owned_command import verify_display_environment
-from run_s5m1_native import DISPLAY_SWIFT
+from pmix_display_swift import SOURCE as DISPLAY_SWIFT
 
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def directory_path(root,name):
@@ -419,7 +419,7 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     for name in ('stdout.log','stderr.log','environment.json','window.json','window-query.json','image-command.json','native-window.png','video-command.json','native-window.mov','capture-ready.json','protocol-done.json','capture-complete.json'):
         safe(directory,name)
     capture=capture_receipts(directory,r,capture_producer_sha256)
-    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'constructor_bootstrap':bootstrap_binding,'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
+    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'display_id':request['display_id'],'display_binding':'explicit-target-schema3','raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'constructor_bootstrap':bootstrap_binding,'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
     if request['mode']=='nav':
         start=event('navigation-begin');end=event('navigation-end-input');done=event('navigation-complete');origin=start['data']['origin_ns'];a=start['frame_id'];b=end['frame_id']
         require(a<b<done['frame_id'],'navigation phase sequence')

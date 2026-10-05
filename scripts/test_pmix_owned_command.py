@@ -1,5 +1,6 @@
 """Real owned-Python process regressions; all native adapters are synthetic, no GUI."""
 import contextlib
+import copy
 import io
 import json
 import os
@@ -13,7 +14,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from pmix_owned_command import owned_command, verify_command
+from pmix_owned_command import owned_command, verify_command, verify_display_environment
 import run_pmix_native as runner
 
 
@@ -85,7 +86,8 @@ class OwnedCommands(unittest.TestCase):
         self.assertTrue((self.root/'environment-memory.subcommand.stdout').exists())
 
     def test_runner_hung_subcommand_reaches_cleanup_preservation_and_evidence(self):
-        # The actual runner executes only owned Python fixture programs. No SDK/display/window/screenshot call runs.
+        # Simulate the Darwin gate; actual adapters execute only owned Python fixtures.
+        # No SDK/display/window/screenshot call runs and this is never native proof.
         for failure in ('window-query','image','display-before','environment-os','display-restored','producer-stderr-descendant','reader-start-failure'):
             with self.subTest(failure=failure):
                 case=self.root/failure;case.mkdir();binary=case/'synthetic-app';producer=case/'synthetic-producer'
@@ -101,7 +103,7 @@ signal.pause()
                         'print(json.dumps({"synthetic_owned_stderr_descendant":child.pid}),file=sys.stderr,flush=True)'])
                     if failure=='reader-start-failure':program+='\nsignal.pause()\n'
                     producer.write_text('#!'+sys.executable+'\n'+program+'\n');producer.chmod(0o700)
-                calls=[];display={'after':{'mode_id':113,'refresh_hz':144,'width':1920,'height':1080,'pixel_width':3840,'pixel_height':2160,'backing_scale':2}}
+                calls=[];snapshot={'display_id':2,'mode_id':113,'refresh_hz':144,'width':1920,'height':1080,'pixel_width':3840,'pixel_height':2160,'backing_scale':2,'in_mirror_set':False};display={'before':dict(snapshot),'after':dict(snapshot)}
                 def adapter(directory,label,command,**kwargs):
                     calls.append(label)
                     if label==failure or (failure=='display-restored' and label=='window-query'):
@@ -113,10 +115,10 @@ signal.pause()
                         Path(command[-1]).write_bytes(b'synthetic image, no native pixels');value=''
                     else:raise AssertionError('unexpected real-adapter path: '+label)
                     return owned_command(directory,label,self.command('print('+repr(value)+')'),timeout=1,grace=.2,check=kwargs.get('check',False))
-                out=case/'output';argv=['run_pmix_native','--binary',str(binary),'--capture-producer',str(producer),'--output',str(out),'--mode','workflow','--video','--display-policy','preserve']
+                out=case/'output';argv=['run_pmix_native','--binary',str(binary),'--capture-producer',str(producer),'--output',str(out),'--mode','workflow','--video','--display-policy','preserve','--display-id','2']
                 start=time.monotonic()
                 reader_failure=patch.object(runner.threading.Thread,'start',side_effect=RuntimeError('injected reader start failure')) if failure=='reader-start-failure' else contextlib.nullcontext()
-                with patch.object(sys,'argv',argv),patch.object(runner,'owned_command',adapter),reader_failure,contextlib.redirect_stdout(io.StringIO()):
+                with patch.object(sys,'platform','darwin'),patch.object(sys,'argv',argv),patch.object(runner,'owned_command',adapter),reader_failure,contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(runner.main(),1)
                 self.assertLess(time.monotonic()-start,4)
                 self.assertTrue((out/'runner-error.json').exists());self.assertTrue((out/'runner.json').exists());self.assertTrue((out/'file-hashes.json').exists())
@@ -139,6 +141,237 @@ signal.pause()
                 else:self.assertIn('display-restored',calls)
                 if failure=='display-restored':self.assertTrue((out/'display-restoration-error.json').exists())
                 elif failure!='display-before':self.assertEqual(json.loads((out/'display-restored.json').read_text()),display)
+
+    def display_fixture(self,changed=False):
+        """Invented sealed-shaped receipts, never actual Swift/native evidence."""
+        initial={'display_id':2,'mode_id':113,'refresh_hz':144,'width':1920,'height':1080,
+                 'pixel_width':3840,'pixel_height':2160,'backing_scale':2,'in_mirror_set':False}
+        active=dict(initial,mode_id=114,refresh_hz=60) if changed else dict(initial)
+        request={'schema_version':3,'display_id':2,'display_policy':'frozen-60hz' if changed else 'preserve',
+                 'display_mode_change_authorized':changed}
+        receipts={'display-before':{'before':dict(initial),'after':dict(initial)},
+                  'display-active':{'before':dict(initial),'after':dict(active)},
+                  'display-active-probe':{'before':dict(active),'after':dict(active)},
+                  'display-restored':{'before':dict(active),'after':dict(initial)},
+                  'display-restored-probe':{'before':dict(initial),'after':dict(initial)}}
+        helper=Path('/tmp/synthetic-display-fixture/display.swift')
+        commands={'display-before':['/usr/bin/swift',str(helper),'probe','2'],
+                  'display-active':['/usr/bin/swift',str(helper),'set60' if changed else 'probe','2'],
+                  'display-active-probe':['/usr/bin/swift',str(helper),'probe','2'],
+                  'display-restored':['/usr/bin/swift',str(helper),'restore' if changed else 'probe','2']+
+                                     (['113'] if changed else []),
+                  'display-restored-probe':['/usr/bin/swift',str(helper),'probe','2']}
+        return request,receipts,commands
+
+    def check_display_fixture(self,fixture):
+        request,receipts,commands=fixture
+        (self.root/'display.swift').write_text(runner.DISPLAY_SWIFT)
+        (self.root/'window-query.json').write_text(json.dumps({'command':['/usr/bin/swift','/tmp/synthetic-display-fixture/window.swift','123']}))
+        def command_files(label,command,stdout):
+            started={'display-before':100,'display-active':200,'display-active-probe':300,
+                     'display-restored':500,'display-restored-probe':600}.get(label,120)
+            row={'schema_version':2,'scope':'owned isolated subcommand; no native acceptance',
+                 'command':command,'pid':12345,'pgid':12345,'private_session':True,
+                 'timeout_seconds':runner.LIMITS[label],'cleanup_grace_seconds':2,
+                 'started_monotonic_ns':started,'finished_monotonic_ns':started+10,'exit_code':0,'signal':None,
+                 'timed_out':False,'error':None,'signals_sent':[],'joined':True,
+                 'owned_group_released':True,'result':'RETURNED'}
+            (self.root/(label+'.subcommand-process.json')).write_text(json.dumps(row))
+            (self.root/(label+'.subcommand-launch.json')).write_text(json.dumps({key:row[key] for key in
+                ('pid','pgid','private_session','command','started_monotonic_ns','timeout_seconds')}))
+            (self.root/(label+'.subcommand.stdout')).write_text(stdout)
+            (self.root/(label+'.subcommand.stderr')).write_text('')
+        for label,receipt in receipts.items():
+            (self.root/(label+'.json')).write_text(json.dumps(receipt))
+            command_files(label,commands[label],json.dumps(receipt)+'\n')
+        environment={'os':'synthetic-os\n','machine':'synthetic-arm','memory_bytes':1024,'power':'synthetic-power\n'}
+        (self.root/'environment.json').write_text(json.dumps(environment))
+        for key,label,command in [('os','environment-os',['/usr/bin/sw_vers']),('machine','environment-machine',['/usr/bin/uname','-m']),
+                                  ('memory_bytes','environment-memory',['/usr/sbin/sysctl','-n','hw.memsize']),
+                                  ('power','environment-power',['/usr/bin/pmset','-g','custom'])]:
+            command_files(label,command,str(environment[key]))
+        (self.root/'owned-resource-usage.json').write_text(json.dumps({'started_monotonic_ns':400,'finished_monotonic_ns':450}))
+        verify_display_environment(self.root,request,runner.DISPLAY_SWIFT)
+
+    def reject_display_fixture(self,mutate,changed=True):
+        baseline=self.display_fixture(changed);self.check_display_fixture(baseline)
+        values=copy.deepcopy(baseline);mutate(*values)
+        with self.assertRaises(ValueError):self.check_display_fixture(values)
+        self.check_display_fixture(baseline)
+
+    def test_explicit_display_preserve_and_frozen_restore_contract(self):
+        self.check_display_fixture(self.display_fixture(False))
+        self.check_display_fixture(self.display_fixture(True))
+        values=self.display_fixture(True)
+        # Current mode may change before cleanup. Restore must still match entry.
+        values[1]['display-restored']['before'].update(mode_id=999,refresh_hz=75)
+        self.check_display_fixture(values)
+        preserved=self.display_fixture(False)
+        for receipt in preserved[1].values():
+            for snapshot in receipt.values():snapshot['in_mirror_set']=True
+        self.check_display_fixture(preserved)
+        mirrored=self.display_fixture(True)
+        for receipt in mirrored[1].values():
+            for snapshot in receipt.values():snapshot['in_mirror_set']=True
+        with self.assertRaisesRegex(ValueError,'mirrored'):self.check_display_fixture(mirrored)
+
+    def test_display_request_id_and_schema_are_strict(self):
+        self.reject_display_fixture(lambda request,_,__:request.pop('display_id'))
+        for value in (False,True,0,-1,2**32,'2'):
+            with self.subTest(display_id=value):
+                self.reject_display_fixture(lambda request,_,__,value=value:request.update(display_id=value))
+        for value in (2,True,'3'):
+            self.reject_display_fixture(lambda request,_,__,value=value:request.update(schema_version=value))
+        self.reject_display_fixture(lambda request,_,__:request.update(display_mode_change_authorized=False))
+
+    def test_display_snapshot_target_types_and_restoration_are_exact(self):
+        for label in ('display-before','display-active','display-active-probe','display-restored','display-restored-probe'):
+            for side in ('before','after'):
+                with self.subTest(label=label,side=side):
+                    self.reject_display_fixture(lambda _,receipts,__,label=label,side=side:
+                        receipts[label][side].update(display_id=3))
+        for key,value in (('mode_id',True),('mode_id',2**32),('width',True),('refresh_hz',False),
+                          ('refresh_hz',float('nan')),('backing_scale',0),('pixel_width',-1),('in_mirror_set',0),('in_mirror_set',True)):
+            self.reject_display_fixture(lambda _,receipts,__,key=key,value=value:
+                receipts['display-restored']['after'].update({key:value}))
+        for key,value in (('mode_id',114),('backing_scale',1),('pixel_width',1920)):
+            self.reject_display_fixture(lambda _,receipts,__,key=key,value=value:
+                receipts['display-restored']['after'].update({key:value}))
+        self.reject_display_fixture(lambda _,receipts,__:
+            receipts['display-before']['before'].update(mode_id=999))
+        self.reject_display_fixture(lambda _,receipts,__:
+            receipts['display-active']['before'].update(mode_id=999))
+        self.reject_display_fixture(lambda _,receipts,__:
+            receipts['display-active']['after'].update(width=960))
+
+    def test_display_command_receipts_bind_target_and_original_mode(self):
+        for label in ('display-before','display-active','display-active-probe','display-restored','display-restored-probe'):
+            self.reject_display_fixture(lambda _,__,commands,label=label:commands[label].__setitem__(3,'3'))
+            self.reject_display_fixture(lambda _,__,commands,label=label:commands[label].pop(3))
+        self.reject_display_fixture(lambda _,__,commands:commands['display-restored'].__setitem__(4,'114'))
+        self.reject_display_fixture(lambda _,__,commands:commands['display-active'].__setitem__(2,'probe'))
+        self.reject_display_fixture(lambda _,receipts,__:receipts['display-active']['after'].update(refresh_hz=144))
+        baseline=self.display_fixture(True);self.check_display_fixture(baseline)
+        raw=self.root/'display-active.subcommand.stdout'
+        raw.write_text(raw.read_text().replace('"display_id": 2','"display_id": 3, "display_id": 2',1))
+        with self.assertRaisesRegex(ValueError,'duplicate JSON key'):
+            verify_display_environment(self.root,baseline[0],runner.DISPLAY_SWIFT)
+        self.check_display_fixture(baseline)
+
+    def test_display_post_exit_probes_and_app_clock_causality(self):
+        for label in ('display-active-probe','display-restored-probe'):
+            self.reject_display_fixture(lambda _,receipts,__,label=label:
+                receipts[label]['after'].update(refresh_hz=75))
+            baseline=self.display_fixture(True);self.check_display_fixture(baseline)
+            (self.root/(label+'.json')).unlink()
+            with self.assertRaisesRegex(ValueError,'missing evidence'):verify_display_environment(self.root,baseline[0],runner.DISPLAY_SWIFT)
+        for label,start in (('display-active-probe',200),('display-active-probe',210),
+                            ('display-restored',400),('display-restored-probe',510)):
+            baseline=self.display_fixture(True);self.check_display_fixture(baseline)
+            path=self.root/(label+'.subcommand-process.json');row=json.loads(path.read_text())
+            row.update(started_monotonic_ns=start,finished_monotonic_ns=start+10);path.write_text(json.dumps(row))
+            launch=self.root/(label+'.subcommand-launch.json');value=json.loads(launch.read_text())
+            value['started_monotonic_ns']=start;launch.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError,'causal binding'):
+                verify_display_environment(self.root,baseline[0],runner.DISPLAY_SWIFT)
+        for start,finish in ((300,450),(310,450),(False,450),(400,500)):
+            baseline=self.display_fixture(True);self.check_display_fixture(baseline)
+            (self.root/'owned-resource-usage.json').write_text(json.dumps({'started_monotonic_ns':start,'finished_monotonic_ns':finish}))
+            with self.assertRaises(ValueError):verify_display_environment(self.root,baseline[0],runner.DISPLAY_SWIFT)
+        self.check_display_fixture(self.display_fixture(True))
+
+    def test_runner_same_target_cleanup_after_partial_set_abort_and_main_change(self):
+        # All external commands are intercepted. No Mac helper or GUI is executed.
+        for failure in ('main-change','partial-set','keyboard-interrupt','target-unavailable','invalid-initial',
+                        'missing-on-restore','cleanup-receipt-write-failure','cleanup-second-interrupt',
+                        'process-lifetime-reversion','restore-process-lifetime-reversion','mirrored-initial'):
+            with self.subTest(failure=failure):
+                case=self.root/failure;case.mkdir();binary=case/'never-launched-app';producer=case/'never-launched-producer'
+                binary.write_bytes(b'synthetic app');producer.write_bytes(b'synthetic producer')
+                initial=self.display_fixture(True)[1]['display-before']['after'];calls=[];synthetic_main={'display_id':2}
+                def adapter(directory,label,command,**kwargs):
+                    calls.append((label,list(command)))
+                    if label=='display-before':
+                        if failure=='target-unavailable':raise subprocess.CalledProcessError(2,command,stderr='requested display unavailable; no fallback')
+                        if failure=='mirrored-initial':initial['in_mirror_set']=True
+                        receipt={'before':dict(initial),'after':dict(initial)}
+                        if failure=='invalid-initial':receipt['after']['display_id']=3
+                    elif label.startswith('environment-'):
+                        value='1024' if label=='environment-memory' else 'synthetic-environment'
+                        return subprocess.CompletedProcess(command,0,value,'')
+                    elif label=='display-active':
+                        self.assertEqual(command[-2:],['set60','2'])
+                        if failure in ('partial-set','cleanup-receipt-write-failure','cleanup-second-interrupt'):
+                            raise subprocess.CalledProcessError(2,command,stderr='synthetic partial mutation')
+                        if failure=='keyboard-interrupt':raise KeyboardInterrupt('synthetic abort')
+                        # The new current-main ID differs, but every operation stays on2.
+                        synthetic_main['display_id']=3
+                        receipt={'before':dict(initial),'after':dict(initial,mode_id=114,refresh_hz=60)}
+                    elif label=='display-active-probe':
+                        self.assertEqual(command[-2:],['probe','2'])
+                        current=dict(initial) if failure=='process-lifetime-reversion' else dict(initial,mode_id=114,refresh_hz=60)
+                        receipt={'before':dict(current),'after':dict(current)}
+                    elif label=='display-restored-probe':
+                        self.assertEqual(command[-2:],['probe','2'])
+                        current=dict(initial,mode_id=114,refresh_hz=60) if failure=='restore-process-lifetime-reversion' else dict(initial)
+                        receipt={'before':dict(current),'after':dict(current)}
+                    elif label=='display-restored':
+                        if failure=='mirrored-initial':self.assertEqual(command[-2:],['probe','2'])
+                        else:self.assertEqual(command[-3:],['restore','2','113'])
+                        if failure=='missing-on-restore':raise subprocess.CalledProcessError(2,command,stderr='requested target unavailable; no fallback')
+                        receipt={'before':dict(initial) if failure=='mirrored-initial' else dict(initial,mode_id=999,refresh_hz=75),'after':dict(initial)}
+                    else:raise AssertionError('unexpected actual command '+label)
+                    return subprocess.CompletedProcess(command,0,json.dumps(receipt),'')
+                out=case/'output';argv=['run_pmix_native','--binary',str(binary),'--capture-producer',str(producer),
+                    '--output',str(out),'--mode','workflow','--video','--display-policy','frozen-60hz',
+                    '--allow-display-mode-change','--display-id','2']
+                original_write=runner.write
+                def fixture_write(path,value):
+                    if path.name=='owned-cleanup.json':
+                        if failure=='cleanup-receipt-write-failure':raise OSError('synthetic cleanup receipt write failure')
+                        if failure=='cleanup-second-interrupt':raise KeyboardInterrupt('synthetic second abort during cleanup')
+                    return original_write(path,value)
+                with patch.object(sys,'platform','darwin'),patch.object(sys,'argv',argv),patch.object(runner,'owned_command',adapter),patch.object(runner,'write',fixture_write),contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.main(),1)
+                self.assertFalse((out/'owned-process.json').exists())
+                self.assertTrue((out/'file-hashes.json').exists())
+                labels=[label for label,_ in calls]
+                if failure in ('target-unavailable','invalid-initial'):
+                    self.assertEqual(labels,['display-before'])
+                    error=json.loads((out/'display-restoration-error.json').read_text())
+                    self.assertFalse(error['mode_change_attempted']);self.assertFalse(error['initial_snapshot_available'])
+                else:
+                    self.assertIn('display-restored',labels)
+                    self.assertEqual(labels[-1],'display-restored' if failure=='missing-on-restore' else 'display-restored-probe')
+                    if failure=='main-change':self.assertEqual(synthetic_main['display_id'],3)
+                    if failure=='mirrored-initial':
+                        self.assertEqual(labels,['display-before','display-restored','display-restored-probe'])
+                    if failure in ('missing-on-restore','restore-process-lifetime-reversion'):
+                        error=json.loads((out/'display-restoration-error.json').read_text())
+                        self.assertTrue(error['mode_change_attempted']);self.assertTrue(error['initial_snapshot_available'])
+                        self.assertEqual(error['display_id'],2);self.assertEqual(error['original_mode_id'],113)
+                        self.assertEqual((out/'display-restored.json').exists(),failure=='restore-process-lifetime-reversion')
+                    else:
+                        self.assertEqual(json.loads((out/'display-restored.json').read_text())['after'],initial)
+                        self.assertFalse((out/'display-restoration-error.json').exists())
+                        if failure.startswith('cleanup-'):
+                            self.assertFalse((out/'owned-cleanup.json').exists())
+                            self.assertIn('owned cleanup/evidence failed',json.loads((out/'runner.json').read_text())['error'])
+
+    def test_pmix_helper_never_resolves_main_display_and_cli_id_is_bounded(self):
+        self.assertNotIn('CGMainDisplayID',runner.DISPLAY_SWIFT)
+        self.assertNotIn('NSScreen.main',runner.DISPLAY_SWIFT)
+        self.assertNotIn('CGDisplaySetDisplayMode',runner.DISPLAY_SWIFT)
+        self.assertNotIn('.permanently',runner.DISPLAY_SWIFT)
+        self.assertNotIn('.forAppOnly',runner.DISPLAY_SWIFT)
+        self.assertIn('CGCompleteDisplayConfiguration(configuration, .forSession)',runner.DISPLAY_SWIFT)
+        self.assertIn('CGConfigureDisplayWithDisplayMode(configuration, display, mode, nil)',runner.DISPLAY_SWIFT)
+        self.assertIn('CGDisplayIsInMirrorSet(display) == 0',runner.DISPLAY_SWIFT)
+        for text in ('0','-1','+2','2.0',' 2','4294967296','True','٢'):
+            with self.subTest(text=text):
+                with self.assertRaises(runner.argparse.ArgumentTypeError):runner.display_id_argument(text)
+        self.assertEqual(runner.display_id_argument('2'),2)
+        self.assertEqual(runner.display_id_argument('4294967295'),2**32-1)
 
     def test_runner_has_no_unbounded_run_check_output_or_wait_calls(self):
         import ast

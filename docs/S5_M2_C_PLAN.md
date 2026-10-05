@@ -725,3 +725,83 @@ reverification on the original sealed native evidence remains required, recordin
 old producer/source/binary identity separately from the new verifier identity.
 That recheck cannot earn native PASS for a newly changed source. The original
 failure and all unexecuted formal matrix/attack/platform gates remain preserved.
+
+### PMIX explicit display target (request schema3)
+
+S5-M2-C's runner requires --display-id, an unsigned nonzero 32-bit display ID.
+Its separate PMIX helper receives probe DISPLAY_ID, set60 DISPLAY_ID or restore
+DISPLAY_ID MODE_ID. The legacy S5-M1 helper is unchanged. The helper validates
+all arguments before mode changes, resolves only the requested online display,
+and takes backing scale from the NSScreen with that exact NSScreenNumber.
+It initializes its own non-activating NSApplication before querying screens.
+The opaque signed Apple mode ID is represented consistently as UInt32 bits in
+both snapshots and mode matching. Every snapshot has a strict Boolean
+in_mirror_set; mode changes refuse mirrored targets rather than reconfiguring
+linked displays. The helper never resolves a new current main display.
+
+CGDisplaySetDisplayMode is not used by this helper: its application-lifetime
+scope would expire when the short setter process exits. Instead the helper uses
+CGBeginDisplayConfiguration, CGConfigureDisplayWithDisplayMode and
+CGCompleteDisplayConfiguration with .forSession only. It never saves permanent
+settings. Configure failure cancels the still-valid transaction. Complete
+consumes that token on return, including error, so it is never cancelled twice;
+the runner still has responsibility to restore the entry mode after an attempt.
+Apple's [session scope](https://developer.apple.com/documentation/coregraphics/cgconfigureoption/forsession)
+and [transaction contract](https://developer.apple.com/documentation/coregraphics/cgcompletedisplayconfiguration(_:_:)?changes=_9)
+define these lifetimes. The rejected a105 source checkpoint remains preserved;
+its passing synthetic tests did not prove the short-process API lifetime.
+
+The initial probe must provide two equal complete typed snapshots before any
+original mode is retained. The active receipt must start at that original target
+snapshot and keep logical/pixel dimensions and scale. Frozen policy additionally
+requires explicit mode-change authorization and actual60Hz. Immediately before
+attempting set60, the runner records restoration responsibility in its control
+state. Partial command failure, timeout or KeyboardInterrupt reaches the same
+target's original mode restoration in finally. A nested finally also attempts
+that restoration after cleanup receipt I/O fails or cleanup is interrupted;
+those cleanup failures remain fatal and cannot earn owned-process join proof.
+Missing target/mode/screen mapping fails without switching to another display.
+If cleanup cannot restore an unavailable target, its failure record includes the
+target ID, original mode and attempt status; it cannot claim restoration.
+Session-scoped settings do not auto-revert on runner SIGKILL. The external
+coordinator must establish that inner/display processes have stopped before
+same-target emergency restoration and independent probing, or report failure.
+
+The verifier requires request schema3 and a strict display_id; every owned
+launch/process/raw-output receipt must use the same explicit target argv. The
+five labels are display-before, display-active, display-active-probe,
+display-restored and display-restored-probe; each is bounded to10seconds with
+the existing2second owned-group cleanup grace. All ten before/after snapshots
+name that target, and frozen mode requires every in_mirror_set to be false.
+Initial probe equality, active
+original-state/geometry binding and exact final-after == initial-after are
+mandatory. Final-before may differ when interference changed the target before
+cleanup; that does not change which original snapshot must be restored.
+After each setter/restorer process joins, a separate same-ID probe must have
+equal before/after and equal the preceding helper's expected after snapshot.
+The independent active probe must still show60Hz after setter exit and finish
+before the app starts. App completion must precede restoration, and each
+post-exit probe must start strictly after its corresponding helper finishes.
+This binds actual session persistence rather than accepting an in-process60Hz
+snapshot that silently reverts before native work begins.
+
+Seven additional synthetic OwnedCommands methods cover typed IDs/schema, all
+snapshot identities, argv/original-mode binding, preserved144 and60-to-original
+paths, changed current-main ID, partial set failure, abort, cleanup receipt-write
+failure/second interruption, bad initial receipt, missing initial target and
+target loss at restoration, mirrored targets, missing independent probes,
+helper-exit mode reversion and strict probe/app/restore clock negatives.
+Raw display JSON duplicate keys are rejected by the
+same strict parser as structured receipts. Existing owned-Python
+failure tests explicitly simulate only the Darwin platform gate, with every
+native adapter replaced; no SDK, display or GUI operation runs in these tests.
+They remain auxiliary source regressions, not native display or capture proof.
+
+The independently frozen bootstrap-only schema2 verifier is the sole read-only
+recheck identity for old sealed c8 data. This schema3 successor has no legacy
+fallback. Fresh Source/build provenance, gates, Swift6 compile and read-only
+target probe, and actual native capture must use the final reviewed identity.
+The authorized matrix restores each round's entry snapshot before another row;
+physical identity after unplug/replug and app-window placement are outside this
+display-target contract. An unavailable target is an explicit failure, not a
+promise that every hardware failure can be restored.

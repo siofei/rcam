@@ -1,10 +1,10 @@
 """Local PMIX native runner. Preserve display by default; join valid movie before app release."""
 import argparse,datetime,hashlib,json,os,queue,shutil,subprocess,sys,tempfile,threading,time,uuid
 from pathlib import Path
-from run_s5m1_native import DISPLAY_SWIFT
+from pmix_display_swift import SOURCE as DISPLAY_SWIFT
 from pmix_capture_swift import SOURCE as CAPTURE_SWIFT
 from pmix_capture_lifecycle import Lifecycle
-from pmix_owned_command import owned_command, LIMITS, drain_owned_group, group_present
+from pmix_owned_command import owned_command, LIMITS, drain_owned_group, group_present, validate_display_receipt
 
 WINDOW_SWIFT = r'''
 import CoreGraphics
@@ -28,12 +28,18 @@ def display_policy_operation(policy,authorized):
     if policy!='frozen-60hz' or not authorized:raise ValueError('explicit display-change authorization required for frozen60Hz protocol')
     return 'set60'
 
+def display_id_argument(text):
+    if not text.isascii() or not text.isdigit() or not 0<int(text)<2**32:
+        raise argparse.ArgumentTypeError('display ID must be an integer from 1 through UInt32.max')
+    return int(text)
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--binary',type=Path,required=True);p.add_argument('--capture-producer',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--mode',choices=['nav','move','points','escape','new-project','workflow','workflow-reopen','workflow-cross-layer'],required=True)
     p.add_argument('--round',type=int,default=1);p.add_argument('--video',action='store_true');p.add_argument('--fixture',type=Path)
     p.add_argument('--display-policy',choices=['preserve','frozen-60hz'],default='preserve')
+    p.add_argument('--display-id',type=display_id_argument,required=True,help='explicit target display for all probe/set/restore operations')
     p.add_argument('--allow-display-mode-change',action='store_true',help='only after explicit user coordination of the setting change')
     a=p.parse_args()
     if not a.video:p.error('--video required')
@@ -48,25 +54,36 @@ def main():
     protocol=ROOT/'fixtures/synthetic/s5m2c/protocol.json'
     for name,data in [('display.swift',DISPLAY_SWIFT),('window.swift',WINDOW_SWIFT),('capture.swift',CAPTURE_SWIFT)]: (native/name).write_text(data)
     shutil.copy2(producer,native/'capture-producer');os.chmod(native/'capture-producer',0o700)
-    request={'schema_version':2,'mode':a.mode,'selected':1000,'fixture':str(fixture),'fixture_sha256':sha(fixture),'protocol_sha256':sha(protocol),'native_inputs_sha256':sha(protocol.with_name('native-inputs.json')),'round':a.round,'run_id':str(uuid.uuid4()),'start_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_manifest_sha256':sha(ROOT/'MANIFEST.sha256'),'display_policy':a.display_policy,'display_mode_change_authorized':a.allow_display_mode_change,'evidence_scope':'full-pmix-native' if operation=='set60' else 'capture-precheck-only'}
+    request={'schema_version':3,'mode':a.mode,'selected':1000,'fixture':str(fixture),'fixture_sha256':sha(fixture),'protocol_sha256':sha(protocol),'native_inputs_sha256':sha(protocol.with_name('native-inputs.json')),'round':a.round,'run_id':str(uuid.uuid4()),'start_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_manifest_sha256':sha(ROOT/'MANIFEST.sha256'),'display_id':a.display_id,'display_policy':a.display_policy,'display_mode_change_authorized':a.allow_display_mode_change,'evidence_scope':'full-pmix-native' if operation=='set60' else 'capture-precheck-only'}
     write(native/'request.json',request)
     before=None;original=None;process=video=reader=None;life=None;code=1;error=None;exit_code=None;rss=None;usage_receipt=None;restore=None;video_record=None;changed=False
     ui=Path(tempfile.mkdtemp(prefix='rcam-i2-c-ui-',dir=native));messages=queue.Queue();events=[];stdout_rows=[];producer_stderr=None;producer_err_file=None;reader_started=False;reader_cleanup_error=None;producer_signals=[];producer_group_released=False
     write(native/'binary-before.json',{'path':str(binary),'sha256':sha(binary),'bytes':binary.stat().st_size});shutil.copy2(ROOT/'MANIFEST.sha256',native/'source-manifest.sha256')
     try:
-        before=json.loads(owned_command(native,'display-before',['/usr/bin/swift',str(native/'display.swift'),'probe'],check=True).stdout)
+        initial=json.loads(owned_command(native,'display-before',['/usr/bin/swift',str(native/'display.swift'),'probe',str(a.display_id)],check=True).stdout)
+        validate_display_receipt(initial,a.display_id)
+        if initial['before']!=initial['after']:raise RuntimeError('initial target probe changed')
+        before=initial
         write(native/'display-before.json',before);original=before['after']['mode_id']
+        if operation=='set60' and before['after']['in_mirror_set']:
+            raise RuntimeError('target display is mirrored; refusing linked mode changes')
         environment={'timing_scope':'egui raw input and production Metal completion bound; no scanout claim'}
         for key,label,command in [('os','environment-os',['/usr/bin/sw_vers']),('machine','environment-machine',['/usr/bin/uname','-m']),
                                   ('memory_bytes','environment-memory',['/usr/sbin/sysctl','-n','hw.memsize']),('power','environment-power',['/usr/bin/pmset','-g','custom'])]:
             value=owned_command(native,label,command,check=True).stdout
             environment[key]=int(value) if key=='memory_bytes' else (value.strip() if key=='machine' else value)
         write(native/'environment.json',environment)
-        changed=operation=='set60';active=json.loads(owned_command(native,'display-active',['/usr/bin/swift',str(native/'display.swift'),operation],check=True).stdout);write(native/'display-active.json',active)
+        changed=operation=='set60';active=json.loads(owned_command(native,'display-active',['/usr/bin/swift',str(native/'display.swift'),operation,str(a.display_id)],check=True).stdout);write(native/'display-active.json',active)
+        validate_display_receipt(active,a.display_id)
+        if active['before']!=before['after']:raise RuntimeError('active original target snapshot mismatch')
         if changed and abs(active['after']['refresh_hz']-60)>.01:raise RuntimeError('actual60Hz unavailable')
         if operation=='probe' and active['after']!=before['after']:raise RuntimeError('display changed before capture')
         for key in ('width','height','pixel_width','pixel_height','backing_scale'):
             if active['after'][key]!=before['after'][key]:raise RuntimeError('display geometry changed')
+        active_probe=json.loads(owned_command(native,'display-active-probe',['/usr/bin/swift',str(native/'display.swift'),'probe',str(a.display_id)],check=True).stdout)
+        write(native/'display-active-probe.json',active_probe);validate_display_receipt(active_probe,a.display_id)
+        if active_probe['before']!=active_probe['after'] or active_probe['after']!=active['after']:
+            raise RuntimeError('active target mode did not survive setter process exit')
         env={k:v for k,v in os.environ.items() if not k.startswith('RCAM_')};env.update(RCAM_PMIX_NATIVE_DIR=str(native),RCAM_UI_ROI_DIR=str(ui),RCAM_UI_ROI_ROOT=str(native))
         with (native/'stdout.log').open('wb') as app_out,(native/'stderr.log').open('wb') as app_err:
             app_started=time.monotonic_ns();process=subprocess.Popen([str(binary)],env=env,stdout=app_out,stderr=app_err)
@@ -142,58 +159,68 @@ def main():
     except BaseException as e:
         error=str(e);write(native/'runner-error.json',{'error':error,'type':type(e).__name__})
     finally:
-        # Every phase is bounded and isolated so an error cannot skip app/restore/evidence.
-        if video is not None:
-            try:
-                if video.poll() is None and reader_started:
-                    try:video.stdin.write('STOP\n');video.stdin.flush();video.wait(timeout=5)
-                    except (BrokenPipeError,OSError,subprocess.TimeoutExpired):pass
-                if video.poll() is None or group_present(video.pid):
-                    producer_group_released=drain_owned_group(video,producer_signals,2)
-                else:producer_group_released=True
-                if not producer_group_released:raise RuntimeError('owned producer group not released')
-            except BaseException as e:error='owned producer cleanup failed: '+str(e);code=1
-        if reader is not None:
-            try:
-                reader.join(timeout=2)
-                if reader.is_alive():raise RuntimeError('owned reader still running')
-            except BaseException as e:
-                reader_cleanup_error=repr(e);error='owned reader cleanup failed: '+str(e);code=1
-                write(native/'reader-cleanup-error.json',{'error':reader_cleanup_error,'started':reader_started})
-        if producer_err_file is not None:
-            try:producer_err_file.close()
-            except BaseException as e:error='producer stderr file close failed: '+str(e);code=1
-        if video is not None:
-            for label,pipe in (('stdin',video.stdin),('stdout',video.stdout)):
-                if label=='stdout' and reader is not None and reader.is_alive():continue
-                try:pipe.close()
-                except BaseException as e:
-                    error='owned producer pipe close failed: '+str(e);code=1
-                    write(native/('producer-'+label+'-cleanup-error.json'),{'error':repr(e)})
-            (native/'capture-stdout.log').write_text(''.join(stdout_rows))
-            try:write(native/'capture-events.json',[json.loads(line) for line in stdout_rows])
-            except json.JSONDecodeError:pass
-            write(native/'producer-cleanup.json',{'pid':video.pid,'pgid':video.pid,'private_session':True,
-                  'exit_code':video.returncode,'signal':-video.returncode if video.returncode is not None and video.returncode<0 else None,
-                  'joined':video.returncode is not None,'owned_group_released':producer_group_released,'signals_sent':producer_signals,
-                  'reader_joined':reader_started and not reader.is_alive() and reader_cleanup_error is None,
-                  'finished_monotonic_ns':time.monotonic_ns(),'control_state':life.state if life else None,
-                  'scope':'owned producer actual cleanup; never native success'})
-        if process is not None and process.returncode is None:
-            try:
-                process.terminate()
-                try:process.wait(timeout=5)
-                except subprocess.TimeoutExpired:process.kill();process.wait(timeout=2)
-            except BaseException as e:error='owned app cleanup failed: '+str(e);code=1
-        write(native/'owned-cleanup.json',{'app_pid':process.pid if process else None,'app_exit_code':process.returncode if process else None,'producer_pid':video.pid if video else None,'producer_exit_code':video.returncode if video else None,'producer_reader_joined':reader_started and reader is not None and not reader.is_alive() and reader_cleanup_error is None,'finished_monotonic_ns':time.monotonic_ns(),'scope':'cleanup status; resource accounting only from owned wait4'})
         try:
-            if before is None:raise RuntimeError('no initial display snapshot; no display mode was set; restore query skipped')
-            op='restore' if changed else 'probe';cmd=['/usr/bin/swift',str(native/'display.swift'),op]+([str(original)] if changed else [])
-            restore=json.loads(owned_command(native,'display-restored',cmd,check=True).stdout);write(native/'display-restored.json',restore)
-            if restore['after']!=before['after']:error='display restoration/preservation mismatch';code=1
+            # Owned-process cleanup is bounded; evidence write failures stay fatal.
+            if video is not None:
+                try:
+                    if video.poll() is None and reader_started:
+                        try:video.stdin.write('STOP\n');video.stdin.flush();video.wait(timeout=5)
+                        except (BrokenPipeError,OSError,subprocess.TimeoutExpired):pass
+                    if video.poll() is None or group_present(video.pid):
+                        producer_group_released=drain_owned_group(video,producer_signals,2)
+                    else:producer_group_released=True
+                    if not producer_group_released:raise RuntimeError('owned producer group not released')
+                except BaseException as e:error='owned producer cleanup failed: '+str(e);code=1
+            if reader is not None:
+                try:
+                    reader.join(timeout=2)
+                    if reader.is_alive():raise RuntimeError('owned reader still running')
+                except BaseException as e:
+                    reader_cleanup_error=repr(e);error='owned reader cleanup failed: '+str(e);code=1
+                    write(native/'reader-cleanup-error.json',{'error':reader_cleanup_error,'started':reader_started})
+            if producer_err_file is not None:
+                try:producer_err_file.close()
+                except BaseException as e:error='producer stderr file close failed: '+str(e);code=1
+            if video is not None:
+                for label,pipe in (('stdin',video.stdin),('stdout',video.stdout)):
+                    if label=='stdout' and reader is not None and reader.is_alive():continue
+                    try:pipe.close()
+                    except BaseException as e:
+                        error='owned producer pipe close failed: '+str(e);code=1
+                        write(native/('producer-'+label+'-cleanup-error.json'),{'error':repr(e)})
+                (native/'capture-stdout.log').write_text(''.join(stdout_rows))
+                try:write(native/'capture-events.json',[json.loads(line) for line in stdout_rows])
+                except json.JSONDecodeError:pass
+                write(native/'producer-cleanup.json',{'pid':video.pid,'pgid':video.pid,'private_session':True,
+                      'exit_code':video.returncode,'signal':-video.returncode if video.returncode is not None and video.returncode<0 else None,
+                      'joined':video.returncode is not None,'owned_group_released':producer_group_released,'signals_sent':producer_signals,
+                      'reader_joined':reader_started and not reader.is_alive() and reader_cleanup_error is None,
+                      'finished_monotonic_ns':time.monotonic_ns(),'control_state':life.state if life else None,
+                      'scope':'owned producer actual cleanup; never native success'})
+            if process is not None and process.returncode is None:
+                try:
+                    process.terminate()
+                    try:process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:process.kill();process.wait(timeout=2)
+                except BaseException as e:error='owned app cleanup failed: '+str(e);code=1
+            write(native/'owned-cleanup.json',{'app_pid':process.pid if process else None,'app_exit_code':process.returncode if process else None,'producer_pid':video.pid if video else None,'producer_exit_code':video.returncode if video else None,'producer_reader_joined':reader_started and reader is not None and not reader.is_alive() and reader_cleanup_error is None,'finished_monotonic_ns':time.monotonic_ns(),'scope':'cleanup status; resource accounting only from owned wait4'})
         except BaseException as e:
-            error='display restoration/preservation failed: '+str(e);code=1
-            write(native/'display-restoration-error.json',{'error':error,'mode_change_attempted':changed,'initial_snapshot_available':before is not None})
+            error='owned cleanup/evidence failed: '+str(e);code=1
+        finally:
+            # A cleanup or receipt error must not skip same-target restoration.
+            try:
+                if before is None:raise RuntimeError('no initial display snapshot; no display mode was set; restore query skipped')
+                op='restore' if changed else 'probe';cmd=['/usr/bin/swift',str(native/'display.swift'),op,str(a.display_id)]+([str(original)] if changed else [])
+                restore=json.loads(owned_command(native,'display-restored',cmd,check=True).stdout);write(native/'display-restored.json',restore)
+                validate_display_receipt(restore,a.display_id)
+                if restore['after']!=before['after']:error='display restoration/preservation mismatch';code=1
+                restored_probe=json.loads(owned_command(native,'display-restored-probe',['/usr/bin/swift',str(native/'display.swift'),'probe',str(a.display_id)],check=True).stdout)
+                write(native/'display-restored-probe.json',restored_probe);validate_display_receipt(restored_probe,a.display_id)
+                if restored_probe['before']!=restored_probe['after'] or restored_probe['after']!=before['after']:
+                    raise RuntimeError('original target mode did not survive restore helper process exit')
+            except BaseException as e:
+                error='display restoration/preservation failed: '+str(e);code=1
+                write(native/'display-restoration-error.json',{'error':error,'display_id':a.display_id,'original_mode_id':original,'mode_change_attempted':changed,'initial_snapshot_available':before is not None})
         write(native/'runner.json',{'exit_code':exit_code,'error':error,'peak_child_rss_bytes':rss,'scope':'owned-child wait4 resource usage; no process enumeration; movie valid/joined before app release','resource_usage':usage_receipt,'ui_roi_directory':ui.name,'source_manifest_sha256':request['source_manifest_sha256'],'capture_state':life.state if life else None})
         for item in native.iterdir():
             if item.is_file():shutil.copy2(item,out/item.name)

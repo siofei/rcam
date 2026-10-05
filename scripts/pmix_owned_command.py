@@ -1,5 +1,6 @@
 """Bound local PMIX subcommands and only their newly created private process group."""
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -9,7 +10,8 @@ import time
 
 from verify_s5m2_evidence import require, load, safe
 
-LIMITS={'display-before':10,'display-active':10,'display-restored':10,'window-query':10,'image':5,
+LIMITS={'display-before':10,'display-active':10,'display-active-probe':10,
+        'display-restored':10,'display-restored-probe':10,'window-query':10,'image':5,
         'environment-os':3,'environment-machine':3,'environment-memory':3,'environment-power':3}
 GRACE=2
 
@@ -99,17 +101,52 @@ def verify_command(directory,label,command,exit_code,stdout=None,stderr=None):
 
 
 def verify_display_environment(directory,request,display_source):
+    require(type(request.get('schema_version')) is int and request['schema_version']==3,
+            'explicit-target PMIX request schema')
+    display_id=request.get('display_id')
+    require(type(display_id) is int and 0<display_id<2**32,'explicit PMIX display ID')
     require(safe(directory,'display.swift').read_text()==display_source,'reviewed display helper source')
     query=load(safe(directory,'window-query.json'));helper=Path(query['command'][1]).parent/'display.swift'
     before=load(safe(directory,'display-before.json'));active=load(safe(directory,'display-active.json'));restored=load(safe(directory,'display-restored.json'))
+    active_probe=load(safe(directory,'display-active-probe.json'));restored_probe=load(safe(directory,'display-restored-probe.json'))
+    receipts=(before,active,active_probe,restored,restored_probe)
+    for receipt in receipts:validate_display_receipt(receipt,display_id)
+    require(before['before']==before['after'],'initial target probe changed')
+    require(active['before']==before['after'],'active original target snapshot')
+    require(restored['after']==before['after'],'complete same-target restoration')
+    require(request['display_policy'] in ('preserve','frozen-60hz'),'PMIX display policy')
     changed=request['display_policy']=='frozen-60hz'
-    commands=[('display-before',['/usr/bin/swift',str(helper),'probe'],before),
-              ('display-active',['/usr/bin/swift',str(helper),'set60' if changed else 'probe'],active),
-              ('display-restored',['/usr/bin/swift',str(helper),'restore' if changed else 'probe']+
-               ([str(before['after']['mode_id'])] if changed else []),restored)]
+    require(not changed or all(snapshot['in_mirror_set'] is False for receipt in receipts
+                               for snapshot in receipt.values()),'refuse linked mirrored display changes')
+    require((changed and request['display_mode_change_authorized'] is True
+             and abs(active['after']['refresh_hz']-60)<.01)
+            or (not changed and active['after']==before['after']),'active target mode/preservation')
+    for key in ('width','height','pixel_width','pixel_height','backing_scale'):
+        require(active['after'][key]==before['after'][key],'active target geometry')
+    require(active_probe['before']==active_probe['after']==active['after'],
+            'active mode did not survive setter exit')
+    require(restored_probe['before']==restored_probe['after']==restored['after'],
+            'original mode did not survive restore helper exit')
+    commands=[('display-before',['/usr/bin/swift',str(helper),'probe',str(display_id)],before),
+              ('display-active',['/usr/bin/swift',str(helper),'set60' if changed else 'probe',str(display_id)],active),
+              ('display-active-probe',['/usr/bin/swift',str(helper),'probe',str(display_id)],active_probe),
+              ('display-restored',['/usr/bin/swift',str(helper),'restore' if changed else 'probe',str(display_id)]+
+               ([str(before['after']['mode_id'])] if changed else []),restored),
+              ('display-restored-probe',['/usr/bin/swift',str(helper),'probe',str(display_id)],restored_probe)]
+    processes={}
     for label,command,expected in commands:
-        verify_command(directory,label,command,0,stderr='')
-        require(json.loads(safe(directory,label+'.subcommand.stdout').read_text())==expected,'bounded actual display query output')
+        processes[label]=verify_command(directory,label,command,0,stderr='')
+        require(load(safe(directory,label+'.subcommand.stdout'))==expected,'bounded actual display query output')
+    usage=load(safe(directory,'owned-resource-usage.json'))
+    require(all(type(usage.get(k)) is int and 0<usage[k]<2**64
+                for k in ('started_monotonic_ns','finished_monotonic_ns'))
+            and usage['started_monotonic_ns']<usage['finished_monotonic_ns'],'display/app causal clock types')
+    require(processes['display-before']['finished_monotonic_ns']<processes['display-active']['started_monotonic_ns']
+            and processes['display-active']['finished_monotonic_ns']<processes['display-active-probe']['started_monotonic_ns']
+            and processes['display-active-probe']['finished_monotonic_ns']<usage['started_monotonic_ns']
+            and usage['finished_monotonic_ns']<processes['display-restored']['started_monotonic_ns']
+            and processes['display-restored']['finished_monotonic_ns']<processes['display-restored-probe']['started_monotonic_ns'],
+            'setter join/post-exit probe/app lifetime/restoration causal binding')
     environment=load(safe(directory,'environment.json'))
     for key,label,command in [('os','environment-os',['/usr/bin/sw_vers']),('machine','environment-machine',['/usr/bin/uname','-m']),
                               ('memory_bytes','environment-memory',['/usr/sbin/sysctl','-n','hw.memsize']),('power','environment-power',['/usr/bin/pmset','-g','custom'])]:
@@ -117,3 +154,21 @@ def verify_display_environment(directory,request,display_source):
         raw=safe(directory,label+'.subcommand.stdout').read_text()
         actual=int(raw) if key=='memory_bytes' else (raw.strip() if key=='machine' else raw)
         require(actual==environment[key],'bounded actual environment output: '+key)
+
+
+def validate_display_receipt(receipt,display_id):
+    """Every receipt targets one available display, with complete typed geometry."""
+    require(type(display_id) is int and 0<display_id<2**32,'explicit PMIX display ID')
+    require(type(receipt) is dict and set(receipt)=={'before','after'},'target display receipt fields')
+    fields={'display_id','mode_id','width','height','pixel_width','pixel_height','refresh_hz','backing_scale','in_mirror_set'}
+    for snapshot in receipt.values():
+        require(type(snapshot) is dict and set(snapshot)==fields,'target display snapshot fields')
+        require(type(snapshot['display_id']) is int and snapshot['display_id']==display_id,
+                'target display snapshot identity')
+        require(type(snapshot['mode_id']) is int and 0<=snapshot['mode_id']<2**32,
+                'target display mode ID')
+        require(type(snapshot['in_mirror_set']) is bool,'target display mirror status type')
+        require(all(type(snapshot[k]) is int and snapshot[k]>0
+                    for k in ('width','height','pixel_width','pixel_height')),'target display dimensions')
+        require(all(type(snapshot[k]) in (int,float) and math.isfinite(snapshot[k]) and snapshot[k]>0
+                    for k in ('refresh_hz','backing_scale')),'target display rate/scale')
