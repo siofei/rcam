@@ -21,6 +21,107 @@ def directory_path(root,name):
     require(path.is_dir() and path.resolve().is_relative_to(root.resolve()),'missing/escaped ROI directory')
     return path
 
+def bind_frame_producers(report, ui, paints, roi_requests, roi_samples, roi_finalization):
+    """Exact complete coverage, including the real on-exit callback/fence.
+
+    The existing UI = ordinary PMIX frames + 1 relation stays exact. Its one
+    terminal record is mandatory and participates in every callback counter.
+    """
+    require(report.get('observation_version') == 3, 'PMIX terminal observation version')
+    frames = report.get('frames')
+    terminal = report.get('terminal_frame')
+    require(type(frames) is list and frames and type(terminal) is dict,
+            'PMIX missing ordinary/terminal frame')
+    require(type(report.get('last_observed_frame_id')) is int
+            and report['last_observed_frame_id'] == len(frames), 'PMIX ordinary frame coverage')
+    require(len(ui) == len(frames) + 1, 'PMIX/UI frame producer coverage')
+    all_frames = frames + [terminal]
+    require(all(type(f.get('id')) is int and f['id'] == number
+                for number, f in enumerate(all_frames, 1)), 'PMIX complete frame IDs')
+    require(all(type(f.get('frame')) is int and f['frame'] == number
+                for number, f in enumerate(ui, 1)), 'PMIX/UI complete frame IDs')
+    previous_ui_input = -1
+    for frame, ui_frame in zip(all_frames, ui):
+        require(type(frame.get('pass_index')) is int
+                and type(ui_frame.get('pass_index')) is int
+                and frame['pass_index'] == ui_frame['pass_index'] == 0,
+                'PMIX unmodelled additional update pass')
+        ui_input = ui_frame['input']['t_ns']
+        require(type(ui_input) is int and ui_input > previous_ui_input,
+                'PMIX/UI reused raw input')
+        previous_ui_input = ui_input
+        state = frame['state']
+        require(ui_frame['version'] == state['version']
+                and ui_frame['scene_serial'] == state['scene_serial']
+                and ui_frame['selected'] == state['selected']
+                and ui_frame['busy'] == state['busy']
+                and ui_frame['display_pending'] == state['display_pending'],
+                'PMIX/UI actual scene/version/frame binding')
+        require(ui_frame['canvas'] == frame['view']['rect']
+                and ui_frame['ppp'] == frame['view']['ppp'], 'PMIX/UI physical canvas binding')
+        require(frame['input_ns'] <= frame['observed_ns'], 'PMIX terminal input/update clock')
+        if frame['painted']:
+            draw_complete(frame)
+        else:
+            require('gpu_completed' not in frame and 'completed_ns' not in frame
+                    and 'input_gpu_complete_ms' not in frame, 'unpainted PMIX fabricated fence')
+    for first, second in zip(all_frames, all_frames[1:]):
+        require(first['input_ns'] < second['input_ns'], 'PMIX complete input clock order')
+        close(second['frame_interval_ms'],
+              (second['input_ns'] - first['input_ns']) / 1e6, 1e-4,
+              'PMIX terminal raw frame interval')
+    require([p['frame'] for p in paints] == [f['id'] for f in all_frames if f['painted']],
+            'PMIX/UI complete paint coverage')
+    bind_callbacks(dict(report, frames=all_frames))
+    exit_record = report.get('exit')
+    require(type(exit_record) is dict, 'PMIX missing on-exit receipt')
+    close_id = exit_record.get('close_requested_frame_id')
+    close_ns = exit_record.get('close_requested_ns')
+    exited_ns = exit_record.get('exited_ns')
+    require(type(close_id) is int and 1 <= close_id <= len(all_frames)
+            and type(close_ns) is int and type(exited_ns) is int, 'PMIX Close/exit identity')
+    close_frame = all_frames[close_id - 1]
+    close_end = (all_frames[close_id]['input_ns'] if close_id < len(all_frames) else exited_ns)
+    require(close_frame['phase'] == terminal['phase'] == 14
+            and close_frame['observed_ns'] <= close_ns < close_end,
+            'PMIX actual Close update binding')
+    if close_frame['painted']:
+        require(close_ns <= close_frame['completed_ns'], 'PMIX Close after completed callback')
+    require(exited_ns >= terminal.get('completed_ns', terminal['observed_ns'])
+            and exited_ns > close_ns, 'PMIX final fence/on-exit clock')
+    require(exit_record.get('full_surface_requests_drained') is True,
+            'PMIX undrained full-surface requests')
+    require(type(roi_finalization) is dict
+            and exit_record.get('roi_finalization') == roi_finalization,
+            'PMIX ROI finalization/exit binding')
+    require(type(roi_finalization.get('schema_version')) is int
+            and roi_finalization['schema_version'] == 1
+            and type(roi_finalization.get('frames')) is int
+            and roi_finalization.get('frames') == len(all_frames)
+            and roi_finalization.get('quiesced') is True
+            and roi_finalization.get('pending') is False
+            and roi_finalization.get('writer_joined') is True, 'PMIX ROI drain/writer finalization')
+    require(type(roi_finalization.get('requests')) is int
+            and type(roi_finalization.get('samples')) is int
+            and roi_requests and len(roi_requests) == len(roi_samples)
+            == roi_finalization.get('requests') == roi_finalization.get('samples'),
+            'PMIX ROI every request delivered')
+    seen_requests = set()
+    for number, (request, sample) in enumerate(zip(roi_requests, roi_samples)):
+        key = (request.get('frame'), request.get('request_ns'))
+        require(key not in seen_requests and type(sample.get('sample')) is int
+                and sample['sample'] == number
+                and sample.get('request') == request, 'PMIX ROI request/readback identity')
+        seen_requests.add(key)
+        request_id = request.get('frame')
+        require(type(request_id) is int and 1 <= request_id <= close_id,
+                'PMIX ROI request after Close')
+        snapshot = {k: v for k, v in request.items() if k != 'request_ns'}
+        require(snapshot == ui[request_id - 1], 'PMIX ROI actual request update binding')
+        require(type(request.get('request_ns')) is int
+                and request['request_ns'] >= ui[request_id - 1]['t_ns'], 'PMIX ROI request clock')
+    return all_frames
+
 CONVEX=[(320,0),(296,122),(226,226),(122,296),(0,320),(-122,296),(-226,226),(-296,122),(-320,0),(-296,-122),(-226,-226),(-122,-296),(0,-320),(122,-296),(226,-226),(296,-122)]
 CONCAVE=[(-300,-300),(-100,-300),(-100,-200),(100,-200),(100,-300),(300,-300),(300,300),(100,300),(100,200),(-100,200),(-100,300),(-300,300),(-300,100),(-200,100),(-200,-100),(-300,-100)]
 
@@ -83,7 +184,7 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     hashes=load(directory/'file-hashes.json');actual={f.relative_to(directory).as_posix() for f in directory.rglob('*') if f.is_file()}
     require(actual==set(hashes)|{'file-hashes.json'},'file inventory missing/extra')
     for name,digest in hashes.items():require(sha(safe(directory,name))==digest,'file content hash '+name)
-    require(r['request']==request and r['stage']=='S5-M2-C' and r['schema_version']==2 and r['observation_version']==2 and r['profile']=='release','identity/schema')
+    require(r['request']==request and r['stage']=='S5-M2-C' and r['schema_version']==2 and r['observation_version']==3 and r['profile']=='release','identity/schema')
     require(not r['failures'] and runner['exit_code']==0 and runner['error'] is None,'native/runner failure')
     require(r['binary_sha256']==load(directory/'binary-before.json')['sha256']==binary_sha256,'external binary binding')
     require(r['commit']==commit and r['build_source']==('git-dirty' if commit.endswith('-dirty') else 'git-clean'),'external commit/build source binding')
@@ -111,18 +212,16 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     require(load(roi_root/'identity.json')['pid']==r['pid'],'PMIX/UI ROI owned process binding')
     roi=analyze_roi(roi_root,binary_sha256,source_manifest)
     ui=roi_rows(roi_root/'frames.jsonl')
-    require(len(ui)==len(fs)+1,'PMIX/UI frame producer coverage')
-    for frame,ui_frame in zip(fs,ui):
-        require(ui_frame['frame']==frame['id'] and ui_frame['version']==frame['state']['version'] and ui_frame['scene_serial']==frame['state']['scene_serial'] and ui_frame['selected']==frame['state']['selected'] and ui_frame['busy']==frame['state']['busy'] and ui_frame['display_pending']==frame['state']['display_pending'],'PMIX/UI actual scene/version/frame binding')
-        require(ui_frame['canvas']==frame['view']['rect'] and ui_frame['ppp']==frame['view']['ppp'],'PMIX/UI physical canvas binding')
+    all_frames=bind_frame_producers(r,ui,roi_rows(roi_root/'paint.jsonl'),
+        roi_rows(roi_root/'requests.jsonl'),roi_rows(roi_root/'samples.jsonl'),
+        load(safe(roi_root,'capture-finalization.json')))
     require(roi['user_flicker_report']=='OPEN','unearned flicker closure')
     require(not roi['outliers'],'actual PMIX menu ROI outliers require investigation')
-    bind_callbacks(r)
-    indexed={f['id']:f for f in fs}
-    for a,b in zip(fs,fs[1:]):
+    indexed={f['id']:f for f in all_frames}
+    for a,b in zip(all_frames,all_frames[1:]):
         require(a['input_ns']<b['input_ns'],'input clock monotonic')
         close(b['frame_interval_ms'],(b['input_ns']-a['input_ns'])/1e6,1e-4,'frame interval raw clock')
-    for f in fs:
+    for f in all_frames:
         task_version(f['state']['version'])
         require(f['input_ns']<=f['observed_ns'],'input/update causal clock')
         if f['painted']:draw_complete(f)
@@ -130,7 +229,12 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     for e in events:
         by.setdefault(e['label'],[]).append(e)
         f=indexed[e['frame_id']];require(f['input_ns']<=e['at_ns'],'event/input binding')
-        if f['id']<len(fs):require(e['at_ns']<indexed[f['id']+1]['input_ns'],'event/frame end binding')
+        if f['id']<len(all_frames):require(e['at_ns']<indexed[f['id']+1]['input_ns'],'event/frame end binding')
+    surface_requests=[e['data'] for e in events if e['label']=='screenshot-request']
+    surface_deliveries=[e['data']['request'] for e in events if e['label']=='screenshot']
+    require(sorted(json.dumps(row,sort_keys=True) for row in surface_requests)
+            ==sorted(json.dumps(row,sort_keys=True) for row in surface_deliveries),
+            'every PMIX full-surface request delivered')
     def event(label):require(len(by.get(label,[]))==1,'missing/duplicate '+label);return by[label][0]
     if not workflow:
         base=event('baseline');warm=event('warmup-begin');require(base['at_ns']-warm['at_ns']>=10e9,'warmup <10s')
@@ -154,7 +258,7 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
         require(request_row['input']==request_row['view_version']==worker['receipt']['input'] and request_row['action']==worker['action'],'worker input bound to actual accepted enqueue full version/action')
         frame=indexed[request_row['frame_id']]
         require(frame['state']['version']==request_row['input'] and frame['input_ns']<=request_row['at_ns']<=worker['started_ns'],'accepted enqueue UI full version/clock binding')
-        if frame['id']<len(fs):require(request_row['at_ns']<indexed[frame['id']+1]['input_ns'],'enqueue frame interval')
+        if frame['id']<len(all_frames):require(request_row['at_ns']<indexed[frame['id']+1]['input_ns'],'enqueue frame interval')
     previous_version=None
     for worker in r['worker']:
         receipt=worker['receipt'];version=receipt['result_version'];state=worker['state']
@@ -172,7 +276,7 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     for name in ('stdout.log','stderr.log','environment.json','window.json','window-query.json','image-command.json','native-window.png','video-command.json','native-window.mov','capture-ready.json','protocol-done.json','capture-complete.json'):
         safe(directory,name)
     capture=capture_receipts(directory,r,capture_producer_sha256)
-    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'raw_frames':len(fs),'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
+    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
     if request['mode']=='nav':
         start=event('navigation-begin');end=event('navigation-end-input');done=event('navigation-complete');origin=start['data']['origin_ns'];a=start['frame_id'];b=end['frame_id']
         require(a<b<done['frame_id'],'navigation phase sequence')
@@ -204,7 +308,11 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
         for key in ['frame_p95_ms','frame_p99_ms','frame_max_ms','input_gpu_p95_ms']:require(summary[key]<=p['budgets'][key],f'{key}: {summary[key]} > {p["budgets"][key]}')
     elif request['mode'] in ('move','escape','new-project'):
         mode=request['mode'];p2={'frame_stall_ms_max':200,'drag_seconds':10,'interruption_drag_seconds':1,'camera':p['camera'],'drag_press_mm':[1.,1.],'canvas_physical':p['canvas_physical']}
-        preview,times,indexed=bind_frames(r,p2)
+        # The frozen M2-B parser consumes v2's complete frames list. Adapt only
+        # its in-memory envelope after v3's mandatory terminal binding above;
+        # never alter the raw producer evidence or the frozen M2-B contract.
+        complete_envelope=dict(r,observation_version=2,frames=all_frames,last_observed_frame_id=len(all_frames))
+        preview,times,indexed=bind_frames(complete_envelope,p2)
         require(baseline['selected']==1000,'mixed drag selection count')
         selected=next(x['selected_ids'] for x in r['snapshots'] if x['label']=='before')
         require(selected==[f'object-{n}' for n in p['drag']['ordinals']],'mixed drag ordered selected IDs')

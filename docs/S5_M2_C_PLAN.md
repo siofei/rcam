@@ -624,3 +624,64 @@ actual SDK/probe/writer checks, clean committed public/internal builds and the
 coordinated preserve-mode owned-window precheck remain required. Real capture
 startup/first-frame/final MOV, full12 native matrix and authentic full48 attacks
 remain NOT_EXECUTED; noncanvas flicker remains OPEN.
+
+### PMIX terminal-frame lifecycle repair (2026-10-05, candidate only)
+
+Exact input is the source-only transfer snapshot
+69e884a66bcb7aa58bdd85dbaae2d1db99fc8ce5, parent c0d2570d552e6129410c3c4601d6bdf35018f448.
+Its five-file preflight patch is SHA-256
+49a8ecb25bc04c151652497e2cfa238e48a35aa203732c150185a1753902cbf7;
+the candidate manifest is
+242bb4c85ba62b234db3d9205b4c6843c97ca064a7a2b10ba0dab1941aae7b61.
+All668 listed source files matched that exact snapshot before these edits.
+This transfer commit is not a native acceptance or final product release.
+
+The retained actual owned-window precheck failed native verification: PMIX had
+325 frames, UI327, where the existing relation required326 UI frames. All327
+UI inputs were distinct, pass_index was0, and each had one actual paint callback.
+PMIX stopped at325 with draw325/uniform-upload36400; it had no326/327 counter
+observations. The recorder wrote observations.json inside the phase14 update,
+before that callback, then stopped its input/tick observation while UI continued.
+This is premature producer finalization; no one-frame tolerance or deleted tail
+is permitted. Keep the failed evidence unchanged and distinct from this source.
+
+Only internal PMIX observation/lifecycle, its minimal on_exit hook, PMIX-specific
+ROI drainage, portable verifier/tests and this plan/manifest are changed. No
+manufacturing action, fixture, trajectory, precision, dependency, toolchain,
+I1/I2 product contract or frozen performance threshold changes. Scope remains
+S5-M2-C, especially R17/R21/R22 and the existing PMIX portions of AT-073/074/075;
+none of their full platform requirements is closed by this candidate.
+
+Observation version3 keeps the exact UI = ordinary PMIX frames + 1 relation.
+The one additional update is now a required terminal_frame, containing the same
+actual input/update state, callback stamp, conservative production GPU fence
+(if painted) and final counters. Close only ends protocol actions. Observation
+continues through every real close redraw, and on_exit settles the final pending
+callback before eframe destroys its painter, then writes the report once. All
+ordinary plus terminal rows bind exactly to every UI/paint row and final draw /
+uniform-upload totals. Unpainted terminal updates have no invented GPU fields.
+Extra/discard passes, missing/duplicated/renumbered rows, an early exit, failed
+GPU fence or an unbound Close clock refuse. No historical report is upgraded.
+The frozen M2-B validator receives an in-memory complete-frame v2 envelope only
+after v3's terminal validation; its source and raw producer evidence stay intact.
+
+Before protocol-end, PMIX quiesces new ROI requests and awaits every previously
+requested ROI and full-surface readback. Frames/paint rows continue. PMIX ROI
+alone adds requests.jsonl and capture-finalization.json; the latter is written
+after writer flush/join and binds exact request/sample totals, quiescence and
+pending=false to the report. Other accepted ROI formats remain unchanged. Every
+full-surface request must have a matching delivered event. Lost readbacks, writer
+failure and fabricated completion cannot earn native success.
+
+Cloud auxiliary checks: the focused24 frame-coverage,26 guard and15 lifecycle
+cases passed (65 total), Python syntax checks and git diff --check passed.
+The24 frame cases are now included by the mandatory guard preflight. Seven
+Rust regressions cover actual FrameLog close-redraw/fence behavior and queued
+ROI writer flush/failure; they are NOT_EXECUTED here because Cargo/rustc/rustfmt
+are absent. Required native commands include cargo test --release --locked -p
+editor-app --features internal-evidence native_pmix::frame_log_tests and the
+corresponding native_ui::writer_tests filter. Fresh native fmt/check/clippy/full
+frozen gates, clean public/internal builds, independent review and a new owned
+capture precheck remain required. No app was launched for this cloud repair.
+The prior failed run remains FAIL; actual repaired native coverage is pending,
+the full12-process matrix remains pending, and noncanvas flicker remains OPEN.

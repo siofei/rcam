@@ -1248,7 +1248,13 @@ fn arrangement_action(command: CommandId) -> Option<Action> {
 impl eframe::App for EditorApp {
     fn on_exit(&mut self) {
         #[cfg(feature = "internal-evidence")]
-        native_ui::finish();
+        {
+            let roi_finalization = native_ui::finish();
+            if let Some(mut run) = self.pmix.take() {
+                run.on_exit(self, roi_finalization);
+                self.pmix = Some(run);
+            }
+        }
         for task in [&self.pending_task, &self.viewport_task]
             .into_iter()
             .flatten()

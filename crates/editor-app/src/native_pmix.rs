@@ -28,6 +28,7 @@ pub fn request_input(
         json!({"sequence":task.task_id,"input":task.input,"view_version":editor_service::task::TaskVersion::capture(view.info.as_ref(),view.task_generation,view.rule_revision),"action":action_label(action),"frame_id":FRAME.load(Ordering::Acquire),"at_ns":origin.elapsed().as_nanos() as u64}),
     )
 }
+
 pub fn accepted_request(input: Option<Value>) {
     if let Some(input) = input {
         REQUESTS
@@ -99,6 +100,41 @@ struct Pending {
     input: Instant,
     observed: Value,
 }
+#[derive(Default)]
+struct FrameLog {
+    pending: Option<Pending>,
+    frames: Vec<Value>,
+}
+impl FrameLog {
+    fn observe(&mut self, pending: Pending) {
+        // A second update without another raw-input hook is an unmodelled egui
+        // discard pass, not another input frame. Never overwrite its evidence.
+        assert!(self.pending.is_none(), "PMIX duplicate update pass");
+        self.pending = Some(pending);
+    }
+    fn complete_pending(
+        &mut self,
+        painted_id: u64,
+        wait: impl FnOnce() -> bool,
+        origin: Instant,
+        counters: impl FnOnce() -> Value,
+    ) -> Option<Value> {
+        let p = self.pending.take()?;
+        let painted = painted_id == p.id;
+        let mut frame = p.observed;
+        frame["painted"] = json!(painted);
+        // Also used at on_exit, while eframe's production device is still live.
+        // An unpainted update gets no fabricated GPU completion observation.
+        if painted {
+            let okay = wait();
+            frame["gpu_completed"] = json!(okay);
+            frame["input_gpu_complete_ms"] = json!(p.input.elapsed().as_secs_f64() * 1000.);
+            frame["completed_ns"] = json!(origin.elapsed().as_nanos() as u64);
+        }
+        frame["counters"] = counters();
+        Some(frame)
+    }
+}
 pub struct Run {
     dir: PathBuf,
     request: Value,
@@ -118,10 +154,9 @@ pub struct Run {
     device: wgpu::Device,
     pub painted: Arc<AtomicU64>,
     pub frame_id: u64,
-    pending: Option<Pending>,
+    log: FrameLog,
     complete: Option<Value>,
     prepared: Option<Value>,
-    frames: Vec<Value>,
     events: Vec<Value>,
     failures: Vec<String>,
     press: Pos2,
@@ -129,7 +164,8 @@ pub struct Run {
     baseline_snapshot: Option<Arc<editor_service::RenderSnapshot>>,
     baseline_scene: Option<Arc<crate::display::Scene>>,
     pub focused: bool,
-    finished: bool,
+    close_requested: Option<(u64, u64)>,
+    surface_pending: Vec<Value>,
     snapshot_files: Vec<Value>,
     delta: MmPoint,
     injected: Value,
@@ -181,10 +217,9 @@ impl Run {
             device,
             painted: Arc::new(AtomicU64::new(0)),
             frame_id: 0,
-            pending: None,
+            log: FrameLog::default(),
             complete: None,
             prepared: None,
-            frames: vec![],
             events: vec![],
             failures: vec![],
             press: Pos2::ZERO,
@@ -192,7 +227,8 @@ impl Run {
             baseline_snapshot: None,
             baseline_scene: None,
             focused: true,
-            finished: false,
+            close_requested: None,
+            surface_pending: vec![],
             snapshot_files: vec![],
             delta: MmPoint::new(0., 0.),
             injected: Value::Null,
@@ -241,34 +277,12 @@ impl Run {
         }
     }
     pub fn input(&mut self, app: &mut EditorApp, ctx: &egui::Context, raw: &mut egui::RawInput) {
-        if self.finished {
-            return;
-        }
         self.complete = None;
-        if let Some(p) = self.pending.take() {
-            let painted = self.painted.load(Ordering::Acquire) == p.id;
-            let mut frame = p.observed;
-            frame["painted"] = json!(painted);
-            // Fence only the actually submitted production callback. This is a
-            // conservative GPU completion bound, not GPU execution or scanout.
-            if painted {
-                let okay = self
-                    .device
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: None,
-                        timeout: Some(Duration::from_secs(5)),
-                    })
-                    .is_ok();
-                frame["gpu_completed"] = json!(okay);
-                frame["input_gpu_complete_ms"] = json!(p.input.elapsed().as_secs_f64() * 1000.);
-                frame["completed_ns"] = json!(self.started.elapsed().as_nanos() as u64);
-                if !okay {
-                    self.failures.push("GPU fence failed".into());
-                }
+        if let Some(frame) = self.complete_pending() {
+            if frame["painted"] == true {
                 self.complete = Some(frame.clone());
             }
-            frame["counters"] = crate::native_s5m1::counter_snapshot();
-            self.frames.push(frame);
+            self.log.frames.push(frame);
         }
         for e in &raw.events {
             if let egui::Event::Screenshot {
@@ -286,7 +300,13 @@ impl Run {
                     format!("P6\n{} {}\n255\n", image.size[0], image.size[1]).into_bytes();
                 bytes.extend(image.pixels.iter().flat_map(|p| [p.r(), p.g(), p.b()]));
                 std::fs::write(self.dir.join(&name), &bytes).unwrap();
-                self.event("screenshot", json!({"path":name,"width":image.size[0],"height":image.size[1],"sha256":sha256_hex(&bytes),"request":user_data.data.as_ref().and_then(|d|d.downcast_ref::<Value>())}));
+                let request = user_data.data.as_ref().unwrap().downcast_ref::<Value>().unwrap();
+                if let Some(index) = self.surface_pending.iter().position(|r| r == request) {
+                    self.surface_pending.remove(index);
+                } else {
+                    self.failures.push("unknown or duplicate full-surface readback".into());
+                }
+                self.event("screenshot", json!({"path":name,"width":image.size[0],"height":image.size[1],"sha256":sha256_hex(&bytes),"request":request}));
             }
         }
         self.frame_id += 1;
@@ -430,6 +450,22 @@ impl Run {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
     }
+    fn complete_pending(&mut self) -> Option<Value> {
+        let device = &self.device;
+        let frame = self.log.complete_pending(
+            self.painted.load(Ordering::Acquire),
+            || device.poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(Duration::from_secs(5)),
+            }).is_ok(),
+            self.started,
+            crate::native_s5m1::counter_snapshot,
+        )?;
+        if frame["gpu_completed"] == false {
+            self.failures.push("GPU fence failed".into());
+        }
+        Some(frame)
+    }
     fn complete_current(&self, app: &EditorApp) -> bool {
         let current = state(app);
         !app.busy
@@ -458,6 +494,7 @@ impl Run {
     }
     fn screenshot(&mut self, ctx: &egui::Context, label: &str) {
         let request = json!({"label":label,"frame_id":self.frame_id});
+        self.surface_pending.push(request.clone());
         self.event("screenshot-request", request.clone());
         ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
             request,
@@ -476,6 +513,12 @@ impl Run {
     fn finish(&mut self, _app: &mut EditorApp, _ctx: &egui::Context) {
         let done_path = self.dir.join("protocol-done.json");
         if !done_path.is_file() {
+            // Quiesce only new readbacks. Frame/paint observation continues
+            // while every existing ROI and full-surface request is delivered.
+            crate::native_ui::quiesce();
+            if !crate::native_ui::readbacks_drained() || !self.surface_pending.is_empty() {
+                return;
+            }
             let done = json!({"app_pid":std::process::id(),"run_id":self.request["run_id"],"frame_id":self.frame_id,"at_ns":self.started.elapsed().as_nanos() as u64});
             self.event("protocol-end", done.clone());
             std::fs::write(&done_path, serde_json::to_vec_pretty(&done).unwrap()).unwrap();
@@ -502,17 +545,45 @@ impl Run {
         self.enter(14);
     }
     fn close_after_capture(&mut self, app: &mut EditorApp, ctx: &egui::Context) {
-        self.finished = true;
+        assert_eq!(self.phase, 14, "PMIX Close before capture completion");
+        assert!(self.close_requested.is_none(), "duplicate PMIX close request");
+        if !crate::native_ui::readbacks_drained() || !self.surface_pending.is_empty() {
+            self.failures.push("readbacks not drained before Close".into());
+        }
+        self.close_requested = Some((self.frame_id, self.started.elapsed().as_nanos() as u64));
+        app.allow_quit = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+    pub fn on_exit(&mut self, app: &EditorApp, roi_finalization: Option<Value>) {
+        // eframe can draw further genuine updates after Close. Only on_exit is
+        // terminal, and it runs before the production painter/device is destroyed.
+        let terminal_frame = self.complete_pending();
+        if self.close_requested.is_none() {
+            self.failures.push("application exited before PMIX Close".into());
+        }
+        if terminal_frame.is_none() {
+            self.failures.push("missing PMIX terminal frame".into());
+        }
+        if !self.surface_pending.is_empty() {
+            self.failures.push("undelivered full-surface requests at exit".into());
+        }
+        if roi_finalization.as_ref().is_none_or(|r| {
+            r["quiesced"] != true || r["pending"] != false || r["writer_joined"] != true
+                || r["requests"].as_u64().is_none_or(|n| n == 0 || r["samples"].as_u64() != Some(n))
+        }) {
+            self.failures.push("ROI readbacks/writer not finalized at exit".into());
+        }
+        let exit = json!({"close_requested_frame_id":self.close_requested.map(|c|c.0),"close_requested_ns":self.close_requested.map(|c|c.1),"exited_ns":self.started.elapsed().as_nanos() as u64,"roi_finalization":roi_finalization,"full_surface_requests_drained":self.surface_pending.is_empty()});
         let binary = std::fs::read(std::env::current_exe().unwrap()).unwrap();
         let fixture = Path::new(self.request["fixture"].as_str().unwrap());
-        let report = json!({"schema_version":2,"stage":"S5-M2-C","profile":"release","observation_version":2,"last_observed_frame_id":self.frame_id-1,"request":self.request,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"source_manifest_sha256":sha256_hex(include_bytes!("../../../MANIFEST.sha256")),"pid":std::process::id(),"fixture_sha256":sha256_hex(&std::fs::read(fixture).unwrap()),"protocol_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/protocol.json")),"native_inputs_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/native-inputs.json")),"adapter":app.adapter,"frames":self.frames,"events":self.events,"snapshots":self.snapshot_files,"worker":worker_snapshot(),"requests":*REQUESTS.get_or_init(Default::default).lock().unwrap(),"hits":*HITS.get_or_init(Default::default).lock().unwrap(),"failures":self.failures,"counters":crate::native_s5m1::counter_snapshot(),"measurement_scope":"synthetic egui input; production Metal callback completion upper bound, no physical input/scanout claim; peak RSS and cumulative CPU from owned-child wait4"});
+        let report = json!({"schema_version":2,"stage":"S5-M2-C","profile":"release","observation_version":3,"last_observed_frame_id":self.log.frames.len(),"request":self.request,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"source_manifest_sha256":sha256_hex(include_bytes!("../../../MANIFEST.sha256")),"pid":std::process::id(),"fixture_sha256":sha256_hex(&std::fs::read(fixture).unwrap()),"protocol_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/protocol.json")),"native_inputs_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/native-inputs.json")),"adapter":app.adapter,"frames":self.log.frames,"terminal_frame":terminal_frame,"exit":exit,"events":self.events,"snapshots":self.snapshot_files,"worker":worker_snapshot(),"requests":*REQUESTS.get_or_init(Default::default).lock().unwrap(),"hits":*HITS.get_or_init(Default::default).lock().unwrap(),"failures":self.failures,"counters":crate::native_s5m1::counter_snapshot(),"measurement_scope":"synthetic egui input; production Metal callback completion upper bound including the terminal update, no physical input/scanout claim; peak RSS and cumulative CPU from owned-child wait4"});
+        let report_path = self.dir.join("observations.json");
+        assert!(!report_path.exists(), "PMIX report already finalized");
         std::fs::write(
-            self.dir.join("observations.json"),
+            report_path,
             serde_json::to_vec_pretty(&report).unwrap(),
         )
         .unwrap();
-        app.allow_quit = true;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
     fn workflow_action(&self, app: &EditorApp) -> Option<(&'static str, Action, Value)> {
         use crate::{selection::SelectionMode, state::PivotInput};
@@ -735,39 +806,12 @@ impl Run {
         })
     }
     pub fn tick(&mut self, app: &mut EditorApp, ctx: &egui::Context) {
-        if self.finished {
-            return;
-        }
         let cpu_ms = self.input_at.elapsed().as_secs_f64() * 1000.;
-        if self.started.elapsed() > Duration::from_secs(240) {
-            self.failures.push(format!("timeout phase {}", self.phase));
-            self.finish(app, ctx);
-            return;
-        }
         let locked_step = if self.mode == "workflow-cross-layer" {
             5
         } else {
             11
         };
-        if (app.view.error.is_some()
-            && !(self.mode.starts_with("workflow")
-                && (self.workflow_step == locked_step || self.workflow_step == locked_step + 1)
-                && app
-                    .view
-                    .error
-                    .as_ref()
-                    .is_some_and(|e| e.code == "LAYER_LOCKED")))
-            || app.display_error.as_deref().is_some_and(|message| {
-                !(app.display_pending && message == "正在准备当前缩放的完整图形")
-            })
-        {
-            self.failures.push(format!(
-                "app error {:?} {:?}",
-                app.view.error, app.display_error
-            ));
-            self.finish(app, ctx);
-            return;
-        }
         let stable = self.baseline_snapshot.as_ref().is_none_or(|s| {
             app.view
                 .snap_snapshot
@@ -781,11 +825,40 @@ impl Run {
         let interval = self
             .previous
             .map(|_| self.input_at.duration_since(self.started).as_secs_f64());
-        self.pending = Some(Pending {
+        self.log.observe(Pending {
             id: self.frame_id,
             input: self.input_at,
-            observed: json!({"id":self.frame_id,"phase":self.phase,"processed_navigation":ctx.input(|i|json!({"scroll":[i.smooth_scroll_delta.x,i.smooth_scroll_delta.y],"zoom":i.zoom_delta()})),"injected":self.injected,"view":view_parameters(app),"gesture":app.drag.as_ref().map(|d|json!({"last":[d.last.x,d.last.y],"confirmed":d.confirmed,"dragging":d.evidence_dragging(),"error":d.error()})),"input_ns":self.input_at.duration_since(self.started).as_nanos() as u64,"input_seconds":interval,"observed_ns":self.started.elapsed().as_nanos() as u64,"state":state(app),"cpu_update_ms":cpu_ms,"frame_interval_ms":self.frame_interval,"focused":self.focused,"prepare":self.prepared.take(),"snapshot_identity_unchanged":stable,"scene_identity_unchanged":scene_stable,"preview_index_identity_unchanged":app.last_good.as_ref().is_none_or(|l|Arc::ptr_eq(&l.scene.index,&l.index)),"paint_delta":app.last_good.as_ref().map(|l|l.uniforms.preview),"paint":app.last_good.as_ref().map(|l|json!({"scene_serial":l.scene.serial,"scene_anchor":l.scene.anchor,"uniform_view":l.uniforms.view,"uniform_camera":l.uniforms.camera,"uniform_counts":l.uniforms.counts,"objects":l.scene.objects.len(),"primitives":l.scene.primitives.len(),"points":l.scene.points.len(),"index_words":l.index.data.len()})),"display_message":app.display_error}),
+            observed: json!({"id":self.frame_id,"phase":self.phase,"pass_index":ctx.current_pass_index(),"processed_navigation":ctx.input(|i|json!({"scroll":[i.smooth_scroll_delta.x,i.smooth_scroll_delta.y],"zoom":i.zoom_delta()})),"injected":self.injected,"view":view_parameters(app),"gesture":app.drag.as_ref().map(|d|json!({"last":[d.last.x,d.last.y],"confirmed":d.confirmed,"dragging":d.evidence_dragging(),"error":d.error()})),"input_ns":self.input_at.duration_since(self.started).as_nanos() as u64,"input_seconds":interval,"observed_ns":self.started.elapsed().as_nanos() as u64,"state":state(app),"cpu_update_ms":cpu_ms,"frame_interval_ms":self.frame_interval,"focused":self.focused,"prepare":self.prepared.take(),"snapshot_identity_unchanged":stable,"scene_identity_unchanged":scene_stable,"preview_index_identity_unchanged":app.last_good.as_ref().is_none_or(|l|Arc::ptr_eq(&l.scene.index,&l.index)),"paint_delta":app.last_good.as_ref().map(|l|l.uniforms.preview),"paint":app.last_good.as_ref().map(|l|json!({"scene_serial":l.scene.serial,"scene_anchor":l.scene.anchor,"uniform_view":l.uniforms.view,"uniform_camera":l.uniforms.camera,"uniform_counts":l.uniforms.counts,"objects":l.scene.objects.len(),"primitives":l.scene.primitives.len(),"points":l.scene.points.len(),"index_words":l.index.data.len()})),"display_message":app.display_error}),
         });
+        if self.close_requested.is_some() {
+            return;
+        }
+        if self.phase != 14 {
+            if self.started.elapsed() > Duration::from_secs(240) {
+                self.failures.push(format!("timeout phase {}", self.phase));
+                self.finish(app, ctx);
+                return;
+            }
+            if (app.view.error.is_some()
+                && !(self.mode.starts_with("workflow")
+                    && (self.workflow_step == locked_step || self.workflow_step == locked_step + 1)
+                    && app
+                        .view
+                        .error
+                        .as_ref()
+                        .is_some_and(|e| e.code == "LAYER_LOCKED")))
+                || app.display_error.as_deref().is_some_and(|message| {
+                    !(app.display_pending && message == "正在准备当前缩放的完整图形")
+                })
+            {
+                self.failures.push(format!(
+                    "app error {:?} {:?}",
+                    app.view.error, app.display_error
+                ));
+                self.finish(app, ctx);
+                return;
+            }
+        }
         ctx.request_repaint_after(Duration::from_millis(16));
         if app.busy {
             return;
@@ -1065,5 +1138,93 @@ impl Run {
             14 => self.close_after_capture(app, ctx),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod frame_log_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn pending(id: u64, origin: Instant) -> Pending {
+        Pending {
+            id,
+            input: Instant::now(),
+            observed: json!({"id":id,"phase":14,"input_ns":origin.elapsed().as_nanos() as u64}),
+        }
+    }
+    #[test]
+    fn zero_one_and_multiple_close_redraws_retain_a_real_terminal_frame() {
+        for redraws in [0, 1, 3] {
+            let origin = Instant::now();
+            let mut log = FrameLog::default();
+            let mut fences = 0;
+            // Closing changes protocol control only. Each actual subsequent
+            // input still settles its preceding observed production callback.
+            for id in 1..=redraws + 1 {
+                if let Some(frame) = log.complete_pending(
+                    id - 1,
+                    || { fences += 1; true },
+                    origin,
+                    || json!({"draw":id-1,"uniform-upload":(id-1)*112}),
+                ) {
+                    log.frames.push(frame);
+                }
+                log.observe(pending(id, origin));
+            }
+            let terminal = log.complete_pending(
+                redraws + 1,
+                || { fences += 1; true },
+                origin,
+                || json!({"draw":redraws+1,"uniform-upload":(redraws+1)*112}),
+            ).unwrap();
+            assert_eq!(log.frames.len(), redraws as usize);
+            assert_eq!(terminal["id"], redraws + 1);
+            assert_eq!(terminal["painted"], true);
+            assert_eq!(terminal["gpu_completed"], true);
+            assert_eq!(fences, redraws + 1);
+            assert!(log.pending.is_none());
+        }
+    }
+    #[test]
+    fn unpainted_terminal_update_never_invents_a_gpu_fence() {
+        let origin = Instant::now();
+        let mut log = FrameLog::default();
+        log.observe(pending(1, origin));
+        let frame = log.complete_pending(0, || panic!("unsubmitted callback polled"), origin, || json!({})).unwrap();
+        assert_eq!(frame["painted"], false);
+        assert!(frame.get("gpu_completed").is_none());
+        assert!(frame.get("completed_ns").is_none());
+        assert!(frame.get("input_gpu_complete_ms").is_none());
+    }
+    #[test]
+    fn failed_terminal_fence_is_recorded_as_failure_not_completion_success() {
+        let origin = Instant::now();
+        let mut log = FrameLog::default();
+        log.observe(pending(1, origin));
+        let frame = log.complete_pending(1, || false, origin, || json!({"draw":1})).unwrap();
+        assert_eq!(frame["painted"], true);
+        assert_eq!(frame["gpu_completed"], false);
+    }
+    #[test]
+    fn final_counter_snapshot_follows_the_real_fence_and_is_not_reused() {
+        let origin = Instant::now();
+        let mut log = FrameLog::default();
+        let fenced = Cell::new(false);
+        log.observe(pending(1, origin));
+        let frame = log.complete_pending(1, || { fenced.set(true); true }, origin, || {
+            assert!(fenced.get());
+            json!({"draw":1})
+        }).unwrap();
+        assert_eq!(frame["counters"]["draw"], 1);
+        assert!(log.complete_pending(1, || panic!("duplicate fence"), origin, || panic!("duplicate counters")).is_none());
+    }
+    #[test]
+    #[should_panic(expected = "PMIX duplicate update pass")]
+    fn a_discard_pass_cannot_overwrite_an_unsettled_raw_frame() {
+        let origin = Instant::now();
+        let mut log = FrameLog::default();
+        log.observe(pending(1, origin));
+        log.observe(pending(1, origin));
     }
 }

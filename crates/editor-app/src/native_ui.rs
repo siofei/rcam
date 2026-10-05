@@ -55,6 +55,10 @@ fn writer(dir: PathBuf) -> (mpsc::SyncSender<WriteJob>, JoinHandle<()>) {
     (send, handle)
 }
 struct Capture {
+    dir: PathBuf,
+    pmix: bool,
+    quiesced: bool,
+    requests: u64,
     origin: Instant,
     frame: u64,
     samples: u64,
@@ -76,7 +80,7 @@ fn capture() -> &'static Mutex<Option<Capture>> {
  assert!(!cfg!(debug_assertions));let binary=std::fs::read(std::env::current_exe().ok()?).ok()?;
  std::fs::write(dir.join("identity.json"),serde_json::to_vec_pretty(&json!({"schema_version":2,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":editor_core::hash::sha256_hex(&binary),"source_manifest_sha256":editor_core::hash::sha256_hex(include_bytes!("../../../MANIFEST.sha256")),"profile":"release","pid":std::process::id(),"scope":"instrumented synthetic native Metal UI actual surface readback; not physical input/OS compositor/scanout","user_flicker_report":"OPEN","sample_interval_ms":100,"max_frames":MAX_FRAMES,"max_samples":MAX_SAMPLES})).unwrap()).unwrap();
  let (writer,writer_handle)=writer(dir.clone());
- Some(Capture{origin:Instant::now(),frame:0,samples:0,last:Instant::now(),pending:false,menus:BTreeMap::new(),callbacks:vec![],input:Value::Null,last_ui:Value::Null,profile_at:Instant::now(),profile_spans:vec![],writer:Some(writer),writer_handle:Some(writer_handle)})})();Mutex::new(value)
+ Some(Capture{dir,pmix:crate::native_pmix::directory().is_some(),quiesced:false,requests:0,origin:Instant::now(),frame:0,samples:0,last:Instant::now(),pending:false,menus:BTreeMap::new(),callbacks:vec![],input:Value::Null,last_ui:Value::Null,profile_at:Instant::now(),profile_spans:vec![],writer:Some(writer),writer_handle:Some(writer_handle)})})();Mutex::new(value)
 })
 }
 pub fn profile(stage: &str) {
@@ -99,15 +103,31 @@ fn append(c: &Capture, name: &'static str, value: Value) {
         .send(WriteJob::Append(name, value))
         .unwrap();
 }
-pub fn finish() {
+pub fn quiesce() {
+    if let Some(c) = capture().lock().unwrap().as_mut() {
+        c.quiesced = true;
+    }
+}
+pub fn readbacks_drained() -> bool {
+    capture().lock().unwrap().as_ref().is_some_and(|c| c.quiesced && !c.pending)
+}
+pub fn finish() -> Option<Value> {
     let Some(capture) = CAPTURE.get() else {
-        return;
+        return None;
     };
     let owned = capture.lock().unwrap().take();
     if let Some(mut c) = owned {
         drop(c.writer.take());
         c.writer_handle.take().unwrap().join().unwrap();
+        if c.pmix {
+            // Written only for PMIX, after every queued byte has been flushed
+            // and the writer joined. Other accepted ROI formats stay unchanged.
+            let receipt = json!({"schema_version":1,"frames":c.frame,"requests":c.requests,"samples":c.samples,"quiesced":c.quiesced,"pending":c.pending,"writer_joined":true});
+            std::fs::write(c.dir.join("capture-finalization.json"), serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
+            return Some(receipt);
+        }
     }
+    None
 }
 pub fn menu(label: &str, response: &egui::Response) {
     if let Some(c) = capture().lock().unwrap().as_mut() {
@@ -209,6 +229,7 @@ pub fn frame(app: &EditorApp, ctx: &egui::Context) {
     c.last_ui = snapshot.clone();
     append(c, "frames.jsonl", snapshot.clone());
     if c.samples < MAX_SAMPLES
+        && !c.quiesced
         && !c.pending
         && c.last.elapsed() >= Duration::from_millis(100)
         && !c.menus.is_empty()
@@ -218,6 +239,10 @@ pub fn frame(app: &EditorApp, ctx: &egui::Context) {
         c.pending = true;
         let mut requested = snapshot;
         requested["request_ns"] = json!(requested_at.duration_since(c.origin).as_nanos() as u64);
+        c.requests += 1;
+        if c.pmix {
+            append(c, "requests.jsonl", requested.clone());
+        }
         ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
             Tag { requested },
         )));
@@ -231,5 +256,53 @@ pub fn geometry_request(sequence: u64, context: &str) {
             "geometry-requests.jsonl",
             json!({"frame":c.frame+1,"t_ns":c.origin.elapsed().as_nanos() as u64,"sequence":sequence,"context":context}),
         );
+    }
+}
+
+#[cfg(test)]
+mod writer_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    fn directory() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "rcam-pmix-roi-writer-test-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir(&path).unwrap();
+        path
+    }
+    #[test]
+    fn queued_frames_and_readbacks_are_flushed_before_join_returns() {
+        let dir = directory();
+        let (send, handle) = writer(dir.clone());
+        for frame in 1..=20 {
+            send.send(WriteJob::Append("frames.jsonl", json!({"frame":frame}))).unwrap();
+        }
+        send.send(WriteJob::Sample(
+            vec![("unit-roi.ppm".into(), b"synthetic-unit-pixels".to_vec())],
+            json!({"sample":0}),
+        )).unwrap();
+        drop(send);
+        handle.join().unwrap();
+        let frames = std::fs::read_to_string(dir.join("frames.jsonl")).unwrap();
+        let observed: Vec<Value> = frames.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(observed.len(), 20);
+        assert_eq!(observed.first().unwrap()["frame"], 1);
+        assert_eq!(observed.last().unwrap()["frame"], 20);
+        assert_eq!(std::fs::read(dir.join("unit-roi.ppm")).unwrap(), b"synthetic-unit-pixels".to_vec());
+        assert_eq!(std::fs::read_to_string(dir.join("samples.jsonl")).unwrap(), "{\"sample\":0}\n");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn writer_io_failure_cannot_produce_a_successful_join() {
+        let dir = directory();
+        std::fs::remove_dir(&dir).unwrap();
+        let (send, handle) = writer(dir);
+        send.send(WriteJob::Append("frames.jsonl", json!({"frame":1}))).unwrap();
+        drop(send);
+        assert!(handle.join().is_err());
     }
 }
