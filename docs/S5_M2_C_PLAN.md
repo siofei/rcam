@@ -685,3 +685,43 @@ frozen gates, clean public/internal builds, independent review and a new owned
 capture precheck remain required. No app was launched for this cloud repair.
 The prior failed run remains FAIL; actual repaired native coverage is pending,
 the full12-process matrix remains pending, and noncanvas flicker remains OPEN.
+
+### Constructor enqueue evidence contract (2026-10-05, verifier correction)
+
+The retained c8 native short run established actual terminal-frame/ROI drainage
+but its complete verifier failed with KeyError0 at accepted-request lookup.
+EditorApp's constructor initializes the PMIX recorder and then enqueues its
+single NewWorkspace action before the first raw-input hook. Its accepted request
+has sequence1/frame_id0 and the existing recorder's observed action is "other".
+That is an actual constructor enqueue, not a UI update. Keep this request and
+worker unchanged; no synthetic UI frame0, bootstrap event or semantic snapshot
+may be created. The later workflow-opened event belongs to project-open.
+
+The correction is a strict source-derived classification in the verifier only.
+The native manifest, already authenticated by its external digest, must bind the
+reviewed constructor, recorder, label mapping, worker and TaskVersion production
+modules to their corresponding ROOT bytes. This is not a permanent magic hash
+pin or a comparison of the entire changed verifier checkout with the old binary
+manifest. Changes to those production paths require another bootstrap-contract
+review; a generic "other" label alone never proves a NewWorkspace action.
+
+Exactly the first request and worker may have frame_id0, sequence/task_id1 and
+that observed label. Their complete empty GEN0 input/view/receipt versions,
+enqueue before the first real input, worker clock/terminal receipt, successful
+new GEN1 workspace result and zero history/selection must agree. Bind the result
+to its first actual UI installation with the same state and empty scene. Worker
+completion may occur after the first input, but must precede that installation's
+observed clock. Earlier UI frames remain the initial GEN0 state. The next normal
+request must consume the full GEN1 version; every normal request retains its
+ordinary UI frame/version/enqueue bounds. All worker terminal/serial checks stay.
+
+Twenty-five synthetic bootstrap cases add source-binding, missing/duplicate/
+misclassified request, bool/type/version/clock, delayed installation, normal UI
+and serial receipt negatives to the mandatory guard preflight. The focused25
+plus previous65 portable cases pass; synthetic data is not native acceptance.
+Actual retained request/worker prefix versions were checked privately, without
+publishing native data or filling gaps from summaries. Complete read-only
+reverification on the original sealed native evidence remains required, recording
+old producer/source/binary identity separately from the new verifier identity.
+That recheck cannot earn native PASS for a newly changed source. The original
+failure and all unexecuted formal matrix/attack/platform gates remain preserved.

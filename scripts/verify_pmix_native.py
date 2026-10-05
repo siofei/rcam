@@ -168,6 +168,172 @@ def task_version(version):
         require(type(version['document_id']) is str and version['document_id'],'document ID type')
         for key in ('document_revision','workspace_revision'):require(type(version[key]) is str and version[key].isascii() and version[key].isdigit() and int(version[key])<2**64,'TaskVersion revision type/range')
         require(version['geometry_policy_hash']==hashlib.sha256(b'{"resolution_mm":0.0001}').hexdigest(),'independent frozen manufacturing policy hash')
+
+BOOTSTRAP_SOURCE_PATHS = (
+    'crates/editor-app/src/main.rs',
+    'crates/editor-app/src/native_pmix.rs',
+    'crates/editor-app/src/native_s5m1.rs',
+    'crates/editor-app/src/state.rs',
+    'crates/editor-service/src/task.rs',
+)
+
+def bootstrap_source_contract(source_manifest_path):
+    """Bind the reviewed constructor path to the actual producer's source.
+
+    The caller has already authenticated this manifest's external digest. These
+    production modules must match the reviewed ROOT bytes, not a permanently
+    pinned whole checkout or the new verifier's own changed source manifest.
+    A production-path change requires another bootstrap-contract review.
+    """
+    manifest = Path(source_manifest_path)
+    require(manifest.is_file(), 'missing bootstrap producer source manifest')
+    rows = manifest.read_text().splitlines()
+    require(0 < len(rows) <= 2048, 'bootstrap source manifest bounds')
+    declared = {}
+    for row in rows:
+        parts = row.split('  ', 1)
+        require(len(parts) == 2 and len(parts[0]) == 64
+                and all(c in '0123456789abcdef' for c in parts[0])
+                and parts[1] and parts[1] not in declared,
+                'bootstrap source manifest entry/duplicate')
+        declared[parts[1]] = parts[0]
+    proof = {}
+    for path in BOOTSTRAP_SOURCE_PATHS:
+        digest = sha(ROOT / path)
+        require(declared.get(path) == digest, 'bootstrap reviewed production source binding ' + path)
+        proof[path] = digest
+    return proof
+
+def bind_worker_requests(report, all_frames, source_manifest_path):
+    """Keep the constructor enqueue and every ordinary UI enqueue observable.
+
+    There is no UI frame zero. The only pre-input request is derived from the
+    authenticated source's unique constructor send(NewWorkspace), and its raw
+    action remains 'other'. No bootstrap event or semantic snapshot is invented.
+    """
+    source_proof = bootstrap_source_contract(source_manifest_path)
+    requests = report['requests']
+    workers = report['worker']
+    require(type(requests) is list and type(workers) is list and len(requests) >= 2 and workers,
+            'missing constructor request/worker coverage')
+    require(all(type(w['sequence']) is int and 0 < w['sequence'] < 2**64 for w in workers)
+            and [w['sequence'] for w in workers] == sorted({w['sequence'] for w in workers}),
+            'worker sequence order/duplicate')
+    require(all(type(q['sequence']) is int and 0 < q['sequence'] < 2**64 for q in requests)
+            and [q['sequence'] for q in requests] == [w['sequence'] for w in workers],
+            'accepted request/worker coverage')
+    require(all(type(q['frame_id']) is int and q['frame_id'] >= 0 for q in requests)
+            and [i for i, q in enumerate(requests) if q['frame_id'] == 0] == [0],
+            'unique initial constructor frame-zero request')
+    require(all_frames and all(type(f['id']) is int and f['id'] == i
+                              for i, f in enumerate(all_frames, 1)), 'real UI frame IDs for requests')
+    for frame in all_frames:
+        task_version(frame['state']['version'])
+        require(type(frame['input_ns']) is int and type(frame['observed_ns']) is int
+                and 0 <= frame['input_ns'] <= frame['observed_ns'] < 2**64,
+                'request UI unsigned causal clocks')
+    indexed = {f['id']: f for f in all_frames}
+    mode = report['request']['mode']
+    worker_end = report['frames'][-1]['input_ns']
+    for worker in workers:
+        require(all(type(worker[k]) is int and 0 <= worker[k] < 2**64
+                    for k in ('started_ns', 'finished_ns')), 'worker unsigned clock types')
+        require((worker['error'] is None or
+                 (mode in ('workflow', 'workflow-cross-layer') and worker['action'] == 'move'
+                  and worker['error']['code'] == 'LAYER_LOCKED'))
+                and worker['blocked'] is None
+                and 0 <= worker['started_ns'] <= worker['finished_ns'] <= worker_end,
+                'worker error/time')
+    empty = dict(document_id=None, document_revision=None, workspace_revision=None,
+                 generation=0, rule_revision=0, geometry_policy_hash='')
+    first = requests[0]
+    bootstrap = workers[0]
+    require(first['sequence'] == bootstrap['sequence'] == 1
+            and first['action'] == bootstrap['action'] == 'other', 'constructor source-derived action/sequence')
+    require(first['input'] == first['view_version'] == empty, 'constructor empty initial full version')
+    installed = None
+    for number, (request_row, worker) in enumerate(zip(requests, workers)):
+        require(type(request_row['at_ns']) is int and 0 <= request_row['at_ns'] < 2**64,
+                'accepted enqueue unsigned clock')
+        task_version(request_row['input']); task_version(request_row['view_version'])
+        require(request_row['input'] == request_row['view_version'] == worker['receipt']['input']
+                and request_row['action'] == worker['action'],
+                'worker input bound to actual accepted enqueue full version/action')
+        if number == 0:
+            require(request_row['at_ns'] < all_frames[0]['input_ns']
+                    and request_row['at_ns'] <= worker['started_ns'], 'constructor pre-input enqueue/worker clock')
+            receipt = worker['receipt']; result = receipt['result_version']; state = worker['state']
+            task_version(result); task_version(state['version'])
+            require(type(receipt['task_id']) is int and receipt['task_id'] == 1
+                    and receipt['state'] == 'completed' and worker['error'] is None
+                    and worker['blocked'] is None, 'constructor successful typed terminal receipt')
+            require(result['document_id'] is not None and result['document_revision'] == '0'
+                    and result['workspace_revision'] == '0' and result['generation'] == 1
+                    and state['version'] == result, 'constructor new workspace full result version')
+            require(all(type(state[k]) is int and state[k] == 0 for k in ('undo', 'redo', 'selected'))
+                    and type(state['scene_serial']) is int and state['scene_serial'] >= 0,
+                    'constructor empty workspace worker state')
+            matches = [f for f in all_frames if f['state']['version'] == result]
+            require(matches, 'constructor result never installed in a real UI frame')
+            installed = matches[0]
+            require(worker['finished_ns'] <= installed['observed_ns'], 'constructor worker/UI installation clock')
+            require(all(installed['state'][k] == state[k] for k in state),
+                    'constructor actual installed worker state')
+            ui_state = installed['state']
+            require(all(type(ui_state[k]) is int and ui_state[k] == 0 for k in ('undo', 'redo', 'selected'))
+                    and type(ui_state['scene_serial']) is int
+                    and type(ui_state['scene_objects']) is int and ui_state['scene_objects'] == 0
+                    and ui_state['primary'] is None and ui_state['dirty'] is False
+                    and ui_state['project_dirty'] is False, 'constructor actual empty UI workspace')
+            for frame in all_frames[:installed['id'] - 1]:
+                before = frame['state']
+                require(before['version'] == empty
+                        and all(before[k] is None for k in ('document_id', 'revision', 'workspace_revision',
+                                                           'undo', 'redo', 'dirty', 'project_dirty', 'scene_serial'))
+                        and type(before['selected']) is int and before['selected'] == 0
+                        and type(before['scene_objects']) is int and before['scene_objects'] == 0
+                        and before['primary'] is None, 'constructor pre-installation UI initial state')
+        else:
+            require(request_row['frame_id'] in indexed, 'accepted enqueue missing real UI frame')
+            frame = indexed[request_row['frame_id']]
+            require(frame['state']['version'] == request_row['input']
+                    and frame['input_ns'] <= request_row['at_ns'] <= worker['started_ns'],
+                    'accepted enqueue UI full version/clock binding')
+            if frame['id'] < len(all_frames):
+                require(request_row['at_ns'] < indexed[frame['id'] + 1]['input_ns'], 'enqueue frame interval')
+            if number == 1:
+                require(request_row['input'] == bootstrap['receipt']['result_version']
+                        and request_row['frame_id'] >= installed['id']
+                        and request_row['at_ns'] >= bootstrap['finished_ns'],
+                        'constructor next accepted request full continuity')
+    previous_version = None
+    for worker in workers:
+        receipt = worker['receipt']; version = receipt['result_version']; state = worker['state']
+        task_version(receipt['input']); task_version(version); task_version(state['version'])
+        require(type(receipt['task_id']) is int and receipt['task_id'] == worker['sequence']
+                and receipt['state'] == ('failed' if worker['error'] else 'completed'), 'typed terminal worker receipt')
+        keys = {'document_id', 'document_revision', 'workspace_revision', 'generation', 'rule_revision', 'geometry_policy_hash'}
+        require(set(receipt['input']) == set(version) == keys and version == state['version'],
+                'complete TaskVersion receipt/state')
+        require(version['document_id'] == state['document_id']
+                and version['document_revision'] == state['revision']
+                and version['workspace_revision'] == state['workspace_revision'],
+                'TaskVersion document/workspace state binding')
+        require(receipt['input']['generation'] == (previous_version['generation'] if previous_version is not None else 0),
+                'initial/serial TaskVersion generation')
+        if previous_version is not None:
+            require(receipt['input'] == previous_version, 'serial worker full version continuity')
+        require(version['generation'] == receipt['input']['generation']
+                + int(version['document_id'] != receipt['input']['document_id']),
+                'actual document replacement generation transition')
+        previous_version = version
+        if worker['action'] == 'selection-centers':
+            require(receipt['input'] == version, 'read-only centers changed full version')
+    for first_worker, second_worker in zip(workers, workers[1:]):
+        require(first_worker['finished_ns'] <= second_worker['started_ns'], 'worker concurrency')
+    return {'classification': 'source-derived constructor NewWorkspace', 'observed_action': first['action'],
+            'sequence': 1, 'first_installed_ui_frame': installed['id'], 'production_sources': source_proof}
+
 def visible_frame(f):
     draw_complete(f);require(not f['state']['display_pending'],'old-view fallback completion')
     paint=f['paint'];v=f['view'];require(paint['scene_serial']==f['state']['scene_serial'],'stale callback scene')
@@ -249,34 +415,11 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     require(runner['peak_child_rss_bytes']>0 and runner['peak_child_rss_bytes']<=p['budgets']['rss_bytes'],'peak child RSS')
     require(0<r['counters']['custom-buffer-largest-observed-bytes']<=p['budgets']['custom_gpu_bytes'],'GPU buffer budget')
     require('Metal' in r['adapter'],'native Metal adapter')
-    require([w['sequence'] for w in r['worker']]==sorted({w['sequence'] for w in r['worker']}),'worker sequence order/duplicate')
-    for w in r['worker']:require((w['error'] is None or (mode in ('workflow','workflow-cross-layer') and w['action']=='move' and w['error']['code']=='LAYER_LOCKED')) and w['blocked'] is None and 0<=w['started_ns']<=w['finished_ns']<=fs[-1]['input_ns'],'worker error/time')
-    requests=r['requests']
-    require([q['sequence'] for q in requests]==[w['sequence'] for w in r['worker']],'accepted request/worker coverage')
-    for request_row,worker in zip(requests,r['worker']):
-        task_version(request_row['input']);task_version(request_row['view_version'])
-        require(request_row['input']==request_row['view_version']==worker['receipt']['input'] and request_row['action']==worker['action'],'worker input bound to actual accepted enqueue full version/action')
-        frame=indexed[request_row['frame_id']]
-        require(frame['state']['version']==request_row['input'] and frame['input_ns']<=request_row['at_ns']<=worker['started_ns'],'accepted enqueue UI full version/clock binding')
-        if frame['id']<len(all_frames):require(request_row['at_ns']<indexed[frame['id']+1]['input_ns'],'enqueue frame interval')
-    previous_version=None
-    for worker in r['worker']:
-        receipt=worker['receipt'];version=receipt['result_version'];state=worker['state']
-        task_version(receipt['input']);task_version(version);task_version(state['version'])
-        require(type(receipt['task_id']) is int and receipt['task_id']==worker['sequence'] and receipt['state']==('failed' if worker['error'] else 'completed'),'typed terminal worker receipt')
-        keys={'document_id','document_revision','workspace_revision','generation','rule_revision','geometry_policy_hash'}
-        require(set(receipt['input'])==set(version)==keys and version==state['version'],'complete TaskVersion receipt/state')
-        require(version['document_id']==state['document_id'] and version['document_revision']==state['revision'] and version['workspace_revision']==state['workspace_revision'],'TaskVersion document/workspace state binding')
-        require(receipt['input']['generation']==(previous_version['generation'] if previous_version is not None else 0),'initial/serial TaskVersion generation')
-        if previous_version is not None:require(receipt['input']==previous_version,'serial worker full version continuity')
-        require(version['generation']==receipt['input']['generation']+int(version['document_id']!=receipt['input']['document_id']),'actual document replacement generation transition')
-        previous_version=version
-        if worker['action']=='selection-centers':require(receipt['input']==version,'read-only centers changed full version')
-    for a,b in zip(r['worker'],r['worker'][1:]):require(a['finished_ns']<=b['started_ns'],'worker concurrency')
+    bootstrap_binding=bind_worker_requests(r,all_frames,safe(directory,'source-manifest.sha256'))
     for name in ('stdout.log','stderr.log','environment.json','window.json','window-query.json','image-command.json','native-window.png','video-command.json','native-window.mov','capture-ready.json','protocol-done.json','capture-complete.json'):
         safe(directory,name)
     capture=capture_receipts(directory,r,capture_producer_sha256)
-    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
+    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'constructor_bootstrap':bootstrap_binding,'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
     if request['mode']=='nav':
         start=event('navigation-begin');end=event('navigation-end-input');done=event('navigation-complete');origin=start['data']['origin_ns'];a=start['frame_id'];b=end['frame_id']
         require(a<b<done['frame_id'],'navigation phase sequence')

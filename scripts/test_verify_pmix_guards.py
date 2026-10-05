@@ -24,6 +24,7 @@ from pmix_capture_swift import SOURCE
 from run_pmix_capture_preflight import validate_probe, initialization_readiness, helper_run, validate_process, validate_toolchain
 from test_pmix_owned_command import OwnedCommands
 from test_pmix_frame_coverage import FrameCoverage
+from test_pmix_bootstrap import Bootstrap
 PRODUCER_SHA=hashlib.sha256(b'unit-producer').hexdigest()
 
 
