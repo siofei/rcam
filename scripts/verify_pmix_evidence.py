@@ -77,8 +77,8 @@ def gate_ledger(path, expected):
     return load(path)
 
 
-def verify(root, *, expected_source, expected_commit, expected_binary, expected_gate_ledger,
-           expected_base=BASE):
+def _background(root, *, expected_source, expected_commit, expected_binary, expected_gate_ledger,
+                expected_base=BASE):
     root = Path(root)
     evidence_layout(root)
     require(re.fullmatch('[0-9a-f]{64}',expected_source) and re.fullmatch('[0-9a-f]{64}',expected_binary)
@@ -163,7 +163,7 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
     writer = safe(root,'gates/capture-writer-preflight/RESULTS.json')
     require(file_sha(writer)==records[0]['capture_writer_results_sha256'], 'capture writer external ledger binding')
     capture = load(writer); capture_root=writer.parent
-    require(capture['result']=='PASS' and capture['source_manifest_sha256']==expected_source
+    require(capture['result'] in ('PASS','BLOCKED') and capture['source_manifest_sha256']==expected_source
             and capture['scope']=='background initialization metadata and synthetic writer only; no stream capture or GUI',
             'capture writer preflight scope/source')
     require({p.name for p in capture_root.iterdir()}==set(capture['files'])|{'RESULTS.json'}, 'capture preflight file inventory')
@@ -184,24 +184,53 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
         require([parse_json(line.encode()) for line in (capture_root/(expected_mode[2:]+'.stdout')).read_text().splitlines()]==[row['receipt']]
                 and not (capture_root/(expected_mode[2:]+'.stderr')).read_bytes()
                 and type(row['exit_code']) is int and row['exit_code']==(0 if state=='INITIALIZATION_ONLY_PASS' else 2), 'initialization actual exit/raw receipt')
-    require(capture['probes'][0]['receipt']['result']=='INITIALIZATION_ONLY_PASS'
-            and capture['probes'][0]['receipt']['existing_screen_access'] is True
+    positive=capture['probes'][0]['receipt']
+    background_blocked=capture['result']=='BLOCKED'
+    require(positive['existing_screen_access'] is True
             and capture['probes'][1]['receipt']['result']=='BLOCKED', 'capture initialization constructor/access still blocked')
+    if background_blocked:
+        require(positive['result']=='BLOCKED' and positive.get('blocked_reason')=='no-eligible-window'
+                and positive['query_kind']=='currentProcess-no-consent'
+                and positive['filter_constructor']=='NOT_EXECUTED'
+                and capture['probes'][0]['exit_code']==2,
+                'only authenticated permission-true no-eligible-window background qualification')
+    else:
+        require(positive['result']=='INITIALIZATION_ONLY_PASS' and positive['filter_constructor']=='EXECUTED'
+                and capture['probes'][0]['exit_code']==0, 'background initialization-only positive')
     compile_receipt=load(capture_root/'compile.json')
     validate_toolchain(capture_root,compile_receipt,capture['probes'][0]['command'][0])
     require([(row['mode'],row['exit_code'],row['samples']) for row in capture['cases']]==CAPTURE_CASES, 'actual writer lifecycle matrix')
     for row in capture['cases']:
+        require(type(row['exit_code']) is int and type(row['samples']) is int,
+                'typed writer lifecycle exit/sample counts')
         mode=row['mode']; raw=(capture_root/(mode+'.stdout')).read_text()
         validate_process(load(capture_root/(mode+'.process.json')),load(capture_root/(mode+'.launch.json')),
                          row['command'],row['exit_code'],row['producer_pid'],30)
         require(all(event.get('producer_pid',row['producer_pid'])==row['producer_pid'] for event in row['events']), 'actual writer child PID')
         require([parse_json(line.encode()) for line in raw.splitlines()]==row['events']
                 and not (capture_root/(mode+'.stderr')).read_bytes(), 'actual writer raw events/stderr: '+mode)
+        require(file_sha(capture_root/(mode+'.stdout'))==row['stdout_sha256']
+                and file_sha(capture_root/(mode+'.stderr'))==row['stderr_sha256'], 'actual writer declared stdio hashes: '+mode)
+        require(all((event.get('source_kind')=='synthetic-self-test' and event['app_pid']==event['window_id']==0)
+                    or (event.get('event')=='failure' and set(event)=={'event','error','schema_version'}
+                        and type(event['schema_version']) is int and event['schema_version']==2)
+                    for event in row['events']), 'actual synthetic writer/refusal scope: '+mode)
         movie=capture_root/(mode+'.mov')
         if row['samples']:
             require(mov_info(movie)==row['movie'] and file_sha(movie)==row['movie_sha256']
                     and row['movie']['samples']==row['samples']
+                    and (row['movie']['width'],row['movie']['height'])==(64,48)
+                    and row['movie']['duration_seconds']>0
                     and [event['event'] for event in row['events']]==['ready','finished'], 'actual writer MOV lifecycle: '+mode)
+            first,last=row['events']
+            require(first['source_kind']==last['source_kind']=='synthetic-self-test'
+                    and first['app_pid']==first['window_id']==last['app_pid']==last['window_id']==0
+                    and first['frame_status']=='complete' and first['sample_append_succeeded'] is True
+                    and last['writer_status']=='completed' and type(last['accepted_samples']) is int
+                    and last['accepted_samples']==row['samples']
+                    and all(last[key] is True for key in ('stream_stopped','sample_queue_drained',
+                                                        'input_marked_finished','finish_writing_callback_received'))
+                    and movie.stat().st_size==last['output_bytes'], 'actual writer successful finalization: '+mode)
         else:
             require(not movie.exists() and row['movie'] is None and row['movie_sha256'] is None
                     and any(event['event']=='failure' for event in row['events'])
@@ -211,13 +240,19 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
     require([(row['id'], row['command']) for row in records] == COMMANDS,
             'full frozen gate command matrix')
     summary = load(root/'gates/summary.json')
-    require(summary['stage'] == 'S5-M2-C' and summary['unchanged_source']
-            and summary['unchanged_status'] and summary['gates_expected'] == len(COMMANDS)
-            and summary['gates_passed'] == len(COMMANDS), 'incomplete/changed-source gates')
+    require(summary['stage'] == 'S5-M2-C' and summary['unchanged_source'] is True
+            and summary['unchanged_status'] is True
+            and type(summary['gates_expected']) is int and summary['gates_expected'] == len(COMMANDS)
+            and type(summary['gates_passed']) is int and summary['gates_passed'] == len(COMMANDS),
+            'incomplete/changed-source gates')
     require(summary['source_manifest_sha256'] == expected_source
             and summary['commit'] == expected_commit.removesuffix('-dirty')
             and summary['clean_worktree'] is (not expected_commit.endswith('-dirty'))
-            and summary['result']==('CANDIDATE_GATES_PASS' if expected_commit.endswith('-dirty') else 'GATES_PASS'),
+            and summary['capture_initialization']==capture['result']
+            and type(summary['capture_initialization_exit_code']) is int
+            and summary['capture_initialization_exit_code']==(2 if background_blocked else 0)
+            and summary['result']==('BLOCKED_CAPTURE_INITIALIZATION' if background_blocked else
+                                   ('CANDIDATE_GATES_PASS' if expected_commit.endswith('-dirty') else 'GATES_PASS')),
             'gate source/commit identity')
     require((root/'gates/source-before.sha256').read_bytes() == raw_manifest
             and (root/'gates/source-after.sha256').read_bytes() == raw_manifest,
@@ -241,8 +276,42 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
                 'public/internal PMIX control boundary')
     require(binaries['release-internal']['sha256'] == expected_binary,
             'external native binary identity')
+    qualification={'result':'BACKGROUND_QUALIFIED_FOREGROUND_PENDING',
+                   'background_status':summary['result'],
+                   'background_initialization':positive['result'],
+                   'background_blocked_reason':positive.get('blocked_reason') if background_blocked else None,
+                   'cargo_gates':'PASS','writer_and_refusal_tests':'PASS',
+                   'foreground_initialization':'PENDING_REAL_OWNED_NATIVE',
+                   'source_manifest_sha256':expected_source,'build_commit':expected_commit,
+                   'binary_sha256':expected_binary,'capture_producer_sha256':capture['producer_sha256'],
+                   'gate_ledger_sha256':expected_gate_ledger,'gates':len(records),
+                   'stage_PASS_claim':False}
+    return root,review,capture,qualification
+
+
+def qualify_background(root, *, expected_source, expected_commit, expected_binary, expected_gate_ledger,
+                       expected_base=BASE):
+    """Read-only prequalification, never native/initialization/stage PASS.
+
+    Whole sealed Source/background evidence and the externally frozen31 ledger
+    remain mandatory. Only the precise permission-true no-eligible-window state
+    is eligible when initialization is BLOCKED; original receipts are untouched.
+    """
+    root,review,_,qualification=_background(root,expected_source=expected_source,expected_commit=expected_commit,
+        expected_binary=expected_binary,expected_gate_ledger=expected_gate_ledger,expected_base=expected_base)
+    require(type(review['native']) is list and review['native']==[] and not (root/'native').exists(),
+            'background qualification requires pristine seed with no native rows/directory')
+    return qualification
+
+
+def verify(root, *, expected_source, expected_commit, expected_binary, expected_gate_ledger,
+           expected_base=BASE):
+    root,review,capture,qualification=_background(root,expected_source=expected_source,
+        expected_commit=expected_commit,expected_binary=expected_binary,
+        expected_gate_ledger=expected_gate_ledger,expected_base=expected_base)
     native_rows = review['native']
-    require([(row['mode'], row['round']) for row in native_rows] == MATRIX,
+    require(type(native_rows) is list and all(type(row['round']) is int for row in native_rows)
+            and [(row['mode'], row['round']) for row in native_rows] == MATRIX,
             'three-round/complete native PMIX matrix')
     native_root = root/'native'
     require(native_root.is_dir() and not native_root.is_symlink(), 'native evidence root')
@@ -263,7 +332,7 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
         request_path = safe(root, name+'/request.json')
         directory = request_path.parent
         request = load(request_path)
-        require(request['mode'] == row['mode'] and request['round'] == row['round'],
+        require(type(request['round']) is int and request['mode'] == row['mode'] and request['round'] == row['round'],
                 'native request/matrix binding')
         require(type(request['run_id']) is str and request['run_id']
                 and request['run_id'] not in seen_ids, 'reused native run ID')
@@ -278,7 +347,12 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
             require(workflow == sha(safe(directory, 'reopen-input.rcam').read_bytes()),
                     'fresh process reopened a different project')
     return {'result': 'PMIX_EVIDENCE_VERIFIED_PENDING_INDEPENDENT_REVIEW',
-            'gates': len(records), 'native_runs': len(results), 'runs': results,
+            'gates': qualification['gates'], 'native_runs': len(results), 'runs': results,
+            'background_qualification':qualification,
+            'foreground_initialization':{'result':'VERIFIED_FROM_ALL_REAL_OWNED_NATIVE_RUNS',
+                                         'native_runs':len(results),'proof':'each mandatory native verifier: actual constructor/mainthread/access/PID/window/first-frame/drain/join/MOV',
+                                         'capture_producer_sha256':capture['producer_sha256']},
+            'final_stage':'PENDING_INDEPENDENT_REVIEW',
             'source_manifest_sha256': expected_source, 'build_commit': expected_commit,
             'user_flicker_report': 'OPEN', 'stage_PASS_claim': False}
 
@@ -291,9 +365,12 @@ if __name__ == '__main__':
     parser.add_argument('--binary-sha256', required=True)
     parser.add_argument('--gate-ledger-sha256', required=True,
                         help='independently frozen SHA256 of exact gates/gates.json; do not derive from the bundle under test')
+    parser.add_argument('--background-only',action='store_true',
+                        help='sealed background prequalification only; foreground real owned initialization remains pending')
     args = parser.parse_args()
     try:
-        print(json.dumps(verify(args.directory, expected_source=args.source_manifest,
+        check=qualify_background if args.background_only else verify
+        print(json.dumps(check(args.directory, expected_source=args.source_manifest,
                                 expected_commit=args.commit,
                                 expected_binary=args.binary_sha256,
                                 expected_gate_ledger=args.gate_ledger_sha256), indent=2))

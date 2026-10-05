@@ -14,6 +14,9 @@ import subprocess
 import time
 import unittest
 import zlib
+import zipfile
+import source_manifest
+import verify_pmix_evidence
 import sys
 from unittest.mock import patch
 import run_pmix_capture_preflight as preflight
@@ -362,5 +365,233 @@ class Guards(unittest.TestCase):
                 if node.func.attr=='wait':self.assertTrue(any(key.arg=='timeout' for key in node.keywords))
                 if node.func.attr=='Popen':
                     self.assertTrue(any(key.arg=='start_new_session' and isinstance(key.value,ast.Constant) and key.value.value is True for key in node.keywords))
+
+
+
+class BackgroundQualification(unittest.TestCase):
+    """Invented sealed-shaped fixtures exercise real parsers, never native proof."""
+    @classmethod
+    def setUpClass(cls):
+        cls.root_source=Path(__file__).resolve().parents[1]
+        cls.source_digest=hashlib.sha256((cls.root_source/'MANIFEST.sha256').read_bytes()).hexdigest()
+        cls.commit='1'*40
+        cls.archive=tempfile.TemporaryDirectory(prefix='rcam-background-source-unit-')
+        archive=Path(cls.archive.name)/'Source.zip'
+        entries={path.relative_to(cls.root_source).as_posix():path.read_bytes() for path in source_manifest.source_files()}
+        entries['MANIFEST.sha256']=(cls.root_source/'MANIFEST.sha256').read_bytes()
+        metadata={'schema_version':1,'clean_worktree':True,'supplemental_only':False,'stage':'S5-M2-C',
+                  'commit':cls.commit,'git_commit':cls.commit,'source_manifest_sha256':cls.source_digest,
+                  'included_paths':sorted(entries),'source_file_count':len(entries)-1,'manifest_count':len(entries)}
+        entries['PACKAGE_INFO.json']=(json.dumps(metadata)+'\n').encode()
+        entries['PACKAGE_MANIFEST.sha256']=''.join(hashlib.sha256(data).hexdigest()+'  '+name+'\n' for name,data in sorted(entries.items())).encode()
+        with zipfile.ZipFile(archive,'w') as z:
+            for name,data in entries.items():z.writestr(name,data)
+        cls.archive_path=archive
+    @classmethod
+    def tearDownClass(cls):cls.archive.cleanup()
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(prefix='rcam-background-unit-');self.root=Path(self.temp.name)
+        self.gates=self.root/'gates';self.gates.mkdir();self.capture=self.gates/'capture-writer-preflight';self.capture.mkdir()
+        shutil.copy2(self.archive_path,self.root/'Source.zip')
+        self.review={'stage':'S5-M2-C','schema_version':2,'accepted_base':verify_pmix_evidence.BASE,
+                     'build_commit':self.commit,'source_manifest_sha256':self.source_digest,'user_flicker_report':'OPEN',
+                     'Windows':'DEFERRED','K1_native_remaining':'DEFERRED','whole_I2':'NOT_ALL_PASS',
+                     'review_state':'CLEAN_FINAL_PENDING_INDEPENDENT_REVIEW','native':[]}
+        write(self.root/'REVIEW.json',self.review)
+        self.producer_path='/tmp/synthetic-background-unit/capture-producer'
+        source_path='/tmp/synthetic-background-unit/capture.swift'
+        compile_command=['/usr/bin/swiftc','-swift-version','5','-parse-as-library',source_path,'-o',self.producer_path]
+        (self.capture/'capture.swift').write_text(SOURCE);(self.capture/'capture-producer').write_bytes(b'synthetic-not-executable-producer')
+        self.process('compile',compile_command,0,'','',120)
+        self.process('swift-version',['/usr/bin/swiftc','--version'],0,'synthetic Swift version\n','',10)
+        self.process('sdk-path',['/usr/bin/xcrun','--show-sdk-path'],0,'/synthetic/SDK\n','',10)
+        write(self.capture/'compile.json',{'command':compile_command,'exit_code':0,'swift_version':'synthetic Swift version\n','sdk':'/synthetic/SDK\n'})
+        self.probes=[]
+        for i,(mode,selection) in enumerate((('--probe-initialization','real-on-screen'),('--probe-no-window','own-window-none'))):
+            row=Guards.probe_fixture(self,True);row['selection']=selection;row['producer_pid']=800+i
+            for stage in row['trace']:stage['producer_pid']=800+i
+            command=[self.producer_path,mode];self.process(mode[2:],command,2,json.dumps(row)+'\n','',15,pid=800+i)
+            self.probes.append({'mode':mode,'command':command,'exit_code':2,'receipt':row})
+        cases=[]
+        for i,(mode,code,samples) in enumerate(preflight.CASES):
+            command=[self.producer_path,'--self-test',mode,'/tmp/synthetic-background-unit/'+mode+'.mov'];pid=900+i
+            events=[{'event':'failure','error':'synthetic refusal','schema_version':2}]
+            info=None;digest=None
+            if samples:
+                raw=self.movie(samples);(self.capture/(mode+'.mov')).write_bytes(raw);info=mov_info(self.capture/(mode+'.mov'));digest=hashlib.sha256(raw).hexdigest()
+                events=[{'event':'ready','source_kind':'synthetic-self-test','app_pid':0,'window_id':0,'producer_pid':pid,
+                         'frame_status':'complete','sample_append_succeeded':True},
+                        {'event':'finished','source_kind':'synthetic-self-test','app_pid':0,'window_id':0,'producer_pid':pid,
+                         'writer_status':'completed','accepted_samples':samples,'stream_stopped':True,
+                         'sample_queue_drained':True,'input_marked_finished':True,
+                         'finish_writing_callback_received':True,'output_bytes':len(raw)}]
+            self.process(mode,command,code,''.join(json.dumps(row)+'\n' for row in events),'',30,pid=pid)
+            cases.append({'mode':mode,'command':command,'exit_code':code,'producer_pid':pid,'samples':samples,
+                          'stdout_sha256':hashlib.sha256((self.capture/(mode+'.stdout')).read_bytes()).hexdigest(),
+                          'stderr_sha256':hashlib.sha256((self.capture/(mode+'.stderr')).read_bytes()).hexdigest(),
+                          'events':events,'movie':info,'movie_sha256':digest})
+        self.capture_result={'result':'BLOCKED','background_writer_and_refusal_tests':'PASS','probes':self.probes,
+             'scope':'background initialization metadata and synthetic writer only; no stream capture or GUI',
+             'source_manifest_sha256':self.source_digest,'producer_sha256':hashlib.sha256((self.capture/'capture-producer').read_bytes()).hexdigest(),
+             'producer_source_sha256':hashlib.sha256((self.capture/'capture.swift').read_bytes()).hexdigest(),'cases':cases}
+        self.capture_seal()
+        preflight_digests={}
+        for stem,command in [('guard-preflight',['python3','-B','scripts/test_verify_pmix_guards.py']),
+                             ('capture-lifecycle-preflight',['python3','-B','scripts/test_pmix_capture_lifecycle.py'])]:
+            log=stem+'.log';(self.gates/log).write_text('synthetic parser-only PASS fixture\n');digest=hashlib.sha256((self.gates/log).read_bytes()).hexdigest()
+            write(self.gates/(stem+'.json'),{'command':command,'exit_code':0,'source_manifest_sha256':self.source_digest,'log':log,'sha256':digest})
+            preflight_digests[stem]=digest
+        self.records=[]
+        for name,command in verify_pmix_evidence.COMMANDS:
+            log=name+'.log';(self.gates/log).write_text('synthetic '+name+' fixture\n')
+            self.records.append({'id':name,'command':command,'exit_code':0,'commit':self.commit,'source_manifest_sha256':self.source_digest,
+                                 'log':log,'sha256':hashlib.sha256((self.gates/log).read_bytes()).hexdigest()})
+        self.records[0].update(guard_preflight_sha256=preflight_digests['guard-preflight'],
+                              capture_lifecycle_sha256=preflight_digests['capture-lifecycle-preflight'])
+        self.ledger_seal()
+        self.summary={'stage':'S5-M2-C','commit':self.commit,'clean_worktree':True,'source_manifest_sha256':self.source_digest,
+                      'unchanged_source':True,'unchanged_status':True,'gates_expected':len(self.records),'gates_passed':len(self.records),
+                      'capture_initialization':'BLOCKED','capture_initialization_exit_code':2,'result':'BLOCKED_CAPTURE_INITIALIZATION'}
+        write(self.gates/'summary.json',self.summary)
+        for name in ('source-before.sha256','source-after.sha256'):shutil.copy2(self.root_source/'MANIFEST.sha256',self.gates/name)
+        write(self.gates/'a2-fixture-inventory.json',{'sha256':['8075367c8ae92db5fed8f7d1f0d0784db2adb84922a766aec404396f4a68b80f','68b9606ba4f52d2a599ac97527985128c7df8215e63c9c19617185d4489baeb9','5a3ca2155d6835592f5c5687bb4da682c6fb22b96c66994ca98b013face5c4fb','87f640be4096344ad749a237982d6f3e26778ffd0139b0dceab7457dde982f81'],'local_paths_copied':False})
+        binaries={}
+        for kind in ('release','release-internal'):
+            data=('synthetic '+self.commit).encode()
+            if kind=='release-internal':data+=b' RCAM_I1_NATIVE_DIR RCAM_I2_B_NATIVE_DIR RCAM_I2_C_NATIVE_DIR RCAM_UI_ROI_DIR RCAM_PMIX_NATIVE_DIR'
+            path=self.gates/'bin'/('editor-app-'+kind);path.parent.mkdir(exist_ok=True);path.write_bytes(data)
+            binaries[kind]={'path':path.relative_to(self.gates).as_posix(),'sha256':hashlib.sha256(data).hexdigest(),
+                            'commit':self.commit,'source_manifest_sha256':self.source_digest}
+        write(self.gates/'binaries.json',binaries);self.binary=binaries['release-internal']['sha256'];self.seal()
+    def tearDown(self):self.temp.cleanup()
+    def process(self,name,command,code,stdout,stderr,timeout,pid=700):
+        # Invented process logs. No child/compiler/native program is executed.
+        started=10000+len(list(self.capture.glob('*.process.json')))*1000
+        row={'schema_version':2,'scope':'owned background helper process; no native acceptance','pid':pid,'command':command,
+             'exit_code':code,'pgid':pid,'private_session':True,'timeout_seconds':timeout,'cleanup_grace_seconds':2,
+             'signals_sent':[],'owned_group_released':True,'signal':None,'timed_out':False,'joined':True,'error':None,
+             'started_monotonic_ns':started,'finished_monotonic_ns':started+500,'result':'RETURNED'}
+        write(self.capture/(name+'.process.json'),row)
+        write(self.capture/(name+'.launch.json'),{key:row[key] for key in ('pid','pgid','private_session','command','timeout_seconds','started_monotonic_ns')})
+        (self.capture/(name+'.stdout')).write_text(stdout);(self.capture/(name+'.stderr')).write_text(stderr)
+    def movie(self,n):
+        mdat=box(b'mdat',(struct.pack('>I',1)+b'\x65')*n);entry=bytearray(86);struct.pack_into('>HH',entry,32,64,48)
+        entry+=box(b'avcC',b'\x01\x64\x00\x1f\xff\xe1\x00\x01\x67\x01\x00\x01\x68');struct.pack_into('>I4s',entry,0,len(entry),b'avc1')
+        stsd=box(b'stsd',b'\0'*4+struct.pack('>I',1)+entry);stts=box(b'stts',b'\0'*4+struct.pack('>III',1,n,1000));stsz=box(b'stsz',b'\0'*4+struct.pack('>II',5,n))
+        stsc=box(b'stsc',b'\0'*4+struct.pack('>IIII',1,1,n,1));stco=box(b'stco',b'\0'*4+struct.pack('>II',1,8));mdhd=box(b'mdhd',b'\0'*12+struct.pack('>II',1000,1000*n)+b'\0'*4);hdlr=box(b'hdlr',b'\0'*8+b'vide'+b'\0'*12)
+        return mdat+box(b'moov',box(b'trak',box(b'mdia',mdhd+hdlr+box(b'minf',box(b'stbl',stsd+stts+stsz+stsc+stco)))))
+    def capture_seal(self):
+        self.capture_result['files']={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in self.capture.iterdir() if p.is_file() and p.name!='RESULTS.json'}
+        write(self.capture/'RESULTS.json',self.capture_result)
+    def ledger_seal(self):
+        self.records[0]['capture_writer_results_sha256']=hashlib.sha256((self.capture/'RESULTS.json').read_bytes()).hexdigest()
+        write(self.gates/'gates.json',self.records);self.ledger=hashlib.sha256((self.gates/'gates.json').read_bytes()).hexdigest()
+    def seal(self):
+        (self.root/'Evidence_MANIFEST.sha256').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(self.root).as_posix()+'\n' for p in sorted(self.root.rglob('*')) if p.is_file() and p.name!='Evidence_MANIFEST.sha256'))
+    def arguments(self):return dict(expected_source=self.source_digest,expected_commit=self.commit,expected_binary=self.binary,expected_gate_ledger=self.ledger)
+    def qualify(self):return verify_pmix_evidence.qualify_background(self.root,**self.arguments())
+    def mutate_probe(self,mutate):
+        row=self.probes[0]['receipt'];mutate(row);(self.capture/'probe-initialization.stdout').write_text(json.dumps(row)+'\n')
+        self.capture_seal();self.ledger_seal();self.seal()
+    def test_precise_blocked_seed_qualifies_without_mutation_or_native_claim(self):
+        before={p.relative_to(self.root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in self.root.rglob('*') if p.is_file()}
+        result=self.qualify();self.assertEqual(result['result'],'BACKGROUND_QUALIFIED_FOREGROUND_PENDING')
+        self.assertEqual(result['background_status'],'BLOCKED_CAPTURE_INITIALIZATION');self.assertEqual(result['background_initialization'],'BLOCKED')
+        self.assertEqual(result['foreground_initialization'],'PENDING_REAL_OWNED_NATIVE');self.assertFalse(result['stage_PASS_claim'])
+        after={p.relative_to(self.root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in self.root.rglob('*') if p.is_file()};self.assertEqual(before,after)
+    def test_original_initialization_only_pass_still_requires_foreground_proof(self):
+        row=Guards.probe_fixture(self);row['producer_pid']=800
+        for stage in row['trace']:stage['producer_pid']=800
+        self.probes[0].update(receipt=row,exit_code=0)
+        path=self.capture/'probe-initialization.process.json';process=json.loads(path.read_text());process['exit_code']=0;write(path,process)
+        (self.capture/'probe-initialization.stdout').write_text(json.dumps(row)+'\n')
+        self.capture_result['result']='PASS';self.capture_seal();self.ledger_seal()
+        self.summary.update(result='GATES_PASS',capture_initialization='PASS',capture_initialization_exit_code=0)
+        write(self.gates/'summary.json',self.summary);self.seal()
+        result=self.qualify();self.assertEqual(result['background_status'],'GATES_PASS')
+        self.assertEqual(result['background_initialization'],'INITIALIZATION_ONLY_PASS')
+        self.assertIsNone(result['background_blocked_reason'])
+        self.assertEqual(result['foreground_initialization'],'PENDING_REAL_OWNED_NATIVE');self.assertFalse(result['stage_PASS_claim'])
+    def test_permission_false_and_other_blocked_reasons_are_rejected(self):
+        for reason in ('api-unavailable','permission-denied','unexplained'):
+            self.mutate_probe(lambda row,reason=reason:row.update(blocked_reason=reason))
+            with self.assertRaises(ValueError):self.qualify()
+        self.mutate_probe(lambda row:(row.update(blocked_reason='no-eligible-window',existing_screen_access=False),row['trace'][2].update(existing_access=False)))
+        with self.assertRaisesRegex(ValueError,'access'):self.qualify()
+    def test_probe_scope_constructor_pid_raw_and_cleanup_are_not_waived(self):
+        baseline=copy.deepcopy(self.probes[0]['receipt'])
+        for key,value in (('query_kind','excludingDesktopWindows-owned'),('filter_constructor','EXECUTED'),
+                          ('own_windows',1),('active',True),('streams_started',1),('native_proof',True)):
+            self.probes[0]['receipt']=copy.deepcopy(baseline)
+            self.mutate_probe(lambda row,key=key,value=value:row.update({key:value}))
+            with self.assertRaises(ValueError):self.qualify()
+        self.probes[0]['receipt']=copy.deepcopy(baseline)
+        self.mutate_probe(lambda row:row['trace'][1].update(producer_pid=999))
+        with self.assertRaises(ValueError):self.qualify()
+    def test_writer_finalization_and_background_join_are_not_waived(self):
+        path=self.capture/'normal.process.json';row=json.loads(path.read_text());row['joined']=False;write(path,row)
+        self.capture_seal();self.ledger_seal();self.seal()
+        with self.assertRaisesRegex(ValueError,'join'):self.qualify()
+        row['joined']=True;write(path,row)
+        normal=next(row for row in self.capture_result['cases'] if row['mode']=='normal')
+        normal['events'][-1]['finish_writing_callback_received']=False
+        (self.capture/'normal.stdout').write_text(''.join(json.dumps(event)+'\n' for event in normal['events']))
+        normal['stdout_sha256']=hashlib.sha256((self.capture/'normal.stdout').read_bytes()).hexdigest()
+        self.capture_seal();self.ledger_seal();self.seal()
+        with self.assertRaisesRegex(ValueError,'finalization'):self.qualify()
+    def test_inventory_source_binary_and_raw_writer_binding_are_not_waived(self):
+        (self.capture/'normal.stdout').write_text('resealed-but-not-events\n');self.capture_seal();self.ledger_seal();self.seal()
+        with self.assertRaises(ValueError):self.qualify()
+        (self.root/'extra.txt').write_text('invented extra');self.seal()
+        with self.assertRaisesRegex(ValueError,'canonical evidence root'):self.qualify()
+    def test_old_ledger_digest_still_rejects_resealed_capture_result(self):
+        trusted=self.ledger;self.mutate_probe(lambda row:row.update(existing_screen_access=False));self.ledger=trusted
+        with self.assertRaisesRegex(ValueError,'external frozen gate ledger'):self.qualify()
+    def test_incomplete_or_failed_cargo_gates_are_rejected(self):
+        self.records[-1]['exit_code']=1;self.ledger_seal();self.seal()
+        with self.assertRaisesRegex(ValueError,'failed/wrong-source gate'):self.qualify()
+    def test_background_result_cannot_be_relabelled_pass(self):
+        self.summary.update(result='GATES_PASS',capture_initialization='PASS',capture_initialization_exit_code=0);write(self.gates/'summary.json',self.summary);self.seal()
+        with self.assertRaisesRegex(ValueError,'gate source/commit'):self.qualify()
+    def test_seed_rejects_old_native_rows_or_even_empty_native_directory(self):
+        self.review['native']=[{'mode':'nav','round':1}];write(self.root/'REVIEW.json',self.review);self.seal()
+        with self.assertRaisesRegex(ValueError,'pristine seed'):self.qualify()
+        self.review['native']=[];write(self.root/'REVIEW.json',self.review);(self.root/'native').mkdir();self.seal()
+        with self.assertRaisesRegex(ValueError,'pristine seed'):self.qualify()
+    def test_complete_verifier_never_grants_pass_without_exact_twelve_rows(self):
+        with self.assertRaisesRegex(ValueError,'complete native PMIX matrix'):
+            verify_pmix_evidence.verify(self.root,**self.arguments())
+        self.review['native']=[{'mode':mode,'round':True if number==1 else number} for mode,number in verify_pmix_evidence.MATRIX]
+        write(self.root/'REVIEW.json',self.review);self.seal()
+        with self.assertRaisesRegex(ValueError,'complete native PMIX matrix'):
+            verify_pmix_evidence.verify(self.root,**self.arguments())
+    def test_writer_integer_aliases_are_rejected(self):
+        row=self.capture_result['cases'][0];row['exit_code']=False;row['samples']=True
+        self.capture_seal();self.ledger_seal();self.seal()
+        with self.assertRaisesRegex(ValueError,'typed writer'):self.qualify()
+        row['exit_code']=0;row['samples']=1;row['events'][-1]['accepted_samples']=True
+        (self.capture/'short.stdout').write_text(''.join(json.dumps(event)+'\n' for event in row['events']))
+        row['stdout_sha256']=hashlib.sha256((self.capture/'short.stdout').read_bytes()).hexdigest()
+        self.capture_seal();self.ledger_seal();self.seal()
+        with self.assertRaisesRegex(ValueError,'finalization'):self.qualify()
+    def test_full_result_expression_has_bound_gate_count_and_requires_native_calls(self):
+        # Execute only the real final return expression with invented locals.
+        # This catches refactor scope errors; it does not execute or prove native12.
+        import ast
+        module=ast.parse(Path(verify_pmix_evidence.__file__).read_text())
+        function=next(node for node in module.body if isinstance(node,ast.FunctionDef) and node.name=='verify')
+        statement=next(node for node in reversed(function.body) if isinstance(node,ast.Return))
+        namespace={'qualification':{'gates':31},'results':[{'synthetic_result_expression':True}]*12,
+                   'capture':{'producer_sha256':'0'*64},'expected_source':'1'*64,'expected_commit':'2'*40}
+        result=eval(compile(ast.Expression(statement.value),'<synthetic final result expression>','eval'),{},namespace)
+        self.assertEqual(result['gates'],31);self.assertEqual(result['native_runs'],12);self.assertFalse(result['stage_PASS_claim'])
+        loop=next(node for node in function.body if isinstance(node,ast.For) and isinstance(node.iter,ast.Name)
+                  and node.iter.id=='native_rows')
+        self.assertTrue(any(isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute)
+                            and isinstance(node.func.value,ast.Name) and node.func.value.id=='results'
+                            and node.func.attr=='append' and len(node.args)==1
+                            and isinstance(node.args[0],ast.Call) and isinstance(node.args[0].func,ast.Name)
+                            and node.args[0].func.id=='verify_native' for node in ast.walk(loop)))
+        self.assertFalse(any(isinstance(node,ast.Name) and node.id=='records' for node in ast.walk(statement)))
 
 if __name__=='__main__':unittest.main()

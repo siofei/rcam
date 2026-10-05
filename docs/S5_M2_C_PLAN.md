@@ -835,3 +835,65 @@ regressions stay mandatory. The successor needs its own strict Swift6 compile
 and read-only probe before fresh build/gates or authorized actual mode changes.
 No display argv, request schema3, snapshot fields, five-label receipt contract,
 runner source bytes or legacy S5-M1 helper change in this correction.
+
+### Background qualification and genuine foreground initialization
+
+The windowless background helper's currentProcess/no-consent query may correctly
+return no eligible window. A31-command exit0 ledger alongside that BLOCKED probe
+does not become GATES_PASS, initialization-only PASS or native PASS. Existing
+RESULTS, summary, logs and externally frozen gates.json remain untouched. There
+is no PID/window injection into --probe-initialization and no temporary helper
+window is added. The existing --owned-window production path is a separate real
+stream/writer operation, not a replacement background receipt.
+
+The evidence verifier now exposes one pure read-only startup qualification API:
+qualify_background(root, expected_source=..., expected_commit=...,
+expected_binary=..., expected_gate_ledger=..., expected_base=BASE).
+The matching CLI is verify_pmix_evidence.py DIRECTORY --background-only with the
+same required --source-manifest, --commit, --binary-sha256 and independently
+frozen --gate-ledger-sha256 arguments. It requires a pristine sealed seed with
+REVIEW.native=[] and no native directory. Whole inventory, Source package and
+running verifier/fixture bytes, binary provenance, actual compiler/toolchain,
+raw probe/writer/refusal outputs and owned joins, unchanged source/status, all31
+exact commands/exit0/raw hashes and the original external ledger remain strict.
+
+Only the narrow BLOCKED/no-eligible-window state can qualify without background
+constructor execution: positive currentProcess-no-consent probe, existing access
+true, no GUI/stream/writer/frame, exact main-thread/PID trace, constructor
+NOT_EXECUTED, exit2, valid no-window negative, and all actual synthetic writer
+and refusal checks. api-unavailable, permissionFalse, unexplained BLOCKED, FAIL,
+malformed/changed source, unfinished child, failed gate or relabelled summary
+still fail. A genuine prior initialization-only background success keeps its
+separate result; it never substitutes for foreground proof.
+
+Qualification returns BACKGROUND_QUALIFIED_FOREGROUND_PENDING, the exact original
+background_status and background_initialization, background_blocked_reason,
+cargo_gates/writer_and_refusal_tests, source/build/binary/producer/ledger identities,
+foreground_initialization=PENDING_REAL_OWNED_NATIVE and stage_PASS_claim=false.
+An exit0 here means permission to attempt the coordinated foreground evidence,
+not a claim that the BLOCKED initialization passed. The external guard records
+this qualification and original sealed seed outside the product bundle.
+
+The default full verifier still requires the exact12-row formal matrix, fresh
+run IDs/directories, workflow-to-reopen SHA chain and every unchanged native
+verifier. Each row must prove the common physical-main-thread filter constructor,
+existing permission, exact app/producer/PID/window ownership, genuine first frame,
+STOP/drain/writer finish/process join before app release and complete MOV. Thus
+foreground initialization is VERIFIED_FROM_ALL_REAL_OWNED_NATIVE_RUNS only after
+all twelve complete verifications; a probe, synthetic case or preserved144Hz
+capture cannot replace any formal row. Output separates background qualification,
+foreground proof and final_stage=PENDING_INDEPENDENT_REVIEW. Flicker remains OPEN
+and stage_PASS_claim remains false.
+
+Thirteen new invented sealed-shaped regression fixtures exercise the actual portable
+Source/whole-inventory/ledger/probe/writer/gate/binary parsers without mocks or
+native execution. They verify unchanged blocked seed bytes, permission/reason/
+query/constructor/UI/PID/refusal/finalization/join/raw/ledger/summary attacks,
+rejection of old native rows or even an empty native directory at startup, and
+full-verifier rejection without all12 rows, strict integer counts/rounds rather
+than boolean aliases, and preservation of the original initialization-only PASS
+branch with foreground still pending. A final-return-expression regression uses
+invented locals to catch refactor scope errors; it does not run or prove native12.
+These fixtures are parser tests only.
+Changed verifier/test/docs bytes require a new reviewed manifest and fresh final
+build/gate identity; old ebd3 background receipts are never resealed as successors.
