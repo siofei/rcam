@@ -610,7 +610,7 @@ class InjectedSupervisorTests(unittest.TestCase):
         with patch.object(supervise.sys, 'platform', 'darwin'), \
              patch.object(supervise, 'ROOT', product), \
              patch.object(supervise, 'sha', side_effect=fake_sha), \
-             patch.object(supervise.subprocess, 'run', return_value=type('Compiled', (), {'returncode': 0})()), \
+             patch.object(supervise.subprocess, 'run', return_value=type('Compiled', (), {'returncode': 0})()) as compile_call, \
              patch.object(supervise.subprocess, 'Popen', side_effect=launch), \
              patch.object(supervise, 'FileTail', Tail), \
              patch.object(supervise, 'discover_native', return_value=(native, owned, request)), \
@@ -623,6 +623,8 @@ class InjectedSupervisorTests(unittest.TestCase):
             with patch.object(supervise, 'ObservationStream', side_effect=lambda tail, monitor, nonce:
                               real_stream(tail, monitor, nonce, clock=lambda: now[0])):
                 result = supervise.run(base)
+        compile_call.assert_called_once()
+        self.last_compile_command = compile_call.call_args.args[0]
         receipt = json.loads((base / 'SUPERVISOR_RESULT.json').read_text())
         return result, receipt, actors
 
@@ -647,6 +649,17 @@ class InjectedSupervisorTests(unittest.TestCase):
             self.assertTrue(receipt['success'])
             self.assertTrue(Path(receipt['native_directory']).is_relative_to(target))
             self.assertEqual(actors[1].signals, [])
+
+    def test_strict_swift6_compile_contract(self):
+        self.exercise()
+        command = self.last_compile_command
+        self.assertEqual(command[0], '/usr/bin/swiftc')
+        self.assertIn('-parse-as-library', command)
+        self.assertEqual(command[command.index('-swift-version') + 1], '6')
+        self.assertIn('-strict-concurrency=complete', command)
+        self.assertIn('-warnings-as-errors', command)
+        self.assertNotIn('-suppress-warnings', command)
+        self.assertNotIn('-strict-concurrency=minimal', command)
 
     def test_complete_wrapper_success_with_owned_finalized_cleanup(self):
         code, receipt, actors = self.exercise()
@@ -767,6 +780,42 @@ class PostJoinRegressionTests(unittest.TestCase):
             self.assertLess(facts['last_sample_end_before_join_ns'], facts['input_at_ns'])
             self.assertLess(facts['input_at_ns'], facts['runner_join_observed_at_ns'])
             print(json.dumps({'fixed_regression':'cleanup input detected before any success', 'receipt':result, 'synthetic_facts':facts}, indent=2))
+
+
+class SwiftActorBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        self.swift = Path(__file__).with_name('interference.swift').read_text()
+        start = self.swift.index('@MainActor\nprivate final class InterferenceObserver')
+        end = self.swift.index('@main\nprivate struct InterferenceObserverMain')
+        self.observer = self.swift[start:end]
+        self.outside = self.swift[:start] + self.swift[end:]
+
+    def test_mutable_state_and_json_remain_actor_owned(self):
+        for name in ('current', 'lastCommand', 'runnerCredential', 'ownedCredential',
+                     'ownedApplication', 'sequence'):
+            self.assertIn('private var ' + name, self.observer)
+            self.assertNotIn('var ' + name, self.outside)
+        self.assertNotIn('[String: Any]', self.outside)
+        for method in ('emit', 'fatal', 'identityAlive', 'applyControl', 'readyMarker', 'sample'):
+            self.assertIn('private func ' + method, self.observer)
+            self.assertNotIn('func ' + method, self.outside)
+
+    def test_explicit_mainactor_entry_and_timer_boundary(self):
+        self.assertIn('@main\nprivate struct InterferenceObserverMain {\n    @MainActor\n    static func main()', self.swift)
+        self.assertIn('observer.run()', self.outside)
+        self.assertIn('MainActor.assumeIsolated {', self.observer)
+        self.assertIn('self.sample()', self.observer)
+        self.assertIn('RunLoop.main.add(timer, forMode: .common)', self.observer)
+        self.assertIn('MONITOR_NOT_MAIN_THREAD', self.observer)
+        self.assertIn('MONITOR_MAIN_RUNLOOP_RETURNED', self.observer)
+
+    def test_no_unsafe_concurrency_opt_out_or_external_activation(self):
+        for opt_out in ('@unchecked Sendable', 'nonisolated(unsafe)', '@preconcurrency',
+                        '.activate(', 'activateApprovedSeq'):
+            self.assertNotIn(opt_out, self.swift)
+        for value in ('Control', 'Credential', 'ReadyIdentity'):
+            declaration = next(line for line in self.swift.splitlines() if line.startswith('struct ' + value + ':'))
+            self.assertIn('Sendable', declaration)
 
 
 if __name__ == '__main__':

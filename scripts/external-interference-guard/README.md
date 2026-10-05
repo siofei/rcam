@@ -14,6 +14,11 @@ forward; the external guard only observes that result.
   bounded cleanup, and a post-join observation barrier.
 - `test_guard.py`: Linux-safe policy, stream, synthetic process and wrapper tests.
 
+The observer has an explicit `@main` entry point and keeps its mutable state and
+AppKit objects inside a single `@MainActor` class. The supervisor compiles it with
+`-parse-as-library -swift-version 6 -strict-concurrency=complete -warnings-as-errors`.
+A standalone compile must use those same options; diagnostics are not suppressed.
+
 Protocol version 2 prevents accidental mixing with the retired activation-capable
 observer. Do not use the earlier version.
 

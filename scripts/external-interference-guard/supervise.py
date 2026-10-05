@@ -271,7 +271,9 @@ def run(base=None):
                  'monitor-compile.stderr', 'monitor-compile.json', 'runner.stdout', 'runner.stderr',
                  'monitor.stdout', 'monitor.stderr', 'SUPERVISOR_RESULT.json', 'workflow-reopen1'):
         require(not (base / name).exists(), 'fresh external evidence directory required: ' + name)
-    compile_command = ['/usr/bin/swiftc', str(base / 'interference.swift'), '-o', str(base / 'interference-monitor')]
+    compile_command = ['/usr/bin/swiftc', '-parse-as-library', '-swift-version', '6',
+                       '-strict-concurrency=complete', '-warnings-as-errors',
+                       str(base / 'interference.swift'), '-o', str(base / 'interference-monitor')]
     with (base / 'monitor-compile.stdout').open('xb') as out, (base / 'monitor-compile.stderr').open('xb') as err:
         compiled = subprocess.run(compile_command, stdout=out, stderr=err, timeout=30)
     write(base / 'monitor-compile.json', {'command': compile_command, 'exit_code': compiled.returncode})
