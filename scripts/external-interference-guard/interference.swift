@@ -46,6 +46,8 @@ private final class InterferenceObserver {
         ["pid": value.pid, "parent_pid": value.parent,
          "start_seconds": value.seconds, "start_micros": value.micros]
     }
+    // Dispatch uptime is Mach absolute time in ns (awake time since boot),
+    // equivalent to Darwin CLOCK_UPTIME_RAW. No process-local epoch or offset.
     private func monotonicNowNS() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
     private func credential(_ pid: Int32) -> Credential? {
         var info = proc_bsdinfo()
@@ -113,7 +115,8 @@ private final class InterferenceObserver {
 
     private func emit(_ value: [String: Any]) {
         var envelope = value
-        envelope["protocol_version"] = 2
+        envelope["protocol_version"] = 3
+        envelope["clock_domain"] = "darwin_uptime_raw_ns"
         envelope["nonce"] = nonce
         do {
             var data = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
@@ -149,7 +152,7 @@ private final class InterferenceObserver {
         let next: Control
         do { next = try JSONDecoder().decode(Control.self, from: Data(contentsOf: controlURL)) }
         catch { fatal("INVALID_OR_MISSING_CONTROL") }
-        guard next.protocolVersion == 2, next.nonce == nonce, next.commandID >= lastCommand,
+        guard next.protocolVersion == 3, next.nonce == nonce, next.commandID >= lastCommand,
               next.runnerPID >= 0, next.appPID >= 0 else { fatal("CONTROL_PROTOCOL") }
         if next.commandID == lastCommand {
             guard next == current else { fatal("CONTROL_CHANGED_WITHOUT_COMMAND") }

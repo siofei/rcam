@@ -12,6 +12,7 @@ TYPES = ('mouseMoved', 'leftMouseDown', 'leftMouseUp', 'rightMouseDown',
          'leftMouseDragged', 'rightMouseDragged', 'otherMouseDown',
          'otherMouseUp', 'otherMouseDragged', 'tabletPointer', 'tabletProximity')
 STATES = ('hid', 'combined')
+CLOCK_DOMAIN = 'darwin_uptime_raw_ns'
 AGE_TOLERANCE_NS = 20_000_000
 MAX_SAMPLE_GAP_NS = 250_000_000
 FOREGROUND_LIMIT_NS = 5_000_000_000
@@ -33,6 +34,7 @@ class Action:
 
 def validate_sample(sample):
     require(type(sample) is dict and sample.get('event') == 'sample', 'sample event')
+    require(sample.get('clock_domain') == CLOCK_DOMAIN, 'sample clock domain')
     require(type(sample.get('seq')) is int and sample['seq'] > 0, 'sample sequence')
     begin, end = sample.get('begin_ns'), sample.get('end_ns')
     require(type(begin) is int and type(end) is int and 0 < begin <= end,

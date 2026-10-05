@@ -19,8 +19,8 @@ AppKit objects inside a single `@MainActor` class. The supervisor compiles it wi
 `-parse-as-library -swift-version 6 -strict-concurrency=complete -warnings-as-errors`.
 A standalone compile must use those same options; diagnostics are not suppressed.
 
-Protocol version 2 prevents accidental mixing with the retired activation-capable
-observer. Do not use the earlier version.
+Protocol version 3 requires the explicit `darwin_uptime_raw_ns` clock domain and
+prevents mixing with older observers. Do not use an earlier version.
 
 ## Background checks
 
@@ -65,6 +65,33 @@ There is no automatic retry. Do not relax the hash locks to bypass a mismatch.
 
 Do not include generated control files, receipts, process records, compilation or
 observation logs, raw captures, or archives in a public commit.
+
+## Shared clock domain
+
+Swift records `DispatchTime.now().uptimeNanoseconds`. On Darwin, Python reads
+`time.clock_gettime_ns(time.CLOCK_UPTIME_RAW)` directly. Both use system-wide Mach
+uptime nanoseconds, excluding sleep; Python 3.9's process-relative `monotonic_ns`
+is never used on the Darwin path. There is no estimated epoch offset or expanded
+freshness allowance. A missing native clock fails before any compiler or process
+launch.
+
+Loss of that required clock is a failure, never permission to align epochs or use
+another absolute clock. Cleanup first sends SIGINT to the already-owned runner,
+then can use the existing bounded relative `Popen.wait` reserve. If interruption
+was already in progress, a clock failure cannot restart its budget. The observer
+is still stopped and a failed receipt is written; unmeasurable duration is `null`
+and an unprovable post-join barrier cannot pass.
+
+All absolute guard timestamps, monitor freshness/liveness, execution and cleanup
+budgets, policy phase deadlines, and the post-join barrier use this one domain.
+UTC strings are informational. Kernel process start credentials remain separate
+identity values and are never compared with uptime. Sleep, compilation timeout
+and `Popen.wait` receive relative durations, not cross-process timestamps. The
+product runner's own process-local timing fields are not treated as guard uptime.
+
+References: [Apple DispatchTime](https://developer.apple.com/documentation/dispatch/dispatchtime),
+[Apple Mach time / CLOCK_UPTIME_RAW equivalence](https://developer.apple.com/documentation/kernel/1462446-mach_absolute_time),
+[Python macOS monotonic clock change in 3.10](https://docs.python.org/3.10/library/time.html#time.monotonic).
 
 ## Safety boundaries
 

@@ -14,11 +14,11 @@ import unittest
 from unittest.mock import patch
 
 from guard_policy import (AGE_TOLERANCE_NS, FOREGROUND_LIMIT_NS, BIND_LIMIT_NS,
-                          READY_LIMIT_NS, MAX_SAMPLE_GAP_NS, TYPES, STATES,
+                          READY_LIMIT_NS, MAX_SAMPLE_GAP_NS, TYPES, STATES, CLOCK_DOMAIN,
                           GuardPolicy, source_changes, validate_sample)
 import supervise
 from supervise import (FileTail, ObservationStream, interrupt_and_join, stop_monitor,
-                       strict_json, discover_native, post_join_barrier, MANIFEST_SHA, BINARY_SHA)
+                       strict_json, discover_native, post_join_barrier, MANIFEST_SHA, BINARY_SHA, system_uptime_ns, ClockUnavailableError)
 
 BASE_NS = 100_000_000_000
 
@@ -36,7 +36,7 @@ def sample(seq=1, begin=None, last_event_ns=10_000_000_000, **changes):
             if name != 'anyInput':
                 row.update(count_before=10, count_after=10)
             rows[state][name] = row
-    value = {'event': 'sample', 'seq': seq, 'begin_ns': begin, 'end_ns': begin + 200_000,
+    value = {'event': 'sample', 'clock_domain': CLOCK_DOMAIN, 'seq': seq, 'begin_ns': begin, 'end_ns': begin + 200_000,
              'thread_main': True, 'runner_pid': 0, 'owned_pid': 0,
              'identity_verified': False, 'owned_alive': False, 'owned_ready': False,
              'front_owned': False, 'capture_complete': False, 'sources': rows}
@@ -306,7 +306,7 @@ class StreamTests(unittest.TestCase):
         self.stream = ObservationStream(self.tail, self.monitor, 'test', clock=lambda: self.now)
 
     def append(self, value):
-        value = dict(value, protocol_version=2, nonce='test')
+        value = dict(value, protocol_version=3, nonce='test', clock_domain=CLOCK_DOMAIN)
         with self.path.open('ab') as handle:
             handle.write(json.dumps(value).encode() + b'\n')
 
@@ -447,7 +447,7 @@ class OwnedLifecycleTests(unittest.TestCase):
                 time.sleep(.01)
             unrelated = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(10)'])
             self.addCleanup(lambda: unrelated.terminate() if unrelated.poll() is None else None)
-            self.assertTrue(interrupt_and_join(runner, 'TEST', base, time.monotonic() + 6))
+            self.assertTrue(interrupt_and_join(runner, 'TEST', base, system_uptime_ns() + 6_000_000_000))
             self.assertEqual(runner.returncode, 0)
             self.assertIsNone(unrelated.poll())
             receipt = json.loads((base / 'controlled-interrupt.json').read_text())
@@ -466,8 +466,31 @@ class OwnedLifecycleTests(unittest.TestCase):
             def wait(self, timeout): raise subprocess.TimeoutExpired('owned', timeout)
         with tempfile.TemporaryDirectory() as directory:
             runner = FakeRunner()
-            self.assertFalse(interrupt_and_join(runner, 'TEST', Path(directory), 40, clock=lambda: 1))
+            self.assertFalse(interrupt_and_join(runner, 'TEST', Path(directory), 40_000_000_000, clock=lambda: 1_000_000_000))
             self.assertEqual(runner.signals, [signal.SIGINT])
+
+    def test_clock_loss_after_prior_interrupt_cannot_restart_cleanup_budget(self):
+        class Runner:
+            pid = 123
+            returncode = None
+            signals = []
+            timeouts = []
+            def poll(self): return None
+            def send_signal(self, value): self.signals.append(value)
+            def wait(self, timeout):
+                self.timeouts.append(timeout)
+                raise subprocess.TimeoutExpired('owned', timeout)
+        def lost_clock():
+            raise ClockUnavailableError('synthetic native uptime lost')
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner()
+            errors = []
+            self.assertFalse(interrupt_and_join(runner, 'TEST', Path(directory),
+                                               deadline_ns=BASE_NS, clock=lost_clock,
+                                               signal_already_sent=True, clock_errors=errors))
+            self.assertEqual(runner.signals, [])
+            self.assertEqual(runner.timeouts, [0])
+            self.assertEqual(len(errors), 1)
 
     def test_candidate_marker_through_symlinked_fixture_root(self):
         with tempfile.TemporaryDirectory() as outer:
@@ -517,7 +540,7 @@ class OwnedLifecycleTests(unittest.TestCase):
 
 class InjectedSupervisorTests(unittest.TestCase):
     """Exercise the complete wrapper with deterministic owned-only fake actors."""
-    def exercise(self, fault=None, temporary_parent=None):
+    def exercise(self, fault=None, temporary_parent=None, clock_failure=None):
         temporary = tempfile.TemporaryDirectory(dir=temporary_parent)
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve(strict=True)
@@ -540,16 +563,21 @@ class InjectedSupervisorTests(unittest.TestCase):
         owned = dict(pid=43)
         now = [BASE_NS]
         actors = []
+        trace = []
+        self.clock_fault_trace = trace
         class Actor:
             def __init__(self, pid):
                 self.pid, self.returncode = pid, None
                 self.signals = []
+                self.wait_timeouts = []
             def poll(self):
                 return self.returncode
             def send_signal(self, value):
                 self.signals.append(value)
+                trace.append(("signal", self.pid, int(value)))
                 self.returncode = -int(value)
             def wait(self, timeout):
+                self.wait_timeouts.append(timeout)
                 return self.returncode
             def terminate(self):
                 self.returncode = -int(signal.SIGTERM)
@@ -567,7 +595,7 @@ class InjectedSupervisorTests(unittest.TestCase):
                     return []
                 self.last_clock = now[0]
                 control = json.loads((base / 'monitor-control.json').read_text())
-                envelope = dict(protocol_version=2, nonce=control['nonce'])
+                envelope = dict(protocol_version=3, nonce=control['nonce'], clock_domain=CLOCK_DOMAIN)
                 records = []
                 if self.seq == 0:
                     records.append(dict(event='ready', monitor_pid=17, thread_main=True, **envelope))
@@ -607,6 +635,13 @@ class InjectedSupervisorTests(unittest.TestCase):
             return supervise.RUNNER_SHA
         def sleep(seconds):
             now[0] += round(seconds * 1e9)
+        def native_clock(clock_id):
+            broken = ((clock_failure == 'after_runner_launch' and len(actors) >= 2) or
+                      (clock_failure == 'runner_completed' and len(actors) >= 2 and actors[1].returncode == 0))
+            if broken:
+                trace.append(('clock-failure', clock_failure))
+                raise OSError('synthetic native uptime lost')
+            return now[0]
         with patch.object(supervise.sys, 'platform', 'darwin'), \
              patch.object(supervise, 'ROOT', product), \
              patch.object(supervise, 'sha', side_effect=fake_sha), \
@@ -614,15 +649,13 @@ class InjectedSupervisorTests(unittest.TestCase):
              patch.object(supervise.subprocess, 'Popen', side_effect=launch), \
              patch.object(supervise, 'FileTail', Tail), \
              patch.object(supervise, 'discover_native', return_value=(native, owned, request)), \
-             patch.object(supervise.time, 'monotonic', side_effect=lambda: now[0] / 1e9), \
-             patch.object(supervise.time, 'monotonic_ns', side_effect=lambda: now[0]), \
+             patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+             patch.object(supervise.time, 'clock_gettime_ns', side_effect=native_clock), \
+             patch.object(supervise.time, 'monotonic', return_value=.036), \
+             patch.object(supervise.time, 'monotonic_ns', return_value=36_000_000), \
              patch.object(supervise.time, 'sleep', side_effect=sleep), \
              patch('builtins.print'):
-            # The default parameter clock is bound at import, so override its factory.
-            real_stream = ObservationStream
-            with patch.object(supervise, 'ObservationStream', side_effect=lambda tail, monitor, nonce:
-                              real_stream(tail, monitor, nonce, clock=lambda: now[0])):
-                result = supervise.run(base)
+            result = supervise.run(base)
         compile_call.assert_called_once()
         self.last_compile_command = compile_call.call_args.args[0]
         receipt = json.loads((base / 'SUPERVISOR_RESULT.json').read_text())
@@ -649,6 +682,47 @@ class InjectedSupervisorTests(unittest.TestCase):
             self.assertTrue(receipt['success'])
             self.assertTrue(Path(receipt['native_directory']).is_relative_to(target))
             self.assertEqual(actors[1].signals, [])
+
+    def test_native_clock_loss_after_owned_launch_still_interrupts_and_receipts(self):
+        code, receipt, actors = self.exercise(clock_failure='after_runner_launch')
+        self.assertEqual(code, 2)
+        self.assertFalse(receipt['success'])
+        self.assertTrue(receipt['clock_unavailable'])
+        self.assertIsNone(receipt['duration_seconds'])
+        self.assertIsNone(receipt['runner_joined_at_ns'])
+        self.assertFalse(receipt['post_join_barrier_satisfied'])
+        self.assertTrue(receipt['joined'])
+        self.assertTrue(receipt['monitor_joined'])
+        self.assertEqual(actors[1].signals, [signal.SIGINT])
+        self.assertEqual(actors[1].wait_timeouts, [35.75])
+        first_fault = next(i for i, row in enumerate(self.clock_fault_trace) if row[0] == 'clock-failure')
+        self.assertEqual(self.clock_fault_trace[first_fault + 1], ('signal', 42, int(signal.SIGINT)))
+
+    def test_native_clock_loss_at_runner_completion_stops_monitor_and_receipts(self):
+        code, receipt, actors = self.exercise(clock_failure='runner_completed')
+        self.assertEqual(code, 2)
+        self.assertFalse(receipt['success'])
+        self.assertTrue(receipt['clock_unavailable'])
+        self.assertIsNone(receipt['duration_seconds'])
+        self.assertFalse(receipt['post_join_barrier_satisfied'])
+        self.assertTrue(receipt['joined'])
+        self.assertTrue(receipt['monitor_joined'])
+        self.assertEqual(actors[1].returncode, 0)
+        self.assertEqual(actors[1].signals, [])
+        self.assertEqual(actors[0].returncode, -int(signal.SIGTERM))
+
+    def test_python39_process_epoch_does_not_enter_guard_timestamps(self):
+        # exercise uses Darwin uptime=BASE_NS and Python monotonic=36ms,
+        # and the unmodified/default ObservationStream clock factory.
+        code, receipt, actors = self.exercise()
+        self.assertEqual(code, 0)
+        self.assertTrue(receipt['success'])
+        self.assertEqual(receipt['clock_domain'], CLOCK_DOMAIN)
+        self.assertGreaterEqual(receipt['runner_joined_at_ns'], BASE_NS)
+        self.assertGreaterEqual(receipt['post_join_sample_begin_ns'], receipt['runner_joined_at_ns'])
+        self.assertLess(receipt['duration_seconds'], 1)
+        self.assertEqual(receipt['execution_budget_seconds'], 190)
+        self.assertEqual(receipt['cleanup_budget_seconds'], 40)
 
     def test_strict_swift6_compile_contract(self):
         self.exercise()
@@ -734,7 +808,7 @@ class PostJoinRegressionTests(unittest.TestCase):
                     if self.last_at is not None and now[0] - self.last_at < 50_000_000: return []
                     self.last_at = now[0]
                     ctl = json.loads((base / 'monitor-control.json').read_text())
-                    env = dict(protocol_version=2, nonce=ctl['nonce'])
+                    env = dict(protocol_version=3, nonce=ctl['nonce'], clock_domain=CLOCK_DOMAIN)
                     rows = []
                     if self.seq == 0: rows.append(dict(event='ready', monitor_pid=17, thread_main=True, **env))
                     if ctl['runnerPID'] and not self.rb:
@@ -767,9 +841,11 @@ class PostJoinRegressionTests(unittest.TestCase):
                  patch.object(supervise.subprocess, 'run', return_value=type('Compile', (), {'returncode':0})()), \
                  patch.object(supervise.subprocess, 'Popen', side_effect=launch), patch.object(supervise, 'FileTail', Tail), \
                  patch.object(supervise, 'discover_native', return_value=(native, {'pid':43}, {'run_id':'00000000-0000-4000-8000-000000000001'})), \
-                 patch.object(supervise.time, 'monotonic', side_effect=lambda:now[0]/1e9), \
-                 patch.object(supervise.time, 'monotonic_ns', side_effect=lambda:now[0]), patch.object(supervise.time, 'sleep', side_effect=sleep), \
-                 patch.object(supervise, 'ObservationStream', side_effect=lambda tail, monitor, nonce:real_stream(tail, monitor, nonce, clock=lambda:now[0])), patch('builtins.print'):
+                 patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+                 patch.object(supervise.time, 'clock_gettime_ns', side_effect=lambda clock_id:now[0]), \
+                 patch.object(supervise.time, 'monotonic', return_value=.036), \
+                 patch.object(supervise.time, 'monotonic_ns', return_value=36_000_000), patch.object(supervise.time, 'sleep', side_effect=sleep), \
+                 patch('builtins.print'):
                 code = supervise.run(base)
             result = json.loads((base / 'SUPERVISOR_RESULT.json').read_text())
             self.assertEqual(code, 2)
@@ -816,6 +892,101 @@ class SwiftActorBoundaryTests(unittest.TestCase):
         for value in ('Control', 'Credential', 'ReadyIdentity'):
             declaration = next(line for line in self.swift.splitlines() if line.startswith('struct ' + value + ':'))
             self.assertIn('Sendable', declaration)
+
+
+class DarwinClockDomainTests(unittest.TestCase):
+    def test_darwin_uses_native_uptime_even_with_python39_process_epoch(self):
+        with patch.object(supervise.sys, 'platform', 'darwin'), \
+             patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+             patch.object(supervise.time, 'clock_gettime_ns', return_value=BASE_NS) as raw, \
+             patch.object(supervise.time, 'monotonic_ns', side_effect=AssertionError('process epoch forbidden')):
+            self.assertEqual(system_uptime_ns(), BASE_NS)
+            raw.assert_called_once_with(8)
+
+    def test_missing_uptime_constant_never_falls_back(self):
+        with patch.object(supervise.sys, 'platform', 'darwin'), \
+             patch.object(supervise.time, 'CLOCK_UPTIME_RAW', None, create=True), \
+             patch.object(supervise.time, 'monotonic_ns', side_effect=AssertionError('fallback forbidden')):
+            with self.assertRaisesRegex(RuntimeError, 'CLOCK_UPTIME_RAW unavailable'):
+                system_uptime_ns()
+
+    def test_native_clock_errors_and_noninteger_values_fail_closed(self):
+        with patch.object(supervise.sys, 'platform', 'darwin'), \
+             patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+             patch.object(supervise.time, 'clock_gettime_ns', side_effect=OSError('native clock unavailable')):
+            with self.assertRaises(ClockUnavailableError):
+                system_uptime_ns()
+        for value in (None, True, 0, -1, 1.5):
+            with patch.object(supervise.sys, 'platform', 'darwin'), \
+                 patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+                 patch.object(supervise.time, 'clock_gettime_ns', return_value=value):
+                with self.assertRaisesRegex(RuntimeError, 'invalid system uptime clock'):
+                    system_uptime_ns()
+
+    def test_default_stream_factory_accepts_same_uptime_sample(self):
+        class Rows:
+            def read(self):
+                return [dict(event='ready', monitor_pid=17, thread_main=True,
+                             protocol_version=3, nonce='domain', clock_domain=CLOCK_DOMAIN),
+                        dict(sample(), protocol_version=3, nonce='domain')]
+        with patch.object(supervise.sys, 'platform', 'darwin'), \
+             patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+             patch.object(supervise.time, 'clock_gettime_ns', return_value=BASE_NS + 1_000_000), \
+             patch.object(supervise.time, 'monotonic_ns', return_value=36_000_000):
+            stream = ObservationStream(Rows(), FakeMonitor(), 'domain')
+            self.assertIsNone(stream.pump())
+            self.assertEqual(stream.last_sample_ns, sample()['end_ns'])
+
+    def test_domain_labels_are_required_by_policy_and_stream(self):
+        value = sample()
+        value['clock_domain'] = 'process_relative'
+        self.assertEqual(GuardPolicy().observe(value).reason, 'INVALID_OBSERVATION')
+        class Rows:
+            def read(self):
+                return [dict(event='ready', monitor_pid=17, thread_main=True,
+                             protocol_version=3, nonce='domain', clock_domain='process_relative')]
+        stream = ObservationStream(Rows(), FakeMonitor(), 'domain', clock=lambda: BASE_NS)
+        self.assertEqual(stream.pump().reason, 'INVALID_MONITOR_STREAM')
+
+    def test_uptime_domain_keeps_exact_freshness_bound(self):
+        for age, expected in [(MAX_SAMPLE_GAP_NS, None),
+                              (MAX_SAMPLE_GAP_NS + 1, 'INVALID_MONITOR_STREAM')]:
+            value = sample()
+            class Rows:
+                def read(self):
+                    return [dict(event='ready', monitor_pid=17, thread_main=True,
+                                 protocol_version=3, nonce='domain', clock_domain=CLOCK_DOMAIN),
+                            dict(value, protocol_version=3, nonce='domain')]
+            with patch.object(supervise.sys, 'platform', 'darwin'), \
+                 patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+                 patch.object(supervise.time, 'clock_gettime_ns', return_value=value['end_ns'] + age), \
+                 patch.object(supervise.time, 'monotonic_ns', return_value=36_000_000):
+                stream = ObservationStream(Rows(), FakeMonitor(), 'domain')
+                action = stream.pump()
+                self.assertEqual(action.reason if action else None, expected)
+
+    def test_postjoin_default_factory_uses_uptime_without_epoch_offset(self):
+        class Stream:
+            integrity = True
+            last_valid_sample = None
+            policy = GuardPolicy()
+            def pump(self):
+                self.last_valid_sample = dict(begin_ns=BASE_NS + 2_000_000)
+        with patch.object(supervise.sys, 'platform', 'darwin'), \
+             patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
+             patch.object(supervise.time, 'clock_gettime_ns', return_value=BASE_NS + 3_000_000), \
+             patch.object(supervise.time, 'monotonic_ns', side_effect=AssertionError('process epoch forbidden')):
+            self.assertTrue(post_join_barrier(Stream(), BASE_NS + 1_000_000))
+
+    def test_no_darwin_monotonic_binding_outside_explicit_test_fallback(self):
+        source = Path(__file__).with_name('supervise.py').read_text()
+        self.assertEqual(source.count('time.monotonic_ns()'), 1)
+        self.assertNotIn('time.monotonic()', source)
+        self.assertNotIn('clock=time.monotonic', source)
+        self.assertIn("value = reader(clock_id)", source)
+        swift = Path(__file__).with_name('interference.swift').read_text()
+        self.assertIn('DispatchTime.now().uptimeNanoseconds', swift)
+        self.assertIn('envelope["clock_domain"] = "darwin_uptime_raw_ns"', swift)
 
 
 if __name__ == '__main__':

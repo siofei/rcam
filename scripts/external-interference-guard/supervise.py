@@ -14,7 +14,7 @@ import sys
 import time
 import uuid
 
-from guard_policy import GuardPolicy, MAX_SAMPLE_GAP_NS, validate_sample
+from guard_policy import GuardPolicy, MAX_SAMPLE_GAP_NS, validate_sample, CLOCK_DOMAIN
 
 # Configure the checkout locally; never publish an operator's filesystem path.
 ROOT = Path(os.environ['RCAM_GUARD_ROOT']) if os.environ.get('RCAM_GUARD_ROOT') else None
@@ -34,6 +34,32 @@ MONITOR_ARM_LIMIT_NS = 5_000_000_000
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+class ClockUnavailableError(RuntimeError):
+    """Required uptime cannot be read; never substitute another absolute clock."""
+
+
+def system_uptime_ns():
+    """Match Swift Dispatch uptime; Darwin Python3.9 monotonic is process-local."""
+    try:
+        if sys.platform == 'darwin':
+            clock_id = getattr(time, 'CLOCK_UPTIME_RAW', None)
+            if type(clock_id) is not int:
+                raise ClockUnavailableError('Darwin CLOCK_UPTIME_RAW unavailable')
+            reader = getattr(time, 'clock_gettime_ns', None)
+            if not callable(reader):
+                raise ClockUnavailableError('Darwin clock_gettime_ns unavailable')
+            value = reader(clock_id)
+        else:
+            value = time.monotonic_ns()  # Synthetic/background tests only.
+    except ClockUnavailableError:
+        raise
+    except (OSError, ValueError, TypeError, OverflowError) as error:
+        raise ClockUnavailableError('system uptime unavailable: ' + str(error)) from error
+    if type(value) is not int or value <= 0:
+        raise ClockUnavailableError('invalid system uptime clock')
+    return value
 
 
 def utc():
@@ -88,11 +114,11 @@ class FileTail:
 
 class ObservationStream:
     """Inject a clock and an owned monitor handle for deterministic tests."""
-    def __init__(self, tail, monitor, nonce, policy=None, clock=time.monotonic_ns):
+    def __init__(self, tail, monitor, nonce, policy=None, clock=None):
         self.tail, self.monitor, self.nonce = tail, monitor, nonce
         self.policy = policy or GuardPolicy()
-        self.clock = clock
-        self.created_ns = clock()
+        self.clock = clock or system_uptime_ns
+        self.created_ns = self.clock()
         self.ready = False
         self.last_sample_ns = None
         self.records = []
@@ -107,8 +133,8 @@ class ObservationStream:
         self.actions = []
         try:
             for row in self.tail.read():
-                require(type(row) is dict and type(row.get('protocol_version')) is int and row.get('protocol_version') == 2 and
-                        row.get('nonce') == self.nonce, 'monitor envelope')
+                require(type(row) is dict and type(row.get('protocol_version')) is int and row.get('protocol_version') == 3 and
+                        row.get('nonce') == self.nonce and row.get('clock_domain') == CLOCK_DOMAIN, 'monitor envelope')
                 event = row.get('event')
                 if event == 'ready':
                     require(not self.ready and row.get('monitor_pid') == self.monitor.pid and
@@ -206,22 +232,42 @@ def discover_native(previous, binary, expected_run_id=None):
     return matches[0] if matches else None
 
 
-def interrupt_and_join(runner, reason, base, deadline, clock=time.monotonic):
-    """Only the owned Popen runner gets SIGINT; its finally cleans its children."""
-    if runner.poll() is None:
+def interrupt_and_join(runner, reason, base, deadline_ns=None, clock=None,
+                       signal_already_sent=False, clock_errors=None):
+    """Signal the owned runner before any clock query, then bounded relative wait.
+
+    An unreadable absolute clock never prevents SIGINT. For a fresh cleanup only,
+    a relative Popen.wait may use the existing cleanup reserve. If SIGINT was sent
+    earlier, clock loss cannot reset that budget: use a zero-time join check.
+    """
+    clock = clock or system_uptime_ns
+    if runner.poll() is not None:
+        runner.wait(timeout=0)
+        return True
+    if not signal_already_sent:
         runner.send_signal(signal.SIGINT)
         write(base / 'controlled-interrupt.json', {
             'runner_pid': runner.pid, 'signal': int(signal.SIGINT), 'reason': reason,
             'scope': 'only this launched runner; its finally owns app/producer cleanup'})
+    reserve = CLEANUP_SECONDS - MONITOR_STOP_SECONDS - POST_JOIN_BARRIER_SECONDS
     try:
-        runner.wait(timeout=max(0, deadline - clock() - MONITOR_STOP_SECONDS - POST_JOIN_BARRIER_SECONDS))
+        now_ns = clock()
+        timeout = (reserve if deadline_ns is None else
+                   max(0, (deadline_ns - now_ns) / 1e9 - MONITOR_STOP_SECONDS - POST_JOIN_BARRIER_SECONDS))
+    except ClockUnavailableError as error:
+        if clock_errors is not None:
+            clock_errors.append(str(error))
+        timeout = 0 if signal_already_sent else reserve
+    try:
+        runner.wait(timeout=timeout)
         return True
     except subprocess.TimeoutExpired:
         return False  # No killall, group signal, or forced app/runner kill.
 
 
-def post_join_barrier(stream, joined_at_ns, clock=time.monotonic_ns, sleep=time.sleep):
+def post_join_barrier(stream, joined_at_ns, clock=None, sleep=time.sleep):
     """Cover the entire owned runner interval with a genuinely post-join sample."""
+    clock = clock or system_uptime_ns
     deadline_ns = joined_at_ns + MAX_SAMPLE_GAP_NS
     while True:
         stream.pump()
@@ -271,6 +317,7 @@ def run(base=None):
                  'monitor-compile.stderr', 'monitor-compile.json', 'runner.stdout', 'runner.stderr',
                  'monitor.stdout', 'monitor.stderr', 'SUPERVISOR_RESULT.json', 'workflow-reopen1'):
         require(not (base / name).exists(), 'fresh external evidence directory required: ' + name)
+    system_uptime_ns()  # Fail before compiler/monitor/runner if the required clock is unavailable.
     compile_command = ['/usr/bin/swiftc', '-parse-as-library', '-swift-version', '6',
                        '-strict-concurrency=complete', '-warnings-as-errors',
                        str(base / 'interference.swift'), '-o', str(base / 'interference-monitor')]
@@ -279,7 +326,7 @@ def run(base=None):
     write(base / 'monitor-compile.json', {'command': compile_command, 'exit_code': compiled.returncode})
     require(compiled.returncode == 0, 'monitor compilation failed')
     nonce = str(uuid.uuid4())
-    control = {'protocolVersion': 2, 'nonce': nonce, 'commandID': 0,
+    control = {'protocolVersion': 3, 'nonce': nonce, 'commandID': 0,
                'runnerPID': 0, 'appPID': 0, 'binaryPath': None, 'native': None,
                'runID': None}
     control_path = base / 'monitor-control.json'
@@ -288,12 +335,16 @@ def run(base=None):
     runner = monitor = tail = None
     native = request = owned = None
     interrupted = None
-    execution_started = None
+    execution_started_ns = None
     joined = monitor_joined = barrier_satisfied = False
     joined_at_ns = None
     stream = None
-    launched_at = time.monotonic()
+    launched_at_ns = None
+    cleanup_deadline_ns = None
+    interrupt_sent = False
+    clock_errors = []
     try:
+        launched_at_ns = system_uptime_ns()
         with (base / 'runner.stdout').open('xb') as out, (base / 'runner.stderr').open('xb') as err, \
              (base / 'monitor.stdout').open('xb') as mout, (base / 'monitor.stderr').open('xb') as merr:
             monitor = subprocess.Popen([str(base / 'interference-monitor'), str(control_path), nonce],
@@ -310,13 +361,13 @@ def run(base=None):
             if interrupted is None:
                 previous = set(Path('/tmp').glob('rcam-pmix-*'))
                 runner = subprocess.Popen(command, cwd=ROOT, stdout=out, stderr=err)
-                execution_started = time.monotonic()
+                execution_started_ns = system_uptime_ns()
                 stream.expected_runner_pid = runner.pid
                 control.update(commandID=control['commandID'] + 1, runnerPID=runner.pid)
                 write(control_path, control)
                 write(base / 'runner-launch.json', {
                     'pid': runner.pid, 'command': command, 'utc': utc(),
-                    'nonce': nonce, 'armed_baseline_seq': stream.policy.previous['seq'],
+                    'nonce': nonce, 'clock_domain': CLOCK_DOMAIN, 'armed_baseline_seq': stream.policy.previous['seq'],
                     'soft_deadline_seconds': EXECUTION_SECONDS,
                     'cleanup_reserve_seconds': CLEANUP_SECONDS,
                     'scope': 'single own-window capture microcheck; preserve; no retry'})
@@ -330,7 +381,7 @@ def run(base=None):
                         joined = True
                         if code != 0:
                             interrupted = 'RUNNER_NONZERO_EXIT'
-                        joined_at_ns = time.monotonic_ns()
+                        joined_at_ns = system_uptime_ns()
                         break
                     if native is None:
                         match = discover_native(previous, binary)
@@ -344,44 +395,65 @@ def run(base=None):
                                 'native': str(native), 'pid': owned['pid'], 'run_id': request['run_id'],
                                 'binary_path': str(binary), 'binary_sha256': BINARY_SHA,
                                 'scope': 'candidate only; monitor must verify live parent/start/executable'})
-                    if time.monotonic() - execution_started > EXECUTION_SECONDS:
+                    if system_uptime_ns() - execution_started_ns > EXECUTION_SECONDS * 1_000_000_000:
                         interrupted = 'MICROCHECK_EXECUTION_DEADLINE'
                         break
                     time.sleep(.01)
                 if interrupted is not None and runner.poll() is None:
-                    cleanup_deadline = time.monotonic() + CLEANUP_SECONDS
+                    cleanup_deadline_ns = system_uptime_ns() + CLEANUP_SECONDS * 1_000_000_000
                     # Keep monitoring during SIGINT/wait; do not block on wait(40).
                     runner.send_signal(signal.SIGINT)
+                    interrupt_sent = True
                     write(base / 'controlled-interrupt.json', {
                         'runner_pid': runner.pid, 'signal': int(signal.SIGINT), 'reason': interrupted,
                         'scope': 'only this launched runner; its finally owns app/producer cleanup'})
-                    while runner.poll() is None and time.monotonic() < cleanup_deadline - MONITOR_STOP_SECONDS - POST_JOIN_BARRIER_SECONDS:
+                    while runner.poll() is None and system_uptime_ns() < cleanup_deadline_ns - int((MONITOR_STOP_SECONDS + POST_JOIN_BARRIER_SECONDS) * 1e9):
                         stream.pump()  # Terminal policy retains the original cause; raw records continue.
                         time.sleep(.01)
                     joined = runner.poll() is not None
                     if joined:
-                        joined_at_ns = time.monotonic_ns()
+                        joined_at_ns = system_uptime_ns()
                 elif runner is not None:
                     joined = runner.poll() is not None
                     if joined and joined_at_ns is None:
-                        joined_at_ns = time.monotonic_ns()
+                        joined_at_ns = system_uptime_ns()
     except BaseException as error:
         interrupted = interrupted or 'SUPERVISOR_EXCEPTION: ' + type(error).__name__ + ': ' + str(error)
+        if isinstance(error, ClockUnavailableError):
+            clock_errors.append(str(error))
+            if stream is not None:
+                stream.integrity = False
+                stream.policy.stop('CLOCK_UNAVAILABLE', {'error': str(error)})
         if runner is not None:
             if runner.poll() is None:
-                joined = interrupt_and_join(runner, interrupted, base, time.monotonic() + CLEANUP_SECONDS)
+                previous_signal = interrupt_sent
+                interrupt_sent = True
+                joined = interrupt_and_join(runner, interrupted, base, cleanup_deadline_ns,
+                                            signal_already_sent=previous_signal,
+                                            clock_errors=clock_errors)
             else:
                 joined = True
             if joined:
-                joined_at_ns = time.monotonic_ns()
+                try:
+                    joined_at_ns = system_uptime_ns()
+                except ClockUnavailableError as clock_error:
+                    clock_errors.append(str(clock_error))
+                    joined_at_ns = None
         if isinstance(error, (SystemExit, KeyboardInterrupt)):
             # Still write the result after owned cleanup; never let an interrupt skip it.
             pass
     finally:
         if runner is not None and joined and stream is not None:
-            joined_at_ns = joined_at_ns if joined_at_ns is not None else time.monotonic_ns()
-            barrier_satisfied = post_join_barrier(stream, joined_at_ns,
-                                                 clock=time.monotonic_ns, sleep=time.sleep)
+            if joined_at_ns is None:
+                interrupted = interrupted or 'JOIN_CLOCK_UNAVAILABLE'
+            else:
+                try:
+                    barrier_satisfied = post_join_barrier(stream, joined_at_ns,
+                                                         clock=system_uptime_ns, sleep=time.sleep)
+                except ClockUnavailableError as clock_error:
+                    clock_errors.append(str(clock_error))
+                    stream.integrity = False
+                    stream.policy.stop('CLOCK_UNAVAILABLE', {'error': str(clock_error)})
             if stream.policy.terminal:
                 interrupted = interrupted or stream.policy.terminal.reason
             if not barrier_satisfied:
@@ -394,13 +466,24 @@ def run(base=None):
                 interrupted = interrupted or 'MONITOR_UNEXPECTED_FINAL_EXIT'
         if tail is not None:
             tail.close()
+        duration_seconds = None
+        if launched_at_ns is not None:
+            try:
+                duration_seconds = (system_uptime_ns() - launched_at_ns) / 1e9
+            except ClockUnavailableError as clock_error:
+                clock_errors.append(str(clock_error))
+        if clock_errors:
+            interrupted = interrupted or 'CLOCK_UNAVAILABLE'
         receipt = {
             'runner_pid': runner.pid if runner else None,
             'actual_exit_code': runner.returncode if runner else None,
             'joined': joined, 'interrupted': interrupted,
             'cleanup_timeout': bool(runner and not joined and runner.returncode is None),
             'execution_budget_seconds': EXECUTION_SECONDS, 'cleanup_budget_seconds': CLEANUP_SECONDS,
-            'duration_seconds': time.monotonic() - launched_at,
+            'duration_seconds': duration_seconds,
+            'clock_unavailable': bool(clock_errors),
+            'clock_error': clock_errors[0] if clock_errors else None,
+            'clock_domain': CLOCK_DOMAIN,
             'native_directory': str(native) if native else None,
             'run_id': request['run_id'] if request else None,
             'monitor_pid': monitor.pid if monitor else None,
