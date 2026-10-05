@@ -116,9 +116,7 @@ pub fn readbacks_drained() -> bool {
         .is_some_and(|c| c.quiesced && !c.pending)
 }
 pub fn finish() -> Option<Value> {
-    let Some(capture) = CAPTURE.get() else {
-        return None;
-    };
+    let capture = CAPTURE.get()?;
     let owned = capture.lock().unwrap().take();
     if let Some(mut c) = owned {
         drop(c.writer.take());
