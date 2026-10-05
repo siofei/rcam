@@ -5,17 +5,23 @@ Small media are parser fixtures, never genuine native acquisition evidence.
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
+import shutil
 import tempfile
+import subprocess
+import time
 import unittest
 import zlib
 import sys
+from unittest.mock import patch
+import run_pmix_capture_preflight as preflight
 from verify_pmix_evidence import evidence_layout, gate_ledger
 from verify_pmix_capture import capture_receipts, mov_info, png_info
 from run_pmix_native import WINDOW_SWIFT
 from pmix_capture_swift import SOURCE
-from run_pmix_capture_preflight import validate_probe, initialization_readiness, helper_run, validate_process
+from run_pmix_capture_preflight import validate_probe, initialization_readiness, helper_run, validate_process, validate_toolchain
 from test_pmix_owned_command import OwnedCommands
 PRODUCER_SHA=hashlib.sha256(b'unit-producer').hexdigest()
 
@@ -50,7 +56,12 @@ class Guards(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(prefix='rcam-pmix-guards-')
         self.root=Path(self.temp.name)
-    def tearDown(self):self.temp.cleanup()
+    def tearDown(self):
+        retained=os.environ.get('RCAM_PMIX_GUARD_TEST_OUT')
+        if retained:
+            destination=Path(retained)/self.id().split('.')[-1];destination.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copytree(self.root,destination)
+        self.temp.cleanup()
     def reject(self,fn,reason):
         with self.assertRaisesRegex(ValueError,reason):fn()
     def envelope(self):
@@ -256,9 +267,98 @@ class Guards(unittest.TestCase):
         command=[sys.executable,'-c','print("unit")'];helper_run(command,self.root,'receipt-child',5)
         original=json.loads((self.root/'receipt-child.process.json').read_text())
         launch=json.loads((self.root/'receipt-child.launch.json').read_text())
-        for key,value in [('timed_out',True),('signal',6),('joined',False),('result','FAIL'),('pid',999)]:
+        for key,value in [('timed_out',True),('signal',6),('joined',False),('result','FAIL'),('pid',999),
+                          ('pgid',999),('private_session',False),('owned_group_released',False),('signals_sent',[15]),
+                          ('timeout_seconds',999),('cleanup_grace_seconds',999)]:
             with self.subTest(key=key):
                 row=dict(original);row[key]=value
                 self.reject(lambda:validate_process(row,launch,command,0,original['pid']),'actual')
+
+    def test_background_descendant_stdio_cleanup_leaves_owned_sentinel_running(self):
+        # Real owned Python processes only. The leader reaps its child when the
+        # private group receives TERM; leader-only termination would wait forever.
+        child=[sys.executable,'-c','import signal; signal.pause()']
+        sentinel=subprocess.Popen(child,start_new_session=True)
+        try:
+            program='\n'.join(['import signal,subprocess,sys,json',f'child=subprocess.Popen({child!r})',
+                'def stop(sig,frame):',' child.wait(timeout=1)',' sys.exit(0)',
+                'signal.signal(signal.SIGTERM,stop)','print(json.dumps({"child":child.pid}),flush=True)',
+                'print("descendant-stderr",file=sys.stderr,flush=True)','signal.pause()'])
+            started=time.monotonic()
+            self.reject(lambda:helper_run([sys.executable,'-c',program],self.root,'descendant-child',.25,grace=1),
+                        'timeout/launch/communication/cleanup')
+            row=json.loads((self.root/'descendant-child.process.json').read_text())
+            self.assertLess(time.monotonic()-started,2.5)
+            self.assertTrue(row['timed_out']);self.assertTrue(row['joined']);self.assertTrue(row['owned_group_released'])
+            self.assertEqual(row['signals_sent'],[15]);self.assertNotEqual(row['pgid'],sentinel.pid)
+            descendant=json.loads((self.root/'descendant-child.stdout').read_text())['child']
+            with self.assertRaises(ProcessLookupError):os.kill(descendant,0)
+            self.assertEqual((self.root/'descendant-child.stderr').read_text(),'descendant-stderr\n')
+            self.assertIsNone(sentinel.poll())
+        finally:sentinel.terminate();sentinel.wait(timeout=2)
+
+    def test_background_term_refusal_kill_and_spawn_failure_retained(self):
+        command=[sys.executable,'-c','import signal,sys; signal.signal(signal.SIGTERM,signal.SIG_IGN); print("kill-output",flush=True); print("kill-error",file=sys.stderr,flush=True); signal.pause()']
+        started=time.monotonic()
+        self.reject(lambda:helper_run(command,self.root,'kill-child',.25,grace=.2),'timeout/launch/communication/cleanup')
+        row=json.loads((self.root/'kill-child.process.json').read_text())
+        self.assertLess(time.monotonic()-started,1.5);self.assertEqual(row['signals_sent'],[15,9])
+        self.assertEqual(row['exit_code'],-9);self.assertTrue(row['joined']);self.assertTrue(row['owned_group_released'])
+        self.assertEqual((self.root/'kill-child.stdout').read_text(),'kill-output\n')
+        self.assertEqual((self.root/'kill-child.stderr').read_text(),'kill-error\n')
+        self.reject(lambda:helper_run(['/nonexistent/rcam-owned-helper'],self.root,'missing-child',1),'timeout/launch/communication/cleanup')
+        row=json.loads((self.root/'missing-child.process.json').read_text())
+        self.assertIsNone(row['pid']);self.assertFalse(row['joined']);self.assertFalse(row['owned_group_released'])
+        self.assertEqual(row['result'],'FAIL');self.assertEqual((self.root/'missing-child.stdout').read_bytes(),b'')
+
+    def test_background_sdk_timeout_stops_before_any_probe(self):
+        calls=[]
+        def adapter(command,out,name,timeout):
+            calls.append((command,name,timeout))
+            # Only synthetic Python adapters run. No compiler, SDK or framework.
+            code='import signal; signal.pause()' if name=='sdk-path' else 'print("synthetic-toolchain")'
+            return helper_run([sys.executable,'-c',code],out,name,min(timeout,.25),grace=.2)
+        out=self.root/'sdk-timeout'
+        with patch.object(preflight.platform,'system',return_value='Darwin'),patch.object(preflight,'helper_run',adapter):
+            self.reject(lambda:preflight.run(out),'timeout/launch/communication/cleanup')
+        self.assertEqual([(name,limit) for _,name,limit in calls],[('compile',120),('swift-version',10),('sdk-path',10)])
+        self.assertEqual(calls[1][0],['/usr/bin/swiftc','--version'])
+        self.assertEqual(calls[2][0],['/usr/bin/xcrun','--show-sdk-path'])
+        self.assertFalse((out/'RESULTS.json').exists());self.assertFalse((out/'probe-initialization.launch.json').exists())
+        for name in ('compile','swift-version','sdk-path'):
+            self.assertTrue((out/(name+'.launch.json')).exists());self.assertTrue((out/(name+'.process.json')).exists())
+        self.assertTrue(json.loads((out/'sdk-path.process.json').read_text())['timed_out'])
+
+    def test_background_toolchain_receipt_positive_and_resealed_negatives(self):
+        # Invented receipts for verifier-only tests, explicitly not SDK proof.
+        producer='/unit/capture-producer';compile_command=['/usr/bin/swiftc','-swift-version','5','-parse-as-library','/unit/capture.swift','-o',producer]
+        receipt={'command':compile_command,'exit_code':0,'swift_version':'unit-version\n','sdk':'unit-sdk\n'}
+        originals={}
+        for index,(name,command,limit,raw) in enumerate([('compile',compile_command,120,''),
+             ('swift-version',['/usr/bin/swiftc','--version'],10,receipt['swift_version']),('sdk-path',['/usr/bin/xcrun','--show-sdk-path'],10,receipt['sdk'])]):
+            row={'schema_version':2,'scope':'owned background helper process; no native acceptance','result':'RETURNED',
+                 'pid':100+index,'pgid':100+index,'command':command,'exit_code':0,'signal':None,'private_session':True,
+                 'timed_out':False,'joined':True,'owned_group_released':True,'error':None,'signals_sent':[],
+                 'timeout_seconds':limit,'cleanup_grace_seconds':2,'started_monotonic_ns':index*10+1,'finished_monotonic_ns':index*10+2}
+            originals[name]=row;write(self.root/(name+'.process.json'),row)
+            write(self.root/(name+'.launch.json'),{key:row[key] for key in ('pid','pgid','private_session','command','timeout_seconds','started_monotonic_ns')})
+            (self.root/(name+'.stdout')).write_text(raw);(self.root/(name+'.stderr')).write_text('')
+        validate_toolchain(self.root,receipt,producer)
+        for name,key,value in [('compile','owned_group_released',False),('swift-version','timeout_seconds',120),('sdk-path','private_session',False)]:
+            row=dict(originals[name]);row[key]=value;write(self.root/(name+'.process.json'),row)
+            self.reject(lambda:validate_toolchain(self.root,receipt,producer),'actual')
+            write(self.root/(name+'.process.json'),originals[name]);validate_toolchain(self.root,receipt,producer)
+        (self.root/'sdk-path.stdout').write_text('resealed-sdk\n')
+        self.reject(lambda:validate_toolchain(self.root,receipt,producer),'raw toolchain')
+
+    def test_background_preflight_has_no_pipe_or_unbounded_subprocess_calls(self):
+        import ast
+        tree=ast.parse(Path(preflight.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute):
+                self.assertNotIn(node.func.attr,('run','check_output','communicate'))
+                if node.func.attr=='wait':self.assertTrue(any(key.arg=='timeout' for key in node.keywords))
+                if node.func.attr=='Popen':
+                    self.assertTrue(any(key.arg=='start_new_session' and isinstance(key.value,ast.Constant) and key.value.value is True for key in node.keywords))
 
 if __name__=='__main__':unittest.main()

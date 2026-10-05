@@ -16,7 +16,7 @@ from run_pmix_gates import COMMANDS
 from verify_pmix_native import verify as verify_native
 from verify_pmix_workflow import parse_json
 from pmix_capture_swift import SOURCE as CAPTURE_SOURCE
-from run_pmix_capture_preflight import CASES as CAPTURE_CASES, validate_probe, validate_process
+from run_pmix_capture_preflight import CASES as CAPTURE_CASES, validate_probe, validate_process, validate_toolchain
 from verify_pmix_capture import mov_info
 from verify_s5m2_evidence import load, require, safe
 
@@ -180,7 +180,7 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
         state=validate_probe(row['receipt'],selection)
         name=expected_mode[2:]
         validate_process(load(capture_root/(name+'.process.json')),load(capture_root/(name+'.launch.json')),
-                         row['command'],row['exit_code'],row['receipt']['producer_pid'])
+                         row['command'],row['exit_code'],row['receipt']['producer_pid'],15)
         require([parse_json(line.encode()) for line in (capture_root/(expected_mode[2:]+'.stdout')).read_text().splitlines()]==[row['receipt']]
                 and not (capture_root/(expected_mode[2:]+'.stderr')).read_bytes()
                 and type(row['exit_code']) is int and row['exit_code']==(0 if state=='INITIALIZATION_ONLY_PASS' else 2), 'initialization actual exit/raw receipt')
@@ -188,13 +188,12 @@ def verify(root, *, expected_source, expected_commit, expected_binary, expected_
             and capture['probes'][0]['receipt']['existing_screen_access'] is True
             and capture['probes'][1]['receipt']['result']=='BLOCKED', 'capture initialization constructor/access still blocked')
     compile_receipt=load(capture_root/'compile.json')
-    require(type(compile_receipt['exit_code']) is int and compile_receipt['exit_code']==0
-            and compile_receipt['command'][:4]==['/usr/bin/swiftc','-swift-version','5','-parse-as-library'], 'capture SDK compile receipt')
+    validate_toolchain(capture_root,compile_receipt,capture['probes'][0]['command'][0])
     require([(row['mode'],row['exit_code'],row['samples']) for row in capture['cases']]==CAPTURE_CASES, 'actual writer lifecycle matrix')
     for row in capture['cases']:
         mode=row['mode']; raw=(capture_root/(mode+'.stdout')).read_text()
         validate_process(load(capture_root/(mode+'.process.json')),load(capture_root/(mode+'.launch.json')),
-                         row['command'],row['exit_code'],row['producer_pid'])
+                         row['command'],row['exit_code'],row['producer_pid'],30)
         require(all(event.get('producer_pid',row['producer_pid'])==row['producer_pid'] for event in row['events']), 'actual writer child PID')
         require([parse_json(line.encode()) for line in raw.splitlines()]==row['events']
                 and not (capture_root/(mode+'.stderr')).read_bytes(), 'actual writer raw events/stderr: '+mode)

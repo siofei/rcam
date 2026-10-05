@@ -577,3 +577,50 @@ blocking close of a live reader. Added synthetic runner integration cases for
 a joined producer whose descendant keeps stderr open and Thread.start failure;
 assert owned descendants gone, app closed, display adapter preserved, failure
 receipts saved. These are explicitly synthetic, never native startup evidence.
+
+### Cloud Git-baseline background preflight bounds (2026-10-04)
+
+The user selected https://github.com/siofei/rcam.git for remaining development.
+The clean default-branch checkpoint is c0d2570d552e6129410c3c4601d6bdf35018f448,
+with all668 source-file hashes matching manifest3bdf8744597ccb1860e64c4af4d5d9c3a1e5ef0762246a8131f2eadefc346433.
+This supersedes the failed cloud Library migration's stale e9 snapshot. Prior
+31-gate binaries still identify34ccaa42-dirty and are historical; identical source
+bytes do not allow relabelling them as clean c0d2570 build/native evidence.
+
+One remaining background-tool lifecycle defect was reproduced using only owned
+Python fixture processes: helper_run's leader-only TERM/KILL and unbounded final
+communicate waited on a descendant's inherited stdout/stderr beyond an outer4s
+bound after a0.15s timeout, without saving its final process receipt. No SDK,
+window, capture, display or user process was involved. Original reproduction/raw
+data remains separate from source and never counts as native acceptance.
+
+Scope remains S5-M2-C, R01/R18/R19/R21/R22 and the existing AT mappings. Allowed
+repair modules: run_pmix_capture_preflight, verify_pmix_evidence, existing guard
+tests, this task book and manifest. No Swift helper, product/runtime, workload,
+geometry, performance threshold, frozen31 Cargo command or native runner changes.
+Background compiler, Swift version, SDK query, probe and synthetic writer commands
+now all use file-backed raw stdout/stderr, DEVNULL stdin and a newly allocated
+private session/group. Timeout/error bounds TERM/KILL/wait to that owned group
+only, preserving immediate launch and final PID/PGID/exit/signal/timeout/join/
+group-release receipts. Compilation remains120s, version/SDK queries10s, probes15s
+and synthetic writers30s; cleanup adds at most two2s grace periods after spawn.
+Process creation and filesystem I/O are not claimed interruptible. No successful
+receipt permits timeout, cleanup signals or unreleased descendants. The portable
+verifier binds exact compiler/version/SDK argv, limits, raw text and process clocks,
+in addition to the externally frozen gate ledger and complete raw-file inventory.
+
+Five added mandatory guard tests cover real descendant descriptor cleanup with
+an unrelated owned sentinel untouched, TERM refusal/KILL and spawn failure, SDK
+timeout reaching retained failure evidence before any framework probe, resealed
+compiler/SDK receipt refusal, and absence of pipe/unbounded subprocess operations.
+The guard entry now contains32 cases (including the unchanged six native-runner
+owned-command cases), plus unchanged15 lifecycle cases. Linux auxiliary execution
+passed46 portable cases:26 guard cases, five portable native-runner command cases
+and15 lifecycle cases. The existing Mac-only synthetic native-runner integration
+case was not executed on Linux. This does not add Linux product support or earn
+Mac/native PASS. No Rust toolchain is installed in that cloud environment; no
+installation or build was attempted. Fresh Mac full31 gates, all47 Python cases,
+actual SDK/probe/writer checks, clean committed public/internal builds and the
+coordinated preserve-mode owned-window precheck remain required. Real capture
+startup/first-frame/final MOV, full12 native matrix and authentic full48 attacks
+remain NOT_EXECUTED; noncanvas flicker remains OPEN.

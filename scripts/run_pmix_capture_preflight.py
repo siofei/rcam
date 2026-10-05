@@ -5,12 +5,14 @@ No owned-window capture, GUI, or display setting is used by this preflight.
 import argparse
 import hashlib
 import json
+import math
 import platform
 import subprocess
 import time
 from pathlib import Path
 
 from pmix_capture_swift import SOURCE
+from pmix_owned_command import GRACE, drain_owned_group, group_present
 from verify_pmix_capture import mov_info
 from verify_s5m2_evidence import require
 
@@ -74,43 +76,84 @@ def initialization_readiness(probe):
     return 'PASS' if state=='INITIALIZATION_ONLY_PASS' and probe['existing_screen_access'] is True else 'BLOCKED'
 
 
-def helper_run(command, out, name, timeout):
-    """Only the owned child; preserve failure output and actual join on all paths."""
-    process=None;stdout=stderr=b'';timed_out=False;error=None;started=time.monotonic_ns()
+def helper_run(command, out, name, timeout, *, grace=GRACE):
+    """Bound this private process group without waiting for inherited pipe EOF."""
+    require(type(command) is list and command and all(type(arg) is str for arg in command)
+            and type(name) is str and name and all(c.isalnum() or c=='-' for c in name),
+            'background helper command/name')
+    require(type(timeout) in (int,float) and math.isfinite(timeout) and 0<timeout<=120
+            and type(grace) in (int,float) and math.isfinite(grace) and 0<grace<=GRACE,
+            'background helper bounds')
+    out=Path(out);process=None;timed_out=False;error=None;signals=[];released=False
+    started=time.monotonic_ns();stdout_path=out/(name+'.stdout');stderr_path=out/(name+'.stderr')
     try:
-        process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        write(out/(name+'.launch.json'),{'pid':process.pid,'command':command,'started_monotonic_ns':started})
-        try:stdout,stderr=process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out=True;process.terminate()
-            try:stdout,stderr=process.communicate(timeout=2)
-            except subprocess.TimeoutExpired:process.kill();stdout,stderr=process.communicate()
+        with stdout_path.open('xb') as stdout,stderr_path.open('xb') as stderr:
+            process=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,start_new_session=True)
+            write(out/(name+'.launch.json'),{'pid':process.pid,'pgid':process.pid,'private_session':True,
+                  'command':command,'timeout_seconds':timeout,'started_monotonic_ns':started})
+            try:process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:timed_out=True
+            if timed_out or process.poll() is None or group_present(process.pid):
+                released=drain_owned_group(process,signals,grace)
+                if not timed_out:error='owned background descendants remained after leader exit'
+            else:released=True
     except BaseException as exception:
         error=repr(exception)
-        if process is not None and process.poll() is None:
-            process.kill();stdout,stderr=process.communicate()
+        if process is not None:
+            try:released=drain_owned_group(process,signals,grace)
+            except BaseException as cleanup_error:error+='; cleanup: '+repr(cleanup_error)
     finally:
-        (out/(name+'.stdout')).write_bytes(stdout);(out/(name+'.stderr')).write_bytes(stderr)
         code=process.returncode if process is not None else None
         write(out/(name+'.process.json'),{'schema_version':2,'scope':'owned background helper process; no native acceptance',
               'pid':process.pid if process is not None else None,'command':command,'exit_code':code,
+              'pgid':process.pid if process is not None else None,'private_session':process is not None,
+              'timeout_seconds':timeout,'cleanup_grace_seconds':grace,'signals_sent':signals,'owned_group_released':released,
               'signal':-code if code is not None and code<0 else None,'timed_out':timed_out,
               'joined':code is not None,'error':error,'started_monotonic_ns':started,'finished_monotonic_ns':time.monotonic_ns(),
-              'result':'FAIL' if timed_out or error or code is None or code<0 else 'RETURNED'})
-    require(not timed_out and error is None, 'background helper timeout/launch/communication failure: '+name)
-    return subprocess.CompletedProcess(command,code,stdout.decode('utf-8'),stderr.decode('utf-8'))
+              'result':'FAIL' if timed_out or error or not released or code is None or code<0 else 'RETURNED'})
+    require(not timed_out and error is None and released, 'background helper timeout/launch/communication/cleanup failure: '+name)
+    return subprocess.CompletedProcess(command,code,stdout_path.read_bytes().decode('utf-8'),stderr_path.read_bytes().decode('utf-8'))
 
 
-def validate_process(row, launch, command, expected_exit, pid):
+def validate_process(row, launch, command, expected_exit, pid, timeout=None):
     require(type(row['schema_version']) is int and row['schema_version']==2
             and row['scope']=='owned background helper process; no native acceptance'
             and row['result']=='RETURNED' and row['timed_out'] is False and row['joined'] is True
-            and row['error'] is None and row['signal'] is None, 'actual background helper non-timeout join')
+            and row['error'] is None and row['signal'] is None and row['private_session'] is True
+            and row['owned_group_released'] is True and row['signals_sent']==[], 'actual background helper non-timeout join')
     require(type(row['pid']) is int and row['pid']==pid>0 and row['command']==command
+            and type(row['pgid']) is int and row['pgid']==pid
+            and type(row['timeout_seconds']) in (int,float) and math.isfinite(row['timeout_seconds'])
+            and 0<row['timeout_seconds']<=120 and (timeout is None or row['timeout_seconds']==timeout)
+            and type(row['cleanup_grace_seconds']) in (int,float) and math.isfinite(row['cleanup_grace_seconds'])
+            and 0<row['cleanup_grace_seconds']<=GRACE
             and type(row['exit_code']) is int and row['exit_code']==expected_exit
             and type(row['started_monotonic_ns']) is int and row['started_monotonic_ns']>0
             and type(row['finished_monotonic_ns']) is int and row['finished_monotonic_ns']>row['started_monotonic_ns']
-            and launch=={key:row[key] for key in ('pid','command','started_monotonic_ns')}, 'actual helper launch/PID/exit/clock')
+            and launch=={key:row[key] for key in ('pid','pgid','private_session','command','timeout_seconds','started_monotonic_ns')}, 'actual helper launch/PID/exit/clock')
+
+
+def validate_toolchain(directory, receipt, producer_path):
+    """Bind the complete reviewed compiler/version/SDK commands and raw outputs."""
+    directory=Path(directory);producer=Path(producer_path)
+    require(producer.is_absolute() and producer.name=='capture-producer', 'capture compiled producer path')
+    command=['/usr/bin/swiftc','-swift-version','5','-parse-as-library',str(producer.with_name('capture.swift')),'-o',str(producer)]
+    require(receipt['command']==command and type(receipt['exit_code']) is int and receipt['exit_code']==0,
+            'capture SDK compile receipt')
+    rows=[]
+    for name,argv,timeout,field in [('compile',command,120,None),
+                                  ('swift-version',['/usr/bin/swiftc','--version'],10,'swift_version'),
+                                  ('sdk-path',['/usr/bin/xcrun','--show-sdk-path'],10,'sdk')]:
+        row=json.loads((directory/(name+'.process.json')).read_text())
+        launch=json.loads((directory/(name+'.launch.json')).read_text())
+        validate_process(row,launch,argv,0,row['pid'],timeout)
+        # All raw compiler bytes are covered by RESULTS.files and the external
+        # ledger; version/SDK text must also match the declared compiler receipt.
+        stdout=(directory/(name+'.stdout')).read_bytes();(directory/(name+'.stderr')).read_bytes()
+        if field:require(type(receipt[field]) is str and receipt[field]==stdout.decode('utf-8'), 'capture raw toolchain output: '+field)
+        rows.append(row)
+    require(all(a['finished_monotonic_ns']<b['started_monotonic_ns'] for a,b in zip(rows,rows[1:])),
+            'capture sequential toolchain process clocks')
 
 
 def run(out):
@@ -119,12 +162,16 @@ def run(out):
     source = out/'capture.swift'; source.write_text(SOURCE)
     binary = out/'capture-producer'
     command = ['/usr/bin/swiftc', '-swift-version', '5', '-parse-as-library', str(source), '-o', str(binary)]
-    result = subprocess.run(command, text=True, capture_output=True, timeout=120)
-    (out/'compile.stdout').write_text(result.stdout); (out/'compile.stderr').write_text(result.stderr)
-    write(out/'compile.json', {'command': command, 'exit_code': result.returncode,
-          'swift_version': subprocess.check_output(['/usr/bin/swiftc', '--version'], text=True),
-          'sdk': subprocess.check_output(['/usr/bin/xcrun', '--show-sdk-path'], text=True)})
+    result = helper_run(command,out,'compile',120)
+    write(out/'compile.json', {'command': command, 'exit_code': result.returncode})
     require(result.returncode == 0, 'capture producer compilation failed')
+    toolchain=helper_run(['/usr/bin/swiftc','--version'],out,'swift-version',10)
+    require(toolchain.returncode==0, 'capture toolchain query failed')
+    sdk=helper_run(['/usr/bin/xcrun','--show-sdk-path'],out,'sdk-path',10)
+    require(sdk.returncode==0, 'capture SDK query failed')
+    write(out/'compile.json', {'command': command, 'exit_code': result.returncode,
+          'swift_version':toolchain.stdout,'sdk':sdk.stdout})
+    validate_toolchain(out,json.loads((out/'compile.json').read_text()),str(binary))
     probes=[]
     for mode,selection in [('--probe-initialization','real-on-screen'),('--probe-no-window','own-window-none')]:
         command=[str(binary),mode];name=mode[2:];result=helper_run(command,out,name,15)
@@ -132,7 +179,7 @@ def run(out):
         require(not result.stderr and len(events)==1, 'actual initialization probe raw output')
         state=validate_probe(events[0],selection)
         validate_process(json.loads((out/(name+'.process.json')).read_text()),json.loads((out/(name+'.launch.json')).read_text()),
-                         command,result.returncode,events[0]['producer_pid'])
+                         command,result.returncode,events[0]['producer_pid'],15)
         require(type(result.returncode) is int and result.returncode==(0 if state=='INITIALIZATION_ONLY_PASS' else 2), 'actual initialization probe exit')
         if selection=='own-window-none':require(state=='BLOCKED', 'windowless helper negative must remain blocked')
         probes.append({'mode':mode,'command':command,'exit_code':result.returncode,'receipt':events[0]})
@@ -162,7 +209,7 @@ def run(out):
                     and not any(row['event'] == 'finished' for row in events)
                     and not movie.exists(), 'failed writer must not produce successful MOV: '+mode)
         process_receipt=json.loads((out/(mode+'.process.json')).read_text())
-        validate_process(process_receipt,json.loads((out/(mode+'.launch.json')).read_text()),command,result.returncode,process_receipt['pid'])
+        validate_process(process_receipt,json.loads((out/(mode+'.launch.json')).read_text()),command,result.returncode,process_receipt['pid'],30)
         require(all(row.get('producer_pid',process_receipt['pid'])==process_receipt['pid'] for row in events), 'writer actual child PID')
         rows.append({'mode': mode, 'command': command, 'exit_code': result.returncode, 'producer_pid':process_receipt['pid'], 'samples': samples,
                      'stdout_sha256': sha(out/(mode+'.stdout')), 'stderr_sha256': sha(out/(mode+'.stderr')),
