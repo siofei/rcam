@@ -66,6 +66,21 @@ There is no automatic retry. Do not relax the hash locks to bypass a mismatch.
 Do not include generated control files, receipts, process records, compilation or
 observation logs, raw captures, or archives in a public commit.
 
+## Locked product identity
+
+The four SHA-256 pins bind the artifacts for clean product commit
+`c8aa2885207709116950a3157d63b70535123f66`. The source manifest has 669 verified
+entries. The native runner file is unchanged from the previous pin set.
+
+- Manifest: `e0ae3aed5175ed735a5725d321293b574c93672ebd7dce8b23127b91a4cbc1ae`
+- Internal app: `13cd6e5cc985963197f2eb4288fce1458c37a57eb2deb9855a6581acf9afd69c`
+- Capture producer: `ef7984f492b3dcee31166bfdff432ec47589dbf0e24d03dc86c69f7535711a1c`
+- Native runner: `5251d99e4e6313590cde31aae17523d28039f07649de4168d6e992a1cd25eda7`
+
+This rebind changes no executable behavior. The short test remains one
+`workflow-reopen` round, own-window only, with display policy `preserve`.
+The formal 60 Hz twelve-flow run is separate and is not started by this guard.
+
 ## Shared clock domain
 
 Swift records `DispatchTime.now().uptimeNanoseconds`. On Darwin, Python reads

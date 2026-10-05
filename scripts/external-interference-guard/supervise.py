@@ -18,9 +18,9 @@ from guard_policy import GuardPolicy, MAX_SAMPLE_GAP_NS, validate_sample, CLOCK_
 
 # Configure the checkout locally; never publish an operator's filesystem path.
 ROOT = Path(os.environ['RCAM_GUARD_ROOT']) if os.environ.get('RCAM_GUARD_ROOT') else None
-MANIFEST_SHA = '242bb4c85ba62b234db3d9205b4c6843c97ca064a7a2b10ba0dab1941aae7b61'
-BINARY_SHA = '49ca772ba559c134316f7dcbc0e26c9dda734d1eff519d9b346051cb72831869'
-PRODUCER_SHA = '2f369f1dad76fdd81171b17dffe9e9d1d93caf4065f7ce88cf4dda073bbac9ef'
+MANIFEST_SHA = 'e0ae3aed5175ed735a5725d321293b574c93672ebd7dce8b23127b91a4cbc1ae'
+BINARY_SHA = '13cd6e5cc985963197f2eb4288fce1458c37a57eb2deb9855a6581acf9afd69c'
+PRODUCER_SHA = 'ef7984f492b3dcee31166bfdff432ec47589dbf0e24d03dc86c69f7535711a1c'
 RUNNER_SHA = '5251d99e4e6313590cde31aae17523d28039f07649de4168d6e992a1cd25eda7'
 EXECUTION_SECONDS = 190
 CLEANUP_SECONDS = 40

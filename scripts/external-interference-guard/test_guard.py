@@ -989,5 +989,20 @@ class DarwinClockDomainTests(unittest.TestCase):
         self.assertIn('envelope["clock_domain"] = "darwin_uptime_raw_ns"', swift)
 
 
+class ReboundProductIdentityTests(unittest.TestCase):
+    def test_four_pins_bind_clean_product_artifacts(self):
+        self.assertEqual({
+            'manifest': supervise.MANIFEST_SHA,
+            'binary': supervise.BINARY_SHA,
+            'producer': supervise.PRODUCER_SHA,
+            'runner': supervise.RUNNER_SHA,
+        }, {
+            'manifest': 'e0ae3aed5175ed735a5725d321293b574c93672ebd7dce8b23127b91a4cbc1ae',
+            'binary': '13cd6e5cc985963197f2eb4288fce1458c37a57eb2deb9855a6581acf9afd69c',
+            'producer': 'ef7984f492b3dcee31166bfdff432ec47589dbf0e24d03dc86c69f7535711a1c',
+            'runner': '5251d99e4e6313590cde31aae17523d28039f07649de4168d6e992a1cd25eda7',
+        })
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
