@@ -469,9 +469,34 @@ class OwnedLifecycleTests(unittest.TestCase):
             self.assertFalse(interrupt_and_join(runner, 'TEST', Path(directory), 40, clock=lambda: 1))
             self.assertEqual(runner.signals, [signal.SIGINT])
 
+    def test_candidate_marker_through_symlinked_fixture_root(self):
+        with tempfile.TemporaryDirectory() as outer:
+            parent = Path(outer).resolve(strict=True)
+            target = parent / 'real'
+            target.mkdir()
+            alias = parent / 'alias'
+            alias.symlink_to(target, target_is_directory=True)
+            with tempfile.TemporaryDirectory(dir=alias) as directory:
+                root = Path(directory).resolve(strict=True)
+                native = root / 'rcam-pmix-test'
+                native.mkdir()
+                binary = root / 'binary'
+                binary.write_text('synthetic')
+                request = dict(schema_version=2, mode='workflow-reopen', round=1,
+                               source_manifest_sha256=MANIFEST_SHA, display_policy='preserve',
+                               display_mode_change_authorized=False,
+                               run_id='00000000-0000-4000-8000-000000000001')
+                owned = dict(pid=43, command=[str(binary)], binary_sha256=BINARY_SHA)
+                (native / 'request.json').write_text(json.dumps(request))
+                (native / 'owned-process.json').write_text(json.dumps(owned))
+                with patch.object(Path, 'glob', return_value=[native]):
+                    found = discover_native(set(), binary)
+                self.assertEqual(found[0], native)
+                self.assertEqual(found[1], owned)
+
     def test_candidate_uses_exact_original_marker_fields(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve(strict=True)
             native = root / 'rcam-pmix-test'
             native.mkdir()
             binary = root / 'binary'
@@ -492,10 +517,10 @@ class OwnedLifecycleTests(unittest.TestCase):
 
 class InjectedSupervisorTests(unittest.TestCase):
     """Exercise the complete wrapper with deterministic owned-only fake actors."""
-    def exercise(self, fault=None):
-        temporary = tempfile.TemporaryDirectory()
+    def exercise(self, fault=None, temporary_parent=None):
+        temporary = tempfile.TemporaryDirectory(dir=temporary_parent)
         self.addCleanup(temporary.cleanup)
-        root = Path(temporary.name)
+        root = Path(temporary.name).resolve(strict=True)
         base = root / 'evidence'
         base.mkdir()
         product = root / 'product'
@@ -609,6 +634,20 @@ class InjectedSupervisorTests(unittest.TestCase):
                 supervise.run()
             launch.assert_not_called()
 
+    def test_symlinked_temporary_root_keeps_strict_hash_and_owned_identity(self):
+        # Model macOS /var -> /private/var without changing TMPDIR or production.
+        with tempfile.TemporaryDirectory() as outer:
+            root = Path(outer).resolve(strict=True)
+            target = root / 'real-temporary-parent'
+            target.mkdir()
+            alias = root / 'symlinked-temporary-parent'
+            alias.symlink_to(target, target_is_directory=True)
+            code, receipt, actors = self.exercise(temporary_parent=alias)
+            self.assertEqual(code, 0)
+            self.assertTrue(receipt['success'])
+            self.assertTrue(Path(receipt['native_directory']).is_relative_to(target))
+            self.assertEqual(actors[1].signals, [])
+
     def test_complete_wrapper_success_with_owned_finalized_cleanup(self):
         code, receipt, actors = self.exercise()
         self.assertEqual(code, 0)
@@ -645,7 +684,7 @@ class InjectedSupervisorTests(unittest.TestCase):
 class PostJoinRegressionTests(unittest.TestCase):
     def test_v2_detects_cleanup_input_after_last_sample_before_join(self):
         with tempfile.TemporaryDirectory(prefix='rcam-review-fixture-') as d:
-            root = Path(d)
+            root = Path(d).resolve(strict=True)
             base = root / 'evidence'; base.mkdir()
             product = root / 'product'; (product / 'scripts').mkdir(parents=True)
             (product / 'MANIFEST.sha256').write_text('synthetic')

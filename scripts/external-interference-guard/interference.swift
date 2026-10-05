@@ -24,7 +24,7 @@ struct Credential: Equatable {
         ["pid": pid, "parent_pid": parent, "start_seconds": seconds, "start_micros": micros]
     }
 }
-func clock() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
+func monotonicNowNS() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
 func credential(_ pid: Int32) -> Credential? {
     var info = proc_bsdinfo()
     let size = Int32(MemoryLayout<proc_bsdinfo>.stride)
@@ -33,7 +33,10 @@ func credential(_ pid: Int32) -> Credential? {
                       seconds: info.pbi_start_tvsec, micros: info.pbi_start_tvusec)
 }
 func executable(_ pid: Int32) -> String? {
-    var buffer = [CChar](repeating: 0, count: Int(PROC_PIDPATHINFO_MAXSIZE))
+    // SDK PROC_PIDPATHINFO_MAXSIZE is (4 * MAXPATHLEN); its expression macro
+    // is unavailable to Swift. Preserve that exact capacity, without a fallback.
+    let capacity = 4 * Int(MAXPATHLEN)
+    var buffer = [CChar](repeating: 0, count: capacity)
     let result = buffer.withUnsafeMutableBytes {
         proc_pidpath(pid, $0.baseAddress!, UInt32($0.count))
     }
@@ -59,13 +62,13 @@ let inventory: [(String, CGEventType)] = [
 func source(_ state: CGEventSourceStateID) -> [String: Any] {
     var rows: [String: Any] = [:]
     for (name, eventType) in inventory {
-        let begin = clock()
+        let begin = monotonicNowNS()
         let before = CGEventSource.counterForEventType(state, eventType: eventType)
-        let ageBegin = clock()
+        let ageBegin = monotonicNowNS()
         let age = CGEventSource.secondsSinceLastEventType(state, eventType: eventType)
-        let ageEnd = clock()
+        let ageEnd = monotonicNowNS()
         let after = CGEventSource.counterForEventType(state, eventType: eventType)
-        let end = clock()
+        let end = monotonicNowNS()
         // Quartz may use an infinite/DBL_MAX sentinel for an unseen event type.
         let available = age.isFinite && age >= 0 && age <= Double(end) / 1e9 + 1
         rows[name] = ["begin_ns": begin, "age_begin_ns": ageBegin,
@@ -74,11 +77,11 @@ func source(_ state: CGEventSourceStateID) -> [String: Any] {
                       "age_seconds": available ? (age as Any) : NSNull()]
     }
     // ~0 is documented only for age, never used as an aggregate counter.
-    let begin = clock()
-    let ageBegin = clock()
+    let begin = monotonicNowNS()
+    let ageBegin = monotonicNowNS()
     let age = CGEventSource.secondsSinceLastEventType(state, eventType: CGEventType(rawValue: UInt32.max)!)
-    let ageEnd = clock()
-    let end = clock()
+    let ageEnd = monotonicNowNS()
+    let end = monotonicNowNS()
     let available = age.isFinite && age >= 0 && age <= Double(end) / 1e9 + 1
     rows["anyInput"] = ["begin_ns": begin, "age_begin_ns": ageBegin,
                         "age_end_ns": ageEnd, "end_ns": end,
@@ -108,7 +111,7 @@ func emit(_ value: [String: Any]) {
 }
 @MainActor
 func fatal(_ reason: String) -> Never {
-    emit(["event": "fatal", "reason": reason, "at_ns": clock(), "thread_main": Thread.isMainThread])
+    emit(["event": "fatal", "reason": reason, "at_ns": monotonicNowNS(), "thread_main": Thread.isMainThread])
     exit(2)
 }
 @MainActor
@@ -153,7 +156,7 @@ func applyControl() {
     if next.runnerPID > 0 && runnerCredential == nil {
         guard let found = credential(next.runnerPID) else { fatal("RUNNER_CREDENTIAL_UNAVAILABLE") }
         runnerCredential = found
-        emit(["event": "runner_bound", "credential": found.json, "at_ns": clock()])
+        emit(["event": "runner_bound", "credential": found.json, "at_ns": monotonicNowNS()])
     }
     if next.appPID > 0 && ownedCredential == nil {
         guard let runner = runnerCredential, let liveRunner = credential(next.runnerPID),
@@ -167,7 +170,7 @@ func applyControl() {
         else { fatal("OWNED_LAUNCH_IDENTITY_UNVERIFIED") }
         ownedCredential = owned
         emit(["event": "owned_bound", "credential": owned.json,
-              "executable_path": canonical(path), "at_ns": clock()])
+              "executable_path": canonical(path), "at_ns": monotonicNowNS()])
     }
     current = next
     lastCommand = next.commandID
@@ -194,7 +197,7 @@ func sample() {
     autoreleasepool {
         applyControl()
         guard let expected = current else { fatal("NO_CONTROL") }
-        let begin = clock()
+        let begin = monotonicNowNS()
         if let runner = runnerCredential, let live = credential(expected.runnerPID), runner != live {
             fatal("RUNNER_KERNEL_IDENTITY_CHANGED")
         }
@@ -210,7 +213,7 @@ func sample() {
                 frontOwned = NSWorkspace.shared.frontmostApplication?.isEqual(app) == true
             }
         }
-        let end = clock()
+        let end = monotonicNowNS()
         sequence += 1
         emit(["event": "sample", "seq": sequence, "begin_ns": begin, "end_ns": end,
               "thread_main": Thread.isMainThread, "runner_pid": expected.runnerPID,
@@ -220,7 +223,7 @@ func sample() {
     }
 }
 // Timer turns give NSRunningApplication's dynamic properties a main-RunLoop refresh.
-emit(["event": "ready", "monitor_pid": getpid(), "thread_main": Thread.isMainThread, "at_ns": clock()])
+emit(["event": "ready", "monitor_pid": getpid(), "thread_main": Thread.isMainThread, "at_ns": monotonicNowNS()])
 let timer = Timer(timeInterval: 0.05, repeats: true) { _ in MainActor.assumeIsolated { sample() } }
 RunLoop.main.add(timer, forMode: .common)
 RunLoop.main.run()
