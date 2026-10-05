@@ -805,3 +805,33 @@ The authorized matrix restores each round's entry snapshot before another row;
 physical identity after unplug/replug and app-window placement are outside this
 display-target contract. An unavailable target is an explicit failure, not a
 promise that every hardware failure can be restored.
+
+### Non-activating helper's current-policy postcondition
+
+The 5be4/05e640 helper passed strict Swift6 compilation but its native read-only
+probe stopped at the redundant setActivationPolicy(.prohibited) return-value
+guard. It changed no display modes, launched no RCam GUI and earned no fresh
+build/native result. Keep that failed probe and source identity intact.
+
+Apple distinguishes an attempted policy switch's Bool result from the current
+activationPolicy() getter. Its [prohibited policy](https://developer.apple.com/documentation/appkit/nsapplication/activationpolicy-swift.enum/prohibited)
+is already the default for unbundled executables without Info.plist and forbids
+windows and activation. The correction initializes NSApplication.shared, checks
+the current policy first and skips a redundant setter when already prohibited.
+Otherwise it attempts prohibited once, then unconditionally reads the current
+policy again and fails unless it is prohibited. A true setter result cannot
+substitute for that final state, and a false result alone cannot diagnose its
+cause. There is no accessory/regular fallback, activation, run or finishLaunching.
+The [getter](https://developer.apple.com/documentation/appkit/nsapplication/activationpolicy())
+and [setter](https://developer.apple.com/documentation/appkit/nsapplication/setactivationpolicy(_:))
+have separate contracts. The native read-only diagnostic established an initially
+prohibited, inactive main-thread helper; it did not retry the setter or determine
+why the earlier return was false.
+
+The added OwnedCommands regression statically binds this exact getter-first,
+fresh-postcondition Swift control flow and excludes activation/fallback calls;
+it is not an AppKit branch execution. Existing display/request/receipt/session
+regressions stay mandatory. The successor needs its own strict Swift6 compile
+and read-only probe before fresh build/gates or authorized actual mode changes.
+No display argv, request schema3, snapshot fields, five-label receipt contract,
+runner source bytes or legacy S5-M1 helper change in this correction.

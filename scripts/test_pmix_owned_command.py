@@ -373,6 +373,24 @@ signal.pause()
         self.assertEqual(runner.display_id_argument('2'),2)
         self.assertEqual(runner.display_id_argument('4294967295'),2**32-1)
 
+    def test_helper_prohibited_policy_uses_current_state_not_switch_bool(self):
+        # Static regression over the actual Swift SOURCE, not an AppKit execution.
+        # Native compile/probe is required to establish the SDK/runtime behavior.
+        source=runner.DISPLAY_SWIFT
+        start=source.index('let application = NSApplication.shared')
+        end=source.index('func snapshot()',start)
+        expected='''let application = NSApplication.shared
+if application.activationPolicy() != .prohibited {
+    _ = application.setActivationPolicy(.prohibited)
+}
+guard application.activationPolicy() == .prohibited else {
+    fail("non-activating helper initialization failed")
+}'''
+        self.assertEqual(' '.join(source[start:end].split()),' '.join(expected.split()))
+        self.assertNotIn('guard application.setActivationPolicy',source)
+        for forbidden in ('.accessory','.regular','.activate(','.run(','.finishLaunching('):
+            self.assertNotIn(forbidden,source)
+
     def test_runner_has_no_unbounded_run_check_output_or_wait_calls(self):
         import ast
         tree=ast.parse(Path(runner.__file__).read_text())

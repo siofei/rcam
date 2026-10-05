@@ -29,7 +29,10 @@ guard ((operation == "probe" || operation == "set60") && arguments.count == 3)
 let display = CGDirectDisplayID(identifier(arguments[2], allowZero: false))
 let restoreMode = operation == "restore" ? identifier(arguments[3], allowZero: true) : nil
 let application = NSApplication.shared
-guard application.setActivationPolicy(.prohibited) else {
+if application.activationPolicy() != .prohibited {
+    _ = application.setActivationPolicy(.prohibited)
+}
+guard application.activationPolicy() == .prohibited else {
     fail("non-activating helper initialization failed")
 }
 
