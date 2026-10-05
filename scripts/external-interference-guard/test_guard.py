@@ -540,7 +540,7 @@ class OwnedLifecycleTests(unittest.TestCase):
 
 class InjectedSupervisorTests(unittest.TestCase):
     """Exercise the complete wrapper with deterministic owned-only fake actors."""
-    def exercise(self, fault=None, temporary_parent=None, clock_failure=None):
+    def exercise(self, fault=None, temporary_parent=None, clock_failure=None, formal_case=None, continuous_guard=None):
         temporary = tempfile.TemporaryDirectory(dir=temporary_parent)
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve(strict=True)
@@ -559,6 +559,9 @@ class InjectedSupervisorTests(unittest.TestCase):
         producer.write_text('synthetic')
         native = root / 'rcam-pmix-synthetic'
         native.mkdir()
+        if formal_case:
+            original = dict(display_id=2, mode_id=113, refresh_hz=144, in_mirror_set=False)
+            (native / 'display-before.json').write_text(json.dumps(dict(before=original, after=original)))
         request = dict(run_id='00000000-0000-4000-8000-000000000001')
         owned = dict(pid=43)
         now = [BASE_NS]
@@ -627,6 +630,8 @@ class InjectedSupervisorTests(unittest.TestCase):
         def launch(command, **kwargs):
             actor = Actor(17 if 'interference-monitor' in command[0] else 42)
             actors.append(actor)
+            if actor.pid == 42:
+                self.last_runner_command = command
             return actor
         def fake_sha(path):
             if path == binary: return supervise.BINARY_SHA
@@ -655,7 +660,12 @@ class InjectedSupervisorTests(unittest.TestCase):
              patch.object(supervise.time, 'monotonic_ns', return_value=36_000_000), \
              patch.object(supervise.time, 'sleep', side_effect=sleep), \
              patch('builtins.print'):
-            result = supervise.run(base)
+            full = (supervise.FullRun(product, binary, producer, base / 'formal-output',
+                    formal_case[0], formal_case[1], 2, supervise.MANIFEST_SHA,
+                    supervise.BINARY_SHA, supervise.PRODUCER_SHA, supervise.RUNNER_SHA,
+                    product / 'MANIFEST.sha256' if formal_case[0] == 'workflow-reopen' else None)
+                    if formal_case else None)
+            result = supervise.run(base, full=full, continuous_guard=continuous_guard)
         compile_call.assert_called_once()
         self.last_compile_command = compile_call.call_args.args[0]
         receipt = json.loads((base / 'SUPERVISOR_RESULT.json').read_text())
