@@ -300,11 +300,17 @@ impl Run {
                     format!("P6\n{} {}\n255\n", image.size[0], image.size[1]).into_bytes();
                 bytes.extend(image.pixels.iter().flat_map(|p| [p.r(), p.g(), p.b()]));
                 std::fs::write(self.dir.join(&name), &bytes).unwrap();
-                let request = user_data.data.as_ref().unwrap().downcast_ref::<Value>().unwrap();
+                let request = user_data
+                    .data
+                    .as_ref()
+                    .unwrap()
+                    .downcast_ref::<Value>()
+                    .unwrap();
                 if let Some(index) = self.surface_pending.iter().position(|r| r == request) {
                     self.surface_pending.remove(index);
                 } else {
-                    self.failures.push("unknown or duplicate full-surface readback".into());
+                    self.failures
+                        .push("unknown or duplicate full-surface readback".into());
                 }
                 self.event("screenshot", json!({"path":name,"width":image.size[0],"height":image.size[1],"sha256":sha256_hex(&bytes),"request":request}));
             }
@@ -454,10 +460,14 @@ impl Run {
         let device = &self.device;
         let frame = self.log.complete_pending(
             self.painted.load(Ordering::Acquire),
-            || device.poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: Some(Duration::from_secs(5)),
-            }).is_ok(),
+            || {
+                device
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: None,
+                        timeout: Some(Duration::from_secs(5)),
+                    })
+                    .is_ok()
+            },
             self.started,
             crate::native_s5m1::counter_snapshot,
         )?;
@@ -546,9 +556,13 @@ impl Run {
     }
     fn close_after_capture(&mut self, app: &mut EditorApp, ctx: &egui::Context) {
         assert_eq!(self.phase, 14, "PMIX Close before capture completion");
-        assert!(self.close_requested.is_none(), "duplicate PMIX close request");
+        assert!(
+            self.close_requested.is_none(),
+            "duplicate PMIX close request"
+        );
         if !crate::native_ui::readbacks_drained() || !self.surface_pending.is_empty() {
-            self.failures.push("readbacks not drained before Close".into());
+            self.failures
+                .push("readbacks not drained before Close".into());
         }
         self.close_requested = Some((self.frame_id, self.started.elapsed().as_nanos() as u64));
         app.allow_quit = true;
@@ -559,19 +573,26 @@ impl Run {
         // terminal, and it runs before the production painter/device is destroyed.
         let terminal_frame = self.complete_pending();
         if self.close_requested.is_none() {
-            self.failures.push("application exited before PMIX Close".into());
+            self.failures
+                .push("application exited before PMIX Close".into());
         }
         if terminal_frame.is_none() {
             self.failures.push("missing PMIX terminal frame".into());
         }
         if !self.surface_pending.is_empty() {
-            self.failures.push("undelivered full-surface requests at exit".into());
+            self.failures
+                .push("undelivered full-surface requests at exit".into());
         }
         if roi_finalization.as_ref().is_none_or(|r| {
-            r["quiesced"] != true || r["pending"] != false || r["writer_joined"] != true
-                || r["requests"].as_u64().is_none_or(|n| n == 0 || r["samples"].as_u64() != Some(n))
+            r["quiesced"] != true
+                || r["pending"] != false
+                || r["writer_joined"] != true
+                || r["requests"]
+                    .as_u64()
+                    .is_none_or(|n| n == 0 || r["samples"].as_u64() != Some(n))
         }) {
-            self.failures.push("ROI readbacks/writer not finalized at exit".into());
+            self.failures
+                .push("ROI readbacks/writer not finalized at exit".into());
         }
         let exit = json!({"close_requested_frame_id":self.close_requested.map(|c|c.0),"close_requested_ns":self.close_requested.map(|c|c.1),"exited_ns":self.started.elapsed().as_nanos() as u64,"roi_finalization":roi_finalization,"full_surface_requests_drained":self.surface_pending.is_empty()});
         let binary = std::fs::read(std::env::current_exe().unwrap()).unwrap();
@@ -579,11 +600,7 @@ impl Run {
         let report = json!({"schema_version":2,"stage":"S5-M2-C","profile":"release","observation_version":3,"last_observed_frame_id":self.log.frames.len(),"request":self.request,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"source_manifest_sha256":sha256_hex(include_bytes!("../../../MANIFEST.sha256")),"pid":std::process::id(),"fixture_sha256":sha256_hex(&std::fs::read(fixture).unwrap()),"protocol_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/protocol.json")),"native_inputs_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/native-inputs.json")),"adapter":app.adapter,"frames":self.log.frames,"terminal_frame":terminal_frame,"exit":exit,"events":self.events,"snapshots":self.snapshot_files,"worker":worker_snapshot(),"requests":*REQUESTS.get_or_init(Default::default).lock().unwrap(),"hits":*HITS.get_or_init(Default::default).lock().unwrap(),"failures":self.failures,"counters":crate::native_s5m1::counter_snapshot(),"measurement_scope":"synthetic egui input; production Metal callback completion upper bound including the terminal update, no physical input/scanout claim; peak RSS and cumulative CPU from owned-child wait4"});
         let report_path = self.dir.join("observations.json");
         assert!(!report_path.exists(), "PMIX report already finalized");
-        std::fs::write(
-            report_path,
-            serde_json::to_vec_pretty(&report).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
     fn workflow_action(&self, app: &EditorApp) -> Option<(&'static str, Action, Value)> {
         use crate::{selection::SelectionMode, state::PivotInput};
@@ -841,7 +858,8 @@ impl Run {
             }
             if (app.view.error.is_some()
                 && !(self.mode.starts_with("workflow")
-                    && (self.workflow_step == locked_step || self.workflow_step == locked_step + 1)
+                    && (self.workflow_step == locked_step
+                        || self.workflow_step == locked_step + 1)
                     && app
                         .view
                         .error
@@ -1164,7 +1182,10 @@ mod frame_log_tests {
             for id in 1..=redraws + 1 {
                 if let Some(frame) = log.complete_pending(
                     id - 1,
-                    || { fences += 1; true },
+                    || {
+                        fences += 1;
+                        true
+                    },
                     origin,
                     || json!({"draw":id-1,"uniform-upload":(id-1)*112}),
                 ) {
@@ -1172,12 +1193,17 @@ mod frame_log_tests {
                 }
                 log.observe(pending(id, origin));
             }
-            let terminal = log.complete_pending(
-                redraws + 1,
-                || { fences += 1; true },
-                origin,
-                || json!({"draw":redraws+1,"uniform-upload":(redraws+1)*112}),
-            ).unwrap();
+            let terminal = log
+                .complete_pending(
+                    redraws + 1,
+                    || {
+                        fences += 1;
+                        true
+                    },
+                    origin,
+                    || json!({"draw":redraws+1,"uniform-upload":(redraws+1)*112}),
+                )
+                .unwrap();
             assert_eq!(log.frames.len(), redraws as usize);
             assert_eq!(terminal["id"], redraws + 1);
             assert_eq!(terminal["painted"], true);
@@ -1191,7 +1217,14 @@ mod frame_log_tests {
         let origin = Instant::now();
         let mut log = FrameLog::default();
         log.observe(pending(1, origin));
-        let frame = log.complete_pending(0, || panic!("unsubmitted callback polled"), origin, || json!({})).unwrap();
+        let frame = log
+            .complete_pending(
+                0,
+                || panic!("unsubmitted callback polled"),
+                origin,
+                || json!({}),
+            )
+            .unwrap();
         assert_eq!(frame["painted"], false);
         assert!(frame.get("gpu_completed").is_none());
         assert!(frame.get("completed_ns").is_none());
@@ -1202,7 +1235,9 @@ mod frame_log_tests {
         let origin = Instant::now();
         let mut log = FrameLog::default();
         log.observe(pending(1, origin));
-        let frame = log.complete_pending(1, || false, origin, || json!({"draw":1})).unwrap();
+        let frame = log
+            .complete_pending(1, || false, origin, || json!({"draw":1}))
+            .unwrap();
         assert_eq!(frame["painted"], true);
         assert_eq!(frame["gpu_completed"], false);
     }
@@ -1212,12 +1247,30 @@ mod frame_log_tests {
         let mut log = FrameLog::default();
         let fenced = Cell::new(false);
         log.observe(pending(1, origin));
-        let frame = log.complete_pending(1, || { fenced.set(true); true }, origin, || {
-            assert!(fenced.get());
-            json!({"draw":1})
-        }).unwrap();
+        let frame = log
+            .complete_pending(
+                1,
+                || {
+                    fenced.set(true);
+                    true
+                },
+                origin,
+                || {
+                    assert!(fenced.get());
+                    json!({"draw":1})
+                },
+            )
+            .unwrap();
         assert_eq!(frame["counters"]["draw"], 1);
-        assert!(log.complete_pending(1, || panic!("duplicate fence"), origin, || panic!("duplicate counters")).is_none());
+        assert!(
+            log.complete_pending(
+                1,
+                || panic!("duplicate fence"),
+                origin,
+                || panic!("duplicate counters")
+            )
+            .is_none()
+        );
     }
     #[test]
     #[should_panic(expected = "PMIX duplicate update pass")]

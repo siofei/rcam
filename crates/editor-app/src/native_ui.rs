@@ -109,7 +109,11 @@ pub fn quiesce() {
     }
 }
 pub fn readbacks_drained() -> bool {
-    capture().lock().unwrap().as_ref().is_some_and(|c| c.quiesced && !c.pending)
+    capture()
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|c| c.quiesced && !c.pending)
 }
 pub fn finish() -> Option<Value> {
     let Some(capture) = CAPTURE.get() else {
@@ -123,7 +127,11 @@ pub fn finish() -> Option<Value> {
             // Written only for PMIX, after every queued byte has been flushed
             // and the writer joined. Other accepted ROI formats stay unchanged.
             let receipt = json!({"schema_version":1,"frames":c.frame,"requests":c.requests,"samples":c.samples,"quiesced":c.quiesced,"pending":c.pending,"writer_joined":true});
-            std::fs::write(c.dir.join("capture-finalization.json"), serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
+            std::fs::write(
+                c.dir.join("capture-finalization.json"),
+                serde_json::to_vec_pretty(&receipt).unwrap(),
+            )
+            .unwrap();
             return Some(receipt);
         }
     }
@@ -279,21 +287,32 @@ mod writer_tests {
         let dir = directory();
         let (send, handle) = writer(dir.clone());
         for frame in 1..=20 {
-            send.send(WriteJob::Append("frames.jsonl", json!({"frame":frame}))).unwrap();
+            send.send(WriteJob::Append("frames.jsonl", json!({"frame":frame})))
+                .unwrap();
         }
         send.send(WriteJob::Sample(
             vec![("unit-roi.ppm".into(), b"synthetic-unit-pixels".to_vec())],
             json!({"sample":0}),
-        )).unwrap();
+        ))
+        .unwrap();
         drop(send);
         handle.join().unwrap();
         let frames = std::fs::read_to_string(dir.join("frames.jsonl")).unwrap();
-        let observed: Vec<Value> = frames.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let observed: Vec<Value> = frames
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
         assert_eq!(observed.len(), 20);
         assert_eq!(observed.first().unwrap()["frame"], 1);
         assert_eq!(observed.last().unwrap()["frame"], 20);
-        assert_eq!(std::fs::read(dir.join("unit-roi.ppm")).unwrap(), b"synthetic-unit-pixels".to_vec());
-        assert_eq!(std::fs::read_to_string(dir.join("samples.jsonl")).unwrap(), "{\"sample\":0}\n");
+        assert_eq!(
+            std::fs::read(dir.join("unit-roi.ppm")).unwrap(),
+            b"synthetic-unit-pixels".to_vec()
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("samples.jsonl")).unwrap(),
+            "{\"sample\":0}\n"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -301,7 +320,8 @@ mod writer_tests {
         let dir = directory();
         std::fs::remove_dir(&dir).unwrap();
         let (send, handle) = writer(dir);
-        send.send(WriteJob::Append("frames.jsonl", json!({"frame":1}))).unwrap();
+        send.send(WriteJob::Append("frames.jsonl", json!({"frame":1})))
+            .unwrap();
         drop(send);
         assert!(handle.join().is_err());
     }
