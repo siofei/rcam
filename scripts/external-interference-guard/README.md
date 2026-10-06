@@ -1,4 +1,4 @@
-# External guarded PMIX full12 coordinator, v3.4-bound identity freeze
+# External guarded PMIX full12 coordinator, v3.5.2-bound identity freeze
 
 This bound candidate requires final independent review before publication and
 Mac execution. It binds the reviewed clean product and the parent's actual fresh
@@ -89,6 +89,36 @@ stream is also fully replayed against its nonce, immutable control/path/runID,
 kernel credentials and actual foreground/capture state; a clean summary receipt
 cannot replace that raw proof. A legitimate capture marker first observed by the
 fresh post-join sample remains valid under the original policy.
+
+The complete extra owned-round check also runs in a separately owned,
+file-logged child through the same watcher. This includes every original raw
+sample replay, display/identity checks and workflow project hashing. The parent
+continues consuming the live sentinel throughout this work. It accepts the
+check result only after exit0, observed join, a fresh post-join barrier and exact
+case/runID/input/supervisor-receipt/workflow bindings. A failed or interrupted
+check cannot advance the matrix. The internal `check-round` operation only
+reads evidence and writes its own external result; it does not launch RCam.
+
+This addresses a reproduced consumption pause in the previous coordinator:
+synchronous raw replay could exceed250ms while the observer kept sampling,
+then the queued first sample correctly failed the unchanged freshness check.
+Historical Mac timing supports that explanation; the original caught exception
+was not retained, so that historical cause remains an inference. Runtime
+receipts now preserve the first stream exception, its sample sequence and
+acquisition timestamps, and the consumption clock when available. Input halt
+details are preserved separately. Raw samples are never skipped or rebased.
+
+The parent freezes the exact round-check input bytes before launch. The worker
+returns the digest of the bytes it actually parsed, and its canonical evidence
+directory must equal the original supervisor's native directory. The returned
+digest and current input file must both match the parent's frozen digest.
+Supervisor receipt hashing and parsing use the same single byte snapshot in
+both parent and worker. The worker returns the digest of its actual parsed
+receipt, and the parent binds it to the original receipt bytes.
+Interruption-journal write errors are retained as failures while the owned child
+still receives its bounded join attempt within the original cleanup deadline.
+This also applies to the existing recovery-child branch; logging cannot start a
+new reserve, skip the join attempt or grant a successful result.
 
 ## Bounded exceptional display restoration
 

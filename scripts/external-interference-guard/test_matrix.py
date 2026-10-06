@@ -477,11 +477,15 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
         runners = []
         commands = []
         active = [None]
+        active_check = [None]
         class Actor:
             def __init__(self, pid, command, code=None):
                 self.pid, self.command, self.returncode = pid, command, code
                 self.signals = []
-            def poll(self): return self.returncode
+            def poll(self):
+                if getattr(self, 'complete_at_ns', None) is not None and now[0] >= self.complete_at_ns:
+                    self.returncode = 0
+                return self.returncode
             def wait(self, timeout):
                 if fault == 'keyboard_cleanup' and len(self.command) > 2 and self.command[2] == 'scripts/run_pmix_native.py' and self.signals:
                     self.first_wait_timeout = timeout
@@ -513,6 +517,14 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
                 return actor
             if command[2] == 'scripts/verify_pmix_native.py':
                 return Actor(pid, command, 0)
+            if len(command) > 3 and command[3] == 'check-round':
+                control = Path(command[command.index('--round-check-input') + 1])
+                actor = Actor(pid, command, matrix.check_round(control))
+                if fault in ('slow_round_check', 'input_round_check') and actor.returncode == 0:
+                    actor.returncode = None
+                    actor.complete_at_ns = now[0] + 400_000_000
+                    active_check[0] = actor
+                return actor
             self.assertEqual(command[2], 'scripts/run_pmix_native.py')
             mode = command[command.index('--mode') + 1]
             round_number = int(command[command.index('--round') + 1])
@@ -594,6 +606,10 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
                     row = value['sources']['combined']['keyDown']
                     row['count_before'] += 1
                     row['count_after'] += 1
+                if self.control.name == 'continuous-control.json' and fault == 'input_round_check' and active_check[0] is not None:
+                    row = value['sources']['hid']['keyDown']
+                    row['count_before'] += 1
+                    row['count_after'] += 1
                 records.append(dict(value, **envelope))
                 with self.path.open('a') as log:
                     for record in records: log.write(json.dumps(record) + '\n')
@@ -653,6 +669,31 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
         self.assertEqual(continuous['failure'], 'UNKNOWN_SESSION_INPUT')
         self.assertEqual((bundle / 'Evidence_MANIFEST.sha256').read_bytes(),
                          (bundle.parent / 'external-guard/background-seed-manifest.sha256').read_bytes())
+
+    def test_slow_offline_round_check_keeps_live_stream_consumption_and_full_twelve(self):
+        code, result, continuous, runners, commands, _, evidence = self.exercise('slow_round_check')
+        self.assertEqual(code, 0)
+        self.assertEqual(result['completed_cases'], 12)
+        self.assertEqual(len(runners), 12)
+        self.assertTrue(continuous['success'])
+        self.assertEqual(continuous['baseline_resets'], 0)
+        checks = [command for command in commands if len(command) > 3 and command[3] == 'check-round']
+        self.assertEqual(len(checks), 12)
+        for case in matrix.CASES:
+            receipt = json.loads((evidence / matrix.case_name(case) / 'round-evidence-check.json').read_text())
+            self.assertTrue(receipt['joined'])
+            self.assertTrue(receipt['post_join_barrier_satisfied'])
+            self.assertTrue(receipt['success'])
+
+    def test_live_hid_input_during_offline_round_check_stops_before_second_runner(self):
+        code, result, continuous, runners, _, bundle, evidence = self.exercise('input_round_check')
+        self.assertEqual(code, 2)
+        self.assertEqual(result['completed_cases'], 0)
+        self.assertEqual(len(runners), 1)
+        self.assertEqual(continuous['failure'], 'HID_COUNTER_CHANGE')
+        self.assertFalse(json.loads((evidence / 'nav1/round-evidence-check.json').read_text())['success'])
+        self.assertEqual((bundle / 'Evidence_MANIFEST.sha256').read_bytes(),
+                         (evidence / 'background-seed-manifest.sha256').read_bytes())
 
     def test_native_failure_stops_exactly_once_and_never_retries(self):
         code, result, _, runners, _, bundle, _ = self.exercise('nonzero')
@@ -1388,6 +1429,272 @@ class BackgroundQualificationContractTests(unittest.TestCase):
         dump(path, original)
         self.assertTrue(matrix.verify_background_qualification(self.root, self.bundle, self.evidence,
                                                                self.pins, self.ledger, rows))
+
+class RoundCheckIsolationTests(unittest.TestCase):
+    """Pure worker contract; synthetic bytes never grant native acceptance."""
+    def setUp(self):
+        fixture = MatrixContract('runTest')
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        self.local, self.request, self.receipt, _ = fixture.fixture()
+        self.pins = fixture.pins
+        self.input = self.local / 'round-check-input.json'
+        dump(self.local / 'SUPERVISOR_RESULT.json', self.receipt)
+        self.control = dict(schema_version=1, mode='nav', round=1, directory=str(self.local),
+                            seen_run_ids=[], workflow_sha256=None,
+                            supervisor_receipt_sha256=matrix.guard.sha(self.local / 'SUPERVISOR_RESULT.json'))
+        self.seen = set()
+        self.sentinel = type('SyntheticSentinel', (), {'pump': lambda self: None})()
+
+    def worker(self, control=None):
+        dump(self.input, self.control if control is None else control)
+        with patch.object(matrix, 'PRODUCT_PINS', self.pins):
+            code = matrix.check_round(self.input)
+        return code, json.loads((self.local / 'round-check-result.json').read_text())
+
+    def watched(self, mutate=None, fail_join=False):
+        def command(command, root, local, label, sentinel):
+            self.assertEqual(label, 'round-evidence-check')
+            self.assertEqual(command, ['python3', '-B', str(Path(matrix.__file__).resolve()), 'check-round',
+                '--root', str(self.local), '--round-check-input', str(self.input)])
+            self.assertEqual(matrix.check_round(self.input), 0)
+            if mutate is not None:
+                path = self.local / 'round-check-result.json'
+                result = json.loads(path.read_text())
+                result.update(mutate)
+                dump(path, result)
+            if fail_join:
+                raise RuntimeError('synthetic owned child not joined')
+        with patch.object(matrix, 'PRODUCT_PINS', self.pins), \
+             patch.object(matrix, 'watched_command', side_effect=command):
+            return matrix.watched_round_check(self.local, self.local, self.local,
+                         ('nav', 1), self.receipt, self.seen, None, self.sentinel)
+
+    def test_complete_raw_worker_and_parent_commit_only_verified_run(self):
+        code, result = self.worker()
+        self.assertEqual(code, 0)
+        self.assertTrue(result['success'])
+        self.assertEqual(result['seen_run_ids'], [self.request['run_id']])
+        self.assertEqual(result['input_sha256'], matrix.guard.sha(self.input))
+        self.assertIsNone(self.watched())
+        self.assertEqual(self.seen, {self.request['run_id']})
+
+    def test_input_types_receipt_source_and_duplicate_ids_reject(self):
+        attacks = [('round', True), ('workflow_sha256', 'bad'), ('schema_version', True),
+                   ('seen_run_ids', [self.request['run_id']]), ('seen_run_ids', ['bad']),
+                   ('supervisor_receipt_sha256', '0' * 64)]
+        for key, value in attacks:
+            with self.subTest(key=key):
+                code, result = self.worker(dict(self.control, **{key: value}))
+                self.assertEqual(code, 2)
+                self.assertFalse(result['success'])
+        self.receipt['source_manifest_sha256'] = '0' * 64
+        dump(self.local / 'SUPERVISOR_RESULT.json', self.receipt)
+        self.control['supervisor_receipt_sha256'] = matrix.guard.sha(self.local / 'SUPERVISOR_RESULT.json')
+        code, result = self.worker()
+        self.assertEqual(code, 2)
+        self.assertIn('pinned product source', result['failure'])
+
+    def test_worker_replays_hidden_focus_loss_and_rejects_partial_tail(self):
+        path = self.local / 'monitor.stdout'
+        original = path.read_text()
+        rows = [json.loads(line) for line in original.splitlines()]
+        next(row for row in rows if row.get('seq') == 5)['front_owned'] = False
+        path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        code, result = self.worker()
+        self.assertEqual(code, 2)
+        self.assertIn('owned raw input/foreground/integrity failure', result['failure'])
+        path.write_text(original + '{')
+        code, result = self.worker()
+        self.assertEqual(code, 2)
+        self.assertIn('complete original owned raw line', result['failure'])
+
+    def test_parent_rejects_worker_result_binding_without_advancing_seen_ids(self):
+        attacks = [('run_id', str(uuid.UUID(int=1))), ('round', True), ('mode', 'move'),
+                   ('seen_run_ids', []), ('input_sha256', '0' * 64),
+                   ('supervisor_receipt_sha256', '0' * 64), ('workflow_sha256', '0' * 64),
+                   ('success', False), ('failure', 'synthetic failure')]
+        for key, value in attacks:
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                self.watched({key: value})
+            self.assertEqual(self.seen, set())
+
+    def test_clean_worker_result_cannot_replace_child_join_failure(self):
+        with self.assertRaisesRegex(RuntimeError, 'child not joined'):
+            self.watched(fail_join=True)
+        self.assertEqual(self.seen, set())
+
+    def test_input_changed_after_worker_read_cannot_match_original_parent_bytes(self):
+        original = matrix.validate_round
+        def delayed(directory, case, receipt, seen, workflow, guard_directory=None):
+            changed = json.loads(self.input.read_text())
+            changed['directory'] = str(self.local / 'unit-only-nonexistent')
+            dump(self.input, changed)
+            return original(directory, case, receipt, seen, workflow, guard_directory)
+        with patch.object(matrix, 'validate_round', side_effect=delayed):
+            with self.assertRaisesRegex(RuntimeError, 'result/input/identity binding'):
+                self.watched()
+        self.assertEqual(self.seen, set())
+        result = json.loads((self.local / 'round-check-result.json').read_text())
+        self.assertNotEqual(result['input_sha256'], matrix.guard.sha(self.input))
+
+    def test_worker_canonical_directory_must_match_original_receipt(self):
+        other = self.local.parent / 'unit-only-redirect'
+        other.mkdir()
+        code, result = self.worker(dict(self.control, directory=str(other)))
+        self.assertEqual(code, 2)
+        self.assertIn('canonical directory/supervisor binding', result['failure'])
+
+    def test_control_mutation_during_atomic_write_rejected_before_child_launch(self):
+        original = matrix.guard.write
+        def changed(path, value):
+            original(path, value)
+            if path == self.input:
+                altered = dict(value, workflow_sha256='0' * 64)
+                dump(path, altered)
+        with patch.object(matrix.guard, 'write', side_effect=changed), \
+             patch.object(matrix, 'watched_command') as child:
+            with self.assertRaisesRegex(RuntimeError, 'original round check input bytes'):
+                matrix.watched_round_check(self.local, self.local, self.local, ('nav', 1),
+                                          self.receipt, self.seen, None, self.sentinel)
+            child.assert_not_called()
+        self.assertEqual(self.seen, set())
+
+    def test_worker_hashes_and_parses_one_original_receipt_byte_snapshot(self):
+        receipt_path = self.local / 'SUPERVISOR_RESULT.json'
+        original_read = Path.read_bytes
+        reads = []
+        def read(path):
+            if path == receipt_path:
+                reads.append(path)
+            return original_read(path)
+        with patch.object(Path, 'read_bytes', new=read):
+            code, result = self.worker()
+        self.assertEqual(code, 0)
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(result['supervisor_receipt_sha256'], self.control['supervisor_receipt_sha256'])
+
+    def test_parent_requires_passed_receipt_to_match_original_parsed_bytes(self):
+        altered = dict(self.receipt, run_id=str(uuid.UUID(int=1)))
+        with patch.object(matrix, 'watched_command') as child:
+            with self.assertRaisesRegex(RuntimeError, 'original parsed supervisor receipt bytes'):
+                matrix.watched_round_check(self.local, self.local, self.local, ('nav', 1),
+                                          altered, self.seen, None, self.sentinel)
+            child.assert_not_called()
+        self.assertEqual(self.seen, set())
+
+
+class InterruptJournalFailureRegressionTests(unittest.TestCase):
+    def exercise(self, recovery=False, first_clock_fails=False, timeout=False):
+        temp = tempfile.TemporaryDirectory(prefix='rcam-journal-fault-unit-')
+        self.addCleanup(temp.cleanup)
+        base = Path(temp.name).resolve(strict=True)
+        now = [100_000_000_000]
+        class Actor:
+            pid = 42
+            returncode = None
+            def __init__(self): self.signals, self.waits = [], []
+            def poll(self): return self.returncode
+            def send_signal(self, value): self.signals.append(value)
+            def wait(self, timeout):
+                self.waits.append(timeout)
+                if timeout_fault:
+                    raise matrix.subprocess.TimeoutExpired('unit-only child', timeout)
+                self.returncode = 0
+                return 0
+        actor = Actor()
+        timeout_fault = timeout
+        pumps = [0]
+        failed_clock = [False]
+        def pump():
+            pumps[0] += 1
+            if pumps[0] == 2: raise RuntimeError('unit-only watch failure')
+            return None
+        sentinel = type('SyntheticSentinel', (), {'pump': staticmethod(pump), 'stream': object()})()
+        original = matrix.guard.write
+        def write(path, value):
+            if path.name == 'controlled-interrupt.json':
+                now[0] += 30_000_000_000
+                raise FileExistsError('unit-only failed durable journal')
+            original(path, value)
+        def clock():
+            if first_clock_fails and actor.signals and not failed_clock[0]:
+                failed_clock[0] = True
+                raise matrix.guard.ClockUnavailableError('unit-only first cleanup clock loss')
+            return now[0]
+        command = (['python3', '-B', str(Path(matrix.__file__).resolve()), 'recover'] if recovery else
+                   ['python3', '-B', str(Path(matrix.__file__).resolve()), 'check-round'])
+        with patch.object(matrix.subprocess, 'Popen', return_value=actor), \
+             patch.object(matrix.guard, 'write', side_effect=write), \
+             patch.object(matrix.guard, 'system_uptime_ns', side_effect=clock), \
+             patch.object(matrix.guard, 'post_join_barrier', return_value=True):
+            with self.assertRaises(RuntimeError):
+                matrix.watched_command(command, base, base, 'owned-check', sentinel,
+                                       restoration_after_halt=recovery,
+                                       deadline_ns=140_000_000_000 if recovery else None)
+        receipt = json.loads((base / 'owned-check.json').read_text())
+        self.assertEqual(actor.signals, [signal.SIGINT])
+        self.assertTrue(receipt['interrupt_journal_errors'])
+        self.assertFalse(receipt['success'])
+        return actor, receipt
+
+    def test_check_child_journal_error_still_joins_using_original_remaining_budget(self):
+        actor, receipt = self.exercise()
+        self.assertEqual(actor.waits, [5.75])
+        self.assertTrue(receipt['joined'])
+
+    def test_recovery_presignal_journal_error_still_joins_same_deadline(self):
+        actor, receipt = self.exercise(recovery=True)
+        self.assertEqual(actor.waits, [5.75])
+        self.assertTrue(receipt['joined'])
+
+    def test_first_clock_unknown_wait_occurs_before_failed_journal_without_new_reserve(self):
+        actor, receipt = self.exercise(first_clock_fails=True)
+        self.assertEqual(actor.waits, [35.75])
+        self.assertTrue(receipt['joined'])
+        self.assertTrue(receipt['clock_unavailable'])
+
+    def test_failed_journal_and_legal_wait_timeout_retain_actual_unjoined_failure(self):
+        actor, receipt = self.exercise(timeout=True)
+        self.assertEqual(actor.waits, [5.75])
+        self.assertFalse(receipt['joined'])
+        self.assertIsNone(receipt['exit_code'])
+
+
+class StreamFailureDiagnosticTests(unittest.TestCase):
+    def test_first_stale_sample_preserves_consumption_clock_and_not_later_error(self):
+        from test_guard import StreamTests, sample
+        fixture = StreamTests('runTest')
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.start()
+        fixture.now += 400_000_000
+        row = sample(3)
+        fixture.append(row)
+        halt = fixture.stream.pump()
+        self.assertEqual(halt.reason, 'INVALID_MONITOR_STREAM')
+        details = dict(fixture.stream.first_stream_error)
+        self.assertEqual(details['error'], 'stale/future monitor sample')
+        self.assertEqual(details['sample_seq'], 3)
+        self.assertEqual(details['sample_end_ns'], row['end_ns'])
+        self.assertEqual(details['observed_at_ns'], fixture.now)
+        with fixture.path.open('ab') as handle:
+            handle.write(b'not-json\n')
+        fixture.stream.pump()
+        self.assertEqual(fixture.stream.first_stream_error, details)
+        self.assertEqual(fixture.stream.policy.terminal.details, dict(details, human_attribution=False))
+        sentinel = matrix.ContinuousSentinel(fixture.path.parent, fixture.path, 'synthetic')
+        sentinel.monitor, sentinel.tail, sentinel.stream = fixture.monitor, fixture.tail, fixture.stream
+        def stop(monitor):
+            monitor.returncode = -int(signal.SIGTERM)
+            return True
+        with patch.object(matrix.guard, 'system_uptime_ns', return_value=fixture.now), \
+             patch.object(matrix.guard, 'stop_monitor', side_effect=stop):
+            self.assertFalse(sentinel.finish())
+        receipt = json.loads((fixture.path.parent / 'CONTINUOUS_RESULT.json').read_text())
+        self.assertEqual(receipt['first_stream_error'], details)
+        self.assertEqual(receipt['failure_details'], dict(details, human_attribution=False))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

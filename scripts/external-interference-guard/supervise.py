@@ -159,15 +159,19 @@ class ObservationStream:
         self.runner_credential = None
         self.last_valid_sample = None
         self.integrity = True
+        self.first_stream_error = None
 
     def pump(self, allow_owned_stop=False):
         self.actions = []
+        row = None
+        now_ns = None
         try:
             if self.continuous_guard is not None:
                 external = self.continuous_guard()
                 if external:
                     self.policy.stop('CONTINUOUS_INPUT_GUARD_FAILURE', {'reason': external.reason})
             for row in self.tail.read():
+                now_ns = None
                 require(type(row) is dict and type(row.get('protocol_version')) is int and row.get('protocol_version') == 3 and
                         row.get('nonce') == self.nonce and row.get('clock_domain') == CLOCK_DOMAIN, 'monitor envelope')
                 event = row.get('event')
@@ -236,7 +240,14 @@ class ObservationStream:
             return self.policy.terminal
         except (ValueError, TypeError, KeyError, RuntimeError, OSError) as error:
             self.integrity = False
-            return self.policy.stop('INVALID_MONITOR_STREAM', {'error': str(error)})
+            details = {'error': str(error), 'error_type': type(error).__name__,
+                       'observed_at_ns': now_ns,
+                       'event': row.get('event') if type(row) is dict else None,
+                       'sample_seq': row.get('seq') if type(row) is dict else None,
+                       'sample_begin_ns': row.get('begin_ns') if type(row) is dict else None,
+                       'sample_end_ns': row.get('end_ns') if type(row) is dict else None}
+            self.first_stream_error = self.first_stream_error or details
+            return self.policy.stop('INVALID_MONITOR_STREAM', details)
 
 
 def discover_native(previous, binary, expected_run_id=None, full=None):
@@ -280,7 +291,8 @@ def discover_native(previous, binary, expected_run_id=None, full=None):
 
 
 def interrupt_and_join(runner, reason, base, deadline_ns=None, clock=None,
-                       signal_already_sent=False, clock_errors=None, cleanup_state=None):
+                       signal_already_sent=False, clock_errors=None, cleanup_state=None,
+                       journal_errors=None):
     """Anchor immediately after first SIGINT, before all durable journal I/O.
 
     First clock failure stays unknown. Its original relative reserve may be used
@@ -297,6 +309,21 @@ def interrupt_and_join(runner, reason, base, deadline_ns=None, clock=None,
     unknown = (signal_already_sent and deadline_ns is None) or bool(
         cleanup_state is not None and cleanup_state['deadline_unknown'])
     fresh_unknown_clock = False
+    journal_failure = None
+    def journal(value):
+        nonlocal journal_failure
+        try:
+            write(base / 'controlled-interrupt.json', value)
+        except BaseException as error:
+            journal_failure = error
+            if journal_errors is not None:
+                journal_errors.append(type(error).__name__ + ': ' + str(error))
+    def finish(joined):
+        # Callers collecting diagnostics retain actual join status. Other
+        # callers still receive the error, only after the bounded join attempt.
+        if journal_failure is not None and journal_errors is None:
+            raise journal_failure
+        return joined
     if not signal_already_sent:
         runner.send_signal(signal.SIGINT)
         if cleanup_state is not None:
@@ -313,7 +340,7 @@ def interrupt_and_join(runner, reason, base, deadline_ns=None, clock=None,
                     cleanup_state['deadline_unknown'] = True
                 if clock_errors is not None:
                     clock_errors.append(str(error))
-        journal = {'runner_pid': runner.pid, 'signal': int(signal.SIGINT), 'reason': reason,
+        receipt = {'runner_pid': runner.pid, 'signal': int(signal.SIGINT), 'reason': reason,
                    'scope': 'only this launched runner; its finally owns app/producer cleanup'}
         if fresh_unknown_clock:
             # Keep the pre-existing bounded relative fault path, but do it now:
@@ -323,9 +350,9 @@ def interrupt_and_join(runner, reason, base, deadline_ns=None, clock=None,
                 joined = True
             except subprocess.TimeoutExpired:
                 joined = False
-            write(base / 'controlled-interrupt.json', journal)
-            return joined
-        write(base / 'controlled-interrupt.json', journal)
+            journal(receipt)
+            return finish(joined)
+        journal(receipt)
     # Journal I/O may consume the original deadline. Re-read only the remaining
     # budget; this clock never establishes or refreshes the first origin.
     try:
@@ -338,9 +365,9 @@ def interrupt_and_join(runner, reason, base, deadline_ns=None, clock=None,
         timeout = 0
     try:
         runner.wait(timeout=timeout)
-        return True
+        return finish(True)
     except subprocess.TimeoutExpired:
-        return False  # No killall, group signal, or forced app/runner kill.
+        return finish(False)  # No killall, group signal, or forced app/runner kill.
 
 
 def post_join_barrier(stream, joined_at_ns, clock=None, sleep=time.sleep):
@@ -445,6 +472,7 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
     cleanup_state = {'started': False, 'deadline_ns': None, 'deadline_unknown': False}
     interrupt_sent = False
     clock_errors = []
+    journal_errors = []
     try:
         launched_at_ns = system_uptime_ns()
         with (base / 'runner.stdout').open('xb') as out, (base / 'runner.stderr').open('xb') as err, \
@@ -555,7 +583,8 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
                 interrupt_sent = True
                 joined = interrupt_and_join(runner, interrupted, base, cleanup_deadline_ns,
                                             signal_already_sent=previous_signal,
-                                            clock_errors=clock_errors, cleanup_state=cleanup_state)
+                                            clock_errors=clock_errors, cleanup_state=cleanup_state,
+                                            journal_errors=journal_errors)
                 cleanup_deadline_ns = cleanup_state['deadline_ns'] or cleanup_deadline_ns
             else:
                 joined = True
@@ -616,12 +645,15 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
             'duration_seconds': duration_seconds,
             'clock_unavailable': bool(clock_errors),
             'clock_error': clock_errors[0] if clock_errors else None,
+            'interrupt_journal_errors': journal_errors,
             'clock_domain': CLOCK_DOMAIN,
             'native_directory': str(native) if native else None,
             'run_id': request['run_id'] if request else None,
             'monitor_pid': monitor.pid if monitor else None,
             'monitor_exit_code': monitor.returncode if monitor else None,
             'monitor_joined': monitor_joined,
+            'monitor_failure_details': stream.policy.terminal.details if stream and stream.policy.terminal else None,
+            'first_stream_error': stream.first_stream_error if stream else None,
             'runner_joined_at_ns': joined_at_ns,
             'cleanup_deadline_ns': cleanup_deadline_ns,
             'cleanup_started': cleanup_state['started'] or interrupt_sent,

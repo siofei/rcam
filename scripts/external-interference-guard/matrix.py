@@ -6,6 +6,7 @@ Imports are harmless. GUI execution is Darwin-only. Tests use synthetic data.
 import argparse
 import ast
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
@@ -387,7 +388,8 @@ def verify_owned_evidence(local, directory, case, receipt):
         post_join = None
         while not tail.done:
             halt = stream.pump()
-            guard.require(halt is None and stream.integrity, 'owned raw input/foreground/integrity failure')
+            guard.require(halt is None and stream.integrity, 'owned raw input/foreground/integrity failure' +
+                          (': ' + str(halt.reason) + ': ' + str((halt.details or {}).get('error')) if halt else ''))
             row = tail.current
             if tail.done:
                 break
@@ -560,6 +562,8 @@ class ContinuousSentinel:
                                               if self.barrier else None),
             'last_sample_seq': self.stream.last_valid_sample['seq'] if self.stream and self.stream.last_valid_sample else None,
             'failure': self.failure, 'error': error, 'clock_domain': guard.CLOCK_DOMAIN,
+            'failure_details': self.stream.policy.terminal.details if self.stream and self.stream.policy.terminal else None,
+            'first_stream_error': self.stream.first_stream_error if self.stream else None,
             'success': bool(self.joined and self.barrier and self.failure is None),
             'human_input_attributed': False, 'external_activation': False, 'baseline_resets': 0})
         return self.joined and self.barrier and self.failure is None
@@ -575,6 +579,7 @@ def watched_command(command, root, base, label, sentinel, seconds=VERIFICATION_S
     joined = barrier = False
     interrupted = None
     clock_errors = []
+    journal_errors = []
     started = joined_at = None
     try:
         halt = sentinel.pump()
@@ -606,11 +611,15 @@ def watched_command(command, root, base, label, sentinel, seconds=VERIFICATION_S
                 # grant this newly owned recovery child a second fresh reserve.
                 process.send_signal(signal.SIGINT)
                 prior_signal = True
-                guard.write(base / 'controlled-interrupt.json', {'runner_pid': process.pid,
-                            'signal': int(signal.SIGINT), 'reason': interrupted,
-                            'scope': 'only launched recovery child; original round cleanup budget'})
+                try:
+                    guard.write(base / 'controlled-interrupt.json', {'runner_pid': process.pid,
+                                'signal': int(signal.SIGINT), 'reason': interrupted,
+                                'scope': 'only launched recovery child; original round cleanup budget'})
+                except BaseException as journal_error:
+                    journal_errors.append(type(journal_error).__name__ + ': ' + str(journal_error))
             joined = guard.interrupt_and_join(process, interrupted, base, deadline_ns=deadline_ns,
-                                              signal_already_sent=prior_signal, clock_errors=clock_errors)
+                                              signal_already_sent=prior_signal, clock_errors=clock_errors,
+                                              journal_errors=journal_errors)
             if joined and joined_at is None:
                 try:
                     joined_at = guard.system_uptime_ns()
@@ -632,13 +641,112 @@ def watched_command(command, root, base, label, sentinel, seconds=VERIFICATION_S
                    'exit_code': process.returncode if process else None, 'joined': joined,
                    'post_join_barrier_satisfied': barrier, 'failure': interrupted,
                    'clock_unavailable': bool(clock_errors), 'clock_domain': guard.CLOCK_DOMAIN,
+                   'interrupt_journal_errors': journal_errors,
                    'joined_at_ns': joined_at, 'deadline_ns': observed_limit, 'deadline_exceeded': budget_exceeded,
                    'success': bool(process and joined and process.returncode == 0 and barrier and
-                                   interrupted is None and not clock_errors and
+                                   interrupted is None and not clock_errors and not journal_errors and
                                    (sentinel.pump() is None or restoration_after_halt))}
         guard.write(base / (label + '.json'), receipt)
     guard.require(receipt['success'], 'owned verification failed: ' + label)
     return receipt
+
+
+def check_round(input_path):
+    """Pure offline owned-round check, isolated from the live sentinel consumer."""
+    pins = require_pins()
+    local = input_path.parent.resolve(strict=True)
+    result = {'result': 'BLOCKED', 'success': False, 'failure': None}
+    try:
+        raw = input_path.read_bytes()
+        guard.require(0 < len(raw) <= guard.MAX_LINE_BYTES, 'round check input size')
+        control = guard.strict_json(raw)
+        guard.require(type(control) is dict and set(control) == {
+            'schema_version', 'mode', 'round', 'directory', 'seen_run_ids',
+            'workflow_sha256', 'supervisor_receipt_sha256'} and
+            type(control['schema_version']) is int and control['schema_version'] == 1 and
+            type(control['round']) is int and (control['mode'], control['round']) in CASES and
+            type(control['directory']) is str and type(control['seen_run_ids']) is list and
+            len(control['seen_run_ids']) < len(CASES), 'round check immutable input')
+        seen = control['seen_run_ids']
+        guard.require(all(type(value) is str and str(uuid.UUID(value)) == value for value in seen) and
+                      seen == sorted(set(seen)), 'round check preceding run IDs')
+        workflow = control['workflow_sha256']
+        guard.require(workflow is None or (type(workflow) is str and re.fullmatch('[0-9a-f]{64}', workflow)),
+                      'round check preceding workflow digest')
+        directory = Path(control['directory']).resolve(strict=True)
+        receipt_path = local / 'SUPERVISOR_RESULT.json'
+        receipt_raw = receipt_path.read_bytes()
+        receipt_sha = hashlib.sha256(receipt_raw).hexdigest()
+        guard.require(type(control['supervisor_receipt_sha256']) is str and
+                      control['supervisor_receipt_sha256'] == receipt_sha,
+                      'round check original supervisor receipt')
+        receipt = guard.strict_json(receipt_raw)
+        guard.require(receipt.get('source_manifest_sha256') == pins.manifest_sha,
+                      'round check pinned product source')
+        guard.require(receipt.get('native_directory') == str(directory),
+                      'round check canonical directory/supervisor binding')
+        seen = set(seen)
+        workflow = validate_round(directory, (control['mode'], control['round']), receipt,
+                                  seen, workflow, guard_directory=local)
+        result.update(result='OWNED_ROUND_EVIDENCE_VERIFIED', success=True,
+                      mode=control['mode'], round=control['round'], run_id=receipt['run_id'],
+                      seen_run_ids=sorted(seen), workflow_sha256=workflow,
+                      input_sha256=hashlib.sha256(raw).hexdigest(),
+                      supervisor_receipt_sha256=receipt_sha)
+    except BaseException as error:
+        result['failure'] = type(error).__name__ + ': ' + str(error)
+    guard.write(local / 'round-check-result.json', result)
+    return 0 if result['success'] else 2
+
+
+def watched_round_check(root, directory, local, case, receipt, seen_ids, workflow_sha, sentinel):
+    """Keep consuming every live sample throughout raw replay and project hashing."""
+    input_path = local / 'round-check-input.json'
+    receipt_raw = (local / 'SUPERVISOR_RESULT.json').read_bytes()
+    receipt_sha = hashlib.sha256(receipt_raw).hexdigest()
+    guard.require(guard.strict_json(receipt_raw) == receipt, 'original parsed supervisor receipt bytes')
+    directory = directory.resolve(strict=True)
+    guard.require(receipt.get('native_directory') == str(directory),
+                  'original round directory/supervisor binding')
+    control = {'schema_version': 1, 'mode': case[0], 'round': case[1],
+               'directory': str(directory), 'seen_run_ids': sorted(seen_ids),
+               'workflow_sha256': workflow_sha, 'supervisor_receipt_sha256': receipt_sha}
+    # Bind the exact bytes this parent writes, rather than any later file state.
+    expected_input_sha = hashlib.sha256((json.dumps(control, indent=2, allow_nan=False) + '\n').encode('utf-8')).hexdigest()
+    guard.write(input_path, control)
+    guard.require(guard.sha(input_path) == expected_input_sha, 'original round check input bytes')
+    command = ['python3', '-B', str(Path(__file__).resolve()), 'check-round',
+               '--root', str(root), '--round-check-input', str(input_path)]
+    try:
+        watched_command(command, root, local, 'round-evidence-check', sentinel)
+    except RuntimeError as error:
+        result_path = local / 'round-check-result.json'
+        if result_path.is_file():
+            raw_failure = result_path.read_bytes()
+            guard.require(0 < len(raw_failure) <= guard.MAX_LINE_BYTES, 'failed round check result size')
+            failed = guard.strict_json(raw_failure)
+            if type(failed) is dict and type(failed.get('failure')) is str:
+                raise RuntimeError(str(error) + ': ' + failed['failure']) from error
+        raise
+    raw = (local / 'round-check-result.json').read_bytes()
+    guard.require(0 < len(raw) <= guard.MAX_LINE_BYTES, 'round check result size')
+    result = guard.strict_json(raw)
+    run_id = receipt.get('run_id')
+    guard.require(type(result) is dict and result.get('result') == 'OWNED_ROUND_EVIDENCE_VERIFIED' and
+                  result.get('success') is True and result.get('failure') is None and
+                  type(result.get('round')) is int and (result.get('mode'), result['round']) == case and
+                  type(run_id) is str and str(uuid.UUID(run_id)) == run_id and run_id not in seen_ids and
+                  result.get('run_id') == run_id and result.get('seen_run_ids') == sorted(seen_ids | {run_id}) and
+                  result.get('input_sha256') == expected_input_sha == guard.sha(input_path) and
+                  result.get('supervisor_receipt_sha256') == receipt_sha == guard.sha(local / 'SUPERVISOR_RESULT.json'),
+                  'joined round check result/input/identity binding')
+    workflow = result.get('workflow_sha256')
+    guard.require('workflow_sha256' in result and
+                  ((case[0] == 'workflow' and type(workflow) is str and re.fullmatch('[0-9a-f]{64}', workflow)) or
+                   (case[0] != 'workflow' and workflow == workflow_sha)), 'joined round check workflow chain')
+    guard.require(sentinel.pump() is None, 'continuous input halt after evidence check')
+    seen_ids.add(run_id)
+    return workflow
 
 
 DISPLAY_LABELS = ('display-before', 'display-active', 'display-active-probe',
@@ -877,8 +985,7 @@ def run_matrix(*, root, binary, producer, bundle, evidence, gate_ledger):
                             'run_id': receipt.get('run_id'), 'guard_success': receipt.get('success')})
             guard.require(code == 0 and receipt.get('success') is True, 'first failed case stops matrix: ' + name)
             watched_command(command_native_verify(root, output, pins), root, local, 'native-verifier', sentinel)
-            workflow_sha = validate_round(output, case, receipt, seen_ids, workflow_sha, guard_directory=local)
-            guard.require(sentinel.pump() is None, 'continuous input halt after evidence check')
+            workflow_sha = watched_round_check(root, output, local, case, receipt, seen_ids, workflow_sha, sentinel)
             rows.append({'mode': case[0], 'round': case[1], 'directory': 'native/' + name})
     except BaseException as error:
         failure = type(error).__name__ + ': ' + str(error)
@@ -1019,7 +1126,7 @@ def validate_completed(*, root, bundle, evidence, gate_ledger, attacks):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('run', 'validate', 'recover'))
+    parser.add_argument('operation', choices=('run', 'validate', 'recover', 'check-round'))
     parser.add_argument('--root', required=True, type=Path)
     parser.add_argument('--bundle', type=Path)
     parser.add_argument('--guard-evidence', type=Path)
@@ -1030,7 +1137,12 @@ def main():
     parser.add_argument('--display-helper', type=Path)
     parser.add_argument('--expected-snapshot', type=Path)
     parser.add_argument('--recovery-output', type=Path)
+    parser.add_argument('--round-check-input', type=Path)
     args = parser.parse_args()
+    if args.operation == 'check-round':
+        if args.round_check_input is None:
+            parser.error('owned round check input required')
+        return check_round(args.round_check_input)
     if args.operation == 'recover':
         if args.display_helper is None or args.expected_snapshot is None or args.recovery_output is None:
             parser.error('owned recovery helper/snapshot/output required')
