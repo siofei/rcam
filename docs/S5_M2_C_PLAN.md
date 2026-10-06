@@ -897,3 +897,113 @@ invented locals to catch refactor scope errors; it does not run or prove native1
 These fixtures are parser tests only.
 Changed verifier/test/docs bytes require a new reviewed manifest and fresh final
 build/gate identity; old ebd3 background receipts are never resealed as successors.
+
+### Session-completion isolation candidate and runner launch boundary
+
+The retained 1a7344/v3.5.2 formal attempt remains BLOCKED, 0/12. Its owned
+set60 helper reached session completion and spent most of its ten-second budget
+waiting for a previous reconfiguration. The original-mode restorer entered the
+same wait and was interrupted by the external app-binding deadline before its
+own timeout. Empty terminal stdout did not locate those phases; the existing
+owned system logs did. The owner of that prior reconfiguration remains unknown.
+The initial and final 144Hz probes do not prove absence of an intermediate mode
+change or successful return from the failed restoration command.
+
+This S5-M2-C candidate (R17/R19/R21/R22, existing AT-073/075/083 relevance)
+isolates set60/restore from AppKit initialization. pmix_display_swift.py exposes
+two standalone literal sources: MUTATOR_SOURCE imports only CoreGraphics,
+Darwin and Foundation; PROBE_SOURCE alone initializes the non-activating
+NSApplication and measures NSScreen's actual backing scale for the exact target.
+The native files are display.swift and display-probe.swift respectively.
+This removes an unnecessary interaction; it is a testable blocking hypothesis,
+not a demonstrated remedy. Apple's direct
+[transaction example](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Conceptual/QuartzDisplayServicesConceptual/Articles/DisplayTransactions.html)
+does not require NSApplication, while
+[NSScreen](https://developer.apple.com/documentation/AppKit/NSScreen) does require
+the application object. The valid GUI/WindowServer execution context is still
+required. The continuous observer and initial probe remain in the sequence;
+no evidence assigns the previous configuration to either process.
+
+Every mutator snapshot contains exactly the eight CoreGraphics fields:
+display_id, mode_id, width, height, pixel_width, pixel_height, refresh_hz and
+in_mirror_set. Every probe snapshot contains those eight plus actual backing_scale.
+The verified operation selects its schema; missing/extra scale is rejected.
+No pixel-ratio or remembered value substitutes for an NSScreen measurement.
+Mutator.before must equal the core projection of the initial full probe.
+Mutator.after must equal both stable post-exit active-probe core snapshots;
+that full probe's geometry and measured scale must equal the initial geometry
+and scale. Restore.after must equal the initial core projection, then both full
+post-restore snapshots must equal the entire initial snapshot. Capture dimensions
+and native display checks now use the validated full active probe. All five
+display labels, exact target/original-mode argv, session scope, mirrored-target
+refusal, ten-second limits and two-second owned cleanup grace remain mandatory.
+No retry, .forAppOnly, permanent mode change or main-screen fallback is added.
+
+Both helpers write bounded phase JSON lines directly to stderr and leave stdout
+for one final before/after receipt. The phase records include actual PID/UID,
+physical main-thread status, sequence, operation, target, selected mode and
+darwin_uptime_raw_ns. Online/current-mode/mirror reads, NSScreen reads, mode
+enumeration and Begin/Configure/Complete each have enter/return boundaries;
+transaction return records carry the raw CGError. Configure failure still cancels
+its valid token, with separate cancellation boundaries; Complete consumes its
+token on return, including error. A successful verifier requires the complete
+expected sequence, typed identities/clocks, success returns and exact snapshot
+bindings. Unknown stderr, missing completion, cancellation/failure paths or a
+timed-out command cannot earn success from a final probe. Phase entry without
+return is diagnostic evidence of the next blocking point.
+The mutator registers a successful nonnull configuration before logging Begin's
+return. A phase serialization/write failure cancels only a still-live registered
+token, clears it before cleanup and emits no recursive phase calls. Normal Cancel
+and Complete returns clear that token before logging their return, so a logging
+failure cannot cancel a consumed token twice. Logging remains mandatory and any
+such failure remains fatal; it is not a successful display receipt.
+
+Native request schema4 also binds the guard's single launch nonce. The external
+runner Popen receives RCAM_PMIX_LAUNCH_NONCE as a canonical UUID; the app continues
+to filter RCAM_ variables and receives its request through the existing native
+directory. The runner records actual runner PID/path/source hash, app/capture
+hashes, target, run ID and two distinct canonical directories: the private native
+working directory and the requested acceptance output. request.json adds
+launch_nonce, runner_pid, native_directory, output_directory,
+runner_binding_sha256 and runner_clock_domain. The already complete native
+request and immutable native/runner-binding.json precede publication of identical
+output/runner-binding.json bytes. A subsequent marker always fails rather than
+overwriting those bytes.
+
+Only after active setter/preservation and its independent probe have joined and
+passed every strict check does the runner publish app-launch.json once, first in
+native and then output. It binds the original runner-binding raw SHA and the same
+nonce/runner/native/output/run/target identity. launch_at_ns uses the actual shared
+Darwin CLOCK_UPTIME_RAW immediately before app Popen, after app log files open;
+it records the launch opportunity, not successful app/window binding. The real
+owned-process record adds runner/nonce/domain and the observed post-Popen uptime.
+The native verifier requires those bindings and the opportunity-before-spawn
+ordering. Existing process-relative monotonic receipts retain their original
+inner causal checks; they are never subtracted from shared Darwin uptime.
+The observed spawn must precede the restorer's first shared-uptime phase and its
+owned argv must be exactly the bound binary path. If the frozen target becomes
+mirrored during preparation, the runner refuses APP_LAUNCH as well as final
+acceptance and still attempts its existing bounded cleanup.
+
+The external guard must first verify the owned Popen/kernel runner, known output,
+source/nonce/request and committed marker bytes. Its original 20/30-second app
+binding/readiness limits start once at the verified launch opportunity, never at
+later owned-bound/readiness observations. Preparation remains under the original
+190-second execution budget and every unchanged owned subcommand budget. A failed
+preparation has no APP_LAUNCH marker and remains FAIL while its existing bounded
+finally attempts same-target restoration. Input monitoring and original cleanup
+budgets remain active. Final output copying explicitly skips both committed
+markers and verifies byte equality with native originals, avoiding truncation or
+replacement while a guard reads them. The external five-stage join/restoration
+proof remains separate and mandatory; no incomplete journal grants recovery.
+
+Portable regressions use invented diagnostic/marker data and owned Python children
+only. They cover exact eight/nine-field roles, scale mismatch, malformed/foreign/
+missing/failed/boolean-alias phase records, immutable publication, distinct native
+and output paths, launch digest/nonce/clock/PID tampering, missing shared clock,
+invalid external nonce, failed pre-app paths without an APP marker, and marker
+preservation during final copying. Source review and these tests establish no
+Swift compilation, AppKit branch execution, successful set/restore or native run.
+The successor requires its own manifest/build/guard identities, strict Swift6
+compilation of both literal helpers, read-only target probe, and an explicitly
+coordinated fresh actual test. All failed source/runtime evidence stays retained.

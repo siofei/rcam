@@ -1,10 +1,11 @@
 """Local PMIX native runner. Preserve display by default; join valid movie before app release."""
 import argparse,datetime,hashlib,json,os,queue,shutil,subprocess,sys,tempfile,threading,time,uuid
 from pathlib import Path
-from pmix_display_swift import SOURCE as DISPLAY_SWIFT
+from pmix_display_swift import PROBE_SOURCE as DISPLAY_PROBE_SWIFT, MUTATOR_SOURCE as DISPLAY_MUTATOR_SWIFT
 from pmix_capture_swift import SOURCE as CAPTURE_SWIFT
 from pmix_capture_lifecycle import Lifecycle
-from pmix_owned_command import owned_command, LIMITS, drain_owned_group, group_present, validate_display_receipt
+from pmix_owned_command import (owned_command, LIMITS, drain_owned_group, group_present, validate_display_receipt,
+    display_core, validate_display_phases, runner_clock_ns, json_bytes, publish_runner_marker, CLOCK_DOMAIN, MARKER_NAMES)
 
 WINDOW_SWIFT = r'''
 import CoreGraphics
@@ -45,6 +46,10 @@ def main():
     if not a.video:p.error('--video required')
     if (a.mode=='workflow-reopen')!=(a.fixture is not None):p.error('--fixture only and always for workflow-reopen')
     if sys.platform!='darwin':p.error('native macOS only')
+    nonce=os.environ.get('RCAM_PMIX_LAUNCH_NONCE')
+    try:
+        if type(nonce) is not str or str(uuid.UUID(nonce))!=nonce:raise ValueError('canonical launch UUID required')
+    except (ValueError,AttributeError):p.error('RCAM_PMIX_LAUNCH_NONCE must contain the external launch nonce')
     try:operation=display_policy_operation(a.display_policy,a.allow_display_mode_change)
     except ValueError as e:p.error(str(e))
     a.output.mkdir(parents=True,exist_ok=False);out=a.output.resolve();native=Path(tempfile.mkdtemp(prefix='rcam-pmix-',dir='/tmp')).resolve()
@@ -52,16 +57,38 @@ def main():
     fixture=a.fixture.resolve(strict=True) if a.fixture else ROOT/'fixtures/synthetic/s5m2c'/('MIX_WORKFLOW.rcam' if a.mode.startswith('workflow') else 'PMIX.gbr')
     if a.mode=='workflow-reopen':shutil.copy2(fixture,native/'reopen-input.rcam');fixture=native/'reopen-input.rcam'
     protocol=ROOT/'fixtures/synthetic/s5m2c/protocol.json'
-    for name,data in [('display.swift',DISPLAY_SWIFT),('window.swift',WINDOW_SWIFT),('capture.swift',CAPTURE_SWIFT)]: (native/name).write_text(data)
+    for name,data in [('display.swift',DISPLAY_MUTATOR_SWIFT),('display-probe.swift',DISPLAY_PROBE_SWIFT),('window.swift',WINDOW_SWIFT),('capture.swift',CAPTURE_SWIFT)]: (native/name).write_text(data)
     shutil.copy2(producer,native/'capture-producer');os.chmod(native/'capture-producer',0o700)
-    request={'schema_version':3,'mode':a.mode,'selected':1000,'fixture':str(fixture),'fixture_sha256':sha(fixture),'protocol_sha256':sha(protocol),'native_inputs_sha256':sha(protocol.with_name('native-inputs.json')),'round':a.round,'run_id':str(uuid.uuid4()),'start_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_manifest_sha256':sha(ROOT/'MANIFEST.sha256'),'display_id':a.display_id,'display_policy':a.display_policy,'display_mode_change_authorized':a.allow_display_mode_change,'evidence_scope':'full-pmix-native' if operation=='set60' else 'capture-precheck-only'}
-    write(native/'request.json',request)
+    request={'schema_version':4,'mode':a.mode,'selected':1000,'fixture':str(fixture),'fixture_sha256':sha(fixture),'protocol_sha256':sha(protocol),'native_inputs_sha256':sha(protocol.with_name('native-inputs.json')),'round':a.round,'run_id':str(uuid.uuid4()),'start_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_manifest_sha256':sha(ROOT/'MANIFEST.sha256'),'display_id':a.display_id,'display_policy':a.display_policy,'display_mode_change_authorized':a.allow_display_mode_change,'evidence_scope':'full-pmix-native' if operation=='set60' else 'capture-precheck-only'}
     before=None;original=None;process=video=reader=None;life=None;code=1;error=None;exit_code=None;rss=None;usage_receipt=None;restore=None;video_record=None;changed=False
     ui=Path(tempfile.mkdtemp(prefix='rcam-i2-c-ui-',dir=native));messages=queue.Queue();events=[];stdout_rows=[];producer_stderr=None;producer_err_file=None;reader_started=False;reader_cleanup_error=None;producer_signals=[];producer_group_released=False
     write(native/'binary-before.json',{'path':str(binary),'sha256':sha(binary),'bytes':binary.stat().st_size});shutil.copy2(ROOT/'MANIFEST.sha256',native/'source-manifest.sha256')
+    def publish_marker(name,value):
+        raw=json_bytes(value);publish_runner_marker(native,name,raw);publish_runner_marker(out,name,raw)
+        return hashlib.sha256(raw).hexdigest()
+    def display_command(label,op,mode=None):
+        helper='display-probe.swift' if op=='probe' else 'display.swift'
+        command=['/usr/bin/swift',str(native/helper),op,str(a.display_id)]+([str(mode)] if mode is not None else [])
+        returned=owned_command(native,label,command,check=True)
+        from verify_pmix_workflow import parse_json
+        receipt=parse_json(returned.stdout.encode());validate_display_receipt(receipt,a.display_id,probe=op=='probe')
+        pid=json.loads((native/(label+'.subcommand-process.json')).read_text())['pid']
+        validate_display_phases(returned.stderr,op,a.display_id,pid,receipt)
+        write(native/(label+'.json'),receipt)
+        return receipt
     try:
-        initial=json.loads(owned_command(native,'display-before',['/usr/bin/swift',str(native/'display.swift'),'probe',str(a.display_id)],check=True).stdout)
-        validate_display_receipt(initial,a.display_id)
+        script=Path(__file__).resolve()
+        binding={'schema_version':1,'event':'RUNNER_BINDING','launch_nonce':nonce,'runner_pid':os.getpid(),
+                 'runner_path':str(script),'runner_sha256':sha(script),'native_directory':str(native),'output_directory':str(out),
+                 'run_id':request['run_id'],'source_manifest_sha256':request['source_manifest_sha256'],
+                 'binary_path':str(binary),'binary_sha256':sha(binary),'capture_producer_sha256':sha(native/'capture-producer'),
+                 'display_id':a.display_id,'clock_domain':CLOCK_DOMAIN,'bound_at_ns':runner_clock_ns()}
+        binding_raw=json_bytes(binding);binding_sha=hashlib.sha256(binding_raw).hexdigest()
+        request.update(launch_nonce=nonce,runner_pid=binding['runner_pid'],native_directory=str(native),output_directory=str(out),
+                       runner_binding_sha256=binding_sha,runner_clock_domain=CLOCK_DOMAIN)
+        publish_runner_marker(native,'runner-binding.json',binding_raw);write(native/'request.json',request)
+        publish_runner_marker(out,'runner-binding.json',binding_raw)
+        initial=display_command('display-before','probe')
         if initial['before']!=initial['after']:raise RuntimeError('initial target probe changed')
         before=initial
         write(native/'display-before.json',before);original=before['after']['mode_id']
@@ -73,21 +100,28 @@ def main():
             value=owned_command(native,label,command,check=True).stdout
             environment[key]=int(value) if key=='memory_bytes' else (value.strip() if key=='machine' else value)
         write(native/'environment.json',environment)
-        changed=operation=='set60';active=json.loads(owned_command(native,'display-active',['/usr/bin/swift',str(native/'display.swift'),operation,str(a.display_id)],check=True).stdout);write(native/'display-active.json',active)
-        validate_display_receipt(active,a.display_id)
-        if active['before']!=before['after']:raise RuntimeError('active original target snapshot mismatch')
+        changed=operation=='set60';active=display_command('display-active',operation)
+        if display_core(active['before'])!=display_core(before['after']):raise RuntimeError('active original target snapshot mismatch')
         if changed and abs(active['after']['refresh_hz']-60)>.01:raise RuntimeError('actual60Hz unavailable')
         if operation=='probe' and active['after']!=before['after']:raise RuntimeError('display changed before capture')
-        for key in ('width','height','pixel_width','pixel_height','backing_scale'):
+        for key in ('width','height','pixel_width','pixel_height'):
             if active['after'][key]!=before['after'][key]:raise RuntimeError('display geometry changed')
-        active_probe=json.loads(owned_command(native,'display-active-probe',['/usr/bin/swift',str(native/'display.swift'),'probe',str(a.display_id)],check=True).stdout)
-        write(native/'display-active-probe.json',active_probe);validate_display_receipt(active_probe,a.display_id)
-        if active_probe['before']!=active_probe['after'] or active_probe['after']!=active['after']:
+        active_probe=display_command('display-active-probe','probe')
+        if active_probe['before']!=active_probe['after'] or display_core(active_probe['after'])!=display_core(active['after']):
             raise RuntimeError('active target mode did not survive setter process exit')
+        if active_probe['after']['backing_scale']!=before['after']['backing_scale']:raise RuntimeError('actual target scale changed')
+        if changed and active_probe['after']['in_mirror_set']:
+            raise RuntimeError('target became mirrored; refusing app launch after linked mode change')
         env={k:v for k,v in os.environ.items() if not k.startswith('RCAM_')};env.update(RCAM_PMIX_NATIVE_DIR=str(native),RCAM_UI_ROI_DIR=str(ui),RCAM_UI_ROI_ROOT=str(native))
         with (native/'stdout.log').open('wb') as app_out,(native/'stderr.log').open('wb') as app_err:
+            launch={'schema_version':1,'event':'APP_LAUNCH','binding_sha256':binding_sha,
+                    **{key:binding[key] for key in ('launch_nonce','runner_pid','native_directory','output_directory','run_id','display_id','clock_domain')},
+                    'launch_at_ns':runner_clock_ns()}
+            publish_marker('app-launch.json',launch)
             app_started=time.monotonic_ns();process=subprocess.Popen([str(binary)],env=env,stdout=app_out,stderr=app_err)
-            write(native/'owned-process.json',{'pid':process.pid,'command':[str(binary)],'binary_sha256':sha(binary)});start=time.monotonic();video_started=ready_at=stop_at=None
+            write(native/'owned-process.json',{'pid':process.pid,'command':[str(binary)],'binary_sha256':sha(binary),
+                  'runner_pid':binding['runner_pid'],'launch_nonce':nonce,'clock_domain':CLOCK_DOMAIN,
+                  'app_started_uptime_ns':runner_clock_ns()});start=time.monotonic();video_started=ready_at=stop_at=None
             def receive():
                 try:
                     for line in video.stdout:stdout_rows.append(line);messages.put(json.loads(line))
@@ -112,7 +146,7 @@ def main():
                     image_cmd=['/usr/sbin/screencapture','-x','-o','-l',str(wid),str(native/'native-window.png')];i_start=time.monotonic_ns();image=owned_command(native,'image',image_cmd,timeout=max(.001,min(LIMITS['image'],start+255-time.monotonic())))
                     write(native/'image-command.json',{'app_pid':process.pid,'window_id':wid,'command':image_cmd,'exit_code':image.returncode,'started_monotonic_ns':i_start,'finished_monotonic_ns':time.monotonic_ns(),'stdout':image.stdout,'stderr':image.stderr})
                     if image.returncode:raise RuntimeError('owned image capture failed')
-                    scale=active['after']['backing_scale'];width=round(window['bounds']['Width']*scale);height=round(window['bounds']['Height']*scale)
+                    scale=active_probe['after']['backing_scale'];width=round(window['bounds']['Width']*scale);height=round(window['bounds']['Height']*scale)
                     video_cmd=[str(native/'capture-producer'),'--owned-window',str(process.pid),str(wid),str(native/'native-window.mov'),request['run_id'],'H264-MOV',str(width),str(height)]
                     video_started=time.monotonic_ns();producer_err_file=(native/'capture-stderr.log').open('xb');video=subprocess.Popen(video_cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=producer_err_file,text=True,start_new_session=True)
                     write(native/'owned-producer.json',{'pid':video.pid,'pgid':video.pid,'private_session':True,'app_pid':process.pid,'window_id':wid,'command':video_cmd,'producer_sha256':sha(native/'capture-producer'),'started_monotonic_ns':video_started})
@@ -210,12 +244,10 @@ def main():
             # A cleanup or receipt error must not skip same-target restoration.
             try:
                 if before is None:raise RuntimeError('no initial display snapshot; no display mode was set; restore query skipped')
-                op='restore' if changed else 'probe';cmd=['/usr/bin/swift',str(native/'display.swift'),op,str(a.display_id)]+([str(original)] if changed else [])
-                restore=json.loads(owned_command(native,'display-restored',cmd,check=True).stdout);write(native/'display-restored.json',restore)
-                validate_display_receipt(restore,a.display_id)
-                if restore['after']!=before['after']:error='display restoration/preservation mismatch';code=1
-                restored_probe=json.loads(owned_command(native,'display-restored-probe',['/usr/bin/swift',str(native/'display.swift'),'probe',str(a.display_id)],check=True).stdout)
-                write(native/'display-restored-probe.json',restored_probe);validate_display_receipt(restored_probe,a.display_id)
+                op='restore' if changed else 'probe'
+                restore=display_command('display-restored',op,original if changed else None)
+                if display_core(restore['after'])!=display_core(before['after']):error='display restoration/preservation mismatch';code=1
+                restored_probe=display_command('display-restored-probe','probe')
                 if restored_probe['before']!=restored_probe['after'] or restored_probe['after']!=before['after']:
                     raise RuntimeError('original target mode did not survive restore helper process exit')
             except BaseException as e:
@@ -223,7 +255,10 @@ def main():
                 write(native/'display-restoration-error.json',{'error':error,'display_id':a.display_id,'original_mode_id':original,'mode_change_attempted':changed,'initial_snapshot_available':before is not None})
         write(native/'runner.json',{'exit_code':exit_code,'error':error,'peak_child_rss_bytes':rss,'scope':'owned-child wait4 resource usage; no process enumeration; movie valid/joined before app release','resource_usage':usage_receipt,'ui_roi_directory':ui.name,'source_manifest_sha256':request['source_manifest_sha256'],'capture_state':life.state if life else None})
         for item in native.iterdir():
-            if item.is_file():shutil.copy2(item,out/item.name)
+            if item.name in MARKER_NAMES:
+                if not (out/item.name).is_file() or (out/item.name).read_bytes()!=item.read_bytes():
+                    raise RuntimeError('immutable output runner marker missing/changed: '+item.name)
+            elif item.is_file():shutil.copy2(item,out/item.name)
             elif item.is_dir():shutil.copytree(item,out/item.name)
         write(out/'file-hashes.json',{f.relative_to(out).as_posix():sha(f) for f in sorted(out.rglob('*')) if f.is_file()})
         print(json.dumps({'output':str(out),'native_directory':str(native),'exit_code':code,'error':error,'display_restored':restore},ensure_ascii=False),flush=True)

@@ -9,7 +9,7 @@ from verify_pmix_workflow import verify_workflow,verify_cross_layer_workflow,dec
 from verify_i2_c_ui_roi import analyze as analyze_roi, rows as roi_rows
 from verify_pmix_capture import capture_receipts
 from pmix_owned_command import verify_display_environment
-from pmix_display_swift import SOURCE as DISPLAY_SWIFT
+from pmix_display_swift import PROBE_SOURCE as DISPLAY_PROBE_SWIFT, MUTATOR_SOURCE as DISPLAY_MUTATOR_SWIFT
 
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def directory_path(root,name):
@@ -365,8 +365,8 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     require(r['native_inputs_sha256']==request['native_inputs_sha256']==sha(ROOT/'fixtures/synthetic/s5m2c/native-inputs.json'),'native input protocol binding')
     require(r['protocol_sha256']==request['protocol_sha256']==sha(ROOT/'fixtures/synthetic/s5m2c/protocol.json'),'protocol binding')
     require(request['source_manifest_sha256']==runner['source_manifest_sha256']==sha(directory/'source-manifest.sha256'),'source manifest binding')
-    before=load(directory/'display-before.json')['after'];display=load(directory/'display-active.json')['after'];restored=load(directory/'display-restored.json')['after']
-    verify_display_environment(directory,request,DISPLAY_SWIFT)
+    before=load(directory/'display-before.json')['after'];display=load(directory/'display-active-probe.json')['after'];restored=load(directory/'display-restored-probe.json')['after']
+    verify_display_environment(directory,request,DISPLAY_PROBE_SWIFT,DISPLAY_MUTATOR_SWIFT)
     require(restored==before,'native display restoration/preservation')
     if request['evidence_scope']=='capture-precheck-only':
         require(allow_capture_precheck and request['display_policy']=='preserve' and display==before,'capture-only display scope; formal performance cannot use preserved144Hz as frozen60Hz')
@@ -419,7 +419,7 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     for name in ('stdout.log','stderr.log','environment.json','window.json','window-query.json','image-command.json','native-window.png','video-command.json','native-window.mov','capture-ready.json','protocol-done.json','capture-complete.json'):
         safe(directory,name)
     capture=capture_receipts(directory,r,capture_producer_sha256)
-    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'display_id':request['display_id'],'display_binding':'explicit-target-schema3','raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'constructor_bootstrap':bootstrap_binding,'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
+    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'display_id':request['display_id'],'display_binding':'explicit-target-runner-schema4','raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'constructor_bootstrap':bootstrap_binding,'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
     if request['mode']=='nav':
         start=event('navigation-begin');end=event('navigation-end-input');done=event('navigation-complete');origin=start['data']['origin_ns'];a=start['frame_id'];b=end['frame_id']
         require(a<b<done['frame_id'],'navigation phase sequence')

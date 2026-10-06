@@ -267,7 +267,7 @@ def capture_receipts(directory,r,expected_producer_sha256):
     require(movie['samples']==video['finished_event']['accepted_samples'],'every accepted capture frame encoded')
     require(png['width']==movie['width'] and png['height']==movie['height'] and command[7:]==[str(movie['width']),str(movie['height'])],'image/movie/command window dimensions')
     bounds=window['bounds'];require(all(type(bounds[k]) in (int,float) and math.isfinite(bounds[k]) for k in ('X','Y','Width','Height')),'window bounds')
-    scale=load(safe(directory,'display-active.json'))['after']['backing_scale']
+    scale=load(safe(directory,'display-active-probe.json'))['after']['backing_scale']
     require(abs(movie['width']-bounds['Width']*scale)<=2 and abs(movie['height']-bounds['Height']*scale)<=2,'capture/window physical dimensions')
     protocol_span=(end_event['at_ns']-start_event['at_ns'])/1e9
     require(protocol_span>0 and movie['duration_seconds']+1>=protocol_span,'MOV complete protocol time coverage')
