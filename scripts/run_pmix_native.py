@@ -5,7 +5,8 @@ from pmix_display_swift import PROBE_SOURCE as DISPLAY_PROBE_SWIFT, MUTATOR_SOUR
 from pmix_capture_swift import SOURCE as CAPTURE_SWIFT
 from pmix_capture_lifecycle import Lifecycle
 from pmix_owned_command import (owned_command, LIMITS, drain_owned_group, group_present, validate_display_receipt,
-    display_core, validate_display_phases, runner_clock_ns, json_bytes, publish_runner_marker, CLOCK_DOMAIN, MARKER_NAMES)
+    display_core, validate_display_phases, runner_clock_ns, json_bytes, publish_runner_marker, CLOCK_DOMAIN, MARKER_NAMES,
+    DISPLAY_SWIFT_PREFIX)
 
 WINDOW_SWIFT = r'''
 import CoreGraphics
@@ -68,7 +69,7 @@ def main():
         return hashlib.sha256(raw).hexdigest()
     def display_command(label,op,mode=None):
         helper='display-probe.swift' if op=='probe' else 'display.swift'
-        command=['/usr/bin/swift',str(native/helper),op,str(a.display_id)]+([str(mode)] if mode is not None else [])
+        command=[*DISPLAY_SWIFT_PREFIX,str(native/helper),op,str(a.display_id)]+([str(mode)] if mode is not None else [])
         returned=owned_command(native,label,command,check=True)
         from verify_pmix_workflow import parse_json
         receipt=parse_json(returned.stdout.encode());validate_display_receipt(receipt,a.display_id,probe=op=='probe')

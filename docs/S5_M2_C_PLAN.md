@@ -1007,3 +1007,33 @@ Swift compilation, AppKit branch execution, successful set/restore or native run
 The successor requires its own manifest/build/guard identities, strict Swift6
 compilation of both literal helpers, read-only target probe, and an explicitly
 coordinated fresh actual test. All failed source/runtime evidence stays retained.
+
+### Display interpreter uses the tested strict Swift6 language mode
+
+The 0d764/29bf native precheck compiled both literal display helpers successfully
+with swiftc -swift-version 6 -warnings-as-errors. Its actual interpreter invocation
+omitted the language flags and failed MainActor checking before runtime entry;
+it produced neither phase records nor a display receipt. That source/precheck
+failure stays preserved and did not earn fresh background gates, build or native
+acceptance.
+
+Every PMIX display interpreter argv now begins exactly with /usr/bin/swift,
+-swift-version, 6, -warnings-as-errors, followed by the verified probe/mutator
+source path, operation, explicit display ID and original mode ID for restore.
+The source-owned command verifier requires this same full argv for all five
+labels. The external guard must use the identical prefix for its five-stage
+proof and emergency same-target probe/restore calls. Window-query and legacy
+S5-M1 commands are outside this change. The two literal Swift sources, Actor
+annotations, phase/marker schemas, session API, no-retry rule and all deadlines
+are unchanged.
+
+The official Swift driver [interpret job](https://github.com/swiftlang/swift-driver/blob/main/Sources/SwiftDriver/Jobs/InterpretJob.swift)
+forwards [common frontend options](https://github.com/swiftlang/swift-driver/blob/main/Sources/SwiftDriver/Jobs/FrontendJobHelpers.swift),
+including language version and warning treatment. This correction selects the
+already tested strict language mode; it does not remove isolation or warning
+checks. A portable regression mutates each raw owned argv consistently with its
+launch receipt, preserving all successful phase/snapshot data, and rejects
+missing flags, Swift5 and suppressed warnings. Those parser tests do not execute
+the interpreter. The next Mac precheck must invoke this exact interpreter argv
+before any set/restore or fresh build/native work; swiftc success alone is not
+interpreter success.

@@ -149,7 +149,7 @@ signal.pause()
                     else:raise AssertionError('unexpected real-adapter path: '+label)
                     program='print('+repr(value)+')'
                     if label.startswith('display-'):
-                        receipt=json.loads(value);rows=phase_rows(command[2],receipt)
+                        receipt=json.loads(value);rows=phase_rows(command[5],receipt)
                         program+='\nimport os,json,time,sys\nrows='+repr(rows)+'\nfor row in rows:\n row["producer_pid"]=os.getpid();row["at_ns"]=time.monotonic_ns();print(json.dumps(row),file=sys.stderr,flush=True)'
                     return owned_command(directory,label,self.command(program),timeout=1,grace=.2,check=kwargs.get('check',False))
                 out=case/'output';argv=['run_pmix_native','--binary',str(binary),'--capture-producer',str(producer),'--output',str(out),'--mode','workflow','--video','--display-policy','preserve','--display-id','2']
@@ -197,12 +197,12 @@ signal.pause()
                   'display-restored':{'before':dict(active),'after':dict(initial)},
                   'display-restored-probe':{'before':dict(initial),'after':dict(initial)}}
         helper=Path('/tmp/synthetic-display-fixture/display.swift');probe=helper.with_name('display-probe.swift')
-        commands={'display-before':['/usr/bin/swift',str(probe),'probe','2'],
-                  'display-active':['/usr/bin/swift',str(helper if changed else probe),'set60' if changed else 'probe','2'],
-                  'display-active-probe':['/usr/bin/swift',str(probe),'probe','2'],
-                  'display-restored':['/usr/bin/swift',str(helper if changed else probe),'restore' if changed else 'probe','2']+
+        commands={'display-before':['/usr/bin/swift','-swift-version','6','-warnings-as-errors',str(probe),'probe','2'],
+                  'display-active':['/usr/bin/swift','-swift-version','6','-warnings-as-errors',str(helper if changed else probe),'set60' if changed else 'probe','2'],
+                  'display-active-probe':['/usr/bin/swift','-swift-version','6','-warnings-as-errors',str(probe),'probe','2'],
+                  'display-restored':['/usr/bin/swift','-swift-version','6','-warnings-as-errors',str(helper if changed else probe),'restore' if changed else 'probe','2']+
                                      (['113'] if changed else []),
-                  'display-restored-probe':['/usr/bin/swift',str(probe),'probe','2']}
+                  'display-restored-probe':['/usr/bin/swift','-swift-version','6','-warnings-as-errors',str(probe),'probe','2']}
         if changed:
             for label in ('display-active','display-restored'):
                 receipts[label]={side:display_core(snapshot) for side,snapshot in receipts[label].items()}
@@ -226,7 +226,7 @@ signal.pause()
             (self.root/(label+'.subcommand-launch.json')).write_text(json.dumps({key:row[key] for key in
                 ('pid','pgid','private_session','command','started_monotonic_ns','timeout_seconds')}))
             (self.root/(label+'.subcommand.stdout')).write_text(stdout)
-            (self.root/(label+'.subcommand.stderr')).write_text(phase_text(command[2],receipts[label],started=started) if label.startswith('display-') else '')
+            (self.root/(label+'.subcommand.stderr')).write_text(phase_text(command[5],receipts[label],started=started) if label.startswith('display-') else '')
         for label,receipt in receipts.items():
             (self.root/(label+'.json')).write_text(json.dumps(receipt))
             command_files(label,commands[label],json.dumps(receipt)+'\n')
@@ -314,10 +314,10 @@ signal.pause()
 
     def test_display_command_receipts_bind_target_and_original_mode(self):
         for label in ('display-before','display-active','display-active-probe','display-restored','display-restored-probe'):
-            self.reject_display_fixture(lambda _,__,commands,label=label:commands[label].__setitem__(3,'3'))
-            self.reject_display_fixture(lambda _,__,commands,label=label:commands[label].pop(3))
-        self.reject_display_fixture(lambda _,__,commands:commands['display-restored'].__setitem__(4,'114'))
-        self.reject_display_fixture(lambda _,__,commands:commands['display-active'].__setitem__(2,'probe'))
+            self.reject_display_fixture(lambda _,__,commands,label=label:commands[label].__setitem__(6,'3'))
+            self.reject_display_fixture(lambda _,__,commands,label=label:commands[label].pop(6))
+        self.reject_display_fixture(lambda _,__,commands:commands['display-restored'].__setitem__(7,'114'))
+        self.reject_display_fixture(lambda _,__,commands:commands['display-active'].__setitem__(5,'probe'))
         self.reject_display_fixture(lambda _,receipts,__:receipts['display-active']['after'].update(refresh_hz=144))
         baseline=self.display_fixture(True);self.check_display_fixture(baseline)
         raw=self.root/'display-active.subcommand.stdout'
@@ -325,6 +325,24 @@ signal.pause()
         with self.assertRaisesRegex(ValueError,'duplicate JSON key'):
             verify_display_environment(self.root,baseline[0],runner.DISPLAY_PROBE_SWIFT,runner.DISPLAY_MUTATOR_SWIFT)
         self.check_display_fixture(baseline)
+
+    def test_display_interpreter_language_and_warning_flags_are_exact(self):
+        # Corrupt otherwise consistent raw command receipts, retaining all phases.
+        fixture=self.display_fixture(True);self.check_display_fixture(fixture)
+        for label in ('display-before','display-active','display-active-probe','display-restored','display-restored-probe'):
+            process=self.root/(label+'.subcommand-process.json');launch=self.root/(label+'.subcommand-launch.json')
+            original_process=process.read_bytes();original_launch=launch.read_bytes()
+            command=json.loads(original_process)['command']
+            self.assertEqual(command[:4],['/usr/bin/swift','-swift-version','6','-warnings-as-errors'])
+            variants=[command[:1]+command[3:],command[:3]+command[4:],
+                      command[:2]+['5']+command[3:],command[:3]+['-suppress-warnings']+command[4:]]
+            for variant in variants:
+                p=json.loads(original_process);p['command']=variant;process.write_text(json.dumps(p))
+                l=json.loads(original_launch);l['command']=variant;launch.write_text(json.dumps(l))
+                with self.subTest(label=label,argv=variant),self.assertRaises(ValueError):
+                    verify_display_environment(self.root,fixture[0],runner.DISPLAY_PROBE_SWIFT,runner.DISPLAY_MUTATOR_SWIFT)
+            process.write_bytes(original_process);launch.write_bytes(original_launch)
+        verify_display_environment(self.root,fixture[0],runner.DISPLAY_PROBE_SWIFT,runner.DISPLAY_MUTATOR_SWIFT)
 
     def test_display_post_exit_probes_and_app_clock_causality(self):
         for label in ('display-active-probe','display-restored-probe'):
@@ -391,10 +409,10 @@ signal.pause()
                         if failure=='missing-on-restore':raise subprocess.CalledProcessError(2,command,stderr='requested target unavailable; no fallback')
                         receipt={'before':dict(initial) if failure=='mirrored-initial' else dict(initial,mode_id=999,refresh_hz=75),'after':dict(initial)}
                     else:raise AssertionError('unexpected actual command '+label)
-                    if command[2]!='probe':receipt={side:display_core(snapshot) for side,snapshot in receipt.items()}
+                    if command[5]!='probe':receipt={side:display_core(snapshot) for side,snapshot in receipt.items()}
                     # Fake process receipt is owned by this injected adapter, not a Swift execution.
                     (directory/(label+'.subcommand-process.json')).write_text(json.dumps({'pid':12345}))
-                    return subprocess.CompletedProcess(command,0,json.dumps(receipt),phase_text(command[2],receipt))
+                    return subprocess.CompletedProcess(command,0,json.dumps(receipt),phase_text(command[5],receipt))
                 out=case/'output';argv=['run_pmix_native','--binary',str(binary),'--capture-producer',str(producer),
                     '--output',str(out),'--mode','workflow','--video','--display-policy','frozen-60hz',
                     '--allow-display-mode-change','--display-id','2']

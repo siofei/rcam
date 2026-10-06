@@ -19,6 +19,7 @@ LIMITS={'display-before':10,'display-active':10,'display-active-probe':10,
         'environment-os':3,'environment-machine':3,'environment-memory':3,'environment-power':3}
 GRACE=2
 CLOCK_DOMAIN='darwin_uptime_raw_ns'
+DISPLAY_SWIFT_PREFIX=('/usr/bin/swift','-swift-version','6','-warnings-as-errors')
 MARKER_NAMES={'runner-binding.json','app-launch.json'}
 CORE_DISPLAY_FIELDS={'display_id','mode_id','width','height','pixel_width','pixel_height','refresh_hz','in_mirror_set'}
 
@@ -274,17 +275,17 @@ def verify_display_environment(directory,request,probe_source,mutator_source):
             'original full target mode did not survive restore helper exit')
     for key in ('width','height','pixel_width','pixel_height','backing_scale'):
         require(active_probe['after'][key]==before['after'][key],'active target actual geometry/scale')
-    commands=[('display-before',['/usr/bin/swift',str(probe),'probe',str(display_id)],before),
-              ('display-active',['/usr/bin/swift',str(helper if changed else probe),'set60' if changed else 'probe',str(display_id)],active),
-              ('display-active-probe',['/usr/bin/swift',str(probe),'probe',str(display_id)],active_probe),
-              ('display-restored',['/usr/bin/swift',str(helper if changed else probe),'restore' if changed else 'probe',str(display_id)]+
+    commands=[('display-before',[*DISPLAY_SWIFT_PREFIX,str(probe),'probe',str(display_id)],before),
+              ('display-active',[*DISPLAY_SWIFT_PREFIX,str(helper if changed else probe),'set60' if changed else 'probe',str(display_id)],active),
+              ('display-active-probe',[*DISPLAY_SWIFT_PREFIX,str(probe),'probe',str(display_id)],active_probe),
+              ('display-restored',[*DISPLAY_SWIFT_PREFIX,str(helper if changed else probe),'restore' if changed else 'probe',str(display_id)]+
                ([str(before['after']['mode_id'])] if changed else []),restored),
-              ('display-restored-probe',['/usr/bin/swift',str(probe),'probe',str(display_id)],restored_probe)]
+              ('display-restored-probe',[*DISPLAY_SWIFT_PREFIX,str(probe),'probe',str(display_id)],restored_probe)]
     processes={};phases={}
     for label,command,expected in commands:
         processes[label]=verify_command(directory,label,command,0)
         require(load(safe(directory,label+'.subcommand.stdout'))==expected,'bounded actual display query output')
-        phases[label]=validate_display_phases(safe(directory,label+'.subcommand.stderr').read_text(),command[2],display_id,
+        phases[label]=validate_display_phases(safe(directory,label+'.subcommand.stderr').read_text(),command[5],display_id,
                                               processes[label]['pid'],expected)
     usage=load(safe(directory,'owned-resource-usage.json'))
     require(all(type(usage.get(k)) is int and 0<usage[k]<2**64
