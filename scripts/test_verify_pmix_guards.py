@@ -28,6 +28,7 @@ from run_pmix_capture_preflight import validate_probe, initialization_readiness,
 from test_pmix_owned_command import OwnedCommands
 from test_pmix_frame_coverage import FrameCoverage
 from test_pmix_bootstrap import Bootstrap
+from test_pmix_input_modifiers import InputModifiers
 PRODUCER_SHA=hashlib.sha256(b'unit-producer').hexdigest()
 
 

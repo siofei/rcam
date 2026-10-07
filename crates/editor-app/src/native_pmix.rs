@@ -91,6 +91,36 @@ pub fn directory() -> Option<PathBuf> {
         && dir.file_name()?.to_str()?.starts_with("rcam-pmix-"))
     .then_some(dir)
 }
+
+const DRAG_INPUT_POLICY_VERSION: u64 = 1;
+
+fn input_modifiers(mode: &str, phase: u32) -> egui::Modifiers {
+    let mut modifiers = egui::Modifiers::NONE;
+    // Dedicated contour Snap is independent of the global Snap.enabled flag.
+    // The frozen free-trajectory benchmark uses its ordinary Alt bypass.
+    modifiers.alt = ["move", "escape", "new-project"].contains(&mode) && (4..=7).contains(&phase);
+    modifiers
+}
+
+fn modifier_value(modifiers: egui::Modifiers) -> Value {
+    json!({"alt":modifiers.alt,"ctrl":modifiers.ctrl,"shift":modifiers.shift,"command":modifiers.command,"mac_cmd":modifiers.mac_cmd})
+}
+
+fn button_inputs(raw: &egui::RawInput) -> Value {
+    json!(raw.events.iter().filter_map(|event| {
+        if let egui::Event::PointerButton { pos, button, pressed, modifiers } = event {
+            Some(json!({"button":format!("{button:?}"),"pressed":pressed,"position":[pos.x,pos.y],"modifiers":modifier_value(*modifiers)}))
+        } else { None }
+    }).collect::<Vec<_>>())
+}
+
+fn key_inputs(raw: &egui::RawInput) -> Value {
+    json!(raw.events.iter().filter_map(|event| {
+        if let egui::Event::Key { key, physical_key, pressed, repeat, modifiers } = event {
+            Some(json!({"key":format!("{key:?}"),"physical_key":physical_key.map(|key|format!("{key:?}")),"pressed":pressed,"repeat":repeat,"modifiers":modifier_value(*modifiers)}))
+        } else { None }
+    }).collect::<Vec<_>>())
+}
 fn state(app: &EditorApp) -> Value {
     let d = app.view.info.as_ref();
     json!({"document_id":d.map(|d|&d.document_id),"revision":d.map(|d|&d.revision),"workspace_revision":d.map(|d|&d.workspace_revision),"version":editor_service::task::TaskVersion::capture(app.view.info.as_ref(),app.view.task_generation,app.view.rule_revision),"dirty":d.map(|d|d.dirty),"project_dirty":d.map(|d|d.project_dirty),"undo":d.map(|d|d.undo_entries),"redo":d.map(|d|d.redo_entries),"selected":app.view.selected.ordered.len(),"primary":app.view.selected.primary().map(|o|&o.object.object_id),"scene_serial":app.view.scene.as_ref().map(|s|s.serial),"scene_objects":app.view.scene.as_ref().map_or(0,|s|s.objects.len()),"busy":app.busy,"display_pending":app.display_pending,"delta":app.drag.as_ref().map(|g|g.delta),"canvas_physical":[app.canvas_rect.width()*app.reported_ppp,app.canvas_rect.height()*app.reported_ppp]})
@@ -254,12 +284,13 @@ impl Run {
                 pos: p,
                 button: egui::PointerButton::Primary,
                 pressed,
-                modifiers: egui::Modifiers::NONE,
+                modifiers: raw.modifiers,
             });
         }
     }
     fn key(raw: &mut egui::RawInput, key: egui::Key, command: bool, shift: bool) {
         let modifiers = egui::Modifiers {
+            alt: raw.modifiers.alt,
             mac_cmd: command,
             command,
             shift,
@@ -319,6 +350,8 @@ impl Run {
         FRAME.store(self.frame_id, Ordering::Release);
         self.input_at = Instant::now();
         self.focused = raw.focused;
+        let input_phase = self.phase;
+        raw.modifiers = input_modifiers(&self.mode, input_phase);
         match self.phase {
             20 => {
                 let t = self
@@ -444,7 +477,7 @@ impl Run {
             }
             _ => {}
         }
-        self.injected = json!({"view":view_parameters(app),"pointer":raw.events.iter().rev().find_map(|e|if let egui::Event::PointerMoved(p)=e {Some([p.x,p.y])} else {None}),"pressed":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:true,..})),"released":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:false,..})),"escape":raw.events.iter().any(|e|matches!(e,egui::Event::Key {key:egui::Key::Escape,pressed:true,..})),"pointer_gone":raw.events.iter().any(|e|matches!(e,egui::Event::PointerGone)),"zoom":raw.events.iter().filter_map(|e|if let egui::Event::Zoom(z)=e {Some(*z)} else {None}).collect::<Vec<_>>(),"wheel":raw.events.iter().filter_map(|e|if let egui::Event::MouseWheel{delta,..}=e {Some([delta.x,delta.y])} else {None}).collect::<Vec<_>>(),"focused":raw.focused,"trajectory_origin_ns":self.trajectory_origin.map(|t|t.duration_since(self.started).as_nanos() as u64)});
+        self.injected = json!({"input_policy_version":DRAG_INPUT_POLICY_VERSION,"input_phase":input_phase,"modifiers":modifier_value(raw.modifiers),"buttons":button_inputs(raw),"keys":key_inputs(raw),"view":view_parameters(app),"pointer":raw.events.iter().rev().find_map(|e|if let egui::Event::PointerMoved(p)=e {Some([p.x,p.y])} else {None}),"pressed":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:true,..})),"released":raw.events.iter().any(|e|matches!(e,egui::Event::PointerButton {pressed:false,..})),"escape":raw.events.iter().any(|e|matches!(e,egui::Event::Key {key:egui::Key::Escape,pressed:true,..})),"pointer_gone":raw.events.iter().any(|e|matches!(e,egui::Event::PointerGone)),"zoom":raw.events.iter().filter_map(|e|if let egui::Event::Zoom(z)=e {Some(*z)} else {None}).collect::<Vec<_>>(),"wheel":raw.events.iter().filter_map(|e|if let egui::Event::MouseWheel{delta,..}=e {Some([delta.x,delta.y])} else {None}).collect::<Vec<_>>(),"focused":raw.focused,"trajectory_origin_ns":self.trajectory_origin.map(|t|t.duration_since(self.started).as_nanos() as u64)});
         // Frame interval includes recorder overhead, scheduling and preceding
         // GPU completion. CPU update excludes this PMIX recorder but includes
         // the separate accepted UI ROI collector; all frame intervals include both.
@@ -845,7 +878,7 @@ impl Run {
         self.log.observe(Pending {
             id: self.frame_id,
             input: self.input_at,
-            observed: json!({"id":self.frame_id,"phase":self.phase,"pass_index":ctx.current_pass_index(),"processed_navigation":ctx.input(|i|json!({"scroll":[i.smooth_scroll_delta.x,i.smooth_scroll_delta.y],"zoom":i.zoom_delta()})),"injected":self.injected,"view":view_parameters(app),"gesture":app.drag.as_ref().map(|d|json!({"last":[d.last.x,d.last.y],"confirmed":d.confirmed,"dragging":d.evidence_dragging(),"error":d.error()})),"input_ns":self.input_at.duration_since(self.started).as_nanos() as u64,"input_seconds":interval,"observed_ns":self.started.elapsed().as_nanos() as u64,"state":state(app),"cpu_update_ms":cpu_ms,"frame_interval_ms":self.frame_interval,"focused":self.focused,"prepare":self.prepared.take(),"snapshot_identity_unchanged":stable,"scene_identity_unchanged":scene_stable,"preview_index_identity_unchanged":app.last_good.as_ref().is_none_or(|l|Arc::ptr_eq(&l.scene.index,&l.index)),"paint_delta":app.last_good.as_ref().map(|l|l.uniforms.preview),"paint":app.last_good.as_ref().map(|l|json!({"scene_serial":l.scene.serial,"scene_anchor":l.scene.anchor,"uniform_view":l.uniforms.view,"uniform_camera":l.uniforms.camera,"uniform_counts":l.uniforms.counts,"objects":l.scene.objects.len(),"primitives":l.scene.primitives.len(),"points":l.scene.points.len(),"index_words":l.index.data.len()})),"display_message":app.display_error}),
+            observed: json!({"id":self.frame_id,"phase":self.phase,"pass_index":ctx.current_pass_index(),"processed_modifiers":ctx.input(|i|modifier_value(i.modifiers)),"processed_buttons":ctx.input(|i|button_inputs(&i.raw)),"processed_keys":ctx.input(|i|key_inputs(&i.raw)),"processed_navigation":ctx.input(|i|json!({"scroll":[i.smooth_scroll_delta.x,i.smooth_scroll_delta.y],"zoom":i.zoom_delta()})),"injected":self.injected,"view":view_parameters(app),"gesture":app.drag.as_ref().map(|d|json!({"last":[d.last.x,d.last.y],"confirmed":d.confirmed,"dragging":d.evidence_dragging(),"error":d.error()})),"input_ns":self.input_at.duration_since(self.started).as_nanos() as u64,"input_seconds":interval,"observed_ns":self.started.elapsed().as_nanos() as u64,"state":state(app),"cpu_update_ms":cpu_ms,"frame_interval_ms":self.frame_interval,"focused":self.focused,"prepare":self.prepared.take(),"snapshot_identity_unchanged":stable,"scene_identity_unchanged":scene_stable,"preview_index_identity_unchanged":app.last_good.as_ref().is_none_or(|l|Arc::ptr_eq(&l.scene.index,&l.index)),"paint_delta":app.last_good.as_ref().map(|l|l.uniforms.preview),"paint":app.last_good.as_ref().map(|l|json!({"scene_serial":l.scene.serial,"scene_anchor":l.scene.anchor,"uniform_view":l.uniforms.view,"uniform_camera":l.uniforms.camera,"uniform_counts":l.uniforms.counts,"objects":l.scene.objects.len(),"primitives":l.scene.primitives.len(),"points":l.scene.points.len(),"index_words":l.index.data.len()})),"display_message":app.display_error}),
         });
         if self.close_requested.is_some() {
             return;
@@ -1163,6 +1196,96 @@ impl Run {
 mod frame_log_tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn free_drag_alt_is_scoped_to_press_through_release_confirmation() {
+        for mode in [
+            "move",
+            "escape",
+            "new-project",
+            "nav",
+            "points",
+            "workflow",
+            "workflow-reopen",
+            "workflow-cross-layer",
+        ] {
+            for phase in 0..=76 {
+                let modifiers = input_modifiers(mode, phase);
+                assert_eq!(
+                    modifiers.alt,
+                    ["move", "escape", "new-project"].contains(&mode) && (4..=7).contains(&phase)
+                );
+                assert!(
+                    !modifiers.ctrl && !modifiers.shift && !modifiers.command && !modifiers.mac_cmd
+                );
+                assert_eq!(
+                    crate::selection::SelectionMode::from_modifiers(modifiers),
+                    crate::selection::SelectionMode::Replace
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn egui_receives_alt_on_drag_buttons_and_escape_then_clears_it_for_history() {
+        let ctx = egui::Context::default();
+        let position = Pos2::new(20., 30.);
+        let mut press = egui::RawInput {
+            modifiers: input_modifiers("escape", 4),
+            ..Default::default()
+        };
+        Run::pointer(&mut press, position, Some(true));
+        let press_buttons = button_inputs(&press);
+        let _ = ctx.run(press, |ctx| {
+            ctx.input(|input| {
+                assert!(input.modifiers.alt && input.pointer.primary_pressed());
+                assert_eq!(button_inputs(&input.raw), press_buttons);
+            });
+        });
+        let mut release = egui::RawInput {
+            modifiers: input_modifiers("escape", 6),
+            ..Default::default()
+        };
+        Run::pointer(&mut release, position, Some(false));
+        Run::key(&mut release, egui::Key::Escape, false, false);
+        let release_buttons = button_inputs(&release);
+        let release_keys = key_inputs(&release);
+        let _ = ctx.run(release, |ctx| {
+            ctx.input(|input| {
+                assert!(
+                    input.modifiers.alt
+                        && input.pointer.primary_released()
+                        && input.key_pressed(egui::Key::Escape)
+                );
+                assert!(crate::drag::cancelled(
+                    input.key_pressed(egui::Key::Escape),
+                    true,
+                    false,
+                    input.pointer.primary_down(),
+                    input.pointer.primary_released()
+                ));
+                assert_eq!(button_inputs(&input.raw), release_buttons);
+                assert_eq!(key_inputs(&input.raw), release_keys);
+            });
+        });
+        for (phase, shift) in [(8, false), (10, true)] {
+            let mut history = egui::RawInput {
+                modifiers: input_modifiers("move", phase),
+                ..Default::default()
+            };
+            Run::key(&mut history, egui::Key::Z, true, shift);
+            let history_keys = key_inputs(&history);
+            let _ = ctx.run(history, |ctx| {
+                ctx.input(|input| {
+                    assert!(
+                        !input.modifiers.alt && input.modifiers.command && input.modifiers.mac_cmd
+                    );
+                    assert_eq!(input.modifiers.shift, shift);
+                    assert_eq!(key_inputs(&input.raw), history_keys);
+                });
+            });
+        }
+    }
 
     fn pending(id: u64, origin: Instant) -> Pending {
         Pending {

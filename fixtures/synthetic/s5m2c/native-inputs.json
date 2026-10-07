@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "stage": "S5-M2-C",
-  "version": 1,
+  "version": 2,
   "point_camera_logical_scale": 20,
   "native_box_rect_mm": [
     -3,
@@ -23,5 +23,22 @@
     400.5,
     250.5
   ],
-  "reason": "Initial native rectangle starts within the ordinary 6-physical-pixel hit radius and therefore correctly becomes click selection. Use blank margin for the actual GUI marquee; exact same complete100k object set, camera and300ms budget. Preserve protocol.json and failednativebaseline."
+  "reason": "Initial native rectangle starts within the ordinary 6-physical-pixel hit radius and therefore correctly becomes click selection. Use blank margin for the actual GUI marquee; exact same complete100k object set, camera and300ms budget. Preserve protocol.json and failednativebaseline.",
+  "drag_input_policy": {
+    "version": 1,
+    "modes": [
+      "move",
+      "escape",
+      "new-project"
+    ],
+    "incoming_phases": [
+      4,
+      5,
+      6,
+      7
+    ],
+    "bypass": "alt-only",
+    "other_frames": "none-except-explicit-command-shortcuts",
+    "production_contour": "unchanged"
+  }
 }

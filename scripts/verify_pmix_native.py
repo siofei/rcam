@@ -21,6 +21,121 @@ def directory_path(root,name):
     require(path.is_dir() and path.resolve().is_relative_to(root.resolve()),'missing/escaped ROI directory')
     return path
 
+DRAG_INPUT_POLICY={'version':1,'modes':['move','escape','new-project'],'incoming_phases':[4,5,6,7],
+                   'bypass':'alt-only','other_frames':'none-except-explicit-command-shortcuts',
+                   'production_contour':'unchanged'}
+MODIFIER_KEYS={'alt','ctrl','shift','command','mac_cmd'}
+# tick records its phase before changing control state. These are only the
+# raw-input hook's transitions; conditional hooks can retain their input phase.
+COMMON_INPUT_PHASES={0,1,12,13,14}
+MODE_INPUT_PHASES={
+    'move':COMMON_INPUT_PHASES|set(range(2,12)),
+    'escape':COMMON_INPUT_PHASES|set(range(2,8)),
+    'new-project':COMMON_INPUT_PHASES|set(range(2,8)),
+    'nav':COMMON_INPUT_PHASES|{2,3,20,21},
+    'points':COMMON_INPUT_PHASES|{2,3}|set(range(30,39)),
+    'workflow':COMMON_INPUT_PHASES|{70,71,75,76},
+    'workflow-reopen':COMMON_INPUT_PHASES,
+    'workflow-cross-layer':COMMON_INPUT_PHASES|{70,71},
+}
+INPUT_PHASE_TRANSITIONS={4:{5},6:{6,7},8:{9},10:{11},20:{20,21},
+                         32:{32,33},35:{35,36},36:{36,37},37:{37,38},75:{75,76}}
+
+
+def verify_input_modifiers(report,frames,native_inputs):
+    """Bind the free trajectory to actual injected and egui-processed modifiers."""
+    require(type(native_inputs['version']) is int and native_inputs['version']==2
+            and native_inputs['drag_input_policy']==DRAG_INPUT_POLICY
+            and type(native_inputs['drag_input_policy']['version']) is int,
+            'PMIX declared free-trajectory input policy')
+    mode=report['request']['mode'];require(mode in MODE_INPUT_PHASES,'PMIX input policy mode')
+    drag=mode in DRAG_INPUT_POLICY['modes']
+    events=report['events'];anchors={}
+    for label in ('press','release','undo-input','redo-input'):
+        matches=[event for event in events if event['label']==label]
+        require(len(matches)<=1,'duplicate modifier input anchor '+label)
+        if matches:anchors[label]=matches[0]['frame_id']
+    expected_anchors=({'press','release','undo-input','redo-input'} if mode=='move'
+                      else {'press','release'} if drag else set())
+    require(set(anchors)==expected_anchors
+            and all(type(number) is int and any(frame['id']==number for frame in frames)
+                    for number in anchors.values()),'PMIX modifier input anchors/mode')
+    def modifiers(value,expected):
+        require(type(value) is dict and set(value)==MODIFIER_KEYS
+                and all(type(value[key]) is bool for key in MODIFIER_KEYS)
+                and value==expected,'actual PMIX modifier fields/bypass')
+    for frame in frames:
+        injected=frame['injected'];incoming=injected.get('input_phase');observed=frame['phase']
+        require(type(injected.get('input_policy_version')) is int and injected['input_policy_version']==1
+                and type(incoming) is int and 0<=incoming<=76,'PMIX actual input policy/version/phase')
+        require(type(observed) is int and incoming in MODE_INPUT_PHASES[mode]
+                and observed in MODE_INPUT_PHASES[mode]
+                and observed in INPUT_PHASE_TRANSITIONS.get(incoming,{incoming}),
+                'PMIX actual input/observed phase transition')
+        if drag and observed in (5,6,7):
+            require(incoming in ({5:{4,5},6:{6},7:{6,7}}[observed]),'PMIX drag incoming/observed phase')
+        else:require(not drag or incoming not in (4,5,6,7),'PMIX bypass phase outside drag')
+        alt=drag and incoming in (4,5,6,7)
+        expected=dict(alt=alt,ctrl=False,shift=False,command=False,mac_cmd=False)
+        key=None
+        if frame['id']==anchors.get('undo-input'):key='Z';expected.update(command=True,mac_cmd=True)
+        if frame['id']==anchors.get('redo-input'):key='Z';expected.update(command=True,mac_cmd=True,shift=True)
+        if mode=='escape' and frame['id']==anchors.get('release'):key='Escape'
+        if frame['id']==anchors.get('undo-input'):
+            require(incoming==8 and observed==9,'PMIX actual Undo input phase')
+        if frame['id']==anchors.get('redo-input'):
+            require(incoming==10 and observed==11,'PMIX actual Redo input phase')
+        modifiers(injected.get('modifiers'),expected);modifiers(frame.get('processed_modifiers'),expected)
+        require(type(injected['pressed']) is bool and type(injected['released']) is bool,
+                'PMIX actual pointer phase booleans')
+        if drag:
+            require(injected['pressed']==(frame['id']==anchors['press'])
+                    and injected['released']==(frame['id']==anchors['release']),
+                    'PMIX actual drag button anchors')
+            require((incoming==4)==(frame['id']==anchors['press'])
+                    and (incoming==6 and observed==7)==(frame['id']==anchors['release']),
+                    'PMIX actual press/release transition anchors')
+            if mode=='move':
+                require((incoming==8)==(frame['id']==anchors['undo-input'])
+                        and (incoming==10)==(frame['id']==anchors['redo-input']),
+                        'PMIX actual history transition anchors')
+        elif mode=='points':
+            pair=(incoming,observed)
+            require(injected['pressed']==(pair in ((32,33),(35,36)))
+                    and injected['released']==(pair in ((32,33),(37,38))),
+                    'PMIX actual point/box button transitions')
+        else:
+            require(not injected['pressed'] and not injected['released'],'PMIX extra non-point button')
+        expected_buttons=[]
+        for name,pressed in (('pressed',True),('released',False)):
+            if injected[name]:expected_buttons.append(pressed)
+        for field in ('buttons','keys'):
+            raw=injected.get(field);processed=frame.get('processed_'+field)
+            require(type(raw) is list and type(processed) is list and processed==raw
+                    and json.dumps(processed,sort_keys=True)==json.dumps(raw,sort_keys=True),
+                    'PMIX delivered button/key records: '+field)
+        buttons=injected['buttons']
+        require(len(buttons)==len(expected_buttons),'PMIX actual button count')
+        for button,pressed in zip(buttons,expected_buttons):
+            require(type(button) is dict and set(button)=={'button','pressed','position','modifiers'}
+                    and button['button']=='Primary' and type(button['pressed']) is bool and button['pressed'] is pressed
+                    and type(button['position']) is list and len(button['position'])==2
+                    and all(type(v) in (int,float) and math.isfinite(v) for v in button['position'])
+                    and button['position']==injected['pointer'],'PMIX actual button identity/position')
+            modifiers(button['modifiers'],expected)
+        keys=injected['keys'];require(len(keys)==(2 if key else 0),'PMIX actual key count')
+        for event,pressed in zip(keys,(True,False)):
+            require(type(event) is dict and set(event)=={'key','physical_key','pressed','repeat','modifiers'}
+                    and event['key']==event['physical_key']==key and type(event['pressed']) is bool
+                    and event['pressed'] is pressed and event['repeat'] is False,'PMIX actual key identity/phase')
+            modifiers(event['modifiers'],expected)
+        if drag and frame['id']==anchors.get('press'):
+            require(incoming==4 and injected['pressed'] and not injected['released'] and alt,'PMIX actual Alt press')
+        if drag and frame['id']==anchors.get('release'):
+            require(incoming==6 and injected['released'] and not injected['pressed'] and alt,'PMIX actual Alt release/cancel')
+    return {'policy':'free-trajectory-alt-v1','frames':len(frames),'production_contour':'unchanged'}
+
+
 def bind_frame_producers(report, ui, paints, roi_requests, roi_samples, roi_finalization):
     """Exact complete coverage, including the real on-exit callback/fence.
 
@@ -381,6 +496,7 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     all_frames=bind_frame_producers(r,ui,roi_rows(roi_root/'paint.jsonl'),
         roi_rows(roi_root/'requests.jsonl'),roi_rows(roi_root/'samples.jsonl'),
         load(safe(roi_root,'capture-finalization.json')))
+    input_policy=verify_input_modifiers(r,all_frames,load(ROOT/'fixtures/synthetic/s5m2c/native-inputs.json'))
     require(roi['user_flicker_report']=='OPEN','unearned flicker closure')
     require(not roi['outliers'],'actual PMIX menu ROI outliers require investigation')
     indexed={f['id']:f for f in all_frames}
@@ -419,7 +535,7 @@ def verify(directory, *, source_manifest, commit, binary_sha256, capture_produce
     for name in ('stdout.log','stderr.log','environment.json','window.json','window-query.json','image-command.json','native-window.png','video-command.json','native-window.mov','capture-ready.json','protocol-done.json','capture-complete.json'):
         safe(directory,name)
     capture=capture_receipts(directory,r,capture_producer_sha256)
-    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'display_id':request['display_id'],'display_binding':'explicit-target-runner-schema4','raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'constructor_bootstrap':bootstrap_binding,'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
+    summary={'mode':request['mode'],'evidence_scope':request['evidence_scope'],'display_id':request['display_id'],'display_binding':'explicit-target-runner-schema4','raw_frames':len(fs),'raw_update_frames':len(all_frames),'terminal_frame_id':r['terminal_frame']['id'],'constructor_bootstrap':bootstrap_binding,'input_policy':input_policy,'rss_peak_bytes':runner['peak_child_rss_bytes'],'gpu_peak_bytes':r['counters']['custom-buffer-largest-observed-bytes'],'ui_roi':roi,'capture':capture,'user_flicker_report':'OPEN','stage_PASS_claim':False}
     if request['mode']=='nav':
         start=event('navigation-begin');end=event('navigation-end-input');done=event('navigation-complete');origin=start['data']['origin_ns'];a=start['frame_id'];b=end['frame_id']
         require(a<b<done['frame_id'],'navigation phase sequence')

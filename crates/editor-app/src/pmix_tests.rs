@@ -71,6 +71,77 @@ fn open() -> Model {
 }
 
 #[test]
+fn pmix_free_drag_alt_bypasses_the_enabled_dedicated_contour() {
+    let mut m = open();
+    m.run(Action::SelectRect(
+        BoundsMm {
+            min_x_mm: 0.5,
+            min_y_mm: 0.5,
+            max_x_mm: 20.5,
+            max_y_mm: 50.5,
+        },
+        editor_core::hit_test::SelectRectMode::Window,
+    ));
+    checked(&m);
+    assert_eq!(m.view.selected.ordered.len(), 1000);
+    let selection = m.view.selected.clone();
+    let snapshot = m.view.snap_snapshot.clone().unwrap();
+    let excluded: std::collections::HashSet<_> =
+        selection.ids().into_iter().map(str::to_owned).collect();
+    let settings = crate::object_snap::Settings::default();
+    assert!(!settings.enabled);
+    let contour = settings.contour();
+    assert!(contour.enabled);
+    let camera = Camera {
+        center: MmPoint::new(200.5, 125.5),
+        scale: 1.656,
+    };
+    // A source-fixture regression at the failing trajectory coordinate, not a
+    // replay receipt or proof of the historical unlogged SnapResolution.
+    let raw = MmPoint::new(18.416704260784627, 14.291752322284495);
+    let mut runtime = crate::object_snap::Runtime::default();
+    let snapped = runtime
+        .resolve(
+            raw,
+            &contour,
+            Default::default(),
+            camera,
+            2.,
+            Some(&snapshot),
+            &m.view.snap_index,
+            &m.view.layers,
+            Some(&excluded),
+            false,
+        )
+        .unwrap();
+    assert_eq!(snapped.point, MmPoint::new(20.75, 14.));
+    assert_eq!(snapped.kind, Some(editor_core::snap::SnapKind::Quadrant));
+    assert_eq!(snapped.candidate.unwrap().object_id, "object-5221");
+    let bypassed = runtime
+        .resolve(
+            raw,
+            &contour,
+            Default::default(),
+            camera,
+            2.,
+            Some(&snapshot),
+            &m.view.snap_index,
+            &m.view.layers,
+            Some(&excluded),
+            true,
+        )
+        .unwrap();
+    assert_eq!(bypassed.point, raw);
+    assert!(bypassed.kind.is_none() && bypassed.candidate.is_none() && !bypassed.from_grid);
+    assert_eq!(m.view.selected, selection);
+    assert!(Arc::ptr_eq(
+        m.view.snap_snapshot.as_ref().unwrap(),
+        &snapshot
+    ));
+    assert!(!settings.enabled && contour.enabled);
+}
+
+#[test]
 fn pmix_full_fixture_has_independent_type_coordinate_and_edge_truth() {
     let protocol: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../../../fixtures/synthetic/s5m2c/protocol.json"

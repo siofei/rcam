@@ -1037,3 +1037,47 @@ missing flags, Swift5 and suppressed warnings. Those parser tests do not execute
 the interpreter. The next Mac precheck must invoke this exact interpreter argv
 before any set/restore or fresh build/native work; swiftc success alone is not
 interpreter success.
+
+### PMIX free drag uses the ordinary contour Alt bypass
+
+The actual 0cf2c702/37df matrix retained three successful navigation rounds and
+stopped at move1: its native verifier rejected a preview delta while the input
+guard and cleanup checks completed. The frozen free pointer trajectory entered
+the dedicated eight-physical-pixel contour Snap radius of an unselected circle.
+The measured delta resolves exactly to its left quadrant. The radius crossing,
+fixture geometry and source path support this diagnosis; that run did not log a
+SnapResolution or actual modifiers, so the candidate hit remains an inference.
+The failed source and raw evidence stay retained. Its successful release endpoint
+does not discharge the failed intermediate preview contract.
+
+Global Object Snap.enabled=false does not disable Settings.contour(), the accepted
+I2-B policy for ordinary drag/point transforms. The PMIX benchmark now uses that
+policy's existing Alt bypass during incoming phases4 through7 of move, escape and
+new-project only, from the press through release confirmation. It resets all five
+modifier fields on every other input frame. Pointer press/release events carry
+the same modifiers; Escape preserves Alt so ordinary cancellation still executes.
+New-project keeps bypass active on its release input while its existing workspace
+action cancels the gesture. Undo/Redo retain only their explicit Command/MacCmd
+and Redo Shift modifiers. Navigation, points and workflow inputs remain unmodified
+by this drag policy. Production contour/gesture/selection behavior is unchanged.
+
+native-inputs.json version2 declares this narrow input policy. The source-owned
+PMIX report records the incoming phase, all five Boolean raw and egui-processed
+modifier fields, and exact raw/processed PointerButton and Key records on every
+ordinary and terminal update. The verifier requires the declared policy and exact
+actual records, including Alt on press, confirmation, every preview and release,
+Alt+Escape, reset during history/workflow, key/button counts, positions and typed
+identities. Missing legacy fields, inactive bypass, extra modifiers, Boolean
+aliases, altered phases or differing processed records fail. These observations
+come from the PMIX injection and the same egui input used by update; the earlier
+UI raw-input hook is not claimed to observe the later injected events.
+
+The shared M2-B trajectory verifier, 1e-9 manufacturing tolerance, paint tolerance,
+100k fixture, camera, workload, timing budgets and frozen protocol.json remain
+unchanged. The new Rust regressions cover scoped modifier reset, actual egui
+delivery of button/Alt+Escape/history inputs, and the production Snap resolver at
+a fixture coordinate inside the contour radius with and without Alt. Portable
+negative tests use invented parser records. Neither those tests nor the coordinate
+regression creates native evidence or reclassifies the old failure. The successor
+requires a new reviewed manifest, fresh Rust/internal gates and build identities,
+and a new guarded real matrix before any native or complete-stage PASS claim.
