@@ -1081,3 +1081,72 @@ negative tests use invented parser records. Neither those tests nor the coordina
 regression creates native evidence or reclassifies the old failure. The successor
 requires a new reviewed manifest, fresh Rust/internal gates and build identities,
 and a new guarded real matrix before any native or complete-stage PASS claim.
+
+### Stationary view validation cache candidate (2026-10-07)
+
+Scope is S5-M2-C, R01/R08/R10/R11/R16/R17/R18/R19/R21/R22 and the existing
+AT-017/032/067/073/075/086/087/090/091/092 mappings. This is a bounded repair
+of repeated CPU scene preparation in editor-app main/app_tests, the test app
+initializer, this taskbook and the source manifest. Base source is exactly
+`d6e5fe8a542cca51a65a66100ffeed5a6abae1c8`, with 672 source files and manifest
+SHA-256 `a1692b3da28df336b81b030c19c9f84c568e6b274c3850e2987aea05e180f88f`.
+
+The supplied real Mac Release matrix passed nav1–3 and stopped at move1:
+frame p95 54.789625 ms exceeds the unchanged 50 ms gate, with 218 intervals
+435..652, p99 59.835333 ms and 217 previews. Reported CPU update p95 was
+27.061709 ms, combined prepare p95 25.953500 ms and UI canvas p95 16.102791 ms.
+The combined prepare counter includes the earlier validation duration. These
+percentiles cannot be subtracted to obtain validation p95 or predict savings.
+The two screenshot delivery maxima remain in acceptance; excluding them would
+still leave a reported p95 53.945166 ms and is not permitted. GPU completion
+observations mix scheduling, drawing and fences, and are not independent GPU
+execution measurements. The failed run remains historical evidence.
+
+The original early `gpu::uniforms` invokes a full stationary (zero delta)
+`prepare`, before cancellation and `usable` gates; the later canvas performs
+another full preparation with the current drag delta. The candidate uses a
+single app-local entry to memoize the complete original
+`Result<Uniforms, String>` from the first call only. The cache owns strong Arc
+references to immutable Scene and selected flags, and compares both allocation
+identities plus exact floating-point bits of camera center x/y and scale, rect
+min/max x/y, and pixels per point. Equal scene serials or contents do not imply
+a hit. Retaining the allocations prevents pointer recycling and makes
+`Arc::make_mut` acquire a fresh identity. Scene None/replacement releases the
+entry before view-guard short circuits; failed canvas/LOD guards clear it too.
+Entries are replaced, rather than accumulated.
+
+The call stays at the original early validation position. Positive-canvas and
+live render_ppm guards retain their order and Chinese messages. Existing error
+and cancellation gates keep their position. Scene::scalar and RenderIndex
+viewport/sample_candidate_work are read-only and have no logging or interior
+mutation on this path; the cache does not omit their checks. The original GPU,
+display, render index, shader, Snap/Alt, manufacturing and measurement paths
+are unchanged. In particular, no moving Prepared result fills the early cache,
+and no stationary result is used as a moved preview. The real-delta canvas
+prepare and its validation_ms accounting remain intact.
+
+Six cache regressions cover bit-for-bit successful uniforms, exact original
+errors and ordering (flags, viewport, viewport bounds, local precision,
+non-finite work), every key field, signed zero/NaN payloads, same-serial different
+Arc, COW, repeated-frame single preparation, real delta preparation, clearing,
+recovery, and retired allocations released through Weak probes. An additional
+actual App::update regression compares cached/uncached early validation using
+confirmed moved drag releases: an error must prevent DragMove before canvas
+preparation, while a valid release is a positive control. It also checks cache
+hits and stale point-tool cancellation without manufacturing changes.
+
+Cloud validation uses locked Rust 1.89.0. macOS arm64 all-target check/Clippy,
+with and without internal-evidence, provide compilation checks only. Cache
+regressions can run through an auxiliary harness using the unchanged original
+GPU/display/index modules and verbatim extracted app-local cache/tests; this is
+CPU correctness evidence only. The full App::update regression and frozen
+PMIX/drag/point release runtime suites still require Mac execution. The standard
+Linux editor-app build is blocked by its unsupported platform configuration and
+the locked Linux-only ordered-float 5.5.0 dependency's declared Rust 1.90 minimum;
+no dependency, product feature or Linux support code is changed to bypass them.
+
+Independent source review is required before freezing the candidate. This
+change is not native acceptance or PMIX PASS. The original Mac owner must use a
+new candidate identity, clean Release build and all twelve matrix rows, retaining
+every frame and screenshot. The 50 ms and 1e-9 gates, fixed inputs and intervals
+remain unchanged; no minimum time saving is asserted from cloud checks.

@@ -9,6 +9,202 @@ use std::{
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
+    use eframe::{App, egui};
+    use std::sync::Arc;
+
+    let (mut model, _) = setup();
+    select(&mut model);
+    let identity = crate::state::selection_geometry_identity(&model.view);
+    model.run(Action::SelectionCenters(
+        identity,
+        editor_service::SelectionCentersParams {
+            groups: model.view.selected.groups(),
+            semantics: editor_service::SelectionMaterialSemantics::SelectedLayerComposite,
+        },
+    ));
+    model.run(Action::Viewport(
+        MmPoint::new(15., 20.),
+        editor_core::BoundsMm {
+            min_x_mm: -100.,
+            min_y_mm: -100.,
+            max_x_mm: 100.,
+            max_y_mm: 100.,
+        },
+        32.,
+    ));
+    assert!(model.view.error.is_none());
+    let before = model.view.info.clone();
+    let raw = egui::RawInput {
+        focused: true,
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200., 900.),
+        )),
+        ..Default::default()
+    };
+    // Clearing before every update reproduces the uncached early validator.
+    // Both paths execute the actual App update, including its later canvas.
+    for (force_uncached, invalid) in [(true, true), (false, true), (true, false), (false, false)] {
+        let mut app = crate::modal::tests::app();
+        let (tx, requests) = std::sync::mpsc::sync_channel(32);
+        app.tx = tx;
+        app.view = model.view.clone();
+        app.camera = crate::camera::Camera {
+            center: MmPoint::new(15., 20.),
+            scale: 32.,
+        };
+        app.selected_flags = Arc::new(crate::gpu::selection_flags(
+            app.view.scene.as_ref().unwrap(),
+            &app.view.selected.ids(),
+        ));
+        let ctx = egui::Context::default();
+        ctx.options_mut(|options| options.max_passes = std::num::NonZeroUsize::new(1).unwrap());
+        let mut frame = eframe::Frame::_new_kittest();
+        for _ in 0..3 {
+            let _ = ctx.run(raw.clone(), |ctx| {
+                if force_uncached {
+                    app.uniform_validation.clear();
+                }
+                app.update(ctx, &mut frame);
+            });
+        }
+        assert!(app.usable(), "warm view must be usable");
+        if invalid {
+            app.selected_flags = Arc::new(vec![]);
+        }
+        let error = app
+            .uniform_validation
+            .uniforms(
+                app.view.scene.as_ref().unwrap(),
+                app.camera,
+                app.canvas_rect,
+                ctx.pixels_per_point(),
+                &app.selected_flags,
+            )
+            .err();
+        assert_eq!(
+            error.as_deref(),
+            invalid.then_some("VALIDATION_FAILED: selection flags length")
+        );
+        app.view.drag_hit = true;
+        app.view.press_hit = app.view.selected.primary().cloned();
+        let press = app.canvas_rect.center();
+        let mut gesture = crate::drag::Gesture::arm(
+            &app.view,
+            press,
+            app.camera,
+            app.canvas_rect,
+            ctx.pixels_per_point(),
+            Replace,
+        );
+        gesture.confirm(&app.view);
+        gesture.update(press + egui::vec2(20., 10.));
+        assert!(gesture.movement_armed() && gesture.delta != MmPoint::new(0., 0.));
+        app.drag = Some(gesture);
+        let mut held = raw.clone();
+        held.events = vec![
+            egui::Event::PointerMoved(press),
+            egui::Event::PointerButton {
+                pos: press,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+        ];
+        // Establish pointer-down without processing this app's error yet, then
+        // release the confirmed moved gesture in the real update. A cancellation
+        // deferred until canvas preparation would enqueue DragMove first.
+        let _ = ctx.run(held, |_| {});
+        let mut release = raw.clone();
+        release.events = vec![
+            egui::Event::PointerMoved(press + egui::vec2(20., 10.)),
+            egui::Event::PointerButton {
+                pos: press + egui::vec2(20., 10.),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers {
+                    alt: true,
+                    ..Default::default()
+                },
+            },
+        ];
+        release.modifiers.alt = true;
+        let count = app.uniform_validation.preparations;
+        let _ = ctx.run(release, |ctx| {
+            if force_uncached {
+                app.uniform_validation.clear();
+            }
+            app.update(ctx, &mut frame);
+        });
+        assert!(
+            app.drag.is_none(),
+            "release must finish or cancel the gesture"
+        );
+        if !force_uncached {
+            assert_eq!(
+                app.uniform_validation.preparations, count,
+                "same-key error/success hit"
+            );
+        }
+        assert_eq!(app.display_error, error);
+        assert_eq!(app.view.info, before);
+        let mut moves = 0;
+        while let Ok((_, _, action, _)) = requests.try_recv() {
+            if matches!(action, Action::DragMove(_)) {
+                moves += 1;
+            }
+            assert!(!matches!(
+                action,
+                Action::Move(_, _) | Action::PointApply(_)
+            ));
+        }
+        assert_eq!(
+            moves,
+            usize::from(!invalid),
+            "valid release is the positive control"
+        );
+        if !invalid {
+            continue;
+        }
+        assert!(!app.usable());
+
+        // Restoring valid inputs must recover immediately. Stale point tools
+        // still cancel at the original early context checks in this update.
+        app.selected_flags = Arc::new(crate::gpu::selection_flags(
+            app.view.scene.as_ref().unwrap(),
+            &app.view.selected.ids(),
+        ));
+        app.point_transform = Some(crate::point_transform::Session::new(
+            &app.view,
+            crate::point_transform::Mode::Move,
+            app.display_unit,
+        ));
+        app.open_point_adapter(crate::point_adapter::Adapter::Measure, MmPoint::new(0., 0.));
+        app.view.task_generation += 1;
+        let _ = ctx.run(raw.clone(), |ctx| {
+            if force_uncached {
+                app.uniform_validation.clear();
+            }
+            app.update(ctx, &mut frame);
+        });
+        assert!(
+            app.point_adapter.is_none()
+                && app.point_pick.is_none()
+                && app.point_transform.is_none()
+        );
+        assert!(app.modal.is_none() && app.display_error.is_none());
+        assert_eq!(app.view.info, before);
+        while let Ok((_, _, action, _)) = requests.try_recv() {
+            assert!(!matches!(
+                action,
+                Action::DragMove(_) | Action::Move(_, _) | Action::PointApply(_)
+            ));
+        }
+    }
+}
+
+#[test]
 fn display_work_keeps_controls_enabled_and_accepts_one_user_command() {
     let mut app = crate::modal::tests::app();
     let (tx, requests) = std::sync::mpsc::sync_channel(2);
@@ -3221,6 +3417,262 @@ fn real_large_rectangle_selection_regression() {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod uniform_validation_tests {
+    use crate::gpu::{Uniforms, prepare_measured, uniforms, uniforms_preview};
+    use crate::{
+        UniformValidationCache,
+        camera::Camera,
+        display::{Object, Primitive, Scene},
+    };
+    use editor_core::MmPoint;
+    use eframe::egui;
+    use std::sync::Arc;
+
+    fn scene() -> Arc<Scene> {
+        let objects = vec![Object {
+            meta: [0, 1, 0, 1],
+            bounds: [-1., -1., 1., 1.],
+            ..Default::default()
+        }];
+        Arc::new(Scene {
+            serial: 7,
+            index: Arc::new(
+                crate::render_index::RenderIndex::build(&objects, &[], [0.; 2]).unwrap(),
+            ),
+            anchor: MmPoint::new(0., 0.),
+            objects,
+            primitives: vec![Primitive::default()],
+            points: vec![],
+            ids: vec!["object".into()],
+            ppm: 10.,
+        })
+    }
+    fn rect() -> egui::Rect {
+        egui::Rect::from_min_max(egui::pos2(10., 20.), egui::pos2(410., 420.))
+    }
+    fn camera() -> Camera {
+        Camera {
+            center: MmPoint::new(0., 0.),
+            scale: 10.,
+        }
+    }
+    fn bytes(result: Result<Uniforms, String>) -> Result<Vec<u8>, String> {
+        result.map(|u| bytemuck::bytes_of(&u).to_vec())
+    }
+    fn equivalent(
+        cache: &mut UniformValidationCache,
+        scene: &Arc<Scene>,
+        camera: Camera,
+        rect: egui::Rect,
+        ppp: f32,
+        flags: &Arc<Vec<u32>>,
+    ) {
+        assert_eq!(
+            bytes(cache.uniforms(scene, camera, rect, ppp, flags)),
+            bytes(uniforms(scene, camera, rect, ppp, flags))
+        );
+    }
+
+    #[test]
+    fn repeated_frames_prepare_validation_once_but_keep_real_delta() {
+        let scene = scene();
+        let flags = Arc::new(vec![1]);
+        let mut cache = UniformValidationCache::default();
+        let stationary = uniforms(&scene, camera(), rect(), 2., &flags).unwrap();
+        for n in 1..=32 {
+            equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+            let delta = MmPoint::new(n as f64 / 64., -(n as f64) / 128.);
+            let actual = prepare_measured(&scene, camera(), rect(), 2., &flags, delta).unwrap();
+            let original = uniforms_preview(&scene, camera(), rect(), 2., &flags, delta).unwrap();
+            assert_eq!(
+                bytemuck::bytes_of(&actual.uniforms),
+                bytemuck::bytes_of(&original)
+            );
+            assert_ne!(actual.uniforms.preview, stationary.preview);
+            assert_eq!(actual.uniforms.preview[0], delta.x_mm as f32);
+            assert_eq!(actual.uniforms.preview[1], delta.y_mm as f32);
+            assert!(Arc::ptr_eq(&actual.index, &scene.index));
+        }
+        assert_eq!(cache.preparations, 1);
+    }
+
+    #[test]
+    fn each_camera_rect_and_ppp_bit_invalidates_without_tolerance() {
+        let scene = scene();
+        let flags = Arc::new(vec![0]);
+        for field in 0..8 {
+            let mut cache = UniformValidationCache::default();
+            equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+            let mut c = camera();
+            let mut r = rect();
+            let mut ppp = 2f32;
+            match field {
+                0 => c.center.x_mm = f64::from_bits(c.center.x_mm.to_bits() + 1),
+                1 => c.center.y_mm = f64::from_bits(c.center.y_mm.to_bits() + 1),
+                2 => c.scale = f64::from_bits(c.scale.to_bits() + 1),
+                3 => r.min.x = f32::from_bits(r.min.x.to_bits() + 1),
+                4 => r.min.y = f32::from_bits(r.min.y.to_bits() + 1),
+                5 => r.max.x = f32::from_bits(r.max.x.to_bits() + 1),
+                6 => r.max.y = f32::from_bits(r.max.y.to_bits() + 1),
+                7 => ppp = f32::from_bits(ppp.to_bits() + 1),
+                _ => unreachable!(),
+            }
+            equivalent(&mut cache, &scene, c, r, ppp, &flags);
+            equivalent(&mut cache, &scene, c, r, ppp, &flags);
+            assert_eq!(cache.preparations, 2, "field {field}");
+            equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+            assert_eq!(cache.preparations, 3, "single entry, field {field}");
+        }
+    }
+
+    #[test]
+    fn signed_zero_and_nan_payloads_are_exact_keys() {
+        let scene = scene();
+        let flags = Arc::new(vec![0]);
+        let mut cache = UniformValidationCache::default();
+        for x in [0., -0., f64::NAN, f64::from_bits(f64::NAN.to_bits() + 1)] {
+            let c = Camera {
+                center: MmPoint::new(x, 0.),
+                ..camera()
+            };
+            equivalent(&mut cache, &scene, c, rect(), 2., &flags);
+            equivalent(&mut cache, &scene, c, rect(), 2., &flags);
+        }
+        assert_eq!(cache.preparations, 4);
+    }
+
+    #[test]
+    fn scene_and_flags_arc_identity_and_copy_on_write_invalidate() {
+        let mut scene = scene();
+        let mut flags = Arc::new(vec![0]);
+        let mut cache = UniformValidationCache::default();
+        equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+        equivalent(
+            &mut cache,
+            &scene.clone(),
+            camera(),
+            rect(),
+            2.,
+            &flags.clone(),
+        );
+        assert_eq!(cache.preparations, 1);
+        let same_serial = Arc::new((*scene).clone());
+        equivalent(&mut cache, &same_serial, camera(), rect(), 2., &flags);
+        assert_eq!(cache.preparations, 2);
+        scene = same_serial;
+        // The cache's retained strong reference forces COW, even without
+        // another caller retaining the old allocation.
+        Arc::make_mut(&mut scene).ppm = 20.;
+        equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+        assert_eq!(cache.preparations, 3);
+        flags = Arc::new((*flags).clone());
+        equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+        assert_eq!(cache.preparations, 4);
+        Arc::make_mut(&mut flags)[0] = 1;
+        equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+        assert_eq!(cache.preparations, 5);
+    }
+
+    #[test]
+    fn clear_none_and_replacement_release_retired_scene_and_flags() {
+        let mut cache = UniformValidationCache::default();
+        for replacement in [false, true] {
+            let scene = scene();
+            let flags = Arc::new(vec![0]);
+            equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+            let weak_scene = Arc::downgrade(&scene);
+            let weak_flags = Arc::downgrade(&flags);
+            cache.invalidate_if_scene_changed(Some(&scene));
+            assert!(cache.entry.is_some());
+            drop(scene);
+            drop(flags);
+            assert!(weak_scene.upgrade().is_some());
+            if replacement {
+                cache.invalidate_if_scene_changed(Some(&self::scene()));
+            } else {
+                cache.invalidate_if_scene_changed(None);
+            }
+            assert!(cache.entry.is_none());
+            assert!(weak_scene.upgrade().is_none());
+            assert!(weak_flags.upgrade().is_none());
+        }
+        let scene = scene();
+        let flags = Arc::new(vec![0]);
+        equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+        cache.clear();
+        equivalent(&mut cache, &scene, camera(), rect(), 2., &flags);
+        assert_eq!(cache.preparations, 4);
+    }
+
+    #[test]
+    fn cached_original_errors_are_identical_and_recover_on_changed_inputs() {
+        let mut cache = UniformValidationCache::default();
+        for failure in 0..8 {
+            let mut scene = scene();
+            let mut flags = Arc::new(vec![0]);
+            let mut c = camera();
+            let mut r = rect();
+            let mut ppp = 2.;
+            let expected = match failure {
+                0 => {
+                    flags = Arc::new(vec![]);
+                    ppp = f32::NAN; // Flag length must retain its original precedence.
+                    "VALIDATION_FAILED: selection flags length"
+                }
+                1 => {
+                    ppp = f32::NAN;
+                    "VALIDATION_FAILED: viewport"
+                }
+                2 => {
+                    c.scale = 0.;
+                    "VALIDATION_FAILED: viewport"
+                }
+                3 => {
+                    c.center.x_mm = f64::INFINITY;
+                    "VALIDATION_FAILED: viewport bounds"
+                }
+                4 => {
+                    c.center.x_mm = 1e10;
+                    "DISPLAY_PRECISION: local coordinate error exceeds 0.1 physical pixel"
+                }
+                5 => {
+                    Arc::make_mut(&mut scene).ppm = 1e10;
+                    flags = Arc::new(vec![1]);
+                    "DISPLAY_PRECISION: local coordinate error exceeds 0.1 physical pixel"
+                }
+                6 => {
+                    // Deliberately malformed display data reaches the original
+                    // work-estimate rejection, after the cheap viewport checks.
+                    let primitive = &mut Arc::make_mut(&mut scene).primitives[0];
+                    primitive.meta[0] = 3;
+                    primitive.b[1] = f32::INFINITY;
+                    "VALIDATION_FAILED: non-finite display work estimate"
+                }
+                7 => {
+                    r = egui::Rect::NOTHING;
+                    "VALIDATION_FAILED: viewport"
+                }
+                _ => unreachable!(),
+            };
+            let count = cache.preparations;
+            let original = bytes(uniforms(&scene, c, r, ppp, &flags));
+            assert_eq!(original, Err(expected.into()), "failure {failure}");
+            for _ in 0..3 {
+                assert_eq!(bytes(cache.uniforms(&scene, c, r, ppp, &flags)), original);
+            }
+            assert_eq!(cache.preparations, count + 1);
+            let valid = self::scene();
+            let valid_flags = Arc::new(vec![0]);
+            assert!(
+                cache
+                    .uniforms(&valid, camera(), rect(), 2., &valid_flags)
+                    .is_ok()
+            );
         }
     }
 }
