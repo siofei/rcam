@@ -278,3 +278,154 @@ This successor changes only product identity pins and their test/documentation.
 All earlier product native rows retain their original identities and cannot
 qualify this rebuilt candidate. No new native12, aggregate, actual48 attacks
 or stage acceptance is granted by this bound source package.
+
+## Isolated display preparation diagnostics (source candidate, no acceptance)
+
+Base: `01c5ed6fabe104833e9242c008e14e087b490d39`; product remains exactly
+`42db040374b0c1643200b7f04e95b03d272ef792` / manifest `0235f9c9…` with the five
+original pins above. This diagnostic changes only this observer and adds
+`diagnose_display_prep.py`, `test_diagnostics.py` and this documentation. The three
+production Python guard modules, product, four helper/runner APIs, literals,
+manifest, twelve cases and48 gates are unchanged. Scope S5-M2-C bounded
+infrastructure diagnosis, R16/R17/R18/R19/R20, AT-064/073/077/082/083; no AT closure.
+
+The observed full12 remains **0/12 FAIL before APP launch**: continuous35→36 gap
+296.303833ms; owned32→33 gap304.769500ms; owned32 also has a56.216417ms inter-field
+interval. The measured98 CG brackets are short. These facts do not identify
+WindowServer, runtime, scheduling, JSON/raw IO or control reads as the cause.
+No full12 retry, threshold relaxation or production optimization is part of this
+candidate. Raw packets remain private; no Library download/upload is needed.
+
+A fourth observer argument explicitly enables its separate diagnostic sidecar.
+The original three-argument path retains original raw JSON,50ms main/common Timer,
+main-thread CG/AppKit sampling, sample begin/end and fields; it reads no extra
+clock and installs no signal handler. Diagnosis requires macOS13+ for the checked
+Sendable queue protected by
+[OSAllocatedUnfairLock](https://developer.apple.com/documentation/os/osallocatedunfairlock).
+There are no unsafe concurrency opt-outs or raw-output workers. Mac must compile
+this exact source with the original strict Swift6 command before any run.
+
+Each observer sidecar is schema1, with nonce/role/PID/sourceSHA/executableSHA,
+`darwin_uptime_raw_ns`, explicit queue/memory/byte/line limits and sequential rows.
+Typed payloads are encoded by a separate strict FIFO worker. Each raw event,
+including ready/binding/sample/fatal, has its own ordinal and independent
+`emit_start`, `emit_progress` and `emit_return` facts; no intermediate emit is
+replaced by a later sample. A cycle contains the previous returned emit reference,
+control entry/return, the exact original sample endpoints,34 dictionary build
+brackets and timer entry/exit. The raw sample end remains before encoding/writing.
+`emit_progress` records only observed pre-write facts. Its write bracket includes
+the bounded diagnostic submission hook; instrumentation overhead cannot be treated
+as an uninstrumented performance measurement. A missing return never gains a time
+from file length or a later sample. Partial cycle/emit traces remain incomplete.
+
+Observer queue<=256; actual queue buffer and every retained field Array capacity
+are charged against768KiB, leaving256KiB for the live cycle/encoder/line. Additional
+queue/encoder budget<1MiB, sidecar<=16MiB, line<=8KiB and raw<=64MiB. The parent
+queue additionally accounts encoded bytes<=768KiB and count<=256, with sidecar<=8MiB
+and line<=8KiB; parent diagnostic memory budget is2MiB. Admission contention,
+capacity exhaustion or encode/write errors fail explicitly; no old row is dropped
+or replaced. Queue locks never encompass encoding/IO. There is no stdout worker,
+Timer replacement, new sampler or optimized snapshot algorithm.
+
+Only diagnosis installs a SIGTERM dispatch source with a MainActor bridge. It
+stops the Timer, submits the last observed cycle and terminal, waits at most200ms
+for FIFO flush, restores default SIGTERM and re-sends it to the same PID. The seal
+is written only after all submitted records have returned from write. Parent
+streaming validation independently checks nonce/role/PID/sequential rows, seal
+counts/bytes/exact EOF, emit ordinals and all actual raw expected bytes/offsets/
+RETURNED facts, sample endpoints and raw EOF. SIGKILL, worker error, a blocked main
+callback, a missing seal or partial raw/sidecar is always `trace_incomplete`/BLOCKED.
+The200ms belongs to the existing monitor-stop budget.
+
+The parent uses thin diagnostic FileTail/ObservationStream adapters with the
+original whole-batch parsing, ordered rows, continuous-before-owned priority,
+validation clock call point, first error and unchanged original raw bytes.
+Additional spans record pump, continuous callback, phase poll, tail read and batch
+parse return. Per-row seq/byte offsets preserve the original actual validation
+clock/error. A gap rejected before that clock leaves it null. The original250ms
+freshness/gap/postjoin and20ms event-age limits never change. Input integrity never
+re-arms after failure. No keys, pointer coordinates, window content or unrelated
+process identities are collected.
+
+After parent/Mac independent review and strict compile, the single controlled CLI
+is (operator paths must be supplied; evidence is a fresh absolute nonsymlink path
+outside product source):
+
+```sh
+python3 -B diagnose_display_prep.py run --root PRODUCT42 --binary APP42 \
+  --producer CAP42 --evidence NEW_DIAG --display-id 2
+```
+
+All original source and runtime pins are verified before evidence creation,
+compilation or observers. Two original streams arm on their first two continuous
+samples before the sole owned internal child is launched. Parent retains its exact
+Popen/argv/source SHA/nonce/kernel runner credential and sends GO only after that
+credential is observed. Only runnerPID is bound; appPID remains0. The owned policy
+requires an authenticated APP launch opportunity but none is supplied, so it stays
+`RUNNER_PREPARING_APP`, never native ACTIVE/owned-ready. There is no FullRun, APP,
+capture, window query, environment recheck, navigation, native verifier or
+APP_LAUNCH marker. APP and CAP pins are checked but their executables are not run.
+
+The child reuses reviewed literals, exact `DISPLAY_SWIFT_PREFIX`, original
+`owned_command` and pure receipt/phase/command validators. The only five stages
+are probe2 → set60 2 → independent probe2 → finally restore2 113 → independent
+probe2. Each uses timeout10s and GRACE2 (TERM2s then KILL2s, worst4s total), private
+PID=PGID, launch/process/raw/phase receipts. Nine-field probes and eight-field
+mutators must match the original2/113/144Hz/scale2/nonmirror snapshot, independent
+60Hz core snapshot and final exact original nine-field snapshot.
+
+Every helper receives an immutable prelaunch attempt-intent binding nonce, child
+PID, ordinal, exact argv, helper SHA and shared uptime. Failed intent publication
+starts no helper. Before any subsequent helper, every issued intent must have
+paired leader-join/group-release proof; a FAIL helper can permit restoration only
+with those actual joins. Missing whole pairs or unjoined groups block recovery;
+144Hz readback and known-PID lists cannot create an exemption. Parent independently
+checks the complete attempt/launch/process inventory even on a failed child.
+
+The190s execution and single40s cleanup budgets include this child. Parent sends
+exactly one SIGINT to its owned child and immediately freezes the original cleanup
+deadline before journal IO. A nonblocking dedicated datagram channel sends that
+nonce/deadline or UNKNOWN; child must actually receive and ACK it before starting
+new recovery. Parent checks the exact ACK independently, never equating send with
+receive. No late clock restarts40s or reuses190s for cancelled cleanup. SIGINT
+masking closes the intent-publication/Popen signal checkpoint boundary; original
+owned-command drain handles any helper that actually launched. Each helper launch
+rechecks remaining budget after intent IO, accounting for worst14s helper lifetime
+and shared monitor4s plus postjoin250ms; two final helpers require28s plus that
+reserve. UNKNOWN/missing ACK/insufficient reserve means no new recovery helper.
+Logging failure does not skip the exact child join. A clock-fault path preserves
+only the original immediate relative bounded join, with no new absolute recovery
+deadline. Both monitors stop concurrently in one shared4s window, with continued
+pumping and final tail drain. Both real postjoin samples must begin between actual
+child join and join+250ms. No later good sample can clear the original failure.
+
+Only all five natural successful stages, original stream integrity, actual
+child/helper/monitor joins, both postjoin barriers and fully verified raw/sidecar
+seals yield `DIAGNOSTIC_COMPLETE`. Cancellation, input/gap, partial evidence or
+any error yields `BLOCKED`, even if display API error0 or physical144Hz returns.
+Every result has `scope=DISPLAY_PREPARATION_DIAGNOSTIC`, `stage_PASS_claim=false`
+and native/full12/full48=`NOT_RUN`. No cancelled collection is PASS.
+
+Kernel hangs, SIGKILL, missing intent/process journals or an unknown cleanup clock
+can prevent proven joins/restoration. That path records joined/unknown facts and
+`possible_unrestored_display`, stops new helpers/recovery and remains BLOCKED;
+it never grants a next run or invents successful restoration. It cannot promise
+hardware recovery or actual joins that were not observed. A live unjoined child
+at the original deadline is an explicit runtime blocker requiring the Mac owner,
+not permission to extend cleanup or signal unrelated processes.
+
+Portable verification:
+
+```sh
+python3 -B -m unittest -v test_guard test_matrix test_diagnostics
+```
+
+The original160 and38 new synthetic tests pass on cloud Python3.12/Linux, including
+capacity/seal/raw EOF, unknown write return, original stream parity/null gap clock,
+no-APP policy, no late restore after intent, cancellation never complete,
+original deadline/ACK/UNKNOWN, paired failed-helper joins, journal failure retaining
+actual join and concurrent monitor stop. These are ordinary/static tests; the
+cloud has no Swift compiler, AppKit or real display. Strict Swift6 and one real
+controlled Mac diagnostic are **NOT_EXECUTED**. This source candidate must be
+independently reviewed and frozen before that one diagnostic; the historical
+full12 failure, native/full48 NOT_RUN and stage_PASS_claim=false remain unchanged.
