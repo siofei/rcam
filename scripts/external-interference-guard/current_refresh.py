@@ -1,4 +1,4 @@
-"""External nav1 then move1 at unchanged144Hz; no full12/aggregate or display recovery."""
+"""External selected nav1/move1 at unchanged144Hz; default nav1 then move1, no display recovery."""
 import argparse
 import importlib
 import importlib.util
@@ -10,6 +10,7 @@ import supervise as guard
 from performance_v1 import PerformanceReport, SCOPE
 
 CASES = (('nav', 1), ('move', 1))
+CASE_SELECTIONS = {'all': CASES, 'nav1': (CASES[0],), 'move1': (CASES[1],)}
 
 
 def bound_import(name, expected):
@@ -88,8 +89,10 @@ def check(input_path, output):
     return 0 if result['functional_result'] == 'PASS' else 2
 
 
-def run(*, root, binary, producer, evidence):
+def run(*, root, binary, producer, evidence, case='all'):
     pins = matrix.require_pins()
+    guard.require(type(case) is str and case in CASE_SELECTIONS, 'explicit current-refresh case selection')
+    cases = CASE_SELECTIONS[case]
     guard.require(sys.platform == 'darwin', 'current-refresh GUI runs only on macOS')
     guard.require(not root.is_symlink() and not evidence.is_symlink(), 'regular source/evidence roots')
     root, binary, producer = [path.resolve(strict=True) for path in (root, binary, producer)]
@@ -107,7 +110,7 @@ def run(*, root, binary, producer, evidence):
     failure = None
     try:
         sentinel.start()
-        for mode, round_number in CASES:
+        for mode, round_number in cases:
             guard.require(sentinel.pump() is None, 'continuous input halt between current-refresh rounds')
             local = evidence / (mode + str(round_number))
             local.mkdir(exist_ok=False)
@@ -145,14 +148,18 @@ def run(*, root, binary, producer, evidence):
     finally:
         continuous_pass = sentinel.finish()
         continuous_replay = False
-        if failure is None and len(seen_ids) == 2 and continuous_pass:
+        if failure is None and len(seen_ids) == len(cases) and continuous_pass:
             try:
                 continuous_replay = matrix.verify_continuous_evidence(evidence, launch_times, joined_times)
             except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
                 failure = 'continuous raw replay: ' + type(error).__name__ + ': ' + str(error)
-        completed = failure is None and len(results) == 2 and len(seen_ids) == 2 and continuous_pass and continuous_replay
+        completed_cases = [row['mode'] + str(row['round']) for row in results if row.get('functional_result') == 'PASS']
+        requested_cases = [mode + str(round_number) for mode, round_number in cases]
+        completed = (failure is None and completed_cases == requested_cases and len(seen_ids) == len(cases)
+                     and continuous_pass and continuous_replay)
         result = {'scope': SCOPE, 'execution_result': 'COMPLETE' if completed else 'FAIL',
                   'functional_result': 'PASS' if completed else 'FAIL', 'failure': failure,
+                  'case_selection': case, 'requested_cases': requested_cases, 'completed_cases': completed_cases,
                   'runs': results, 'continuous_input_guard': continuous_pass, 'retry': False,
                   'continuous_raw_replay': continuous_replay,
                   'display_policy': 'preserve', 'display_mode_change_authorized': False,
@@ -167,6 +174,8 @@ def run(*, root, binary, producer, evidence):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('run', 'report'))
+    parser.add_argument('--case', choices=tuple(CASE_SELECTIONS), default='all',
+                        help='run only move1 or nav1; all runs nav1 then move1 (default)')
     for name in ('root', 'binary', 'producer', 'evidence', 'input', 'output'):
         parser.add_argument('--' + name, type=Path)
     args = parser.parse_args()
@@ -176,7 +185,7 @@ def main():
         return check(args.input, args.output)
     if any(getattr(args, name) is None for name in ('root', 'binary', 'producer', 'evidence')):
         parser.error('run requires --root --binary --producer --evidence')
-    return run(root=args.root, binary=args.binary, producer=args.producer, evidence=args.evidence)
+    return run(root=args.root, binary=args.binary, producer=args.producer, evidence=args.evidence, case=args.case)
 
 
 if __name__ == '__main__':

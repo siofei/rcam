@@ -368,7 +368,7 @@ class TimingReport(unittest.TestCase):
 
 
 class ThinDriver(unittest.TestCase):
-    def exercise(self, fault=None):
+    def exercise(self, fault=None, case=None):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         home=Path(temp.name).resolve();root=home/'product';root.mkdir()
         binary=home/'app';binary.write_bytes(b'unit-only-app')
@@ -410,7 +410,8 @@ class ThinDriver(unittest.TestCase):
              patch.object(matrix,'verify_continuous_evidence',side_effect=RuntimeError('raw corruption') if fault=='replay' else None,return_value=True), \
              patch.object(matrix,'assess_and_recover',side_effect=AssertionError('preserve must never restore')), \
              patch.object(matrix,'command_aggregate',side_effect=AssertionError('no aggregate')):
-            code=current_refresh.run(root=root,binary=binary,producer=producer,evidence=evidence)
+            selection = {} if case is None else {'case': case}
+            code=current_refresh.run(root=root,binary=binary,producer=producer,evidence=evidence,**selection)
         result=guard.strict_json((evidence/'CURRENT_REFRESH_RESULT.json').read_bytes())
         return code,result,calls,phases,evidence
 
@@ -420,6 +421,61 @@ class ThinDriver(unittest.TestCase):
         self.assertEqual(result['functional_result'],'PASS');self.assertFalse(result['overall_PASS_claim'])
         self.assertEqual(result['performance'],'REPORT_ONLY');self.assertEqual(result['flicker'],'UNVERIFIED')
         self.assertFalse(result['display_mode_change_authorized'])
+        self.assertEqual(result['case_selection'],'all')
+        self.assertEqual(result['requested_cases'],['nav1','move1'])
+        self.assertEqual(result['completed_cases'],['nav1','move1'])
+
+    def test_explicit_single_case_completes_only_requested_case(self):
+        for case,mode in (('move1','move'),('nav1','nav')):
+            with self.subTest(case=case):
+                code,result,calls,phases,evidence=self.exercise(case=case)
+                self.assertEqual(code,0);self.assertEqual(calls,[mode]);self.assertEqual(phases,['start','finish'])
+                self.assertEqual(result['execution_result'],'COMPLETE')
+                self.assertEqual(result['case_selection'],case)
+                self.assertEqual(result['requested_cases'],[case]);self.assertEqual(result['completed_cases'],[case])
+                self.assertEqual(len(result['runs']),1)
+                self.assertTrue(result['continuous_input_guard']);self.assertTrue(result['continuous_raw_replay'])
+                self.assertFalse(result['overall_PASS_claim']);self.assertFalse(result['stage_PASS_claim'])
+                self.assertFalse((evidence/('nav1' if mode=='move' else 'move1')).exists())
+
+    def test_single_case_guard_report_tail_and_replay_failure_remain_session_fail(self):
+        for case in ('move1','nav1'):
+            for fault in ('guard','functional','tail','replay'):
+                with self.subTest(case=case,fault=fault):
+                    code,result,calls,phases,_=self.exercise(fault,case=case)
+                    self.assertEqual(code,2);self.assertEqual(calls,[case[:-1]]);self.assertEqual(phases,['start','finish'])
+                    self.assertEqual(result['execution_result'],'FAIL');self.assertEqual(result['functional_result'],'FAIL')
+                    self.assertEqual(result['requested_cases'],[case])
+                    self.assertEqual(result['completed_cases'],[] if fault in ('guard','functional') else [case])
+                    self.assertFalse(result['overall_PASS_claim'])
+
+    def test_explicit_all_keeps_original_nav_then_move_behavior(self):
+        code,result,calls,phases,_=self.exercise(case='all')
+        self.assertEqual(code,0);self.assertEqual(calls,['nav','move']);self.assertEqual(phases,['start','finish'])
+        self.assertEqual(result['requested_cases'],['nav1','move1'])
+        self.assertEqual(result['completed_cases'],['nav1','move1'])
+
+    def test_invalid_case_rejects_before_filesystem_compiler_or_guard_changes(self):
+        for case in ('move2','nav2','move','',None,True,1,('move1',)):
+            with self.subTest(case=case),patch.object(matrix,'verify_source') as verify_source, \
+                 patch.object(matrix,'compile_monitor') as compiler,patch.object(matrix,'ContinuousSentinel') as sentinel, \
+                 self.assertRaisesRegex(RuntimeError,'case selection'):
+                current_refresh.run(root=PRODUCT,binary=PRODUCT/'never-app',producer=PRODUCT/'never-producer',
+                                    evidence=PRODUCT/'never-evidence',case=case)
+            verify_source.assert_not_called();compiler.assert_not_called();sentinel.assert_not_called()
+
+    def test_cli_accepts_only_named_cases_and_defaults_to_all(self):
+        base=['current_refresh.py','run','--root','product','--binary','app','--producer','producer','--evidence','fresh']
+        for case in (None,'all','nav1','move1'):
+            argv=base if case is None else base+['--case',case]
+            with self.subTest(case=case),patch.object(sys,'argv',argv),patch.object(current_refresh,'run',return_value=0) as run:
+                self.assertEqual(current_refresh.main(),0)
+                self.assertEqual(run.call_args.kwargs['case'],'all' if case is None else case)
+        for case in ('nav','move2',''):
+            with self.subTest(case=case),patch.object(sys,'argv',base+['--case',case]), \
+                 patch.object(current_refresh,'run') as run,patch.object(sys,'stderr'),self.assertRaises(SystemExit) as exit:
+                current_refresh.main()
+            self.assertEqual(exit.exception.code,2);run.assert_not_called()
 
     def test_guard_and_function_failure_stop_before_move_with_original_failure_kept(self):
         for fault in ('guard','functional'):
