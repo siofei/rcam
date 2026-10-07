@@ -1142,7 +1142,8 @@ GPU/display/index modules and verbatim extracted app-local cache/tests; this is
 CPU correctness evidence only. The full App::update regression and frozen
 PMIX/drag/point release runtime suites still require Mac execution. The standard
 Linux editor-app build is blocked by its unsupported platform configuration and
-the locked Linux-only ordered-float 5.5.0 dependency's declared Rust 1.90 minimum;
+the selected locked dependency path includes ordered-float 5.5.0, which declares
+a Rust 1.90 minimum;
 no dependency, product feature or Linux support code is changed to bypass them.
 
 Independent source review is required before freezing the candidate. This
