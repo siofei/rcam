@@ -68,6 +68,103 @@ pub struct Prepared {
     pub index: Arc<crate::render_index::RenderIndex>,
     pub stats: PrepareStats,
 }
+/// One immutable-view entry. Delta-dependent queries and validation are never
+/// memoized: only the original base query and unselected binned costs are reused.
+#[derive(Default)]
+pub(crate) struct PrepareWorkCache {
+    entry: Option<PrepareWorkEntry>,
+}
+struct PrepareWorkEntry {
+    // Strong identities prevent address reuse and fence Arc::make_mut edits.
+    scene: Arc<Scene>,
+    selected: Arc<Vec<u32>>,
+    camera_bits: [u64; 3],
+    viewport_bits: [u32; 5],
+    work: StationaryWork,
+}
+#[derive(Default)]
+struct StationaryWork {
+    base: Option<(crate::render_index::ViewportRenderSet, f64)>,
+    // Bounds/style belong to the object, even when primitive ranges overlap.
+    binned: std::collections::HashMap<(usize, usize), Option<f64>>,
+}
+// This is a memoization budget, never a rendering/admission limit. Above it,
+// original computation continues; existing entries remain usable.
+const MAX_STATIONARY_BINNED_COSTS: usize = 65_536;
+struct WorkContext<'a> {
+    started: std::time::Instant,
+    cache: Option<&'a mut StationaryWork>,
+}
+impl PrepareWorkCache {
+    pub(crate) fn clear(&mut self) {
+        self.entry = None;
+    }
+    pub(crate) fn invalidate_if_scene_changed(&mut self, scene: Option<&Arc<Scene>>) {
+        if self
+            .entry
+            .as_ref()
+            .is_some_and(|entry| scene.is_none_or(|scene| !Arc::ptr_eq(&entry.scene, scene)))
+        {
+            self.clear();
+        }
+    }
+    pub(crate) fn prepare_measured(
+        &mut self,
+        scene: &Arc<Scene>,
+        camera: Camera,
+        rect: egui::Rect,
+        ppp: f32,
+        selected: &Arc<Vec<u32>>,
+        delta: editor_core::MmPoint,
+    ) -> Result<Prepared, String> {
+        let started = std::time::Instant::now();
+        let camera_bits = [
+            camera.center.x_mm.to_bits(),
+            camera.center.y_mm.to_bits(),
+            camera.scale.to_bits(),
+        ];
+        let viewport_bits = [
+            rect.min.x.to_bits(),
+            rect.min.y.to_bits(),
+            rect.max.x.to_bits(),
+            rect.max.y.to_bits(),
+            ppp.to_bits(),
+        ];
+        if self.entry.as_ref().is_none_or(|entry| {
+            !Arc::ptr_eq(&entry.scene, scene)
+                || !Arc::ptr_eq(&entry.selected, selected)
+                || entry.camera_bits != camera_bits
+                || entry.viewport_bits != viewport_bits
+        }) {
+            self.entry = Some(PrepareWorkEntry {
+                scene: scene.clone(),
+                selected: selected.clone(),
+                camera_bits,
+                viewport_bits,
+                work: StationaryWork::default(),
+            });
+        }
+        // Delta is deliberately absent from the stationary key. Its scalar
+        // checks and every selected-object/shifted/halo calculation run below.
+        prepare_measured_impl(
+            scene,
+            camera,
+            rect,
+            ppp,
+            selected,
+            delta,
+            WorkContext {
+                started,
+                cache: Some(&mut self.entry.as_mut().unwrap().work),
+            },
+        )
+    }
+}
+#[cfg(test)]
+thread_local! {
+    static PREPARE_BASE_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static BINNED_WORK_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 /// Conservative per-row work for a binned polygon. The shader only visits
 /// edges in the current Y bin. Charge each physical row the densest bin that
 /// row can reach, including one adjacent row and bin for sample phase and
@@ -81,6 +178,8 @@ fn binned_polygon_work(
     shifted_x: f64,
     shifted_y: f64,
 ) -> Option<f64> {
+    #[cfg(test)]
+    BINNED_WORK_CALLS.with(|calls| calls.set(calls.get() + 1));
     let bins = primitive.b[0] as usize;
     let inverse = f64::from(primitive.a[2]);
     if bins == 0 || !inverse.is_finite() || inverse <= 0. || !ppm.is_finite() || ppm <= 0. {
@@ -225,7 +324,29 @@ pub fn prepare_measured(
     selected: &[u32],
     delta: editor_core::MmPoint,
 ) -> Result<Prepared, String> {
-    let started = std::time::Instant::now();
+    prepare_measured_impl(
+        scene,
+        camera,
+        rect,
+        ppp,
+        selected,
+        delta,
+        WorkContext {
+            started: std::time::Instant::now(),
+            cache: None,
+        },
+    )
+}
+fn prepare_measured_impl(
+    scene: &Scene,
+    camera: Camera,
+    rect: egui::Rect,
+    ppp: f32,
+    selected: &[u32],
+    delta: editor_core::MmPoint,
+    context: WorkContext<'_>,
+) -> Result<Prepared, String> {
+    let WorkContext { started, mut cache } = context;
     if selected.len() != scene.objects.len() {
         return Err("VALIDATION_FAILED: selection flags length".into());
     }
@@ -241,8 +362,20 @@ pub fn prepare_measured(
     // Immutable bins serve both stationary and translated objects. Query the
     // original coordinates, then merge by scene ID to preserve exposure order.
     let index = scene.index.clone();
-    let mut viewport = index.viewport(bounds);
-    let mut work = index.sample_candidate_work(&viewport, ppm);
+    let base_query = || {
+        #[cfg(test)]
+        PREPARE_BASE_QUERIES.with(|calls| calls.set(calls.get() + 1));
+        let viewport = index.viewport(bounds);
+        let work = index.sample_candidate_work(&viewport, ppm);
+        (viewport, work)
+    };
+    // Cache the full original set before filtering; shifted work still uses
+    // the full grid counts, and exposure order/diagnostic counts stay intact.
+    let (mut viewport, mut work) = if let Some(cache) = cache.as_deref_mut() {
+        cache.base.get_or_insert_with(base_query).clone()
+    } else {
+        base_query()
+    };
     stats.max_candidates_in_view = viewport.max_candidates_in_view;
     stats.cell_references_visited = viewport.cell_references_visited;
     if preview[0] != 0. || preview[1] != 0. {
@@ -363,7 +496,11 @@ pub fn prepare_measured(
         } else {
             0.
         };
-        for primitive in &scene.primitives[object.meta[0] as usize..object.meta[1] as usize] {
+        for (offset, primitive) in scene.primitives
+            [object.meta[0] as usize..object.meta[1] as usize]
+            .iter()
+            .enumerate()
+        {
             let polygon = matches!(primitive.meta[0], 1 | 3);
             let px = if polygon {
                 [
@@ -396,8 +533,28 @@ pub fn prepare_measured(
             } else if primitive.meta[0] == 1 {
                 rows * f64::from(primitive.meta[3])
             } else if primitive.meta[0] == 3 {
-                binned_polygon_work(scene, primitive, px, py, ppm, shifted_x, shifted_y)
-                    .unwrap_or(rows * f64::from(primitive.b[1]))
+                let calculate =
+                    || binned_polygon_work(scene, primitive, px, py, ppm, shifted_x, shifted_y);
+                let cost = if selected_flags[index] == 0 {
+                    if let Some(cache) = cache.as_deref_mut() {
+                        let key = (index, object.meta[0] as usize + offset);
+                        if let Some(cost) = cache.binned.get(&key) {
+                            *cost
+                        } else {
+                            let cost = calculate();
+                            if cache.binned.len() < MAX_STATIONARY_BINNED_COSTS {
+                                cache.binned.insert(key, cost);
+                            }
+                            cost
+                        }
+                    } else {
+                        calculate()
+                    }
+                } else {
+                    calculate()
+                };
+                // Cached None preserves the original conservative fallback.
+                cost.unwrap_or(rows * f64::from(primitive.b[1]))
             } else {
                 vertical
             };
@@ -856,5 +1013,540 @@ mod binned_work_tests {
                 .sum();
             assert!(estimate >= f64::from(actual), "phase={phase}");
         }
+    }
+}
+
+#[cfg(test)]
+mod prepare_work_cache_tests {
+    use super::*;
+    use editor_core::MmPoint;
+
+    fn scene() -> Arc<Scene> {
+        let edges: Vec<_> = (0..20)
+            .map(|i| {
+                let x = -1.5 + i as f32 * 0.15;
+                ([x, -1.], [x + 0.3, 1.])
+            })
+            .collect();
+        let mut points = vec![[0.; 2]; 2];
+        let mut right = edges.clone();
+        right.reverse();
+        for (header, list) in [right, edges].into_iter().enumerate() {
+            points[header] = [points.len() as f32, list.len() as f32];
+            for (a, b) in list {
+                points.push(a);
+                points.push(b);
+            }
+        }
+        // Shared primitive ranges intentionally need distinct object keys:
+        // clipping bounds and styles differ. Include Clear/layer metadata.
+        let objects = vec![
+            Object {
+                meta: [0, 3, 0, 1],
+                bounds: [-2., -1., -0.25, 1.],
+                style: [0, 0, 0, 0],
+            },
+            Object {
+                meta: [0, 3, 1, 1],
+                bounds: [0.25, -0.5, 1., 0.5],
+                style: [0, crate::display::MODE_EDGE, 0, 0],
+            },
+            Object {
+                meta: [0, 3, 0, 1],
+                bounds: [-1., -0.5, 1., 0.5],
+                style: [0, 0, 0, 0],
+            },
+            Object {
+                meta: [0, 3, 1, 0],
+                bounds: [-2., -1., 2., 1.],
+                style: [0, 0, 0, 0],
+            },
+        ];
+        Arc::new(Scene {
+            serial: 7,
+            index: Arc::new(
+                crate::render_index::RenderIndex::build(&objects, &[], [0.; 2]).unwrap(),
+            ),
+            anchor: MmPoint::new(0., 0.),
+            objects,
+            primitives: vec![
+                Primitive {
+                    meta: [0, 0, 0, 0],
+                    bounds: [-2., -1., 2., 1.],
+                    ..Default::default()
+                },
+                Primitive {
+                    meta: [1, 0, 0, 20],
+                    bounds: [-2., -1., 2., 1.],
+                    ..Default::default()
+                },
+                Primitive {
+                    meta: [3, 1, 0, 0],
+                    a: [1., -1., 0.5, 0.],
+                    b: [1., 20., 0., 1.],
+                    bounds: [-2., -1., 2., 1.],
+                },
+            ],
+            points,
+            ids: vec![],
+            ppm: 20.,
+        })
+    }
+    fn camera() -> Camera {
+        Camera {
+            center: MmPoint::new(0., 0.),
+            scale: 10.,
+        }
+    }
+    fn rect() -> egui::Rect {
+        egui::Rect::from_min_max(egui::pos2(10., 20.), egui::pos2(90., 80.))
+    }
+    fn flags() -> Arc<Vec<u32>> {
+        Arc::new(vec![0, 0, 1, 1])
+    }
+    fn same(a: Result<Prepared, String>, b: Result<Prepared, String>) {
+        match (a, b) {
+            (Ok(a), Ok(b)) => {
+                assert_eq!(
+                    bytemuck::bytes_of(&a.uniforms),
+                    bytemuck::bytes_of(&b.uniforms)
+                );
+                assert!(Arc::ptr_eq(&a.index, &b.index));
+                let counts = |s: &PrepareStats| {
+                    (
+                        s.candidate_count,
+                        s.object_visits,
+                        s.cell_references_visited,
+                        s.max_candidates_in_view,
+                        s.preview_index_ms.to_bits(),
+                        s.estimated_work.to_bits(),
+                    )
+                };
+                assert_eq!(counts(&a.stats), counts(&b.stats));
+            }
+            (Err(a), Err(b)) => assert_eq!(a, b),
+            _ => panic!("cached/reference success differs"),
+        }
+    }
+    fn equivalent(
+        cache: &mut PrepareWorkCache,
+        scene: &Arc<Scene>,
+        camera: Camera,
+        rect: egui::Rect,
+        ppp: f32,
+        flags: &Arc<Vec<u32>>,
+        delta: MmPoint,
+    ) {
+        same(
+            cache.prepare_measured(scene, camera, rect, ppp, flags, delta),
+            prepare_measured(scene, camera, rect, ppp, flags, delta),
+        );
+    }
+    fn calls() -> usize {
+        BINNED_WORK_CALLS.with(std::cell::Cell::get)
+    }
+
+    #[test]
+    fn repeated_views_skip_base_and_unselected_bins_but_recompute_delta() {
+        let (scene, flags) = (scene(), flags());
+        let mut cache = PrepareWorkCache::default();
+        let mut last_preview = None;
+        PREPARE_BASE_QUERIES.with(|v| v.set(0));
+        BINNED_WORK_CALLS.with(|v| v.set(0));
+        for delta in [
+            MmPoint::new(0., 0.),
+            MmPoint::new(0.125, 0.25),
+            MmPoint::new(-0.25, -0.125),
+        ] {
+            let before = calls();
+            let prepared = cache
+                .prepare_measured(&scene, camera(), rect(), 2., &flags, delta)
+                .unwrap();
+            assert_eq!(calls() - before, if last_preview.is_none() { 3 } else { 1 });
+            assert_eq!(PREPARE_BASE_QUERIES.with(std::cell::Cell::get), 1);
+            assert!(last_preview.is_none_or(|preview| preview != prepared.uniforms.preview));
+            last_preview = Some(prepared.uniforms.preview);
+        }
+        assert_eq!(cache.entry.as_ref().unwrap().work.binned.len(), 2);
+        for delta in [
+            MmPoint::new(0., 0.),
+            MmPoint::new(0.125, 0.25),
+            MmPoint::new(100., 100.),
+            MmPoint::new(-100., -100.),
+            MmPoint::new(4., 0.),
+            MmPoint::new(-0., -0.),
+        ] {
+            equivalent(&mut cache, &scene, camera(), rect(), 2., &flags, delta);
+        }
+    }
+
+    #[test]
+    fn exact_view_bits_scene_selection_and_cow_invalidate() {
+        let (mut scene, mut flags) = (scene(), flags());
+        let mut cache = PrepareWorkCache::default();
+        for field in 0..8 {
+            let (mut c, mut r, mut ppp) = (camera(), rect(), 2f32);
+            equivalent(&mut cache, &scene, c, r, ppp, &flags, MmPoint::new(0., 0.));
+            match field {
+                0 => c.center.x_mm = f64::from_bits(1),
+                1 => c.center.y_mm = f64::from_bits(1),
+                2 => c.scale = c.scale.next_up(),
+                3 => r.min.x = r.min.x.next_up(),
+                4 => r.min.y = r.min.y.next_up(),
+                5 => r.max.x = r.max.x.next_up(),
+                6 => r.max.y = r.max.y.next_up(),
+                7 => ppp = ppp.next_up(),
+                _ => unreachable!(),
+            }
+            let before = PREPARE_BASE_QUERIES.with(std::cell::Cell::get);
+            equivalent(&mut cache, &scene, c, r, ppp, &flags, MmPoint::new(0., 0.));
+            assert_eq!(
+                PREPARE_BASE_QUERIES.with(std::cell::Cell::get) - before,
+                2,
+                "cache miss and reference: field {field}"
+            );
+        }
+        for field in 0..2 {
+            equivalent(
+                &mut cache,
+                &scene,
+                camera(),
+                rect(),
+                2.,
+                &flags,
+                MmPoint::new(0., 0.),
+            );
+            let before = PREPARE_BASE_QUERIES.with(std::cell::Cell::get);
+            if field == 0 {
+                scene = Arc::new((*scene).clone());
+            } else {
+                flags = Arc::new((*flags).clone());
+            }
+            equivalent(
+                &mut cache,
+                &scene,
+                camera(),
+                rect(),
+                2.,
+                &flags,
+                MmPoint::new(0., 0.),
+            );
+            assert_eq!(PREPARE_BASE_QUERIES.with(std::cell::Cell::get) - before, 2);
+        }
+        let old_scene = Arc::downgrade(&scene);
+        Arc::make_mut(&mut scene).objects[0].style[1] = crate::display::MODE_EDGE;
+        assert!(old_scene.upgrade().is_some());
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        assert!(old_scene.upgrade().is_none());
+        let old_flags = Arc::downgrade(&flags);
+        Arc::make_mut(&mut flags)[0] = 1;
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        assert!(old_flags.upgrade().is_none());
+        assert!(
+            !cache
+                .entry
+                .as_ref()
+                .unwrap()
+                .work
+                .binned
+                .contains_key(&(0, 2))
+        );
+        for bits in [
+            (-0f64).to_bits(),
+            f64::NAN.to_bits(),
+            f64::NAN.to_bits() + 1,
+        ] {
+            let mut c = camera();
+            c.center.x_mm = f64::from_bits(bits);
+            equivalent(
+                &mut cache,
+                &scene,
+                c,
+                rect(),
+                2.,
+                &flags,
+                MmPoint::new(0., 0.),
+            );
+            assert_eq!(cache.entry.as_ref().unwrap().camera_bits[0], bits);
+        }
+    }
+
+    #[test]
+    fn shared_primitive_ranges_keep_object_clipping_and_addition_order() {
+        let (scene, flags) = (scene(), flags());
+        let mut cache = PrepareWorkCache::default();
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        let work = &cache.entry.as_ref().unwrap().work;
+        assert!(work.binned.contains_key(&(0, 2)) && work.binned.contains_key(&(1, 2)));
+        assert_ne!(work.binned[&(0, 2)], work.binned[&(1, 2)]);
+        for dx in [-20., -2., 0.125, 2., 20.] {
+            for dy in [-20., -2., 0.125, 2., 20.] {
+                equivalent(
+                    &mut cache,
+                    &scene,
+                    camera(),
+                    rect(),
+                    2.,
+                    &flags,
+                    MmPoint::new(dx, dy),
+                );
+            }
+        }
+        for flags in [
+            Arc::new(vec![0; 4]),
+            Arc::new(vec![1; 4]),
+            Arc::new(vec![2, 0, 7, 3]),
+        ] {
+            for delta in [
+                MmPoint::new(0., 0.),
+                MmPoint::new(1., -1.),
+                MmPoint::new(10., 10.),
+            ] {
+                equivalent(&mut cache, &scene, camera(), rect(), 2., &flags, delta);
+            }
+        }
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        let raw_base = &cache.entry.as_ref().unwrap().work.base.as_ref().unwrap().0;
+        assert_eq!(
+            raw_base.ordered_candidate_ids,
+            scene
+                .index
+                .viewport(viewport_bounds(&scene, camera(), rect(), 2.).unwrap())
+                .ordered_candidate_ids
+        );
+        assert!(
+            raw_base.ordered_candidate_ids.contains(&2),
+            "cached base must retain selected objects"
+        );
+    }
+
+    #[test]
+    fn cached_none_and_full_budget_fall_back_without_new_errors() {
+        let (mut scene, flags) = (scene(), flags());
+        Arc::make_mut(&mut scene).primitives[2].b[0] = 0.;
+        let mut cache = PrepareWorkCache::default();
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        assert_eq!(cache.entry.as_ref().unwrap().work.binned[&(0, 2)], None);
+        let before = calls();
+        cache
+            .prepare_measured(
+                &scene,
+                camera(),
+                rect(),
+                2.,
+                &flags,
+                MmPoint::new(0.125, 0.),
+            )
+            .unwrap();
+        assert_eq!(
+            calls() - before,
+            1,
+            "cached None must hit; selected None is recalculated"
+        );
+        let work = &mut cache.entry.as_mut().unwrap().work;
+        for i in 0..MAX_STATIONARY_BINNED_COSTS - 2 {
+            work.binned.insert((usize::MAX, i), Some(0.));
+        }
+        let before = calls();
+        cache
+            .prepare_measured(&scene, camera(), rect(), 2., &flags, MmPoint::new(0., 0.))
+            .unwrap();
+        assert_eq!(calls() - before, 1, "existing keys hit at full capacity");
+        let work = &mut cache.entry.as_mut().unwrap().work;
+        work.binned.remove(&(0, 2));
+        work.binned
+            .insert((usize::MAX, MAX_STATIONARY_BINNED_COSTS), Some(0.));
+        let before = calls();
+        cache
+            .prepare_measured(&scene, camera(), rect(), 2., &flags, MmPoint::new(0., 0.))
+            .unwrap();
+        assert_eq!(
+            calls() - before,
+            2,
+            "uncached stationary entry uses original calculation at capacity"
+        );
+        assert_eq!(
+            cache.entry.as_ref().unwrap().work.binned.len(),
+            MAX_STATIONARY_BINNED_COSTS
+        );
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+    }
+
+    #[test]
+    fn errors_keep_precedence_on_miss_hit_and_changed_delta() {
+        let mut cache = PrepareWorkCache::default();
+        for failure in 0..9 {
+            let (mut scene, mut flags, mut c, mut r, mut ppp, mut delta) = (
+                scene(),
+                flags(),
+                camera(),
+                rect(),
+                2f32,
+                MmPoint::new(0., 0.),
+            );
+            let expected = match failure {
+                0 => {
+                    flags = Arc::new(vec![]);
+                    ppp = f32::NAN;
+                    delta.x_mm = f64::INFINITY;
+                    "VALIDATION_FAILED: selection flags length"
+                }
+                1 => {
+                    ppp = f32::NAN;
+                    delta.x_mm = f64::INFINITY;
+                    "VALIDATION_FAILED: viewport"
+                }
+                2 => {
+                    c.center.x_mm = f64::INFINITY;
+                    delta.x_mm = f64::INFINITY;
+                    "VALIDATION_FAILED: viewport bounds"
+                }
+                3 => {
+                    delta.x_mm = f64::INFINITY;
+                    "DISPLAY_PRECISION: local coordinate error exceeds 0.1 physical pixel"
+                }
+                4 => {
+                    delta.y_mm = f64::from_bits(1);
+                    "DISPLAY_PRECISION: local coordinate error exceeds 0.1 physical pixel"
+                }
+                5 => {
+                    Arc::make_mut(&mut scene).ppm = 1e10;
+                    "DISPLAY_PRECISION: local coordinate error exceeds 0.1 physical pixel"
+                }
+                6 => {
+                    Arc::make_mut(&mut scene).primitives[2].b = [0., f32::INFINITY, 0., 1.];
+                    "VALIDATION_FAILED: non-finite display work estimate"
+                }
+                7 => {
+                    Arc::make_mut(&mut scene).primitives[2].b = [0., f32::INFINITY, 0., 1.];
+                    c.center.x_mm = 1e10;
+                    r.max.x = 4e12;
+                    "VALIDATION_FAILED: non-finite display work estimate"
+                }
+                8 => {
+                    c.center.x_mm = 1e10;
+                    "DISPLAY_PRECISION: local coordinate error exceeds 0.1 physical pixel"
+                }
+                _ => unreachable!(),
+            };
+            let original = prepare_measured(&scene, c, r, ppp, &flags, delta);
+            assert_eq!(
+                original.err().as_deref(),
+                Some(expected),
+                "failure {failure}"
+            );
+            for _ in 0..3 {
+                equivalent(&mut cache, &scene, c, r, ppp, &flags, delta);
+            }
+        }
+        let (scene, flags) = (scene(), flags());
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        for delta in [
+            MmPoint::new(f64::INFINITY, 0.),
+            MmPoint::new(0., f64::NAN),
+            MmPoint::new(0.125, 0.25),
+        ] {
+            equivalent(&mut cache, &scene, camera(), rect(), 2., &flags, delta);
+        }
+    }
+
+    #[test]
+    fn none_replacement_and_clear_release_owned_inputs() {
+        let (scene, flags) = (scene(), flags());
+        let mut cache = PrepareWorkCache::default();
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        let (weak_scene, weak_flags) = (Arc::downgrade(&scene), Arc::downgrade(&flags));
+        drop(scene);
+        drop(flags);
+        assert!(weak_scene.upgrade().is_some() && weak_flags.upgrade().is_some());
+        cache.invalidate_if_scene_changed(None);
+        assert!(weak_scene.upgrade().is_none() && weak_flags.upgrade().is_none());
+        let (scene, flags) = (self::scene(), self::flags());
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        cache.invalidate_if_scene_changed(Some(&Arc::new((*scene).clone())));
+        assert!(cache.entry.is_none());
+        equivalent(
+            &mut cache,
+            &scene,
+            camera(),
+            rect(),
+            2.,
+            &flags,
+            MmPoint::new(0., 0.),
+        );
+        cache.clear();
+        assert!(cache.entry.is_none());
     }
 }

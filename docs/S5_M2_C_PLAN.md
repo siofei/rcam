@@ -1151,3 +1151,82 @@ change is not native acceptance or PMIX PASS. The original Mac owner must use a
 new candidate identity, clean Release build and all twelve matrix rows, retaining
 every frame and screenshot. The 50 ms and 1e-9 gates, fixed inputs and intervals
 remain unchanged; no minimum time saving is asserted from cloud checks.
+
+### Real-delta stationary work cache candidate (2026-10-07)
+
+Scope is the S5-M2-C fluidity follow-up: R01/R05/R08/R10/R11/R16/R17/R18/R19
+and existing AT-017/032/067/073/075/086/087/090/091/092 mappings. Base is exactly
+`42db040374b0c1643200b7f04e95b03d272ef792`, 672 source files, manifest SHA-256
+`0235f9c9bd89d76dd5b101dc2fd99ba226582f1431464467696377664088067b`.
+Allowed changes are editor-app gpu/main/render_index, their regression tests and
+test initializer, this taskbook and the manifest. Work stays in an isolated
+branch. No new graphics-editor window, shader/manufacturing/Snap/Alt changes,
+dependency changes, source publication or automatic native/display experiments.
+Mac test windows must be coordinated with the owner. This fluidity work no longer
+requires forcing a 60 Hz display mode; historical protocols/evidence remain intact.
+
+The owner reports a preserved 144 Hz move1 run with functional, actual-input guard
+and raw replay checks passing, including one commit and Undo/Redo geometry.
+There are 300 preview frames 852..1151 and 301 intervals including release 1152:
+interval p50 31.346750 ms, p95 40.557458 ms, p99 43.466083 ms, max 87.822625 ms.
+CPU update p50/p95/p99/max are 15.988083/16.738292/18.157708/19.563292 ms;
+combined prepare (including early validation) is
+14.996001/15.664250/16.517417/18.369624 ms, mean 14.759894 ms against update
+mean 15.775576 ms. This motivates reducing actual preview preparation. It does
+not prove display presentation FPS or independent GPU execution time. The input
+to GPU-completion upper bound p95 40.397916 ms includes scheduling/drawing/fences.
+Four lifecycle intervals over 200 ms near warmup and post-history synchronous
+semantic snapshots are retained; no component measurement proves evidence
+collection is their sole cause. No frames, screenshots or intervals are removed.
+
+Read-only architecture review identified the stationary base viewport/query work
+and unselected binned polygon scan as safe cache boundaries. A small auxiliary
+CPU probe used the public frozen PMIX fixture (100,000 objects, 140,000 primitives,
+1,540,000 points), 1,000 selected objects, anchor (200.5,125.5), display ppm 4,
+camera scale 1.656, ppp 2 and 1600x900 physical viewport. In six instrumented
+frames, base query/work took 14.676012..19.838385 ms; 9,900 unselected binned
+calls took 6.311146..9.283682 ms per frame. Selection bounds took
+0.061165..0.149370 ms and remain the original full scan. These are Linux CPU
+harness observations with only the harness crate at opt-level 3 and dependencies
+in their existing debug profile, not a Mac Release comparison or SLA prediction.
+The probe and private logs are outside distributable source.
+
+The candidate has one canvas-local immutable-view cache entry, retaining strong
+Scene and selected-flags Arcs and exact camera center/scale and rect/ppp bits.
+Scene serial equality is insufficient. Arc ownership fences COW and prevents
+allocation address recycling; replacement drops the old entry. None/replacement
+and the two existing early view-guard short circuits clear this cache alongside
+the earlier stationary validation cache. The earlier complete uniforms Result
+cache and its validation/error/cancellation position stay intact. Only the later
+real-delta canvas preparation uses this new cache.
+
+The full original base viewport, its world bounds and diagnostic counts, and its
+sample work are memoized after the original flags/viewport/delta scalar checks.
+Filtering selected IDs operates on a clone, never the cached base. Shifted and
+selected-envelope queries/sample work retain their original every-frame order
+and full grid counts. Selected bounds retain the original per-object f32
+addition/min/max/halo arithmetic. No reduced validator or stationary Prepared
+result substitutes for a moving preview.
+
+Only unselected binned_polygon_work Option<f64> values are memoized, lazily at
+the original cost branch, by object and primitive ordinal together. Object bounds
+and styles matter even with shared primitive ranges. Cached None retains the
+original conservative fallback. Selected costs always recompute with the real
+delta; delta scalar and selected bounds precision checks always execute. The
+map is capped at 65,536 costs; additional keys compute normally, existing keys
+still hit, and no new rendering/admission error is introduced. Stationary costs
+are never subtotaled: the original per-primitive work additions, final finite
+check and final camera scalar checks retain their order and bitwise results.
+Cache-key construction is inside the measured preparation interval. Logical
+candidate/object/cell/work diagnostics retain their original meaning.
+
+Regressions compare uniforms bytes, index identity, exact estimated_work bits
+and every non-timing prepare statistic, across repeated and changed deltas,
+clipping/shared primitive ranges, empty/inactive selection, exact key changes,
+Arc replacement/COW, error precedence/recovery, cached None, capacity fallback
+and retired-input release. An auxiliary CPU check also compares the candidate
+against the exact frozen 42 GPU source on the public PMIX fixture. Locked Rust
+1.89 macOS cross-target checks only establish compilation; cloud CPU regressions
+cannot replace native App update, Metal or the full matrix. Existing Linux editor
+configuration/dependency restrictions are not bypassed in product code. Native
+performance and overall stage acceptance remain pending coordinated execution.

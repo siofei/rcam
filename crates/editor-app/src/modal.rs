@@ -481,6 +481,7 @@ pub(crate) mod tests {
             layer_panel_rect: eframe::egui::Rect::NOTHING,
             selected_flags: Default::default(),
             uniform_validation: Default::default(),
+            prepare_work: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
             last_frame: std::time::Instant::now(),
             text_input_at_event: false,

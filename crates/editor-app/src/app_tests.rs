@@ -65,6 +65,7 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
             let _ = ctx.run(raw.clone(), |ctx| {
                 if force_uncached {
                     app.uniform_validation.clear();
+                    app.prepare_work.clear();
                 }
                 app.update(ctx, &mut frame);
             });
@@ -134,6 +135,7 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
         let _ = ctx.run(release, |ctx| {
             if force_uncached {
                 app.uniform_validation.clear();
+                app.prepare_work.clear();
             }
             app.update(ctx, &mut frame);
         });
@@ -185,6 +187,7 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
         let _ = ctx.run(raw.clone(), |ctx| {
             if force_uncached {
                 app.uniform_validation.clear();
+                app.prepare_work.clear();
             }
             app.update(ctx, &mut frame);
         });
@@ -200,6 +203,74 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
                 action,
                 Action::DragMove(_) | Action::Move(_, _) | Action::PointApply(_)
             ));
+        }
+    }
+}
+
+#[test]
+fn canvas_work_cache_releases_inputs_before_scene_and_view_guard_short_circuits() {
+    use eframe::{App, egui};
+    use std::sync::Arc;
+    let (model, _) = setup();
+    let camera = crate::camera::Camera {
+        center: MmPoint::new(0., 0.),
+        scale: 10.,
+    };
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800., 600.));
+    for guard in 0..4 {
+        let mut app = crate::modal::tests::app();
+        let (tx, _requests) = std::sync::mpsc::sync_channel(32);
+        app.tx = tx;
+        app.view = model.view.clone();
+        // These allocations are unique to this app/cache, independently of the
+        // model's scene and its immutable index.
+        let scene = Arc::new((**app.view.scene.as_ref().unwrap()).clone());
+        let flags = Arc::new(vec![0; scene.objects.len()]);
+        let weak_scene = Arc::downgrade(&scene);
+        let weak_flags = Arc::downgrade(&flags);
+        app.prepare_work
+            .prepare_measured(&scene, camera, rect, 1., &flags, MmPoint::new(0., 0.))
+            .unwrap();
+        app.view.scene = Some(scene);
+        drop(flags);
+        app.selected_flags = Arc::new(vec![0; app.view.scene.as_ref().unwrap().objects.len()]);
+        app.camera = camera;
+        app.canvas_rect = if guard == 1 {
+            egui::Rect::NOTHING
+        } else {
+            rect
+        };
+        // Keep the later canvas in its existing LOD-pending branch; it cannot
+        // replace the cache and hide a missed early clear.
+        app.view.render_ppm = 0.;
+        if guard == 0 {
+            app.view.scene = None;
+        }
+        if guard == 3 {
+            app.view.scene = Some(Arc::new((**model.view.scene.as_ref().unwrap()).clone()));
+        }
+        let ctx = egui::Context::default();
+        ctx.options_mut(|options| options.max_passes = std::num::NonZeroUsize::new(1).unwrap());
+        let mut frame = eframe::Frame::_new_kittest();
+        let _ = ctx.run(
+            egui::RawInput {
+                focused: true,
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1200., 900.),
+                )),
+                ..Default::default()
+            },
+            |ctx| app.update(ctx, &mut frame),
+        );
+        assert!(
+            weak_flags.upgrade().is_none(),
+            "early guard {guard} must release cached flags"
+        );
+        if guard == 0 || guard == 3 {
+            assert!(weak_scene.upgrade().is_none());
+        } else {
+            assert_eq!(Arc::strong_count(app.view.scene.as_ref().unwrap()), 1);
         }
     }
 }

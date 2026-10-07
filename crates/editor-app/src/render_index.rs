@@ -12,7 +12,7 @@ pub struct RenderIndex {
     pub data: Vec<u32>, // offsets (absolute), then ordered object indices
     pub max_candidates: usize,
 }
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ViewportRenderSet {
     pub world_bounds: [f64; 4],
     pub cell_range: Option<[usize; 4]>,

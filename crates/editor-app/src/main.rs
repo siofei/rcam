@@ -88,7 +88,7 @@ use std::{
 };
 
 /// Memoize only the stationary validation performed before UI actions. Moving
-/// previews still run their own full preparation with the current delta.
+/// previews still run their own preparation with the current delta.
 #[derive(Default)]
 struct UniformValidationCache {
     entry: Option<UniformValidationEntry>,
@@ -278,6 +278,7 @@ struct EditorApp {
     timing: bool,
     selected_flags: std::sync::Arc<Vec<u32>>,
     uniform_validation: UniformValidationCache,
+    prepare_work: gpu::PrepareWorkCache,
     last_frame: Instant,
     text_input_at_event: bool,
     ime_active: bool,
@@ -559,6 +560,7 @@ impl EditorApp {
             layer_panel_rect: egui::Rect::NOTHING,
             selected_flags: Default::default(),
             uniform_validation: Default::default(),
+            prepare_work: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
             last_frame: Instant::now(),
             text_input_at_event: false,
@@ -1687,13 +1689,17 @@ impl eframe::App for EditorApp {
         let validation_start = Instant::now();
         self.uniform_validation
             .invalidate_if_scene_changed(self.view.scene.as_ref());
+        self.prepare_work
+            .invalidate_if_scene_changed(self.view.scene.as_ref());
         self.display_error = self.view.scene.as_ref().and_then(|scene| {
             if !self.canvas_rect.is_positive() {
                 self.uniform_validation.clear();
+                self.prepare_work.clear();
                 return Some("正在准备画布".into());
             }
             if self.camera.scale * f64::from(ctx.pixels_per_point()) > self.view.render_ppm {
                 self.uniform_validation.clear();
+                self.prepare_work.clear();
                 return Some("正在准备当前缩放的完整图形".into());
             }
             self.uniform_validation
@@ -2799,7 +2805,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                 if let Some(scene) = &self.view.scene
                     && !needs_lod
                 {
-                    match gpu::prepare_measured(
+                    match self.prepare_work.prepare_measured(
                         scene,
                         self.camera,
                         rect,
