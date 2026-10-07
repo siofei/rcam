@@ -1,4 +1,4 @@
-# External guarded PMIX full12 coordinator, v3.6.1-bound candidate
+# External guarded PMIX full12 coordinator, v3.6.2-bound candidate
 
 This source-only candidate binds the independently reviewed product phase/helper
 contract and independently measured fresh Mac build identities below. Final
@@ -9,10 +9,10 @@ this guard candidate does not claim that the display API has been repaired.
 
 The five frozen identities are:
 
-- Product commit: 0cf2c702bb2d815c51fa5080f8b625600ac5d252
-- Source manifest: 37df7531654cb9a4d70231add83072a51c92fbfdc7dbc112bc492f1e8043caf0
-- Internal app: 7e6fdb651c1e8deddc5163567d737fb5e2f440aae0275faf9dcb6800e4b0be8f
-- Capture producer: 1a9a79d94a838ae868f14d62a62ce992fc737b463f5ae8f88b70499bcca8f9b5
+- Product commit: d6e5fe8a542cca51a65a66100ffeed5a6abae1c8
+- Source manifest: a1692b3da28df336b81b030c19c9f84c568e6b274c3850e2987aea05e180f88f
+- Internal app: 3bea984b659cb15ae3b7e2b9be94ad68af1851b3b7504675c3901958431fca15
+- Capture producer: c5f207d3ac37dccb69f8dd1d15dded18e95fdf5bf6c647d3fc3c3dbcb05ebf22
 - Native runner: 20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c
 
 Missing or malformed pins still fail before filesystem changes, compilation or
@@ -265,13 +265,15 @@ operation now requires the exact prefix /usr/bin/swift -swift-version 6
 -warnings-as-errors before its reviewed helper and operation arguments. Window
 query and the strict observer compiler remain separate unchanged contracts.
 
-The exact pinned product has passed fresh clean source/SDK/build qualification,
-the corrected strict interpreter's real target2 probe and all31 background
-commands. The real probe returned a complete original144Hz/scale2/nonmirrored
-snapshot and20 phase records in the shared uptime domain. The sealed background
-qualification remains stage_PASS_claim=false and foreground initialization
-pending; no-eligible-window is preserved as its original capture result.
-No new set60, restore or native capture was performed in that qualification.
-The older guarded run failed before app startup and never exercised
-watched_round_check. No genuine60Hz/full12, aggregate, actual48 attacks or stage
-acceptance is granted by this bound source package.
+The new pinned product has passed fresh clean source/build qualification,
+all31 background commands, the workspace and targeted Rust checks, and its
+portable tests. Both sealed and freshly extracted background qualification
+remain stage_PASS_claim=false with foreground initialization pending;
+no-eligible-window is preserved as the original background capture result.
+The source manifest now has672 entries. Runner, display/marker/qualifier and
+external guard interfaces retain their reviewed contract. The product's new
+PMIX input records and native verifier remain internal product predicates.
+This successor changes only product identity pins and their test/documentation.
+All earlier product native rows retain their original identities and cannot
+qualify this rebuilt candidate. No new native12, aggregate, actual48 attacks
+or stage acceptance is granted by this bound source package.
