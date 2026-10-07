@@ -111,7 +111,11 @@ def source_changes(previous, current, state):
 
 
 class GuardPolicy:
-    def __init__(self):
+    def __init__(self, require_app_launch=False):
+        require(type(require_app_launch) is bool, 'app launch requirement type')
+        self.require_app_launch = require_app_launch
+        self.app_launch_ns = None
+        self.first_owned_ready_ns = None
         self.previous = None
         self.phase = 'ARMING'
         self.runner_pid = self.owned_pid = 0
@@ -120,6 +124,13 @@ class GuardPolicy:
         self.first_foreground_ns = None
         self.capture_completed_ns = None
         self.terminal = None
+
+    def bind_app_launch_origin(self, at_ns):
+        """Accept one externally authenticated opportunity; never reset input."""
+        require(self.require_app_launch and self.app_launch_ns is None,
+                'app launch opportunity already bound or unexpected')
+        require(type(at_ns) is int and at_ns > 0, 'app launch opportunity clock')
+        self.app_launch_ns = at_ns
 
     def stop(self, reason, details=None):
         if self.terminal is None:
@@ -162,6 +173,14 @@ class GuardPolicy:
                 return self.stop('RUNNER_STARTED_BEFORE_ARMING')
         prior = self.previous
         self.previous = sample
+        if self.require_app_launch and self.app_launch_ns is not None:
+            elapsed = sample['end_ns'] - self.app_launch_ns
+            if sample['owned_pid'] and not self.owned_pid and elapsed > BIND_LIMIT_NS:
+                return self.stop('OWNED_BIND_DEADLINE')
+            if sample['owned_ready'] and self.first_owned_ready_ns is None and elapsed > READY_LIMIT_NS:
+                return self.stop('OWNED_READY_DEADLINE')
+            if sample['owned_ready'] and self.first_owned_ready_ns is None:
+                self.first_owned_ready_ns = sample['end_ns']
         if sample['runner_pid']:
             if self.phase == 'ARMING':
                 return self.stop('RUNNER_STARTED_BEFORE_ARMING')
@@ -170,10 +189,14 @@ class GuardPolicy:
             self.runner_pid = sample['runner_pid']
             self.runner_started_ns = self.runner_started_ns or sample['begin_ns']
             if self.phase == 'ARMED':
+                self.phase = 'RUNNER_PREPARING_APP' if self.require_app_launch and self.app_launch_ns is None else 'RUNNER_STARTED'
+            elif self.phase == 'RUNNER_PREPARING_APP' and self.app_launch_ns is not None:
                 self.phase = 'RUNNER_STARTED'
         elif self.runner_pid:
             return self.stop('RUNNER_BINDING_REMOVED')
         if sample['owned_pid']:
+            if self.require_app_launch and (self.app_launch_ns is None or sample['begin_ns'] < self.app_launch_ns):
+                return self.stop('OWNED_APP_BEFORE_VERIFIED_LAUNCH_OPPORTUNITY')
             if self.owned_pid and sample['owned_pid'] != self.owned_pid:
                 return self.stop('OWNED_IDENTITY_CHANGED')
             self.owned_pid = sample['owned_pid']
@@ -196,11 +219,13 @@ class GuardPolicy:
         if self.owned_pid and not sample['owned_alive'] and self.capture_completed_ns is None:
             return self.stop('OWNED_APP_EXITED_BEFORE_CAPTURE_COMPLETE')
         if self.runner_started_ns is not None and self.capture_completed_ns is None:
-            elapsed = sample['end_ns'] - self.runner_started_ns
-            if not self.owned_pid and elapsed > BIND_LIMIT_NS:
-                return self.stop('OWNED_BIND_DEADLINE')
-            if not sample['owned_ready'] and elapsed > READY_LIMIT_NS:
-                return self.stop('OWNED_READY_DEADLINE')
+            anchor = self.app_launch_ns if self.require_app_launch else self.runner_started_ns
+            if anchor is not None:
+                elapsed = sample['end_ns'] - anchor
+                if not self.owned_pid and elapsed > BIND_LIMIT_NS:
+                    return self.stop('OWNED_BIND_DEADLINE')
+                if not sample['owned_ready'] and elapsed > READY_LIMIT_NS:
+                    return self.stop('OWNED_READY_DEADLINE')
         if sample['owned_ready'] and self.capture_completed_ns is None:
             if sample['front_owned']:
                 self.phase = 'ACTIVE'
@@ -214,4 +239,3 @@ class GuardPolicy:
             self.phase = 'ARMED'
             return Action('armed', details={'baseline_seq': sample['seq']})
         return Action('continue', details={'phase': self.phase})
-

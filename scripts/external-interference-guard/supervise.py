@@ -15,6 +15,7 @@ import time
 import uuid
 from dataclasses import dataclass
 import re
+import importlib
 
 from guard_policy import GuardPolicy, MAX_SAMPLE_GAP_NS, validate_sample, CLOCK_DOMAIN
 
@@ -250,12 +251,218 @@ class ObservationStream:
             return self.policy.stop('INVALID_MONITOR_STREAM', details)
 
 
-def discover_native(previous, binary, expected_run_id=None, full=None):
+RUNNER_BINDING_FIELDS = {'schema_version', 'event', 'launch_nonce', 'runner_pid',
+    'runner_path', 'runner_sha256', 'native_directory', 'output_directory', 'run_id',
+    'source_manifest_sha256', 'binary_path', 'binary_sha256', 'capture_producer_sha256',
+    'display_id', 'clock_domain', 'bound_at_ns'}
+APP_LAUNCH_FIELDS = {'schema_version', 'event', 'binding_sha256', 'launch_nonce',
+    'runner_pid', 'native_directory', 'output_directory', 'run_id', 'display_id',
+    'clock_domain', 'launch_at_ns'}
+DISPLAY_CORE_FIELDS = {'display_id', 'mode_id', 'refresh_hz', 'width', 'height',
+                       'pixel_width', 'pixel_height', 'in_mirror_set'}
+DISPLAY_GEOMETRY = {'width': 1920, 'height': 1080, 'pixel_width': 3840, 'pixel_height': 2160}
+DISPLAY_SWIFT_PREFIX = ('/usr/bin/swift', '-swift-version', '6', '-warnings-as-errors')
+
+
+def display_snapshot(snapshot, with_scale=True):
+    fields = DISPLAY_CORE_FIELDS | ({'backing_scale'} if with_scale else set())
+    require(type(snapshot) is dict and set(snapshot) == fields and
+            type(snapshot['display_id']) is type(snapshot['mode_id']) is int and
+            snapshot['display_id'] == 2 and snapshot['mode_id'] > 0 and snapshot['in_mirror_set'] is False and
+            type(snapshot['refresh_hz']) in (int, float) and snapshot['refresh_hz'] in (60, 144) and
+            all(type(snapshot[key]) in (int, float) and snapshot[key] == value for key, value in DISPLAY_GEOMETRY.items()) and
+            (not with_scale or (type(snapshot['backing_scale']) in (int, float) and snapshot['backing_scale'] == 2)),
+            'exact bound nonmirrored display snapshot')
+    return {key: snapshot[key] for key in DISPLAY_CORE_FIELDS}
+
+
+def product_display_validators(root):
+    """Use the exact already-verified product's pure diagnostic validators."""
+    expected = (root / 'scripts/pmix_owned_command.py').resolve(strict=True)
+    existing = sys.modules.get('pmix_owned_command')
+    if existing is not None:
+        require(Path(existing.__file__).resolve(strict=True) == expected, 'different cached product display validator')
+    sys.path.insert(0, str(root / 'scripts'))
+    module = importlib.import_module('pmix_owned_command')
+    require(Path(module.__file__).resolve(strict=True) == expected, 'exact product display validator module')
+    return module
+
+
+def validate_app_preparation(native, root):
+    """Prove the original owned three-stage success before accepting APP_LAUNCH."""
+    states = []
+    previous_finish = None
+    validators = product_display_validators(root)
+    for label, operation in (('display-before', 'probe'), ('display-active', 'set60'),
+                             ('display-active-probe', 'probe')):
+        _, launch, _ = raw_json(native / (label + '.subcommand-launch.json'))
+        _, process, _ = raw_json(native / (label + '.subcommand-process.json'))
+        script = 'display-probe.swift' if operation == 'probe' else 'display.swift'
+        expected = [*DISPLAY_SWIFT_PREFIX, str(native / script), operation, '2']
+        require(type(launch) is dict and type(process) is dict and
+                type(launch.get('pid')) is int and launch['pid'] > 0 and launch.get('pgid') == launch['pid'] and
+                launch.get('private_session') is True and launch.get('command') == expected and
+                launch == {key: process.get(key) for key in ('pid', 'pgid', 'private_session', 'command',
+                    'started_monotonic_ns', 'timeout_seconds')} and
+                type(process.get('schema_version')) is int and process['schema_version'] == 2 and
+                type(process.get('exit_code')) is int and process['exit_code'] == 0 and
+                process.get('joined') is True and process.get('owned_group_released') is True and
+                process.get('timed_out') is False and process.get('error') is None and
+                process.get('signals_sent') == [] and process.get('signal') is None and process.get('result') == 'RETURNED' and
+                type(process.get('timeout_seconds')) in (int, float) and 0 < process['timeout_seconds'] <= 10 and
+                type(process.get('cleanup_grace_seconds')) in (int, float) and 0 < process['cleanup_grace_seconds'] <= 2 and
+                type(process.get('started_monotonic_ns')) is type(process.get('finished_monotonic_ns')) is int and
+                0 < process['started_monotonic_ns'] <= process['finished_monotonic_ns'] and
+                (previous_finish is None or previous_finish <= process['started_monotonic_ns']),
+                'app launch requires actual same-target owned preparation joins')
+        previous_finish = process['finished_monotonic_ns']
+        _, receipt, _ = raw_json(native / (label + '.json'))
+        _, stdout, _ = raw_json(native / (label + '.subcommand.stdout'))
+        require(type(receipt) is dict and set(receipt) == {'before', 'after'} and stdout == receipt,
+                'preparation original raw display result')
+        for moment in ('before', 'after'):
+            display_snapshot(receipt[moment], with_scale=operation == 'probe')
+        validators.validate_display_receipt(receipt, 2, probe=operation == 'probe')
+        stderr = (native / (label + '.subcommand.stderr')).read_text()
+        validators.validate_display_phases(stderr, operation, 2, process['pid'], receipt)
+        states.append(receipt)
+    before, active, probe = states
+    require(before['before'] == before['after'] and before['after']['mode_id'] == 113 and
+            before['after']['refresh_hz'] == 144 and
+            display_snapshot(before['after']) == display_snapshot(active['before'], False) and
+            active['after']['refresh_hz'] == 60 and probe['before'] == probe['after'] and
+            display_snapshot(probe['after']) == display_snapshot(active['after'], False),
+            'actual independent target60Hz opportunity after setter join')
+    return before['after']
+
+
+def raw_json(path):
+    """Hash and parse one immutable byte snapshot, never two file reads."""
+    require(path.is_file() and not path.is_symlink(), 'regular phase evidence: ' + path.name)
+    raw = path.read_bytes()
+    require(0 < len(raw) <= MAX_LINE_BYTES, 'phase evidence size: ' + path.name)
+    return raw, strict_json(raw), hashlib.sha256(raw).hexdigest()
+
+
+def validate_runner_binding(binding, digest, request, full, nonce, runner_pid, earliest_ns, now_ns=None):
+    require(type(binding) is dict and set(binding) == RUNNER_BINDING_FIELDS and
+            type(binding['schema_version']) is int and binding['schema_version'] == 1 and
+            binding['event'] == 'RUNNER_BINDING' and binding['clock_domain'] == CLOCK_DOMAIN and
+            type(binding['runner_pid']) is int and binding['runner_pid'] == runner_pid and runner_pid > 0 and
+            type(binding['display_id']) is int and binding['display_id'] == full.display_id and
+            binding['launch_nonce'] == nonce and str(uuid.UUID(nonce)) == nonce and
+            binding['runner_path'] == str(full.root / 'scripts/run_pmix_native.py') and
+            binding['runner_sha256'] == full.runner_sha and
+            binding['source_manifest_sha256'] == full.manifest_sha and
+            binding['binary_path'] == str(full.binary) and binding['binary_sha256'] == full.binary_sha and
+            binding['capture_producer_sha256'] == full.producer_sha and
+            binding['output_directory'] == str(full.output) and
+            type(binding['native_directory']) is str and Path(binding['native_directory']).is_absolute() and
+            type(binding['run_id']) is str and str(uuid.UUID(binding['run_id'])) == binding['run_id'] and
+            type(binding['bound_at_ns']) is int and binding['bound_at_ns'] >= earliest_ns,
+            'owned runner/native/request binding identity')
+    if now_ns is not None:
+        require(binding['bound_at_ns'] <= now_ns, 'future runner phase clock')
+        native = Path(binding['native_directory'])
+        require(native.is_dir() and not native.is_symlink() and
+                str(native.resolve(strict=True)) == binding['native_directory'], 'canonical native phase directory')
+    if request is None:
+        return binding
+    require(type(request) is dict and type(request.get('schema_version')) is int and request['schema_version'] == 4 and
+            type(request.get('round')) is int and (request.get('mode'), request['round']) == (full.mode, full.round) and
+            type(request.get('display_id')) is int and request['display_id'] == full.display_id and
+            request.get('display_policy') == 'frozen-60hz' and request.get('display_mode_change_authorized') is True and
+            request.get('evidence_scope') == 'full-pmix-native' and
+            request.get('source_manifest_sha256') == full.manifest_sha and
+            request.get('run_id') == binding['run_id'] and request.get('launch_nonce') == nonce and
+            type(request.get('runner_pid')) is int and request['runner_pid'] == runner_pid and
+            request.get('native_directory') == binding['native_directory'] and
+            request.get('output_directory') == binding['output_directory'] and
+            request.get('runner_binding_sha256') == digest and request.get('runner_clock_domain') == CLOCK_DOMAIN,
+            'schema4 request exact runner phase binding')
+    return binding
+
+
+def validate_app_launch(launch, binding, binding_sha, now_ns=None):
+    require(type(launch) is dict and set(launch) == APP_LAUNCH_FIELDS and
+            type(launch['schema_version']) is int and launch['schema_version'] == 1 and
+            launch['event'] == 'APP_LAUNCH' and launch['binding_sha256'] == binding_sha and
+            all(launch[key] == binding[key] for key in ('launch_nonce', 'runner_pid', 'native_directory',
+                'output_directory', 'run_id', 'display_id', 'clock_domain')) and
+            type(launch['runner_pid']) is type(launch['display_id']) is int and
+            type(launch['launch_at_ns']) is int and launch['launch_at_ns'] >= binding['bound_at_ns'],
+            'immutable app launch opportunity binding')
+    if now_ns is not None:
+        require(launch['launch_at_ns'] <= now_ns, 'future app launch opportunity clock')
+    return launch['launch_at_ns']
+
+
+class OwnedLaunchPhase:
+    """Only the known Popen/kernel runner may announce its native launch phase."""
+    def __init__(self, base, full, nonce, runner_pid, earliest_ns):
+        self.base, self.full, self.nonce, self.runner_pid = base, full, nonce, runner_pid
+        self.earliest_ns = earliest_ns
+        self.binding = self.request = self.native = self.launch = None
+        self.binding_sha = self.launch_sha = None
+        self.request_raw = None
+
+    def poll(self, stream):
+        if not stream.runner_bound:
+            return
+        require(stream.runner_credential['pid'] == self.runner_pid, 'phase kernel runner identity')
+        binding_path = self.full.output / 'runner-binding.json'
+        if self.binding is None and not binding_path.exists():
+            return
+        raw, binding, digest = raw_json(binding_path)
+        if self.binding is not None:
+            require(digest == self.binding_sha, 'original runner binding changed')
+        now_ns = system_uptime_ns()
+        validate_runner_binding(binding, digest, None, self.full, self.nonce, self.runner_pid,
+                                self.earliest_ns, now_ns)
+        native = Path(binding['native_directory'])
+        request_raw, request, _ = raw_json(native / 'request.json')
+        validate_runner_binding(binding, digest, request, self.full, self.nonce, self.runner_pid,
+                                self.earliest_ns, now_ns)
+        mirror_raw, _, _ = raw_json(native / 'runner-binding.json')
+        require(mirror_raw == raw, 'native/output original runner binding bytes')
+        if self.binding is None:
+            self.binding, self.binding_sha, self.request, self.native = binding, digest, request, native
+            self.request_raw = request_raw
+            (self.base / 'runner-binding.raw.json').write_bytes(raw)
+            (self.base / 'runner-request.raw.json').write_bytes(request_raw)
+            write(self.base / 'runner-phase-observed.json', {'binding_sha256': digest,
+                  'kernel_credential': stream.runner_credential, 'nonce': self.nonce,
+                  'observed_at_ns': now_ns, 'armed_end_ns': self.earliest_ns})
+        else:
+            require(request_raw == self.request_raw, 'original phase request changed')
+        launch_path = self.full.output / 'app-launch.json'
+        if self.launch is None and not launch_path.exists():
+            require(not (native / 'owned-process.json').exists(), 'owned app without committed launch opportunity')
+            return
+        launch_raw, launch, launch_sha = raw_json(launch_path)
+        origin = validate_app_launch(launch, binding, digest, system_uptime_ns())
+        mirror_raw, _, _ = raw_json(native / 'app-launch.json')
+        require(mirror_raw == launch_raw, 'native/output app launch bytes')
+        if self.launch is None:
+            validate_app_preparation(native, self.full.root)
+            self.launch, self.launch_sha = launch, launch_sha
+            (self.base / 'app-launch.raw.json').write_bytes(launch_raw)
+            write(self.base / 'app-phase-observed.json', {'launch_sha256': launch_sha,
+                  'binding_sha256': digest, 'observed_at_ns': system_uptime_ns(),
+                  'sample_seq_before_binding': stream.last_valid_sample['seq'], 'launch_at_ns': origin})
+            stream.policy.bind_app_launch_origin(origin)
+        else:
+            require(launch_sha == self.launch_sha and origin == stream.policy.app_launch_ns,
+                    'original app launch opportunity changed')
+
+
+def discover_native(previous, binary, expected_run_id=None, full=None, known_native=None):
     manifest_sha = full.manifest_sha if full else MANIFEST_SHA
     binary_sha = full.binary_sha if full else BINARY_SHA
     mode = full.mode if full else 'workflow-reopen'
     matches = []
-    for path in set(Path('/tmp').glob('rcam-pmix-*')) - previous:
+    candidates = [known_native] if known_native is not None else set(Path('/tmp').glob('rcam-pmix-*')) - previous
+    for path in candidates:
         if path.is_symlink() or not path.is_dir():
             continue
         try:
@@ -268,7 +475,7 @@ def discover_native(previous, binary, expected_run_id=None, full=None):
                 owned.get('binary_sha256') == binary_sha):
             continue
         if full:
-            require(type(request.get('schema_version')) is int and request['schema_version'] == 3 and
+            require(type(request.get('schema_version')) is int and request['schema_version'] == 4 and
                     type(request.get('round')) is int and request['round'] == full.round and
                     type(request.get('display_id')) is int and request['display_id'] == full.display_id and
                     request.get('display_policy') == 'frozen-60hz' and
@@ -437,7 +644,9 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
                     '--display-policy', 'preserve']
     for name in ('monitor-control.json', 'interference-monitor', 'monitor-compile.stdout',
                  'monitor-compile.stderr', 'monitor-compile.json', 'runner.stdout', 'runner.stderr',
-                 'monitor.stdout', 'monitor.stderr', 'SUPERVISOR_RESULT.json', 'workflow-reopen1'):
+                 'monitor.stdout', 'monitor.stderr', 'SUPERVISOR_RESULT.json', 'workflow-reopen1',
+                 'runner-binding.raw.json', 'runner-request.raw.json', 'runner-phase-observed.json',
+                 'app-launch.raw.json', 'app-phase-observed.json'):
         require(not (base / name).exists(), 'fresh external evidence directory required: ' + name)
     system_uptime_ns()  # Fail before compiler/monitor/runner if the required clock is unavailable.
     if compiled_monitor is None:
@@ -473,6 +682,7 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
     interrupt_sent = False
     clock_errors = []
     journal_errors = []
+    launch_phase = None
     try:
         launched_at_ns = system_uptime_ns()
         with (base / 'runner.stdout').open('xb') as out, (base / 'runner.stderr').open('xb') as err, \
@@ -480,7 +690,8 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
             monitor = subprocess.Popen([str(monitor_binary), str(control_path), nonce],
                                        stdout=mout, stderr=merr)
             tail = FileTail(base / 'monitor.stdout')
-            stream = ObservationStream(tail, monitor, nonce, continuous_guard=continuous_guard)
+            stream = ObservationStream(tail, monitor, nonce, policy=GuardPolicy(require_app_launch=full is not None),
+                                       continuous_guard=continuous_guard)
             # Establish ready, liveness, and two consecutive raw samples before any runner.
             while stream.policy.phase != 'ARMED':
                 halt = stream.pump()
@@ -490,15 +701,23 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
                 time.sleep(.01)
             if interrupted is None:
                 previous = set(Path('/tmp').glob('rcam-pmix-*'))
-                runner = subprocess.Popen(command, cwd=root, stdout=out, stderr=err)
+                armed_end_ns = stream.last_valid_sample['end_ns']
+                launch_options = {'env': dict(os.environ, RCAM_PMIX_LAUNCH_NONCE=nonce)} if full else {}
+                runner = subprocess.Popen(command, cwd=root, stdout=out, stderr=err, **launch_options)
                 execution_started_ns = system_uptime_ns()
                 stream.expected_runner_pid = runner.pid
+                if full:
+                    launch_phase = OwnedLaunchPhase(base, full, nonce, runner.pid, armed_end_ns)
                 control.update(commandID=control['commandID'] + 1, runnerPID=runner.pid)
                 write(control_path, control)
                 write(base / 'runner-launch.json', {
                     'pid': runner.pid, 'command': command, 'utc': utc(),
                     'started_uptime_ns': execution_started_ns,
+                    'root': str(root),
+                    'product_pins': {'source_manifest_sha256': manifest_sha, 'binary_sha256': binary_sha,
+                                     'capture_producer_sha256': producer_sha, 'runner_sha256': runner_sha},
                     'nonce': nonce, 'clock_domain': CLOCK_DOMAIN, 'armed_baseline_seq': stream.policy.previous['seq'],
+                    'armed_end_ns': armed_end_ns,
                     'soft_deadline_seconds': EXECUTION_SECONDS,
                     'cleanup_reserve_seconds': CLEANUP_SECONDS,
                     'scope': ('formal single matrix case; frozen60; no retry' if full else
@@ -517,12 +736,22 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
                         if joined_at_ns - execution_started_ns > EXECUTION_SECONDS * 1_000_000_000:
                             interrupted = interrupted or 'MICROCHECK_EXECUTION_DEADLINE'
                         break
-                    if native is None:
-                        match = discover_native(previous, binary, full=full)
+                    if launch_phase is not None:
+                        launch_phase.poll(stream)
+                        if launch_phase.binding is not None:
+                            native, request = launch_phase.native, launch_phase.request
+                    if owned is None and (full is None or (launch_phase is not None and launch_phase.launch is not None)):
+                        match = discover_native(previous, binary, full=full, expected_run_id=request['run_id'] if request else None,
+                                                known_native=native if full else None)
                         if match:
                             native, owned, request = match
                             initial_display = None
                             if full:
+                                require(owned.get('runner_pid') == runner.pid and
+                                        owned.get('launch_nonce') == nonce and owned.get('clock_domain') == CLOCK_DOMAIN and
+                                        type(owned.get('app_started_uptime_ns')) is int and
+                                        launch_phase.launch['launch_at_ns'] <= owned['app_started_uptime_ns'] <= system_uptime_ns(),
+                                        'owned app actual launch after verified opportunity')
                                 initial = strict_json((native / 'display-before.json').read_bytes())
                                 initial_display = initial['after']
                                 require(initial['before'] == initial_display and
@@ -667,6 +896,8 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
             'phase': stream.policy.phase if stream else None,
             'first_foreground_ns': stream.policy.first_foreground_ns if stream else None,
             'capture_completed_ns': stream.policy.capture_completed_ns if stream else None,
+            'app_launch_opportunity_ns': stream.policy.app_launch_ns if stream else None,
+            'runner_binding_sha256': launch_phase.binding_sha if launch_phase else None,
             'human_input_attributed': False,
             'display_policy': 'frozen-60hz' if full else 'preserve', 'retry': False,
             'mode': full.mode if full else 'workflow-reopen', 'round': full.round if full else 1,

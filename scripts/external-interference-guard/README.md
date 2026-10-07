@@ -1,14 +1,19 @@
-# External guarded PMIX full12 coordinator, v3.5.2-bound identity freeze
+# External guarded PMIX full12 coordinator, v3.6.1-bound candidate
 
-This bound candidate requires final independent review before publication and
-Mac execution. It binds the reviewed clean product and the parent's actual fresh
-Mac build/background-qualification receipts:
+This source-only candidate binds the independently reviewed product phase/helper
+contract and independently measured fresh Mac build identities below. Final
+independent bound review is still required before publication and execution.
+No previous product/build hashes are reused as runtime pins.
+The original set60 API timeout remains an unresolved diagnostic hypothesis;
+this guard candidate does not claim that the display API has been repaired.
 
-- commit: `1a7344a65f778544811762c0c6be3d157f5acf2b`
-- manifest (671 entries): `8bd352392e3c50da44f5cd7c2108ef9c482ba27bf82dd91a1a37f5468d7510c3`
-- internal app (23197632 bytes, arm64): `c795aaed3c528e71a8713661a002e7d671500aa4e54e0ee622542a30cec31db1`
-- producer (280784 bytes, arm64): `90aedb747e65ab59ec030c15d223a95d9d17e0d15b648d22ff88d297abd157d6`
-- native runner source: `e1369e039aa958921e54749fcf8442ae8cf3d407726f3cdeff86fc93a72838db`
+The five frozen identities are:
+
+- Product commit: 0cf2c702bb2d815c51fa5080f8b625600ac5d252
+- Source manifest: 37df7531654cb9a4d70231add83072a51c92fbfdc7dbc112bc492f1e8043caf0
+- Internal app: 7e6fdb651c1e8deddc5163567d737fb5e2f440aae0275faf9dcb6800e4b0be8f
+- Capture producer: 1a9a79d94a838ae868f14d62a62ce992fc737b463f5ae8f88b70499bcca8f9b5
+- Native runner: 20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c
 
 Missing or malformed pins still fail before filesystem changes, compilation or
 process launch. Every source entry and both runtime binaries are rechecked.
@@ -31,11 +36,11 @@ owned-app binding. No failed case is retried or skipped. The first failure stops
 further GUI execution.
 
 Every runner receives actual `--display-policy frozen-60hz`,
-`--allow-display-mode-change`, and `--display-id 2`, with schema3 request evidence.
+`--allow-display-mode-change`, and `--display-id 2`, with schema4 request evidence. The observer protocol remains version3.
 The authorized original snapshot is target 2/mode 113/144 Hz, logical1920x1080,
 physical3840x2160 and scale 2, never mirrored. There is no outer display lease.
 Each runner enters60 Hz and restores its own original 144 Hz target in `finally`.
-Five owned display operations are mandatory: probe 2, set60 2, independent probe 2
+Five owned display operations are mandatory: AppKit display-probe.swift probe 2, Quartz-only display.swift set60 2, independent probe 2
 after setter join, restore 2 113, independent probe 2 after restorer join. Both
 independent probes and every complete target/geometry snapshot are checked.
 
@@ -51,7 +56,9 @@ verifies the same chain. A frozen synthetic checkout fixture is insufficient.
 
 ## Continuous protection and ownership
 
-The Swift observer and pure input/foreground policy are unchanged from v2.5.
+The Swift observer and original input/foreground predicates retain their
+reviewed behavior. Formal startup adds the authenticated APP_LAUNCH deadline
+origin described below.
 A permanently unbound input-only sentinel is armed once before the first runner;
 it retains the same raw baseline across round launch, display switches, native
 verification, cleanup and inter-round gaps. Each round additionally has its own
@@ -77,6 +84,41 @@ observed passively. After first owned foreground, focus loss halts. Only the
 already-owned runner receives SIGINT; its cleanup owns its app/producer. Every
 joined path requires an actual post-join sample, not a queued older sample.
 Strict Swift6 concurrency checking and warnings-as-errors remain enabled.
+
+Formal startup now distinguishes the authenticated runner preparation phase
+from the app launch opportunity. The owned Popen receives one canonical UUID
+through RCAM_PMIX_LAUNCH_NONCE. Its kernel credential must first be verified by
+the unchanged observer. Only then may the guard follow the fresh output's
+immutable runner-binding.json to the exact native/request/runID/source/app/
+producer/target graph. Native/request bytes are complete before that output
+commit is published. app-launch.json is immutable and published after the
+original setter and independent60Hz postprobe have actually joined and passed
+all original product diagnostic validators, immediately before app Popen.
+Both phases use CLOCK_UPTIME_RAW; hashes and parsing use the same byte snapshot.
+
+The original20s app-binding and30s readiness clocks start once at APP_LAUNCH's
+actual opportunity, never at owned_bound, ready or a later file read. The
+190s overall runner budget still begins at the original owned runner launch.
+Every preparation child keeps its original budget. A preparation failure does
+not create an APP marker: the failed runner may complete its bounded finally
+restore without an app deadline demanding an app that was never started. Input,
+identity and250ms raw protection continue throughout; no baseline is reset.
+Late first binding/readiness observations cannot hide an expired opportunity.
+
+The temporary native directory and the canonical --output directory are distinct.
+Original runner argv and the immutable binding connect them. Round validation
+binds its input to --output while supervisor native metadata binds to the temporary
+native directory. Offline validation replays the same authenticated opportunity
+at its recorded original raw sequence and checks the kernel/binding/marker bytes.
+Emergency recovery still requires all five paired completed display stages;
+a preapp failure does not qualify through a partial journal or later144Hz probe.
+
+Quartz mutation receipts contain exactly eight real core fields; they do not
+supply backing_scale. The three independent AppKit probes supply all nine fields
+and the real scale. Core projections must agree across setter/restorer joins,
+and the final complete nine-field probe must equal the original snapshot.
+Successful phase stderr is validated by the pinned product's pure diagnostic
+API. Restore and its independent probe use separate reviewed literals and files.
 
 Trusted per-round native verification runs in a separately owned, file-logged
 child while the sentinel continues sampling. Long verification or malformed
@@ -110,7 +152,9 @@ details are preserved separately. Raw samples are never skipped or rebased.
 
 The parent freezes the exact round-check input bytes before launch. The worker
 returns the digest of the bytes it actually parsed, and its canonical evidence
-directory must equal the original supervisor's native directory. The returned
+directory must equal the original runner's --output directory. The immutable
+phase binding separately connects that output to the supervisor's temporary
+native directory. The returned
 digest and current input file must both match the parent's frozen digest.
 Supervisor receipt hashing and parsing use the same single byte snapshot in
 both parent and worker. The worker returns the digest of its actual parsed
@@ -210,14 +254,24 @@ a timeout is a failure, not permission to omit predicates or cases. User flicker
 remains OPEN, Windows/K1 remain DEFERRED, and independent stage acceptance remains
 separate from guard, native aggregate and negative-test success.
 
-This bound freeze passed 132 Linux synthetic tests, including early background
-qualification, strict JSON/identity rejection and preservation of the sealed seed.
-This candidate also passed 26 independently authored legacy safety checks,
-12 independent background-seed test groups, and safe replays of the prior
-offline/deadline/budget attacks.
-Those checks do not establish a Mac runtime or formal acceptance result.
+The candidate has160 portable synthetic tests, including the new authenticated
+opportunity, preapp failure, exact deadline/input boundaries, source-byte and
+distinct native/output directory contracts. Independent ordinary phase tests
+cover46 boundary cases using an explicitly mocked preparation validator.
+These checks do not establish real kernel/CG behavior or Mac/native acceptance.
+The current product literals compile under explicit Swift6, but the initial
+unflagged interpreter path failed before runtime. Every actual PMIX display
+operation now requires the exact prefix /usr/bin/swift -swift-version 6
+-warnings-as-errors before its reviewed helper and operation arguments. Window
+query and the strict observer compiler remain separate unchanged contracts.
 
-The parent reports actual strict Swift6/display2 probe, background31 and sealed
-background-only qualification for this same clean product identity. Those
-preconditions preserve the original BLOCKED background capture result. Actual
-guarded60Hz/full12/native capture and original48 attacks remain NOT_RUN.
+The exact pinned product has passed fresh clean source/SDK/build qualification,
+the corrected strict interpreter's real target2 probe and all31 background
+commands. The real probe returned a complete original144Hz/scale2/nonmirrored
+snapshot and20 phase records in the shared uptime domain. The sealed background
+qualification remains stage_PASS_claim=false and foreground initialization
+pending; no-eligible-window is preserved as its original capture result.
+No new set60, restore or native capture was performed in that qualification.
+The older guarded run failed before app startup and never exercised
+watched_round_check. No genuine60Hz/full12, aggregate, actual48 attacks or stage
+acceptance is granted by this bound source package.

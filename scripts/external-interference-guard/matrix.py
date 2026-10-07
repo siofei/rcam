@@ -47,13 +47,13 @@ class ProductPins:
                       'product SHA pins')
 
 
-# Independently reviewed source and actually rebuilt Mac runtime identity.
+# Reviewed clean product source and independently measured fresh Mac builds.
 PRODUCT_PINS = ProductPins(
-    commit='1a7344a65f778544811762c0c6be3d157f5acf2b',
-    manifest_sha='8bd352392e3c50da44f5cd7c2108ef9c482ba27bf82dd91a1a37f5468d7510c3',
-    binary_sha='c795aaed3c528e71a8713661a002e7d671500aa4e54e0ee622542a30cec31db1',
-    producer_sha='90aedb747e65ab59ec030c15d223a95d9d17e0d15b648d22ff88d297abd157d6',
-    runner_sha='e1369e039aa958921e54749fcf8442ae8cf3d407726f3cdeff86fc93a72838db',
+    commit='0cf2c702bb2d815c51fa5080f8b625600ac5d252',
+    manifest_sha='37df7531654cb9a4d70231add83072a51c92fbfdc7dbc112bc492f1e8043caf0',
+    binary_sha='7e6fdb651c1e8deddc5163567d737fb5e2f440aae0275faf9dcb6800e4b0be8f',
+    producer_sha='1a9a79d94a838ae868f14d62a62ce992fc737b463f5ae8f88b70499bcca8f9b5',
+    runner_sha='20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c',
 )
 
 
@@ -311,6 +311,48 @@ class OwnedReplayTail:
         self.handle.close()
 
 
+def verify_launch_phases(local, directory, case, receipt, launch, request, control):
+    """Use the accepted actual bytes and original two-directory ownership graph."""
+    runner_raw, runner, runner_sha = guard.raw_json(local / 'runner-binding.raw.json')
+    source_raw, _, _ = guard.raw_json(directory / 'runner-binding.json')
+    saved_request, _, _ = guard.raw_json(local / 'runner-request.raw.json')
+    current_request, _, _ = guard.raw_json(directory / 'request.json')
+    app_raw, app, app_sha = guard.raw_json(local / 'app-launch.raw.json')
+    source_app, _, _ = guard.raw_json(directory / 'app-launch.json')
+    observed = guard.strict_json((local / 'runner-phase-observed.json').read_bytes())
+    app_observed = guard.strict_json((local / 'app-phase-observed.json').read_bytes())
+    command = launch.get('command')
+    values = launch.get('product_pins')
+    guard.require(type(command) is list and command.count('--output') == 1 and command.count('--capture-producer') == 1 and
+                  type(launch.get('root')) is str and Path(launch['root']).is_absolute() and type(values) is dict and
+                  set(values) == {'source_manifest_sha256', 'binary_sha256', 'capture_producer_sha256', 'runner_sha256'} and
+                  all(type(value) is str and re.fullmatch('[0-9a-f]{64}', value) for value in values.values()) and
+                  values['source_manifest_sha256'] == receipt.get('source_manifest_sha256') and
+                  runner_raw == source_raw and app_raw == source_app and saved_request == current_request and
+                  type(launch.get('armed_end_ns')) is int and launch['armed_end_ns'] > 0 and
+                  observed.get('armed_end_ns') == launch['armed_end_ns'] and
+                  observed.get('binding_sha256') == runner_sha == receipt.get('runner_binding_sha256') and
+                  observed.get('nonce') == control.get('nonce') and
+                  app_observed.get('binding_sha256') == runner_sha and app_observed.get('launch_sha256') == app_sha,
+                  'original phase bytes/source/owned launch graph')
+    full = guard.FullRun(Path(launch['root']), Path(control['binaryPath']),
+                        Path(command[command.index('--capture-producer') + 1]),
+                        Path(command[command.index('--output') + 1]), case[0], case[1], DISPLAY_ID,
+                        values['source_manifest_sha256'], values['binary_sha256'],
+                        values['capture_producer_sha256'], values['runner_sha256'])
+    guard.validate_runner_binding(runner, runner_sha, request, full, control['nonce'], receipt['runner_pid'],
+                                  launch['armed_end_ns'])
+    origin = guard.validate_app_launch(app, runner, runner_sha)
+    guard.require(type(observed.get('observed_at_ns')) is int and observed['observed_at_ns'] >= runner['bound_at_ns'] and
+                  type(app_observed.get('observed_at_ns')) is int and app_observed['observed_at_ns'] >= origin and
+                  app_observed.get('launch_at_ns') == receipt.get('app_launch_opportunity_ns') == origin and
+                  type(app_observed.get('sample_seq_before_binding')) is int and app_observed['sample_seq_before_binding'] >= 2 and
+                  receipt.get('native_directory') == control.get('native') == runner['native_directory'] and
+                  str(directory.resolve(strict=True)) == runner['output_directory'],
+                  'actual app opportunity/observer/original native and output binding')
+    return origin, observed, app_observed
+
+
 def verify_owned_evidence(local, directory, case, receipt):
     """Replay full owned policy, including actual foreground, without summary substitutions."""
     control = guard.strict_json((local / 'monitor-control.json').read_bytes())
@@ -324,6 +366,7 @@ def verify_owned_evidence(local, directory, case, receipt):
                   type(control.get('commandID')) is int and control['commandID'] == 2 and
                   launch.get('nonce') == nonce and launch.get('clock_domain') == guard.CLOCK_DOMAIN,
                   'owned raw/control launch nonce/domain')
+    app_origin, phase_observed, app_observed = verify_launch_phases(local, directory, case, receipt, launch, request, control)
     runner_pid = receipt.get('runner_pid')
     app_pid = binding.get('pid')
     binary = binding.get('binary_path')
@@ -334,6 +377,9 @@ def verify_owned_evidence(local, directory, case, receipt):
                   control.get('appPID') == owned.get('pid') == app_pid and
                   type(binary) is str and control.get('binaryPath') == binary and
                   owned.get('command') == [binary] and owned.get('binary_sha256') == binding.get('binary_sha256') and
+                  type(owned.get('runner_pid')) is int and owned['runner_pid'] == runner_pid and
+                  owned.get('launch_nonce') == nonce and owned.get('clock_domain') == guard.CLOCK_DOMAIN and
+                  type(owned.get('app_started_uptime_ns')) is int and owned['app_started_uptime_ns'] >= app_origin and
                   type(binding.get('binary_sha256')) is str and re.fullmatch('[0-9a-f]{64}', binding['binary_sha256']) and
                   control.get('native') == binding.get('native') == receipt.get('native_directory') and
                   control.get('runID') == binding.get('run_id') == request.get('run_id') == receipt.get('run_id'),
@@ -382,11 +428,14 @@ def verify_owned_evidence(local, directory, case, receipt):
     tail = None
     try:
         tail = OwnedReplayTail(local / 'monitor.stdout')
-        stream = guard.ObservationStream(tail, monitor, nonce, clock=lambda: tail.now_ns)
+        policy = guard.GuardPolicy(require_app_launch=True)
+        stream = guard.ObservationStream(tail, monitor, nonce, policy=policy, clock=lambda: tail.now_ns)
         stream.expected_runner_pid, stream.expected_owned_pid = runner_pid, app_pid
         armed_end = None
         post_join = None
         while not tail.done:
+            if tail.current is not None and tail.current.get('seq') == app_observed['sample_seq_before_binding']:
+                policy.bind_app_launch_origin(app_origin)
             halt = stream.pump()
             guard.require(halt is None and stream.integrity, 'owned raw input/foreground/integrity failure' +
                           (': ' + str(halt.reason) + ': ' + str((halt.details or {}).get('error')) if halt else ''))
@@ -413,6 +462,9 @@ def verify_owned_evidence(local, directory, case, receipt):
                       stream.policy.capture_completed_ns is not None and
                       stream.policy.phase == receipt.get('phase') == 'CAPTURE_FINALIZED_CLEANUP',
                       'owned raw actual foreground/capture/bind/postjoin receipt agreement')
+        guard.require(phase_observed.get('kernel_credential') == stream.runner_credential and
+                      app_origin == stream.policy.app_launch_ns and armed_end == launch['armed_end_ns'],
+                      'phase opportunity tied to original raw kernel runner and arming')
     finally:
         if tail:
             tail.close()
@@ -443,7 +495,7 @@ def validate_round(directory, case, receipt, seen_ids, workflow_sha, guard_direc
     guard.require(type(joined) is int and type(observed) is int and 0 < joined <= observed and
                   observed <= joined + guard.MAX_SAMPLE_GAP_NS, 'formal post-join barrier')
     request = guard.strict_json((directory / 'request.json').read_bytes())
-    guard.require(type(request.get('schema_version')) is int and request['schema_version'] == 3 and
+    guard.require(type(request.get('schema_version')) is int and request['schema_version'] == 4 and
                   type(request.get('round')) is int and (request.get('mode'), request['round']) == case and
                   type(request.get('display_id')) is int and request['display_id'] == DISPLAY_ID and
                   request.get('display_policy') == 'frozen-60hz' and
@@ -457,20 +509,19 @@ def validate_round(directory, case, receipt, seen_ids, workflow_sha, guard_direc
     displays = [guard.strict_json((directory / (name + '.json')).read_bytes()) for name in
                 ('display-before', 'display-active', 'display-active-probe',
                  'display-restored', 'display-restored-probe')]
-    for display in displays:
+    for index, display in enumerate(displays):
         for moment in ('before', 'after'):
             snapshot = display[moment]
-            guard.require(type(snapshot.get('display_id')) is int and snapshot['display_id'] == DISPLAY_ID and
-                          snapshot.get('in_mirror_set') is False and
-                          all(type(snapshot.get(key)) in (int, float) and snapshot[key] == value
-                              for key, value in GEOMETRY.items()), 'bound target/geometry')
+            guard.display_snapshot(snapshot, with_scale=index in (0, 2, 4))
     before, active, active_probe, restored, restored_probe = displays
     guard.require(type(before['after'].get('mode_id')) is int and before['after']['mode_id'] == ORIGINAL_MODE and
                   before['after']['refresh_hz'] == ORIGINAL_HZ and before['before'] == before['after'],
                   'original authorized 144Hz mode')
-    guard.require(active['before'] == before['after'] and active['after']['refresh_hz'] == 60 and
-                  active_probe['before'] == active_probe['after'] == active['after'] and
-                  restored['before'] == active_probe['after'] and restored['after'] == before['after'] and
+    guard.require(guard.display_snapshot(active['before'], False) == guard.display_snapshot(before['after']) and
+                  active['after']['refresh_hz'] == 60 and active_probe['before'] == active_probe['after'] and
+                  guard.display_snapshot(active_probe['after']) == guard.display_snapshot(active['after'], False) and
+                  guard.display_snapshot(restored['before'], False) == guard.display_snapshot(active_probe['after']) and
+                  guard.display_snapshot(restored['after'], False) == guard.display_snapshot(before['after']) and
                   restored_probe['before'] == restored_probe['after'] == before['after'],
                   'per-round real60Hz and exact same-target144Hz restoration')
     if case[0] == 'workflow-reopen':
@@ -683,8 +734,11 @@ def check_round(input_path):
         receipt = guard.strict_json(receipt_raw)
         guard.require(receipt.get('source_manifest_sha256') == pins.manifest_sha,
                       'round check pinned product source')
-        guard.require(receipt.get('native_directory') == str(directory),
-                      'round check canonical directory/supervisor binding')
+        original_launch = guard.strict_json((local / 'runner-launch.json').read_bytes())
+        original_command = original_launch.get('command')
+        guard.require(type(original_command) is list and original_command.count('--output') == 1 and
+                      str(directory) == original_command[original_command.index('--output') + 1],
+                      'round check canonical output/owned launch binding')
         seen = set(seen)
         workflow = validate_round(directory, (control['mode'], control['round']), receipt,
                                   seen, workflow, guard_directory=local)
@@ -706,8 +760,11 @@ def watched_round_check(root, directory, local, case, receipt, seen_ids, workflo
     receipt_sha = hashlib.sha256(receipt_raw).hexdigest()
     guard.require(guard.strict_json(receipt_raw) == receipt, 'original parsed supervisor receipt bytes')
     directory = directory.resolve(strict=True)
-    guard.require(receipt.get('native_directory') == str(directory),
-                  'original round directory/supervisor binding')
+    original_launch = guard.strict_json((local / 'runner-launch.json').read_bytes())
+    original_command = original_launch.get('command')
+    guard.require(type(original_command) is list and original_command.count('--output') == 1 and
+                  str(directory) == original_command[original_command.index('--output') + 1],
+                  'original round output/owned launch binding')
     control = {'schema_version': 1, 'mode': case[0], 'round': case[1],
                'directory': str(directory), 'seen_run_ids': sorted(seen_ids),
                'workflow_sha256': workflow_sha, 'supervisor_receipt_sha256': receipt_sha}
@@ -765,11 +822,11 @@ def original_snapshot(snapshot):
     return snapshot
 
 
-def helper_source(root):
+def helper_source(root, name='MUTATOR_SOURCE'):
     """Extract the reviewed literal, without executing a product module."""
     tree = ast.parse((root / 'scripts/pmix_display_swift.py').read_text())
     values = [node.value for node in tree.body if isinstance(node, ast.Assign) and
-              any(isinstance(target, ast.Name) and target.id == 'SOURCE' for target in node.targets)]
+              any(isinstance(target, ast.Name) and target.id == name for target in node.targets)]
     guard.require(len(values) == 1, 'single reviewed PMIX display helper literal')
     source = ast.literal_eval(values[0])
     guard.require(type(source) is str and source, 'reviewed PMIX display helper source')
@@ -810,7 +867,8 @@ def prove_subcommands_joined(native, runner_exit):
                       'owned child actual join/group release')
         if label in DISPLAY_LABELS:
             operation = 'set60' if label == 'display-active' else ('restore' if label == 'display-restored' else 'probe')
-            expected = ['/usr/bin/swift', str(native / 'display.swift'), operation, str(DISPLAY_ID)]
+            script = 'display-probe.swift' if operation == 'probe' else 'display.swift'
+            expected = [*guard.DISPLAY_SWIFT_PREFIX, str(native / script), operation, str(DISPLAY_ID)]
             if operation == 'restore': expected += [str(ORIGINAL_MODE)]
             guard.require(launch.get('command') == expected, 'same-target inner display command')
     return True
@@ -844,6 +902,9 @@ def assess_and_recover(local, root, sentinel):
                       'owned recovery request target/run/source')
         source = helper_source(root)
         guard.require((native / 'display.swift').read_text() == source, 'reviewed native display helper bytes')
+        probe_source = helper_source(root, 'PROBE_SOURCE')
+        guard.require((native / 'display-probe.swift').read_text() == probe_source,
+                      'reviewed native independent probe bytes')
         prove_subcommands_joined(native, receipt['actual_exit_code'])
         final_path = native / 'display-restored-probe.json'
         if final_path.is_file():
@@ -861,8 +922,11 @@ def assess_and_recover(local, root, sentinel):
         guard.write(expected, snapshot)
         helper = recovery / 'display.swift'
         helper.write_text(source)
+        probe_helper = recovery / 'display-probe.swift'
+        probe_helper.write_text(probe_source)
         command = ['python3', '-B', str(Path(__file__).resolve()), 'recover', '--root', str(root),
-                   '--display-helper', str(helper), '--expected-snapshot', str(expected),
+                   '--display-helper', str(helper), '--display-probe-helper', str(probe_helper),
+                   '--expected-snapshot', str(expected),
                    '--recovery-output', str(recovery)]
         watched_command(command, root, recovery, 'owned-recovery', sentinel, seconds=40,
                         restoration_after_halt=True, deadline_ns=recovery_deadline)
@@ -878,30 +942,39 @@ def assess_and_recover(local, root, sentinel):
     return assessment
 
 
-def recover_display(*, root, helper, expected, output):
+def recover_display(*, root, helper, probe_helper, expected, output):
     """Trusted owned restoration child. It may never start an app or set60."""
     pins = require_pins()
     guard.require(sys.platform == 'darwin', 'display restoration only on macOS')
     root = root.resolve(strict=True)
     output = output.resolve(strict=True)
     guard.require(output != root and root not in output.parents and helper.parent.resolve(strict=True) == output and
-                  expected.parent.resolve(strict=True) == output, 'recovery evidence outside product source')
+                  expected.parent.resolve(strict=True) == output and probe_helper.parent.resolve(strict=True) == output,
+                  'recovery evidence outside product source')
     verify_source(root, pins)
     snapshot = original_snapshot(guard.strict_json(expected.read_bytes()))
     guard.require(helper.read_text() == helper_source(root), 'locked emergency display helper')
+    guard.require(probe_helper.read_text() == helper_source(root, 'PROBE_SOURCE'), 'locked independent emergency probe')
     sys.path.insert(0, str(root / 'scripts'))
-    from pmix_owned_command import owned_command
+    from pmix_owned_command import owned_command, validate_display_receipt, validate_display_phases
     success = False
     failure = None
     try:
-        restore = ['/usr/bin/swift', str(helper), 'restore', str(DISPLAY_ID), str(ORIGINAL_MODE)]
+        restore = [*guard.DISPLAY_SWIFT_PREFIX, str(helper), 'restore', str(DISPLAY_ID), str(ORIGINAL_MODE)]
         returned = owned_command(output, 'display-restored', restore, check=True)
         restored = guard.strict_json(returned.stdout)
-        guard.require(restored.get('after') == snapshot, 'emergency same-target mode restoration')
+        validate_display_receipt(restored, DISPLAY_ID, probe=False)
+        restore_process = guard.strict_json((output / 'display-restored.subcommand-process.json').read_bytes())
+        validate_display_phases(returned.stderr, 'restore', DISPLAY_ID, restore_process['pid'], restored)
+        guard.require(guard.display_snapshot(restored['after'], False) == guard.display_snapshot(snapshot),
+                      'emergency same-target mode restoration')
         # owned_command has already joined leader and exclusive group before probe.
-        probe = ['/usr/bin/swift', str(helper), 'probe', str(DISPLAY_ID)]
+        probe = [*guard.DISPLAY_SWIFT_PREFIX, str(probe_helper), 'probe', str(DISPLAY_ID)]
         returned = owned_command(output, 'display-restored-probe', probe, check=True)
         observed = guard.strict_json(returned.stdout)
+        validate_display_receipt(observed, DISPLAY_ID, probe=True)
+        probe_process = guard.strict_json((output / 'display-restored-probe.subcommand-process.json').read_bytes())
+        validate_display_phases(returned.stderr, 'probe', DISPLAY_ID, probe_process['pid'], observed)
         guard.require(observed.get('before') == observed.get('after') == snapshot,
                       'emergency mode persists after restorer join')
         success = True
@@ -1135,6 +1208,7 @@ def main():
     parser.add_argument('--producer', type=Path)
     parser.add_argument('--attacks-output', type=Path)
     parser.add_argument('--display-helper', type=Path)
+    parser.add_argument('--display-probe-helper', type=Path)
     parser.add_argument('--expected-snapshot', type=Path)
     parser.add_argument('--recovery-output', type=Path)
     parser.add_argument('--round-check-input', type=Path)
@@ -1144,9 +1218,9 @@ def main():
             parser.error('owned round check input required')
         return check_round(args.round_check_input)
     if args.operation == 'recover':
-        if args.display_helper is None or args.expected_snapshot is None or args.recovery_output is None:
+        if args.display_helper is None or args.display_probe_helper is None or args.expected_snapshot is None or args.recovery_output is None:
             parser.error('owned recovery helper/snapshot/output required')
-        return recover_display(root=args.root, helper=args.display_helper,
+        return recover_display(root=args.root, helper=args.display_helper, probe_helper=args.display_probe_helper,
                                expected=args.expected_snapshot, output=args.recovery_output)
     if args.bundle is None or args.guard_evidence is None or args.gate_ledger_sha256 is None:
         parser.error('bundle/guard-evidence/external gate ledger required')

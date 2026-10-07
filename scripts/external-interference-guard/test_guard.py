@@ -560,8 +560,12 @@ class InjectedSupervisorTests(unittest.TestCase):
         native = root / 'rcam-pmix-synthetic'
         native.mkdir()
         if formal_case:
-            original = dict(display_id=2, mode_id=113, refresh_hz=144, in_mirror_set=False)
+            original = dict(display_id=2, mode_id=113, refresh_hz=144, in_mirror_set=False,
+                            width=1920,height=1080,pixel_width=3840,pixel_height=2160,backing_scale=2)
             (native / 'display-before.json').write_text(json.dumps(dict(before=original, after=original)))
+            active = dict(original, mode_id=117, refresh_hz=60)
+            (native / 'display-active.json').write_text(json.dumps(dict(before=original,after=active)))
+            (native / 'display-active-probe.json').write_text(json.dumps(dict(before=active,after=active)))
         request = dict(run_id='00000000-0000-4000-8000-000000000001')
         owned = dict(pid=43)
         now = [BASE_NS]
@@ -625,13 +629,30 @@ class InjectedSupervisorTests(unittest.TestCase):
                 if self.seq >= 6 and control['appPID']:
                     value.update(capture_complete=True, owned_alive=False, front_owned=False)
                     actors[1].returncode = 0
+                if fault == 'preapp_failed' and len(actors) > 1 and now[0] - actors[1].started_ns >= 21_500_000_000:
+                    actors[1].returncode = 1
                 records.append(dict(value, **envelope))
                 return records
         def launch(command, **kwargs):
             actor = Actor(17 if 'interference-monitor' in command[0] else 42)
             actors.append(actor)
             if actor.pid == 42:
+                actor.started_ns = now[0]
                 self.last_runner_command = command
+                if formal_case:
+                    from test_matrix import phase_fixture
+                    full.output.mkdir()
+                    nonce = kwargs['env']['RCAM_PMIX_LAUNCH_NONCE']
+                    request.update(mode=full.mode,round=full.round,source_manifest_sha256=full.manifest_sha,
+                        display_id=2,display_policy='frozen-60hz',display_mode_change_authorized=True,evidence_scope='full-pmix-native')
+                    phase_fixture(native,full.output,full,42,nonce,now[0],now[0],request)
+                    owned.update(runner_pid=42,launch_nonce=nonce,clock_domain=CLOCK_DOMAIN,app_started_uptime_ns=now[0])
+                    if fault == 'preapp_failed':
+                        (native/'app-launch.json').unlink()
+                        (full.output/'app-launch.json').unlink()
+                        row = json.loads((native/'display-active.subcommand-process.json').read_text())
+                        row.update(exit_code=-15,timed_out=True,signals_sent=[15],signal=15,result='FAIL')
+                        (native/'display-active.subcommand-process.json').write_text(json.dumps(row))
             return actor
         def fake_sha(path):
             if path == binary: return supervise.BINARY_SHA
@@ -648,6 +669,7 @@ class InjectedSupervisorTests(unittest.TestCase):
                 raise OSError('synthetic native uptime lost')
             return now[0]
         with patch.object(supervise.sys, 'platform', 'darwin'), \
+             patch.object(supervise, 'product_display_validators', side_effect=lambda root: __import__('test_matrix').synthetic_display_validators(root)), \
              patch.object(supervise, 'ROOT', product), \
              patch.object(supervise, 'sha', side_effect=fake_sha), \
              patch.object(supervise.subprocess, 'run', return_value=type('Compiled', (), {'returncode': 0})()) as compile_call, \
@@ -1012,6 +1034,87 @@ class ReboundProductIdentityTests(unittest.TestCase):
             'producer': 'ef7984f492b3dcee31166bfdff432ec47589dbf0e24d03dc86c69f7535711a1c',
             'runner': '5251d99e4e6313590cde31aae17523d28039f07649de4168d6e992a1cd25eda7',
         })
+
+
+class FormalAppOpportunityPolicyTests(unittest.TestCase):
+    def fresh(self):
+        policy = GuardPolicy(require_app_launch=True)
+        policy.observe(sample(1))
+        policy.observe(sample(2))
+        return policy
+
+    def until(self, policy, end, owned=False, ready=False, change=None):
+        last = policy.previous['end_ns']
+        while last + 50_000_000 < end:
+            row = sample(policy.previous['seq']+1, begin=last+49_800_000, runner_pid=42,
+                         owned_pid=43 if owned else 0, identity_verified=owned, owned_alive=owned,
+                         owned_ready=ready, front_owned=ready)
+            action = policy.observe(row)
+            if action.kind == 'halt': return action
+            last = row['end_ns']
+        row = sample(policy.previous['seq']+1,begin=end-200_000,runner_pid=42,
+                     owned_pid=43 if owned else 0,identity_verified=owned,owned_alive=owned,
+                     owned_ready=ready,front_owned=ready)
+        if change is not None: change(row)
+        return policy.observe(row)
+
+    def test_preapp_can_cross_old20and30_without_app_deadline_or_baseline_reset(self):
+        policy = self.fresh()
+        previous = policy.previous
+        self.assertEqual(self.until(policy,BASE_NS+40_000_000_000).kind,'continue')
+        self.assertEqual(policy.phase,'RUNNER_PREPARING_APP')
+        self.assertGreater(policy.previous['seq'],previous['seq'])
+        self.assertIsNone(policy.app_launch_ns)
+
+    def test_once_bound_opportunity_does_not_reset_raw_baseline(self):
+        policy = self.fresh()
+        previous = policy.previous
+        origin = BASE_NS+100_000_000
+        policy.bind_app_launch_origin(origin)
+        self.assertIs(policy.previous,previous)
+        with self.assertRaises(ValueError):policy.bind_app_launch_origin(origin+1)
+        self.assertEqual(policy.app_launch_ns,origin)
+
+    def test_bind20_and_ready30_exact_minus_and_plus_boundaries(self):
+        for ready_limit in (False,True):
+            for delta in (-1,0,1):
+                with self.subTest(ready=ready_limit,delta=delta):
+                    policy=self.fresh()
+                    origin=BASE_NS+100_000_000
+                    policy.bind_app_launch_origin(origin)
+                    if ready_limit:self.until(policy,origin+1_000_000,owned=True)
+                    limit=READY_LIMIT_NS if ready_limit else BIND_LIMIT_NS
+                    action=self.until(policy,origin+limit+delta,owned=ready_limit)
+                    self.assertEqual(action.reason,('OWNED_READY_DEADLINE' if ready_limit else 'OWNED_BIND_DEADLINE') if delta>0 else None)
+
+    def test_first_late_owned_or_ready_observation_cannot_hide_expired_opportunity(self):
+        for ready_limit in (False,True):
+            policy=self.fresh()
+            origin=BASE_NS+100_000_000
+            policy.bind_app_launch_origin(origin)
+            if ready_limit:self.until(policy,origin+1_000_000,owned=True)
+            limit=READY_LIMIT_NS if ready_limit else BIND_LIMIT_NS
+            self.until(policy,origin+limit-1_000_000,owned=ready_limit)
+            action=self.until(policy,origin+limit+1,owned=True,ready=ready_limit)
+            self.assertEqual(action.reason,'OWNED_READY_DEADLINE' if ready_limit else 'OWNED_BIND_DEADLINE')
+
+    def test_input_first_cause_at_app_deadline_boundary_and_preapp(self):
+        for state,reason in (('hid','HID_COUNTER_CHANGE'),('combined','UNKNOWN_SESSION_INPUT')):
+            for app_bound in (False,True):
+                policy=self.fresh()
+                origin=BASE_NS+100_000_000
+                if app_bound:policy.bind_app_launch_origin(origin)
+                def change(row):
+                    row['sources'][state]['keyDown']['count_before']+=1
+                    row['sources'][state]['keyDown']['count_after']+=1
+                action=self.until(policy,origin+BIND_LIMIT_NS+1,change=change)
+                self.assertEqual(action.reason,reason)
+                self.assertFalse(action.details['human_attribution'])
+
+    def test_formal_owned_pid_requires_prior_authenticated_app_opportunity(self):
+        policy=self.fresh()
+        action=policy.observe(owned_sample(3))
+        self.assertEqual(action.reason,'OWNED_APP_BEFORE_VERIFIED_LAUNCH_OPPORTUNITY')
 
 
 if __name__ == '__main__':

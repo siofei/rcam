@@ -12,6 +12,7 @@ import tempfile
 import unittest
 import uuid
 import zipfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import matrix
@@ -36,6 +37,71 @@ def sha(data):
 
 def dump(path, value):
     path.write_text(json.dumps(value, allow_nan=False) + '\n')
+
+
+def synthetic_display_validators(root):
+    """Only adapter wiring; real product diagnostic semantics have their own suite."""
+    def receipt(value, target, probe=True):
+        if target != 2: raise RuntimeError('unit-only wrong target')
+        for moment in ('before', 'after'):
+            matrix.guard.display_snapshot(value[moment], with_scale=probe)
+    def phases(raw, operation, target, pid, value):
+        if raw != 'unit-only diagnostic adapter\n' or target != 2 or type(pid) is not int or pid <= 0:
+            raise RuntimeError('unit-only diagnostic adapter rejected')
+        return []
+    return SimpleNamespace(validate_display_receipt=receipt, validate_display_phases=phases)
+
+
+def phase_fixture(native, output, full, runner_pid, nonce, bound_at, origin, request,
+                  local=None, armed_end=None, seq_before=3):
+    """Explicitly synthetic immutable schema4 channel, never native acceptance."""
+    binding = dict(schema_version=1, event='RUNNER_BINDING', launch_nonce=nonce,
+        runner_pid=runner_pid, runner_path=str(full.root / 'scripts/run_pmix_native.py'), runner_sha256=full.runner_sha,
+        native_directory=str(native), output_directory=str(output), run_id=request['run_id'],
+        source_manifest_sha256=full.manifest_sha, binary_path=str(full.binary), binary_sha256=full.binary_sha,
+        capture_producer_sha256=full.producer_sha, display_id=2, clock_domain=matrix.guard.CLOCK_DOMAIN,
+        bound_at_ns=bound_at)
+    raw = (json.dumps(binding) + '\n').encode()
+    digest = sha(raw)
+    request.update(schema_version=4, launch_nonce=nonce, runner_pid=runner_pid,
+        native_directory=str(native), output_directory=str(output), runner_binding_sha256=digest,
+        runner_clock_domain=matrix.guard.CLOCK_DOMAIN)
+    dump(native / 'request.json', request)
+    (native / 'runner-binding.json').write_bytes(raw)
+    if native != output:
+        (output / 'runner-binding.json').write_bytes(raw)
+    app = dict(schema_version=1, event='APP_LAUNCH', binding_sha256=digest, launch_nonce=nonce,
+        runner_pid=runner_pid, native_directory=str(native), output_directory=str(output), run_id=request['run_id'],
+        display_id=2, clock_domain=matrix.guard.CLOCK_DOMAIN, launch_at_ns=origin)
+    app_raw = (json.dumps(app) + '\n').encode()
+    (native / 'app-launch.json').write_bytes(app_raw)
+    if native != output: (output / 'app-launch.json').write_bytes(app_raw)
+    for index, (label, operation) in enumerate((('display-before', 'probe'), ('display-active', 'set60'),
+                                              ('display-active-probe', 'probe'))):
+        value = json.loads((native / (label + '.json')).read_text())
+        if operation == 'set60':
+            for moment in ('before', 'after'): value[moment].pop('backing_scale', None)
+            dump(native / (label + '.json'), value)
+        script = 'display-probe.swift' if operation == 'probe' else 'display.swift'
+        launch = dict(pid=7000+index, pgid=7000+index, private_session=True,
+            command=[*matrix.guard.DISPLAY_SWIFT_PREFIX,str(native/script),operation,'2'], started_monotonic_ns=1_000+index*100,
+            timeout_seconds=10)
+        process = dict(launch, schema_version=2, exit_code=0, joined=True, owned_group_released=True,
+            finished_monotonic_ns=1_050+index*100, timed_out=False, error=None, signals_sent=[], signal=None,
+            result='RETURNED', cleanup_grace_seconds=2)
+        dump(native/(label+'.subcommand-launch.json'),launch)
+        dump(native/(label+'.subcommand-process.json'),process)
+        dump(native/(label+'.subcommand.stdout'),value)
+        (native/(label+'.subcommand.stderr')).write_text('unit-only diagnostic adapter\n')
+    if local is not None:
+        (local/'runner-binding.raw.json').write_bytes(raw)
+        (local/'runner-request.raw.json').write_bytes((native/'request.json').read_bytes())
+        (local/'app-launch.raw.json').write_bytes(app_raw)
+        dump(local/'runner-phase-observed.json',dict(binding_sha256=digest,nonce=nonce,armed_end_ns=armed_end,
+            observed_at_ns=origin,kernel_credential=dict(pid=runner_pid,parent_pid=1,start_seconds=10,start_micros=0)))
+        dump(local/'app-phase-observed.json',dict(binding_sha256=digest,launch_sha256=sha(app_raw),
+            observed_at_ns=origin,launch_at_ns=origin,sample_seq_before_binding=seq_before))
+    return binding, digest
 
 
 def background_result(pins, ledger, passed=False):
@@ -81,6 +147,12 @@ def owned_fixture(directory, request, receipt):
     receipt.update(runner_joined_at_ns=joined_ns, post_join_sample_begin_ns=BASE_NS + 300_000_000,
                    first_foreground_ns=BASE_NS + 150_200_000, capture_completed_ns=BASE_NS + 250_200_000,
                    cleanup_started=False, cleanup_deadline_unknown=False)
+    origin = BASE_NS + 105_000_000
+    full = matrix.guard.FullRun(directory / 'unit-only-product', Path(binary), directory/'unit-only-producer', directory,
+        request['mode'],request['round'],2,MANIFEST,BINARY,PRODUCER,RUNNER)
+    _, binding_sha = phase_fixture(directory,directory,full,42,nonce,launch_ns,origin,request,
+        local=directory,armed_end=BASE_NS+50_200_000)
+    receipt.update(app_launch_opportunity_ns=origin,runner_binding_sha256=binding_sha)
     command = ['python3', '-B', 'scripts/run_pmix_native.py', '--binary', binary,
                '--capture-producer', str(directory / 'unit-only-producer'), '--output', str(directory),
                '--mode', request['mode'], '--round', str(request['round']), '--video',
@@ -90,10 +162,12 @@ def owned_fixture(directory, request, receipt):
     dump(directory / 'monitor-control.json', dict(protocolVersion=3, nonce=nonce, commandID=2,
          runnerPID=42, appPID=43, binaryPath=binary, native=str(directory), runID=request['run_id']))
     dump(directory / 'runner-launch.json', dict(pid=42, command=command, nonce=nonce,
-         clock_domain=CLOCK_DOMAIN, started_uptime_ns=launch_ns))
+         clock_domain=CLOCK_DOMAIN, started_uptime_ns=launch_ns,root=str(full.root),armed_end_ns=BASE_NS+50_200_000,
+         product_pins=dict(source_manifest_sha256=MANIFEST,binary_sha256=BINARY,capture_producer_sha256=PRODUCER,runner_sha256=RUNNER)))
     dump(directory / 'native-binding.json', dict(native=str(directory), pid=43,
          run_id=request['run_id'], binary_path=binary, binary_sha256=BINARY))
-    dump(directory / 'owned-process.json', dict(pid=43, command=[binary], binary_sha256=BINARY))
+    dump(directory / 'owned-process.json', dict(pid=43, command=[binary], binary_sha256=BINARY,
+        runner_pid=42,launch_nonce=nonce,clock_domain=CLOCK_DOMAIN,app_started_uptime_ns=origin))
     dump(directory / 'window-ready.json', dict(app_pid=43, run_id=request['run_id']))
     dump(directory / 'capture-complete.json', dict(app_pid=43, run_id=request['run_id'], success=True))
     (directory / 'monitor.stdout').write_text(''.join(json.dumps(row) + '\n' for row in rows))
@@ -114,7 +188,7 @@ class MatrixContract(unittest.TestCase):
                         pixel_width=3840, pixel_height=2160,
                         refresh_hz=144, backing_scale=2, in_mirror_set=False)
         active = dict(original, mode_id=212, refresh_hz=60)
-        request = dict(schema_version=3, mode=case[0], round=case[1],
+        request = dict(schema_version=4, mode=case[0], round=case[1],
                        display_id=2, display_policy='frozen-60hz',
                        display_mode_change_authorized=True,
                        evidence_scope='full-pmix-native', run_id=run_id,
@@ -156,7 +230,13 @@ class MatrixContract(unittest.TestCase):
             request['fixture'] = str(directory / 'reopen-input.rcam')
         for filename, data in files.items():
             dump(directory / filename, data)
+        files['display-restored.json'] = copy.deepcopy(files['display-restored.json'])
+        for moment in ('before','after'):
+            files['display-restored.json'][moment].pop('backing_scale',None)
+        dump(directory/'display-restored.json',files['display-restored.json'])
         owned_fixture(directory, request, receipt)
+        for name in files:
+            files[name] = json.loads((directory/name).read_text())
         return directory, request, receipt, files
 
     def check_round(self, directory, case, receipt, seen=None, workflow=None):
@@ -170,11 +250,13 @@ class MatrixContract(unittest.TestCase):
     def test_01_exact_matrix_and_frozen_bound_pins(self):
         self.assertIsInstance(matrix.CASES, tuple)
         self.assertEqual(matrix.CASES, EXPECTED_CASES)
-        self.assertIsInstance(matrix.PRODUCT_PINS, matrix.ProductPins)
-        self.assertEqual({key: getattr(matrix.PRODUCT_PINS, key) for key in
-                          ('commit', 'manifest_sha', 'binary_sha', 'producer_sha', 'runner_sha')},
-                         {'commit': '1a7344a65f778544811762c0c6be3d157f5acf2b', 'manifest_sha': '8bd352392e3c50da44f5cd7c2108ef9c482ba27bf82dd91a1a37f5468d7510c3', 'binary_sha': 'c795aaed3c528e71a8713661a002e7d671500aa4e54e0ee622542a30cec31db1', 'producer_sha': '90aedb747e65ab59ec030c15d223a95d9d17e0d15b648d22ff88d297abd157d6', 'runner_sha': 'e1369e039aa958921e54749fcf8442ae8cf3d407726f3cdeff86fc93a72838db'})
-        matrix.PRODUCT_PINS.validate()
+        self.assertEqual(matrix.PRODUCT_PINS, matrix.ProductPins(
+            commit='0cf2c702bb2d815c51fa5080f8b625600ac5d252',
+            manifest_sha='37df7531654cb9a4d70231add83072a51c92fbfdc7dbc112bc492f1e8043caf0',
+            binary_sha='7e6fdb651c1e8deddc5163567d737fb5e2f440aae0275faf9dcb6800e4b0be8f',
+            producer_sha='1a9a79d94a838ae868f14d62a62ce992fc737b463f5ae8f88b70499bcca8f9b5',
+            runner_sha='20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c',
+        ))
         self.assertEqual(self.pins.commit, COMMIT)
         self.assertEqual(self.pins.manifest_sha, MANIFEST)
         self.assertEqual(self.pins.binary_sha, BINARY)
@@ -434,6 +516,20 @@ class FormalOwnedWrapperTests(unittest.TestCase):
         self.assertEqual(len(actors), 1)
         self.assertIsNone(receipt['runner_pid'])
 
+    def test_preapp_timeout_natural21second_restore_join_keeps_primary_failure_without_app_sigint(self):
+        from test_guard import InjectedSupervisorTests
+        helper=InjectedSupervisorTests('runTest')
+        self.addCleanup(helper.doCleanups)
+        code,receipt,actors=helper.exercise(fault='preapp_failed',formal_case=('nav',1))
+        self.assertEqual(code,2)
+        self.assertEqual(receipt['actual_exit_code'],1)
+        self.assertEqual(receipt['interrupted'],'RUNNER_NONZERO_EXIT')
+        self.assertEqual(actors[1].signals,[])
+        self.assertIsNone(receipt['app_launch_opportunity_ns'])
+        self.assertEqual(receipt['phase'],'RUNNER_PREPARING_APP')
+        self.assertTrue(receipt['joined'])
+        self.assertTrue(receipt['post_join_barrier_satisfied'])
+
 
 class SyntheticTwelveCaseExecution(unittest.TestCase):
     """Complete coordinator and both real policy streams, no actual RCam/GUI."""
@@ -531,7 +627,7 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
             output = Path(command[command.index('--output') + 1])
             output.mkdir()
             run_id = str(uuid.UUID(int=len(runners) + 1))
-            request = dict(schema_version=3, mode=mode, round=round_number, display_id=2,
+            request = dict(schema_version=4, mode=mode, round=round_number, display_id=2,
                            display_policy='frozen-60hz', display_mode_change_authorized=True,
                            evidence_scope='full-pmix-native', run_id=run_id,
                            source_manifest_sha256=pins.manifest_sha, fixture_sha256=sha(PROJECT_BYTES))
@@ -545,6 +641,14 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
             restored = current if fault == 'restore' and len(runners) == 2 else original
             dump(output / 'display-restored.json', dict(before=current, after=restored))
             dump(output / 'display-restored-probe.json', dict(before=restored, after=restored))
+            fixture_path = Path(command[command.index('--fixture')+1]) if '--fixture' in command else None
+            full = matrix.guard.FullRun(root,binary,producer,output,mode,round_number,2,
+                pins.manifest_sha,pins.binary_sha,pins.producer_sha,pins.runner_sha,fixture_path)
+            nonce = kwargs['env']['RCAM_PMIX_LAUNCH_NONCE']
+            phase_fixture(output,output,full,pid,nonce,now[0],now[0],request)
+            restored_value = json.loads((output/'display-restored.json').read_text())
+            for moment in ('before','after'): restored_value[moment].pop('backing_scale',None)
+            dump(output/'display-restored.json',restored_value)
             if mode == 'workflow': (output / 'workflow-output.rcam').write_bytes(PROJECT_BYTES)
             if mode == 'workflow-reopen':
                 fixture = Path(command[command.index('--fixture') + 1])
@@ -554,7 +658,8 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
             actor.output, actor.request = output, request
             actor.launched_at_ns = now[0]
             actor.app_pid = pid + 1000
-            dump(output / 'owned-process.json', dict(pid=actor.app_pid, command=[str(binary)], binary_sha256=pins.binary_sha))
+            dump(output / 'owned-process.json', dict(pid=actor.app_pid, command=[str(binary)], binary_sha256=pins.binary_sha,
+                runner_pid=pid,launch_nonce=nonce,clock_domain=matrix.guard.CLOCK_DOMAIN,app_started_uptime_ns=now[0]))
             dump(output / 'window-ready.json', dict(app_pid=actor.app_pid, run_id=run_id))
             dump(output / 'capture-complete.json', dict(app_pid=actor.app_pid, run_id=run_id, success=True))
             runners.append(actor)
@@ -614,10 +719,10 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
                 with self.path.open('a') as log:
                     for record in records: log.write(json.dumps(record) + '\n')
                 return records
-        def discover(previous, candidate_binary, expected_run_id=None, full=None):
+        def discover(previous, candidate_binary, expected_run_id=None, full=None, known_native=None):
             actor = active[0]
             self.assertIsNotNone(full)
-            return actor.output, dict(pid=actor.app_pid), actor.request
+            return actor.output, json.loads((actor.output/'owned-process.json').read_text()), actor.request
         interrupted = [False]
         def sleep(seconds):
             if fault == 'keyboard_cleanup' and not interrupted[0] and (evidence / 'nav1/native-binding.json').is_file():
@@ -630,6 +735,7 @@ class SyntheticTwelveCaseExecution(unittest.TestCase):
                 now[0] += 30_000_000_000
             original_write(path, value)
         with patch.object(supervise, 'write', side_effect=journal_write), \
+             patch.object(supervise, 'product_display_validators', side_effect=synthetic_display_validators), \
              patch.object(matrix, 'PRODUCT_PINS', pins), \
              patch.object(matrix.sys, 'platform', 'darwin'), \
              patch.object(supervise.time, 'CLOCK_UPTIME_RAW', 8, create=True), \
@@ -758,7 +864,8 @@ class RecoveryAndContinuousEvidenceTests(unittest.TestCase):
 
     def child(self, label, released=True):
         operation = 'set60' if label == 'display-active' else ('restore' if label == 'display-restored' else 'probe')
-        command = ['/usr/bin/swift', str(self.native / 'display.swift'), operation, '2']
+        script = 'display-probe.swift' if operation == 'probe' else 'display.swift'
+        command = [*matrix.guard.DISPLAY_SWIFT_PREFIX, str(self.native / script), operation, '2']
         if operation == 'restore': command += ['113']
         launch = dict(pid=100, pgid=100, private_session=True, command=command,
                       started_monotonic_ns=1_000_000, timeout_seconds=10)
@@ -815,8 +922,9 @@ class RecoveryAndContinuousEvidenceTests(unittest.TestCase):
         root = self.base / 'source'
         (root / 'scripts').mkdir(parents=True)
         source = '// unit-only display helper; not compiled or run\n'
-        (root / 'scripts/pmix_display_swift.py').write_text('SOURCE = ' + repr(source))
+        (root / 'scripts/pmix_display_swift.py').write_text('MUTATOR_SOURCE = ' + repr(source) + '\nPROBE_SOURCE = ' + repr(source))
         (self.native / 'display.swift').write_text(source)
+        (self.native / 'display-probe.swift').write_text(source)
         run_id = '00000000-0000-4000-8000-000000000001'
         dump(self.native / 'request.json', dict(run_id=run_id, display_id=2, source_manifest_sha256='b' * 64))
         dump(local / 'SUPERVISOR_RESULT.json', dict(joined=True, actual_exit_code=-9 if signal_exit else 1,
@@ -1543,7 +1651,7 @@ class RoundCheckIsolationTests(unittest.TestCase):
         other.mkdir()
         code, result = self.worker(dict(self.control, directory=str(other)))
         self.assertEqual(code, 2)
-        self.assertIn('canonical directory/supervisor binding', result['failure'])
+        self.assertIn('canonical output/owned launch binding', result['failure'])
 
     def test_control_mutation_during_atomic_write_rejected_before_child_launch(self):
         original = matrix.guard.write
@@ -1659,6 +1767,75 @@ class InterruptJournalFailureRegressionTests(unittest.TestCase):
         self.assertEqual(actor.waits, [5.75])
         self.assertFalse(receipt['joined'])
         self.assertIsNone(receipt['exit_code'])
+
+
+class LaunchBindingContractTests(unittest.TestCase):
+    def setUp(self):
+        fixture=MatrixContract('runTest');fixture.setUp();self.addCleanup(fixture.doCleanups)
+        self.directory,self.request,self.receipt,_=fixture.fixture()
+        self.raw,self.binding,self.digest=matrix.guard.raw_json(self.directory/'runner-binding.raw.json')
+        self.app_raw,self.app,self.app_sha=matrix.guard.raw_json(self.directory/'app-launch.raw.json')
+        self.launch=json.loads((self.directory/'runner-launch.json').read_text())
+        self.full=matrix.guard.FullRun(Path(self.launch['root']),Path(self.binding['binary_path']),
+            self.directory/'unit-only-producer',self.directory,'nav',1,2,MANIFEST,BINARY,PRODUCER,RUNNER)
+
+    def test_exact_binding_nonce_identity_paths_and_pins_reject_mismatches(self):
+        g=matrix.guard
+        g.validate_runner_binding(self.binding,self.digest,self.request,self.full,self.binding['launch_nonce'],42,self.launch['armed_end_ns'])
+        changes={'launch_nonce':str(uuid.uuid4()),'runner_pid':41,'runner_path':'/unit-only-wrong/runner.py',
+                 'runner_sha256':'0'*64,'source_manifest_sha256':'0'*64,'binary_path':'/unit-only-wrong/app',
+                 'binary_sha256':'0'*64,'capture_producer_sha256':'0'*64,'display_id':1,
+                 'output_directory':'/unit-only-wrong/output','clock_domain':'process_relative',
+                 'schema_version':True,'bound_at_ns':True}
+        for key,value in changes.items():
+            with self.subTest(key=key),self.assertRaises((RuntimeError,ValueError,TypeError)):
+                g.validate_runner_binding(dict(self.binding,**{key:value}),self.digest,self.request,self.full,
+                    self.binding['launch_nonce'],42,self.launch['armed_end_ns'])
+
+    def test_future_and_changed_app_opportunity_do_not_get_accepted(self):
+        g=matrix.guard
+        origin=g.validate_app_launch(self.app,self.binding,self.digest)
+        with self.assertRaises(RuntimeError):g.validate_app_launch(self.app,self.binding,self.digest,origin-1)
+        for key,value in [('runner_pid',41),('binding_sha256','0'*64),('launch_nonce',str(uuid.uuid4())),
+                          ('native_directory','/unit-only-other-native'),('output_directory','/unit-only-other-output'),
+                          ('run_id',str(uuid.uuid4())),('clock_domain','relative'),('launch_at_ns',True)]:
+            with self.subTest(key=key),self.assertRaises(RuntimeError):
+                g.validate_app_launch(dict(self.app,**{key:value}),self.binding,self.digest)
+
+    def test_hash_and_parse_same_single_bytes_and_marker_symlink_reject(self):
+        path=self.directory/'runner-binding.raw.json'
+        original=Path.read_bytes;reads=[]
+        def read(current):
+            if current==path:reads.append(current)
+            return original(current)
+        with patch.object(Path,'read_bytes',new=read):
+            raw,value,digest=matrix.guard.raw_json(path)
+        self.assertEqual(len(reads),1);self.assertEqual(sha(raw),digest);self.assertEqual(value,self.binding)
+        alias=self.directory/'unit-only-marker-alias.json';alias.symlink_to(path)
+        with self.assertRaises(RuntimeError):matrix.guard.raw_json(alias)
+
+    def test_real_distinct_native_and_output_directories_keep_strict_bridge(self):
+        import shutil
+        native=self.directory.parent/'unit-only-distinct-native';native.mkdir()
+        for source in self.directory.iterdir():
+            if source.is_file():shutil.copyfile(source,native/source.name)
+        request=dict(self.request)
+        binding,digest=phase_fixture(native,self.directory,self.full,42,self.binding['launch_nonce'],
+            self.binding['bound_at_ns'],self.app['launch_at_ns'],request,local=self.directory,
+            armed_end=self.launch['armed_end_ns'])
+        shutil.copyfile(native/'request.json',self.directory/'request.json')
+        self.receipt.update(native_directory=str(native),runner_binding_sha256=digest)
+        dump(self.directory/'SUPERVISOR_RESULT.json',self.receipt)
+        control=json.loads((self.directory/'monitor-control.json').read_text());control['native']=str(native)
+        dump(self.directory/'monitor-control.json',control)
+        body=json.loads((self.directory/'native-binding.json').read_text());body['native']=str(native)
+        dump(self.directory/'native-binding.json',body)
+        control=dict(schema_version=1,mode='nav',round=1,directory=str(self.directory),seen_run_ids=[],workflow_sha256=None,
+                     supervisor_receipt_sha256=matrix.guard.sha(self.directory/'SUPERVISOR_RESULT.json'))
+        input_path=self.directory/'round-check-input.json';dump(input_path,control)
+        with patch.object(matrix,'PRODUCT_PINS',matrix.ProductPins(COMMIT,MANIFEST,BINARY,PRODUCER,RUNNER)):
+            self.assertEqual(matrix.check_round(input_path),0)
+        self.assertNotEqual(binding['native_directory'],binding['output_directory'])
 
 
 class StreamFailureDiagnosticTests(unittest.TestCase):
