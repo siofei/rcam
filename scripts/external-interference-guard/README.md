@@ -358,11 +358,22 @@ receipts fail. Valid receipts latch diagnostic failure, while raw/input first
 error retains priority. Missing receipt is not proof of clean operation: actual
 stream/exit/joins and independently checked raw/sidecar completeness still decide
 the result. The result retains the supplemental receipt/UNKNOWN/INVALID status.
+Darwin receive errors retain the actual `recvmsg` operation, errno, exception
+type and message. ECONNRESET qualifies as expected peer closure only with the
+exact owned Popen already actually joined in the requested normal SIGTERM stop;
+the harness supplies its separately checked actual expected joins. That closure
+adds no receipt: absence remains UNKNOWN, and original stream/exit/seal checks
+remain mandatory. Unexpected reset or any other receive error latches INVALID;
+an already observed failure receipt remains available. There is no retry that
+turns a receive failure into clean operation. EAGAIN/EWOULDBLOCK means empty.
 Known sidecar-open, raw-encode/write and cumulative raw-capacity failures use the
 same bounded hook; raw receipts carry only the original observed emit state,
 phase, ordinal and byte offsets. No failed write gains a return/offset-after.
 Known raw encode/write failure exits74 after its bounded receipt attempt without
 waiting for a redundant FIFO submit; the pending sidecar emit remains incomplete.
+Explicit diagnosis checks `JSONSerialization.isValidJSONObject` before raw
+conversion so NaN/Infinity reject as RAW_ENCODE rather than raising an uncaught
+Foundation Objective-C exception. Original three-argument conversion is unchanged.
 Worker failure reports before touching queue state, tries its failed latch once
 and signals only itself; a busy latch can leave subsequent submit accepted until
 SIGTERM, but the ended writer/missing seal/receipt cannot certify completeness.
@@ -465,7 +476,7 @@ Portable verification:
 python3 -B -m unittest -v test_guard test_matrix test_diagnostics
 ```
 
-The original160 and51 portable diagnostic tests pass on cloud Python3.12/Linux,
+The original160 and60 portable diagnostic tests pass on cloud Python3.12/Linux,
 including
 capacity/seal/raw EOF, unknown write return, original stream parity/null gap clock,
 no-APP policy, no late restore after intent, cancellation never complete,
@@ -487,10 +498,17 @@ records and real seal/EOF, count/memory rejection without queue mutation, shared
 terminal deadline/lock-busy incompleteness, rejection after terminal, actual
 readonly-fd writer failure, EPIPE while holding the actual queue lock, line capacity
 and full/closed failure channel. A second extracted verbatim original emit method
-tests actual JSON NaN encode failure, closed stdout write and cumulative raw cap;
+tests actual JSON NaN/positive/negative Infinity rejection, closed stdout write and cumulative raw cap;
 preexisting sidecar tests open failure. Portable tests separately reject partial
 raw/progress and invented failed-write endpoints. No natural typed encode failure is
-injected; the generic encode-error path remains statically reviewed. Mac must run
+injected; the generic encode-error path remains statically reviewed.
+Small actual datagrams fill the channel; EAGAIN/EWOULDBLOCK and Darwin ENOBUFS
+remain distinct captured send errors; ENOBUFS proves send resource pressure and
+does not independently prove queue fullness. Actual EMSGSIZE rejection proves no receipt
+was delivered; independent MSG_TRUNC/MSG_CTRUNC fixtures verify receive truncation
+even on systems rejecting oversized sends. A smaller test-only receive buffer
+also exercises actual MSG_TRUNC without changing production4096. Joined close/missing receipt and
+unexpected reset/retained receipt have separate regressions. Mac must run
 this harness and strictly compile the same full observer source after independent
 source review, before any separately authorized controlled diagnostic. This new
 source candidate has no real-display result. Historical full12 FAIL and d5 BLOCKED,

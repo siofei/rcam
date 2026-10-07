@@ -5,6 +5,7 @@ The original guard policy, parser, product helpers and thresholds are reused.
 """
 import argparse
 from collections import deque
+import errno
 import json
 import os
 from pathlib import Path
@@ -44,15 +45,37 @@ class FailureChannel:
         self.identity = dict(nonce=nonce, role=role, pid=pid, source_sha256=source_sha,
                              executable_sha256=executable_sha)
         self.raw = self.receipt = self.error = None
+        self.transport = None
 
-    def poll(self):
-        if self.error:
+    def poll(self, joined_peer=None):
+        if self.error or self.transport:
             return
         # At most one receipt and one duplicate probe, including across polls.
         for _ in range(2):
             try:
                 raw, ancillary, flags, _ = self.receiver.recvmsg(FAILURE_LIMIT, 1, socket.MSG_DONTWAIT)
-            except BlockingIOError:
+            except OSError as error:
+                if error.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                    return
+                # Darwin can report reset after the owned datagram peer exits.
+                # Only a caller-authorized, exact actual join qualifies closure;
+                # it supplies no receipt and no stream/sidecar completeness proof.
+                joined = False
+                if error.errno == errno.ECONNRESET and joined_peer is not None:
+                    try:
+                        joined = (joined_peer.pid == self.identity['pid'] and
+                                  joined_peer.returncode is not None and
+                                  joined_peer.wait(timeout=0) == joined_peer.returncode)
+                    except BaseException:
+                        joined = False
+                self.transport = dict(operation='recvmsg', errno_code=error.errno,
+                    error_type=type(error).__name__, message=str(error),
+                    after_receipt=self.receipt is not None,
+                    classification='EXPECTED_PEER_CLOSE' if joined else 'RECEIVE_FAILURE',
+                    joined_pid=joined_peer.pid if joined else None,
+                    joined_exit_code=joined_peer.returncode if joined else None)
+                if not joined:
+                    self.error = type(error).__name__ + ': ' + str(error)
                 return
             try:
                 guard.require(self.raw is None and raw and len(raw) <= FAILURE_LIMIT and not ancillary and
@@ -120,7 +143,7 @@ class FailureChannel:
 
     def summary(self):
         return dict(status='INVALID' if self.error else 'OBSERVED' if self.receipt else 'UNKNOWN',
-                    receipt=self.receipt, error=self.error)
+                    receipt=self.receipt, error=self.error, transport=self.transport)
 
     def close(self):
         self.receiver.close()
@@ -720,7 +743,7 @@ class DiagnosticRun:
                                        stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=env, pass_fds=(peer.fileno(),))
             # Retain exact owned handle before any tail/adapter construction fails.
             item = dict(role=role, nonce=nonce, monitor=monitor, control=control, path=path,
-                        handles=(out, err), stream=None, tail=None,
+                        handles=(out, err), stream=None, tail=None, stop_requested=False,
                         failure_channel=FailureChannel(receiver, nonce, role, monitor.pid, source_sha, digest))
             self.observers.append(item)
             tail = DiagnosticTail(base / (role + '.stdout'), self.trace, role, monitor.pid, nonce, self.clock)
@@ -747,11 +770,15 @@ class DiagnosticRun:
         for item in self.observers:
             channel = item.get('failure_channel')
             if channel:
-                channel.poll()
+                monitor = item['monitor']
+                # Only normal, requested monitor termination is expected here.
+                joined_peer = monitor if (self.stopping and item.get('stop_requested') and
+                                          monitor.poll() == -int(signal.SIGTERM)) else None
+                channel.poll(joined_peer=joined_peer)
+                if channel.receipt:
+                    self.fail('OBSERVER_DIAGNOSTIC_FAILURE: ' + item['role'] + ': ' + channel.receipt['reason'])
                 if channel.error:
                     self.fail('OBSERVER_FAILURE_RECEIPT_INVALID: ' + channel.error)
-                elif channel.receipt:
-                    self.fail('OBSERVER_DIAGNOSTIC_FAILURE: ' + item['role'] + ': ' + channel.receipt['reason'])
 
     def pump(self, allow_stop=False):
         if self.trace.error:
@@ -895,6 +922,7 @@ class DiagnosticRun:
         for item in self.observers:
             if item['monitor'].poll() is None:
                 item['monitor'].terminate()
+                item['stop_requested'] = True
         try:
             started = self.clock()
         except guard.ClockUnavailableError:

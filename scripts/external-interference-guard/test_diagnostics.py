@@ -1,5 +1,6 @@
 """Synthetic fault/lifecycle tests. Never real display, APP or native evidence."""
 from copy import deepcopy
+import errno
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import diagnose_display_prep as diag
 import supervise as guard
 from guard_policy import CLOCK_DOMAIN, TYPES, GuardPolicy
@@ -18,6 +19,16 @@ from test_guard import sample, BASE_NS
 
 NONCE = '00000000-0000-4000-8000-000000000001'
 SHA = 'a' * 64
+
+def fill_datagram_channel(peer):
+    """Reach actual send pressure, not proof that ENOBUFS means queue full."""
+    peer.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+    for _ in range(10000):
+        try: peer.send(b'x' * 256)
+        except OSError as error:
+            if error.errno not in (errno.EAGAIN, errno.EWOULDBLOCK, errno.ENOBUFS): raise
+            return error.errno
+    raise AssertionError('failed to reach actual nonblocking channel capacity')
 
 class Sink:
     error = None
@@ -229,31 +240,122 @@ class FailureChannelTests(TemporaryTest):
     def test_duplicate_even_later_and_truncated_partial_control_rejected(self):
         self.send(self.fact);self.channel.poll();self.send(self.fact);self.channel.poll()
         self.assertIn('duplicate',self.channel.error)
-        for raw in (b'{partial',b'{}\ntrailing\n',b'a'*(diag.FAILURE_LIMIT+1)):
+        for raw in (b'{partial',b'{}\ntrailing\n'):
             self.channel.error=None;self.channel.raw=None;self.channel.receipt=None
             self.peer.send(raw);self.channel.poll();self.assertIsNotNone(self.channel.error)
         self.channel.error=None;self.channel.raw=None;self.channel.receipt=None
         import array
         self.peer.sendmsg([(json.dumps(self.fact)+'\n').encode()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[self.peer.fileno()]))])
         self.channel.poll();self.assertIn('control',self.channel.error)
+    def test_actual_oversize_send_rejection_is_not_received_truncation(self):
+        raw=b'a'*(diag.FAILURE_LIMIT+1)
+        try:self.peer.send(raw)
+        except OSError as error:
+            self.assertEqual(error.errno,errno.EMSGSIZE)
+            self.channel.poll();self.assertEqual(self.channel.summary()['status'],'UNKNOWN')
+            self.assertIsNone(self.channel.raw)
+        else:
+            self.channel.poll();self.assertEqual(self.channel.summary()['status'],'INVALID')
+            self.assertIn('truncated',self.channel.error)
+    def test_receive_truncation_flags_reject_even_well_formed_receipt(self):
+        raw=(json.dumps(self.fact)+'\n').encode()
+        for flag in (socket.MSG_TRUNC,socket.MSG_CTRUNC):
+            with self.subTest(flag=flag):
+                receiver=Mock();receiver.recvmsg.return_value=(raw,[],flag,None)
+                channel=diag.FailureChannel(receiver,NONCE,'owned',17,SHA,SHA)
+                channel.poll();self.assertEqual(channel.summary()['status'],'INVALID')
+                self.assertIn('truncated',channel.error)
+    def test_actual_small_receive_buffer_reports_truncation(self):
+        self.send(self.fact)
+        receiver=Mock()
+        receiver.recvmsg.side_effect=lambda size,ancillary,flags:self.receiver.recvmsg(128,ancillary,flags)
+        channel=diag.FailureChannel(receiver,NONCE,'owned',17,SHA,SHA)
+        channel.poll();self.assertEqual(channel.summary()['status'],'INVALID')
+        self.assertIn('truncated',channel.error);self.assertIsNone(channel.receipt)
+    def test_receive_errno_preserved_and_unexpected_reset_never_recovers(self):
+        for code in (errno.ECONNRESET,errno.ENOBUFS,errno.EBADF):
+            with self.subTest(errno=code):
+                receiver=Mock();receiver.recvmsg.side_effect=OSError(code,os.strerror(code))
+                channel=diag.FailureChannel(receiver,NONCE,'owned',17,SHA,SHA)
+                channel.poll();self.assertEqual(channel.summary()['status'],'INVALID')
+                self.assertEqual(channel.summary()['transport']['errno_code'],code)
+                self.assertEqual(channel.summary()['transport']['operation'],'recvmsg')
+                receiver.recvmsg.side_effect=None
+                receiver.recvmsg.return_value=((json.dumps(self.fact)+'\n').encode(),[],0,None)
+                channel.poll();self.assertIsNone(channel.receipt)
+                self.assertEqual(receiver.recvmsg.call_count,1)
+    def test_unexpected_reset_preserves_already_observed_failure_receipt(self):
+        receiver=Mock();receiver.recvmsg.side_effect=[((json.dumps(self.fact)+'\n').encode(),[],0,None),
+            OSError(errno.ECONNRESET,'unexpected reset')]
+        channel=diag.FailureChannel(receiver,NONCE,'owned',17,SHA,SHA)
+        channel.poll();self.assertEqual(channel.summary()['status'],'INVALID')
+        self.assertEqual(channel.receipt,self.fact)
+        self.assertEqual(channel.summary()['transport']['classification'],'RECEIVE_FAILURE')
+    def test_wouldblock_is_empty_not_a_transport_error(self):
+        receiver=Mock();receiver.recvmsg.side_effect=OSError(errno.EAGAIN,'empty')
+        channel=diag.FailureChannel(receiver,NONCE,'owned',17,SHA,SHA)
+        channel.poll();self.assertEqual(channel.summary()['status'],'UNKNOWN')
+        self.assertIsNone(channel.transport);self.assertIsNone(channel.error)
+    def test_expected_close_requires_exact_actual_join_and_receipt_absence_stays_unknown(self):
+        with subprocess.Popen([sys.executable,'-c','pass'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) as child:
+            child.wait(timeout=2)
+            fact=dict(self.fact,pid=child.pid)
+            for received in (False,True):
+                with self.subTest(received=received):
+                    receiver=Mock()
+                    responses=[OSError(errno.ECONNRESET,os.strerror(errno.ECONNRESET))]
+                    if received:responses.insert(0,((json.dumps(fact)+'\n').encode(),[],0,None))
+                    receiver.recvmsg.side_effect=responses
+                    channel=diag.FailureChannel(receiver,NONCE,'owned',child.pid,SHA,SHA)
+                    channel.poll(joined_peer=child)
+                    self.assertEqual(channel.summary()['status'],'OBSERVED' if received else 'UNKNOWN')
+                    self.assertEqual(channel.summary()['transport']['classification'],'EXPECTED_PEER_CLOSE')
+                    self.assertEqual(channel.summary()['transport']['joined_exit_code'],0)
+                    self.assertEqual(channel.receipt,fact if received else None)
+            receiver=Mock();receiver.recvmsg.side_effect=OSError(errno.ECONNRESET,'reset')
+            channel=diag.FailureChannel(receiver,NONCE,'owned',child.pid+1,SHA,SHA)
+            channel.poll(joined_peer=child);self.assertEqual(channel.summary()['status'],'INVALID')
     def test_nonblocking_full_or_closed_channel_cannot_manufacture_receipt(self):
-        self.peer.setsockopt(socket.SOL_SOCKET,socket.SO_SNDBUF,4096)
-        for _ in range(10000):
-            try:self.peer.send(b'x'*diag.FAILURE_LIMIT)
-            except BlockingIOError:break
-        else:self.fail('failed to reach actual nonblocking channel capacity')
-        with self.assertRaises(BlockingIOError):self.send(self.fact)
+        full_errno=fill_datagram_channel(self.peer)
+        self.assertIn(full_errno,(errno.EAGAIN,errno.EWOULDBLOCK,errno.ENOBUFS))
+        with self.assertRaises(OSError) as caught:self.send(self.fact)
+        self.assertIn(caught.exception.errno,(errno.EAGAIN,errno.EWOULDBLOCK,errno.ENOBUFS))
         self.channel.poll();self.assertEqual(self.channel.summary()['status'],'INVALID')
+        self.assertIsNone(self.channel.receipt)
         self.receiver.close()
         with self.assertRaises(OSError):self.send(self.fact)
     def test_receipt_latches_failure_preserves_firstcause_and_starts_no_child(self):
         run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
-        run.observers=[dict(role='owned',failure_channel=self.channel)]
+        run.observers=[dict(role='owned',failure_channel=self.channel,monitor=Monitor())]
         self.send(self.fact)
         with patch.object(diag.subprocess,'Popen',side_effect=AssertionError('no APP or child permitted')):
             run.poll_failure_channels()
         self.assertIn('QUEUE_COUNT',run.failure);self.assertIsNone(run.child)
         run.failure='original gap';run.poll_failure_channels();self.assertEqual(run.failure,'original gap')
+    def test_known_failure_reason_precedes_supplemental_unexpected_reset(self):
+        receiver=Mock();receiver.recvmsg.side_effect=[((json.dumps(self.fact)+'\n').encode(),[],0,None),
+            OSError(errno.ECONNRESET,'unexpected reset')]
+        channel=diag.FailureChannel(receiver,NONCE,'owned',17,SHA,SHA)
+        run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
+        run.observers=[dict(role='owned',failure_channel=channel,monitor=Monitor())]
+        run.poll_failure_channels()
+        self.assertIn('QUEUE_COUNT',run.failure);self.assertEqual(channel.summary()['status'],'INVALID')
+        self.assertEqual(channel.summary()['transport']['errno_code'],errno.ECONNRESET)
+    def test_run_closure_requires_own_stop_intent_as_well_as_joined_sigterm(self):
+        with subprocess.Popen([sys.executable,'-c','import time; time.sleep(20)'],
+            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) as child:
+            child.terminate();self.assertEqual(child.wait(timeout=2),-int(signal.SIGTERM))
+            for requested in (False,True):
+                with self.subTest(requested=requested):
+                    receiver=Mock();receiver.recvmsg.side_effect=OSError(errno.ECONNRESET,'reset')
+                    channel=diag.FailureChannel(receiver,NONCE,'owned',child.pid,SHA,SHA)
+                    run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
+                    run.stopping=True
+                    run.observers=[dict(role='owned',failure_channel=channel,monitor=child,stop_requested=requested)]
+                    run.poll_failure_channels()
+                    self.assertEqual(channel.summary()['status'],'UNKNOWN' if requested else 'INVALID')
+                    self.assertEqual(run.failure is None,requested)
+                    self.assertIsNone(channel.receipt);self.assertIsNone(run.child)
     def test_spawn_failure_closes_only_channel_and_handles(self):
         run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
         descriptors=[]
@@ -315,7 +417,9 @@ private final class RawIOTest {
     func test(_ mode: String) {
         if mode == "raw-capacity" { rawBytes = 67108864 }
         if mode == "raw-write" { try? FileHandle.standardOutput.close() }
-        emit(["event": "ready", "synthetic": mode == "raw-encode" ? (Double.nan as Any) : (true as Any)])
+        let bad: Double? = mode == "raw-encode" ? Double.nan :
+            mode == "raw-infinity" ? Double.infinity : mode == "raw-negative-infinity" ? -Double.infinity : nil
+        emit(["event": "ready", "synthetic": bad.map { $0 as Any } ?? (true as Any)])
         exit(1)
     }
 }
@@ -487,7 +591,8 @@ class SwiftFIFOTests(TemporaryTest):
         for mode,reason in (('wait',None),('terminal-busy','TERMINAL_LOCK_BUSY'),
             ('shared-deadline','TERMINAL_LOCK_BUSY'),('count','QUEUE_COUNT'),('memory','QUEUE_MEMORY'),
             ('closed','CLOSED'),('write','WRITE'),('worker-busy','WRITE'),('line','LINE_CAPACITY'),
-            ('raw-encode','RAW_ENCODE'),('raw-write','RAW_WRITE'),('raw-capacity','RAW_CAPACITY'),
+            ('raw-encode','RAW_ENCODE'),('raw-infinity','RAW_ENCODE'),('raw-negative-infinity','RAW_ENCODE'),
+            ('raw-write','RAW_WRITE'),('raw-capacity','RAW_CAPACITY'),
             ('open','SIDECAR_OPEN'),('channel-full',None),('channel-closed',None)):
             with self.subTest(mode=mode):
                 receiver,peer=socket.socketpair(socket.AF_UNIX,socket.SOCK_DGRAM)
@@ -497,11 +602,7 @@ class SwiftFIFOTests(TemporaryTest):
                 channel=None
                 try:
                     if mode=='channel-full':
-                        peer.setsockopt(socket.SOL_SOCKET,socket.SO_SNDBUF,4096)
-                        for _ in range(10000):
-                            try:peer.send(b'x'*diag.FAILURE_LIMIT)
-                            except BlockingIOError:break
-                        else:self.fail('failed to fill actual channel')
+                        self.assertIn(fill_datagram_channel(peer),(errno.EAGAIN,errno.EWOULDBLOCK,errno.ENOBUFS))
                     if mode=='channel-closed':receiver.close()
                     env=dict(os.environ,RCAM_DIAG_FAILURE_FD=str(peer.fileno()),RCAM_DIAG_ROLE='owned',
                              RCAM_DIAG_SOURCE_SHA=source_sha,RCAM_DIAG_EXECUTABLE_SHA=exe_sha)
@@ -514,7 +615,7 @@ class SwiftFIFOTests(TemporaryTest):
                         self.assertEqual(child.returncode,74 if mode.startswith('raw-') or mode=='open' else 0,stderr.decode())
                         if mode!='channel-closed':
                             channel=diag.FailureChannel(receiver,NONCE,'owned',child.pid,source_sha,exe_sha)
-                            channel.poll()
+                            channel.poll(joined_peer=child)
                     if mode=='wait':
                         self.assertEqual(channel.summary()['status'],'UNKNOWN')
                         rows=list(diag.sealed_rows(sidecar,NONCE,diag.OBSERVER_LIMIT,role='owned',pid=child.pid))

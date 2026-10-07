@@ -421,6 +421,11 @@ private final class InterferenceObserver {
             fact?.encode_enter_ns = monotonicNowNS()
         }
         do {
+            if diagnostic != nil && !JSONSerialization.isValidJSONObject(envelope) {
+                // Foundation may raise an Objective-C exception for NaN/Infinity;
+                // reject before conversion, preserving unknown encode/write ends.
+                throw NSError(domain: "RCamDiagnosticRawJSON", code: 1)
+            }
             var data = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
             data.append(0x0A)
             if diagnostic != nil {
