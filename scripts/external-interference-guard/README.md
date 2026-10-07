@@ -8,11 +8,40 @@ grant complete AT closure, smoothness, absence of flicker or stage acceptance.
 Allowed edits are this external package only. Frozen product sources, manifest,
 runner, binaries, old dirty diagnostics and all historical failures stay intact.
 
-The new `current_refresh.py run` entry uses the five exact product pins below.
+## Current frozen identity: stationary-work cache comparison candidate
+
+This adapter successor to `e27f0c67eb55ff600de385dd76eef426fcbb8a92`
+binds the following owner-supplied Mac build identities. The source commit is
+the direct child of `42db040374b0c1643200b7f04e95b03d272ef792`; all672 manifest
+entries were authenticated in the cloud. The runner, original native/batch
+verifiers and all six imported product report helpers are byte-identical to
+that parent, so the reviewed external verifier copies remain unchanged.
+
+- Product commit: `5349c4ba7665ad665832ef423acc35a939bed6ea`
+- Source manifest: `618f3a2871f818f944f857af5ba4244079e5c3b7c3a935f4b35dbae944ce29f4`
+- Internal app (required runtime): `ec405c5249f43b6e4d4144a9c053724bf070971f4725bfa187216b89361e2661`
+- Capture producer: `b35a67b341a1efcd4190a88e4dede6e9c7dd2982a08ff1999a459cf321b9b63e`
+- Native runner: `20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c`
+- Public app (provenance only, rejected as runtime): `3638c91accecabd86b7d50e898ecdcd6b65cf099592e3a8befa20883d24a94f2`
+- External gate ledger (background provenance): `dfc1b34d01134648233bc4eb54de1ad880f626063ef4641ae1b622e766eb7891`
+
+The Mac owner reports24 product tests and31 gates, plus seed and fresh-extraction
+qualification. Both qualification results remain
+`BACKGROUND_QUALIFIED_FOREGROUND_PENDING`. The cloud authenticates source and
+runs adapter regressions only; it does not independently remeasure Mac binaries,
+rerun native acquisition or claim a performance improvement. The current-refresh
+driver does not run the historical background/full12/aggregate commands or consume
+a gate ledger. This identity update changes no guard threshold, input protection,
+functional predicate, display policy or report budget. All earlier measurements
+and failures keep their original identities.
+
+The `current_refresh.py run` entry uses the five current runtime pins above.
 It authenticates every frozen manifest entry and the app/producer before any
-compiler or runner starts. It runs only nav round1, then move round1, each in a
+compiler or runner starts. `--case move1` runs only move round1; `--case nav1`
+runs only nav round1. The default `--case all` runs nav round1 then move round1, each in a
 fresh evidence directory with its own UUID, nonce, owned observer and immutable
-launch channel. The existing continuous sentinel remains armed across both
+launch channel. Requested and completed cases are explicit in the result.
+The existing continuous sentinel remains armed across the selected
 rounds, report verification and cleanup; owned raw replay and final continuous
 raw replay are mandatory. The original250ms freshness,20ms age tolerance,
 190s execution and40s cleanup budgets are unchanged.
@@ -63,19 +92,21 @@ plus `current_refresh.py`, `performance_v1.py`, `report_pmix_v1.py`,
 `report_batch_v1.py`, `test_current_refresh.py`). Do not package runtime evidence.
 
 ```sh
-# Portable regression checks; ROOT must be the exact frozen product42db040 tree.
+# Portable regression checks; ROOT must be the exact frozen product5349c4ba tree.
 RCAM_REPORT_TEST_ROOT=/locked/product python3 -B -m unittest -v test_guard test_matrix test_current_refresh
 
-# Mac owner only, using existing authorized runtime binaries and fresh output.
-python3 -B current_refresh.py run --root /locked/product --binary /locked/internal-app \
+# Mac owner only, next move comparison using the new runtime pins and fresh output.
+python3 -B current_refresh.py run --case move1 --root /locked/product --binary /locked/internal-app \
   --producer /locked/capture-producer --evidence /fresh/current-refresh-evidence
 ```
 
-Portable coverage is the original160 unchanged tests plus25 new regressions,
+Portable coverage retains the original160 checks (the exact pin expectation is
+rebound to this product) plus35 current-refresh regressions,
 including real product diagnostic validators with synthetic probe journals,
 wrong auth/snapshot/nonce, unchanged launch origin, raw HID/foreground replay,
 copied predicate/provenance audit, >200ms continuation and late history/geometry
-failure, import shadows, nav→move order and continuous-tail/replay failure.
+failure, canonical import shadows, default nav→move order, explicit case selection,
+continuous-tail/replay failure and rejection of old/public runtime identities.
 No native acquisition, presentation, flicker or Mac functional result is claimed.
 
 ## Preserved historical strict full12 contract: v3.6.3-bound candidate
@@ -87,7 +118,10 @@ No previous product/build hashes are reused as runtime pins.
 The original set60 API timeout remains an unresolved diagnostic hypothesis;
 this guard candidate does not claim that the display API has been repaired.
 
-The five frozen identities are:
+The five identities below describe the historical42db040 publication, not the
+current runtime binding. The current binding is listed above; the strict command
+implementation remains preserved and is not invoked by this current-refresh task.
+No new60Hz requirement is introduced. Historical identities are:
 
 - Product commit: 42db040374b0c1643200b7f04e95b03d272ef792
 - Source manifest: 0235f9c9bd89d76dd5b101dc2fd99ba226582f1431464467696377664088067b

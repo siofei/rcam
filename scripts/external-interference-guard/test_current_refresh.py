@@ -42,6 +42,42 @@ def dump(path, value):
     path.write_text(json.dumps(value, allow_nan=False) + '\n')
 
 
+class ReboundIdentity(unittest.TestCase):
+    def test_new_source_has_672_authenticated_entries_and_unchanged_runner(self):
+        pins=matrix.require_pins()
+        entries=matrix.verify_source(PRODUCT,pins)
+        self.assertEqual(len(entries),672)
+        self.assertEqual(entries['scripts/run_pmix_native.py'],
+                         '20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c')
+
+    def test_old_source_manifest_pin_cannot_authenticate_new_source(self):
+        old=replace(matrix.require_pins(),commit='42db040374b0c1643200b7f04e95b03d272ef792',
+                    manifest_sha='0235f9c9bd89d76dd5b101dc2fd99ba226582f1431464467696377664088067b')
+        with self.assertRaisesRegex(RuntimeError,'locked source manifest'):
+            matrix.verify_source(PRODUCT,old)
+
+    def test_old_or_public_app_and_old_capture_fail_before_acquisition(self):
+        pins=matrix.require_pins()
+        wrong=[('8223232d90072e7587cba09f6cf0963749f8e04a31f6ea89dce47b21ba02353f',pins.producer_sha),
+               ('3638c91accecabd86b7d50e898ecdcd6b65cf099592e3a8befa20883d24a94f2',pins.producer_sha),
+               (pins.binary_sha,'bf3a6b2f879d28b9fe1aa8a3a724639bbd1ff6d1191fbc8666f0ffbd1f863270')]
+        actual_sha=guard.sha
+        with tempfile.TemporaryDirectory() as temporary:
+            home=Path(temporary).resolve(strict=True)
+            binary=home/'app';binary.write_bytes(b'synthetic-app')
+            producer=home/'producer';producer.write_bytes(b'synthetic-capture')
+            evidence=home/'never-acquired'
+            for app_sha,capture_sha in wrong:
+                def synthetic_runtime_sha(path):
+                    return {binary:app_sha,producer:capture_sha}.get(path) or actual_sha(path)
+                with self.subTest(app=app_sha,capture=capture_sha),patch.object(guard,'sha',side_effect=synthetic_runtime_sha), \
+                     patch.object(current_refresh.sys,'platform','darwin'), \
+                     patch.object(matrix,'compile_monitor') as compiler,patch.object(matrix,'ContinuousSentinel') as sentinel, \
+                     self.assertRaisesRegex(RuntimeError,'exact app/producer pins'):
+                    current_refresh.run(root=PRODUCT,binary=binary,producer=producer,evidence=evidence,case='move1')
+                compiler.assert_not_called();sentinel.assert_not_called();self.assertFalse(evidence.exists())
+
+
 class Preserve(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
