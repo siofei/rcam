@@ -41,7 +41,7 @@ def seal(path, rows):
 class TemporaryTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self.tmp.name)
+        self.base = Path(self.tmp.name).resolve(strict=True)
     def tearDown(self): self.tmp.cleanup()
 
 class StreamTests(TemporaryTest):
@@ -299,6 +299,24 @@ class BudgetTests(TemporaryTest):
         for destination in (root/'evidence',link/'evidence',self.base):
             with self.assertRaises(RuntimeError):diag.fresh_destination(destination,root)
         self.assertEqual(diag.fresh_destination(self.base/'new',root),self.base/'new')
+    def test_macos_var_alias_fixture_resolves_but_runtime_still_rejects_alias(self):
+        private_var=self.base/'private'/'var';folders=private_var/'folders'
+        folders.mkdir(parents=True)
+        alias=self.base/'var';alias.symlink_to(private_var,target_is_directory=True)
+        manager=tempfile.TemporaryDirectory(dir=str(alias/'folders'))
+        fixture=TemporaryTest()
+        with patch.object(tempfile,'TemporaryDirectory',return_value=manager):
+            fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        raw_base=Path(manager.name)
+        self.assertIn(alias,raw_base.parents)
+        self.assertNotEqual(raw_base,fixture.base)
+        self.assertEqual(fixture.base,raw_base.resolve(strict=True))
+        self.assertTrue(os.path.samefile(raw_base,fixture.base))
+        root=self.base/'product';root.mkdir()
+        with self.assertRaisesRegex(RuntimeError,'fresh nonsymlink absolute evidence'):
+            diag.fresh_destination(raw_base/'new',root)
+        self.assertEqual(diag.fresh_destination(fixture.base/'new',root),fixture.base/'new')
 
 
 class ParentLifecycleTests(TemporaryTest):
