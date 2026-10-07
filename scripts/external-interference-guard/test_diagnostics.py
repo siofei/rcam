@@ -6,7 +6,9 @@ from pathlib import Path
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 import diagnose_display_prep as diag
@@ -120,6 +122,24 @@ class StreamTests(TemporaryTest):
         self.assertIsNone(rows[0]['error']);self.assertIsNotNone(rows[1]['error'])
 
 class TraceTests(TemporaryTest):
+    def test_concurrent_real_parent_fifo_preserves_every_producer_order(self):
+        writer=diag.TraceWriter(self.base/'trace',NONCE)
+        start=threading.Barrier(5);errors=[]
+        def produce(producer):
+            try:
+                start.wait(timeout=1)
+                for ordinal in range(30):writer.submit(dict(event='item',producer=producer,ordinal=ordinal))
+            except BaseException as error:errors.append(error)
+        threads=[threading.Thread(target=produce,args=(p,)) for p in range(4)]
+        for thread in threads:thread.start()
+        start.wait(timeout=1)
+        for thread in threads:thread.join(timeout=2);self.assertFalse(thread.is_alive())
+        self.assertEqual(errors,[]);writer.finish()
+        rows=list(diag.sealed_rows(self.base/'trace',NONCE,diag.PARENT_LIMIT))
+        self.assertEqual(len(rows),122)
+        for producer in range(4):
+            self.assertEqual([r['ordinal'] for r in rows if r.get('producer')==producer],list(range(30)))
+        with self.assertRaisesRegex(RuntimeError,'failed/closed'):writer.submit(dict(event='late'))
     def test_fifo_capacity_rejects_without_overwrite(self):
         writer=diag.TraceWriter(self.base/'trace',NONCE,capacity=2,start=False)
         writer.submit({'event':'first'});before=list(writer.pending)
@@ -151,11 +171,383 @@ class TraceTests(TemporaryTest):
                 path.write_bytes(raw)
                 with self.assertRaises(RuntimeError):list(diag.sealed_rows(path,NONCE,diag.PARENT_LIMIT))
 
+class FailureChannelTests(TemporaryTest):
+    def test_harness_extracts_candidate_types_and_fifo_verbatim(self):
+        source=Path(diag.__file__).with_name('interference.swift').read_text()
+        start=source.index('// Diagnostic-only values cross the FIFO.')
+        end=source.index('\n@MainActor\nprivate final class InterferenceObserver')
+        harness=swift_fifo_harness(source)
+        self.assertTrue(harness.startswith('import Darwin\nimport Foundation\nimport os\n'+source[start:end]))
+        self.assertTrue(harness.endswith(SWIFT_FIFO_HARNESS))
+        emit=source[source.index('    private func emit(_ value: [String: Any])'):source.index('    private func fatal(_ reason: String)')]
+        self.assertEqual(harness.count(emit),1)
+        self.assertTrue(harness.splitlines()[3].startswith('// Diagnostic-only'))
+        self.assertEqual(harness.count('private final class DiagnosticFIFO:'),1)
+        self.assertNotIn('@unchecked',harness)
+    def setUp(self):
+        super().setUp()
+        self.receiver,self.peer=socket.socketpair(socket.AF_UNIX,socket.SOCK_DGRAM)
+        self.receiver.setblocking(False);self.peer.setblocking(False)
+        self.addCleanup(self.peer.close)
+        self.channel=diag.FailureChannel(self.receiver,NONCE,'owned',17,SHA,SHA)
+        self.addCleanup(self.channel.close)
+        self.fact=dict(schema_version=1,event='diagnostic_failure',clock_domain=CLOCK_DOMAIN,
+            nonce=NONCE,role='owned',pid=17,source_sha256=SHA,executable_sha256=SHA,reason='QUEUE_COUNT',
+            payload_kind='cycle',observed_ns=BASE_NS+2,submit_enter_ns=BASE_NS,lock_acquired_ns=BASE_NS+1,
+            queue_count=256,retained_bytes=12345)
+    def send(self,value):self.peer.send((json.dumps(value)+'\n').encode())
+    def test_actual_datagram_and_unknown_not_clean(self):
+        self.channel.poll();self.assertEqual(self.channel.summary()['status'],'UNKNOWN')
+        self.send(self.fact);self.channel.poll()
+        self.assertEqual(self.channel.summary()['receipt'],self.fact)
+        self.assertEqual(self.channel.summary()['status'],'OBSERVED')
+    def test_bad_identity_time_schema_and_unknown_reason_rejected(self):
+        for key,value in (('nonce','wrong'),('pid',18),('role','continuous'),('source_sha256','b'*64),
+                          ('executable_sha256','b'*64),('reason','LOCK_CONTENTION_PROVEN'),('schema_version',True),
+                          ('lock_acquired_ns',BASE_NS-1),('queue_count',257),('observed_ns',None)):
+            with self.subTest(key=key):
+                self.channel.error=None;self.channel.raw=None;self.channel.receipt=None
+                self.send(dict(self.fact,**{key:value}));self.channel.poll()
+                self.assertEqual(self.channel.summary()['status'],'INVALID')
+    def test_raw_failure_preserves_known_phase_bytes_and_unknown_write_return(self):
+        common=dict(raw_record_ordinal=1,event='ready',encode_enter_ns=BASE_NS)
+        for reason,emit in (
+            ('RAW_ENCODE',dict(common,state='THREW',error='raw encode/write failed')),
+            ('RAW_WRITE',dict(common,state='THREW',error='raw encode/write failed',encode_return_ns=BASE_NS+1,
+                write_enter_ns=BASE_NS+2,expected_bytes=100,offset_before=0)),
+            ('RAW_CAPACITY',dict(common,state='IN_PROGRESS',encode_return_ns=BASE_NS+1,
+                expected_bytes=100,offset_before=diag.RAW_LIMIT))):
+            with self.subTest(reason=reason):
+                fact=dict(self.fact,reason=reason,payload_kind='emit_return',observed_ns=BASE_NS+3,raw_emit=emit)
+                self.channel.raw=None;self.channel.receipt=None;self.send(fact);self.channel.poll()
+                self.assertIsNone(self.channel.error);self.assertEqual(self.channel.receipt['raw_emit'],emit)
+                for key,value in (('write_return_ns',BASE_NS+3),('offset_after',100),('raw_record_ordinal',True)):
+                    self.channel.raw=None;self.channel.receipt=None;self.channel.error=None
+                    self.send(dict(fact,raw_emit=dict(emit,**{key:value})));self.channel.poll()
+                    self.assertEqual(self.channel.summary()['status'],'INVALID')
+                self.channel.error=None
+    def test_duplicate_even_later_and_truncated_partial_control_rejected(self):
+        self.send(self.fact);self.channel.poll();self.send(self.fact);self.channel.poll()
+        self.assertIn('duplicate',self.channel.error)
+        for raw in (b'{partial',b'{}\ntrailing\n',b'a'*(diag.FAILURE_LIMIT+1)):
+            self.channel.error=None;self.channel.raw=None;self.channel.receipt=None
+            self.peer.send(raw);self.channel.poll();self.assertIsNotNone(self.channel.error)
+        self.channel.error=None;self.channel.raw=None;self.channel.receipt=None
+        import array
+        self.peer.sendmsg([(json.dumps(self.fact)+'\n').encode()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[self.peer.fileno()]))])
+        self.channel.poll();self.assertIn('control',self.channel.error)
+    def test_nonblocking_full_or_closed_channel_cannot_manufacture_receipt(self):
+        self.peer.setsockopt(socket.SOL_SOCKET,socket.SO_SNDBUF,4096)
+        for _ in range(10000):
+            try:self.peer.send(b'x'*diag.FAILURE_LIMIT)
+            except BlockingIOError:break
+        else:self.fail('failed to reach actual nonblocking channel capacity')
+        with self.assertRaises(BlockingIOError):self.send(self.fact)
+        self.channel.poll();self.assertEqual(self.channel.summary()['status'],'INVALID')
+        self.receiver.close()
+        with self.assertRaises(OSError):self.send(self.fact)
+    def test_receipt_latches_failure_preserves_firstcause_and_starts_no_child(self):
+        run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
+        run.observers=[dict(role='owned',failure_channel=self.channel)]
+        self.send(self.fact)
+        with patch.object(diag.subprocess,'Popen',side_effect=AssertionError('no APP or child permitted')):
+            run.poll_failure_channels()
+        self.assertIn('QUEUE_COUNT',run.failure);self.assertIsNone(run.child)
+        run.failure='original gap';run.poll_failure_channels();self.assertEqual(run.failure,'original gap')
+    def test_spawn_failure_closes_only_channel_and_handles(self):
+        run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
+        descriptors=[]
+        def rejected(*args,**kwargs):
+            self.assertEqual(len(kwargs['pass_fds']),1)
+            descriptors.extend([*kwargs['pass_fds'],kwargs['stdout'].fileno(),kwargs['stderr'].fileno()])
+            self.assertEqual(str(kwargs['pass_fds'][0]),kwargs['env']['RCAM_DIAG_FAILURE_FD'])
+            raise OSError('synthetic spawn failure')
+        with patch.object(diag.subprocess,'Popen',side_effect=rejected):
+            with self.assertRaisesRegex(OSError,'spawn failure'):run.start_observer('owned',self.base/'observer',SHA,SHA)
+        self.assertEqual(run.observers,[])
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):os.fstat(descriptor)
+    def test_socketpair_failure_closes_open_logs_starts_no_process(self):
+        run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
+        opened=[];original=Path.open
+        def tracked(path,*args,**kwargs):
+            handle=original(path,*args,**kwargs)
+            if path.name.endswith(('.stdout','.stderr')):opened.append(handle)
+            return handle
+        with patch.object(diag.socket,'socketpair',side_effect=OSError('socket allocation failure')), \
+             patch.object(diag.subprocess,'Popen',side_effect=AssertionError('must not start observer')), \
+             patch.object(Path,'open',tracked):
+            with self.assertRaisesRegex(OSError,'allocation'):run.start_observer('owned',self.base/'observer',SHA,SHA)
+        self.assertEqual(run.observers,[]);self.assertEqual(len(opened),2)
+        self.assertTrue(all(handle.closed for handle in opened))
+    def test_adapter_failure_retains_owned_monitor_and_receive_endpoint(self):
+        run=diag.DiagnosticRun(self.base,self.base/'APP',self.base/'CAP',self.base)
+        descriptors=[]
+        def spawned(*args,**kwargs):
+            descriptors.extend(kwargs['pass_fds']);return Monitor()
+        with patch.object(diag.subprocess,'Popen',side_effect=spawned), \
+             patch.object(diag,'DiagnosticTail',side_effect=RuntimeError('adapter setup failure')):
+            with self.assertRaisesRegex(RuntimeError,'adapter setup'):run.start_observer('owned',self.base/'observer',SHA,SHA)
+        self.assertEqual(len(run.observers),1)
+        item=run.observers[0];self.assertEqual(item['monitor'].pid,17);self.assertIsNone(item['tail'])
+        os.fstat(item['failure_channel'].receiver.fileno())
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):os.fstat(descriptor)
+        for handle in item['handles']:handle.close()
+        item['failure_channel'].close()
+
+
+def swift_fifo_harness(source):
+    """Extract the candidate FIFO verbatim; hooks exist only in this test file."""
+    checked=source[source.index('// Diagnostic-only values cross the FIFO.'):source.index(
+        '\n@MainActor\nprivate final class InterferenceObserver')]
+    emit=source[source.index('    private func emit(_ value: [String: Any])'):source.index('    private func fatal(_ reason: String)')]
+    raw_actor='''
+@MainActor
+private final class RawIOTest {
+    private let nonce: String, diagnostic: (any DiagnosticSink)?
+    private var rawOrdinal = 0, rawBytes: UInt64 = 0
+    private var previousEmit: EmitFact?
+    init(_ nonce: String, _ sink: any DiagnosticSink) { self.nonce = nonce; diagnostic = sink }
+    private func monotonicNowNS() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
+    private func trace(_ value: TracePayload) { if let diagnostic, !diagnostic.submit(value) { exit(74) } }
+'''+emit+'''
+    func test(_ mode: String) {
+        if mode == "raw-capacity" { rawBytes = 67108864 }
+        if mode == "raw-write" { try? FileHandle.standardOutput.close() }
+        emit(["event": "ready", "synthetic": mode == "raw-encode" ? (Double.nan as Any) : (true as Any)])
+        exit(1)
+    }
+}
+'''
+    return 'import Darwin\nimport Foundation\nimport os\n'+checked+raw_actor+SWIFT_FIFO_HARNESS
+
+
+SWIFT_FIFO_HARNESS = r'''
+private func check(_ value: Bool, _ message: String) {
+    if !value { FileHandle.standardError.write(Data((message + "\n").utf8)); exit(1) }
+}
+private func payload(_ ordinal: Int) -> TracePayload {
+    .emit_start(EmitFact(raw_record_ordinal: ordinal, event: "test", sample_seq: nil))
+}
+@available(macOS 13.0, *)
+private extension DiagnosticFIFO {
+    func hold(_ entered: DispatchSemaphore, _ released: DispatchSemaphore) {
+        state.withLock { _ in entered.signal(); released.wait() }
+    }
+    func testCapacity(memory: Bool) {
+        let field = FieldBuild(source: "hid", event_type: "anyInput", build_enter_ns: 1, build_return_ns: 2)
+        var cycle = CycleFact(cycle_id: 1, sample_seq: 1, timer_enter_ns: 1, previous_emit: nil)
+        cycle.field_build = Array(repeating: field, count: 64)
+        let value: TracePayload = memory ? .cycle(cycle) : payload(1)
+        let entered = DispatchTime.now().uptimeNanoseconds
+        let rejected = state.withLock { state in
+            while true {
+                let result = admit(value, entered: entered, state: &state)
+                if result.failure != nil {
+                    let before = state.queue.count
+                    let retained = state.retainedFieldBytes
+                    let again = admit(value, entered: entered, state: &state)
+                    check(result.failure == again.failure && before == state.queue.count &&
+                        retained == state.retainedFieldBytes, "rejection changed the actual queue")
+                    return result
+                }
+            }
+        }
+        check(rejected.failure == (memory ? .queueMemory : .queueCount), "wrong actual capacity cause")
+        check(!admitted(rejected, value: value, entered: entered), "capacity accepted")
+    }
+    func waitForWorker() { check(finished.wait(timeout: .now() + .seconds(2)) == .success, "worker did not return") }
+    func makeOutputReadOnly(_ path: String) {
+        let replacement = open(path, O_RDONLY)
+        check(replacement >= 0 && dup2(replacement, fd) == fd, "readonly injection failed")
+        close(replacement)
+    }
+    func blockOutput() -> Int32 {
+        var ends: [Int32] = [0, 0]
+        check(pipe(&ends) == 0, "test pipe failed")
+        check(fcntl(ends[1], F_SETFL, O_NONBLOCK) == 0, "nonblocking test pipe failed")
+        let data = Data(repeating: 0, count: 4096)
+        var full = false
+        for _ in 0..<4096 {
+            let n = data.withUnsafeBytes { Darwin.write(ends[1], $0.baseAddress!, $0.count) }
+            if n < 0 { check(errno == EAGAIN, "pipe fill failed"); full = true; break }
+        }
+        check(full && fcntl(ends[1], F_SETFL, 0) == 0 && dup2(ends[1], fd) == fd, "blocking output injection failed")
+        close(ends[1]); return ends[0]
+    }
+    func waitForDequeue() {
+        let end = DispatchTime.now() + .seconds(1)
+        while !state.withLock({ $0.queue.isEmpty }) {
+            check(DispatchTime.now() < end, "worker did not dequeue")
+            Thread.sleep(forTimeInterval: 0.001)
+        }
+    }
+}
+@main
+private struct FIFOTestMain {
+    @MainActor
+    static func main() {
+        if #available(macOS 13.0, *) { run() } else { exit(64) }
+    }
+    @available(macOS 13.0, *)
+    @MainActor
+    static func run() {
+        // Harness only: observe writer failure without killing the test process.
+        signal(SIGTERM, SIG_IGN)
+        signal(SIGPIPE, SIG_IGN) // harness-only EPIPE injection, never production
+        let mode = CommandLine.arguments[1], path = CommandLine.arguments[2]
+        let fifo = DiagnosticFIFO(path: path, nonce: CommandLine.arguments[3])
+        if mode.hasPrefix("raw-") {
+            RawIOTest(CommandLine.arguments[3], fifo).test(mode)
+        } else if mode == "count" || mode == "memory" || mode == "channel-full" || mode == "channel-closed" {
+            fifo.testCapacity(memory: mode == "memory")
+        } else if mode == "wait" || mode == "terminal-busy" || mode == "shared-deadline" {
+            let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+            let holderDone = DispatchSemaphore(value: 0)
+            Thread { fifo.hold(entered, release); holderDone.signal() }.start()
+            check(entered.wait(timeout: .now() + .seconds(1)) == .success, "holder absent")
+            if mode == "wait" {
+                let called = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+                Thread { called.signal(); check(fifo.submit(payload(1)), "ordinary contention rejected"); done.signal() }.start()
+                check(called.wait(timeout: .now() + .seconds(1)) == .success, "producer absent")
+                check(done.wait(timeout: .now() + .milliseconds(60)) == .timedOut, "producer did not wait")
+                release.signal()
+                check(done.wait(timeout: .now() + .seconds(1)) == .success, "producer stuck after release")
+                check(holderDone.wait(timeout: .now() + .seconds(1)) == .success, "holder stuck")
+                // Exercise actual repeated admission/drain, with independent EOF validation in Python.
+                for ordinal in 2...100 { check(fifo.submit(payload(ordinal)), "ordinary admission failed") }
+                fifo.terminate(.terminal(nil), deadline: .now() + .milliseconds(200))
+            } else {
+                let started = DispatchTime.now(), deadline = started + .milliseconds(200)
+                if mode == "shared-deadline" { Thread.sleep(forTimeInterval: 0.15) }
+                fifo.terminate(.terminal(nil), deadline: deadline)
+                let returned = DispatchTime.now().uptimeNanoseconds
+                // Release only after terminate returned: a blocking terminal path deadlocks this test.
+                release.signal()
+                check(holderDone.wait(timeout: .now() + .seconds(1)) == .success, "holder stuck")
+                print("{\"started_ns\":\(started.uptimeNanoseconds),\"deadline_ns\":\(deadline.uptimeNanoseconds),\"returned_ns\":\(returned)}")
+                return
+            }
+        } else if mode == "closed" {
+            fifo.terminate(.terminal(nil), deadline: .now() + .milliseconds(200))
+            check(!fifo.submit(payload(1)), "record admitted after terminal")
+        } else if mode == "write" || mode == "line" || mode == "worker-busy" {
+            let end = DispatchTime.now() + .seconds(1)
+            while true {
+                let data = try? Data(contentsOf: URL(fileURLWithPath: path))
+                if data?.last == 10 { break }
+                check(DispatchTime.now() < end, "header was not written")
+                Thread.sleep(forTimeInterval: 0.001)
+            }
+            if mode == "worker-busy" {
+                let reader = fifo.blockOutput()
+                check(fifo.submit(payload(1)), "blocked write admission failed")
+                fifo.waitForDequeue()
+                let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+                let done = DispatchSemaphore(value: 0)
+                Thread { fifo.hold(entered, release); done.signal() }.start()
+                check(entered.wait(timeout: .now() + .seconds(1)) == .success, "holder absent")
+                close(reader) // actual worker EPIPE while the queue owner remains held
+                fifo.waitForWorker()
+                release.signal()
+                check(done.wait(timeout: .now() + .seconds(1)) == .success, "holder stuck")
+                // Missed failed latch can accept until SIGTERM; acceptance cannot certify completeness.
+                check(fifo.submit(payload(2)), "test did not exercise missed failed latch")
+                print("{}"); return
+            } else if mode == "write" {
+                fifo.makeOutputReadOnly(path)
+                check(fifo.submit(payload(1)), "write injection admission failed")
+            } else {
+                let field = FieldBuild(source: "hid", event_type: "anyInput", build_enter_ns: 1, build_return_ns: 2)
+                var cycle = CycleFact(cycle_id: 1, sample_seq: 1, timer_enter_ns: 1, previous_emit: nil)
+                cycle.field_build = Array(repeating: field, count: 128)
+                check(fifo.submit(.cycle(cycle)), "line injection admission failed")
+            }
+            fifo.waitForWorker()
+            check(!fifo.submit(payload(2)), "failed writer accepted another record")
+        } else { exit(64) }
+        print("{}")
+    }
+}
+'''
+
+
+@unittest.skipUnless(sys.platform=='darwin', 'NOT_RUN: same-source Swift FIFO requires macOS Swift6')
+class SwiftFIFOTests(TemporaryTest):
+    def test_checked_swift_fifo_concurrency_capacity_terminal_and_failure(self):
+        source=Path(diag.__file__).with_name('interference.swift')
+        harness=self.base/'FIFO.swift';harness.write_text(swift_fifo_harness(source.read_text()))
+        executable=self.base/'FIFO'
+        compile_command=['/usr/bin/swiftc','-parse-as-library','-swift-version','6',
+            '-strict-concurrency=complete','-warnings-as-errors',str(harness),'-o',str(executable)]
+        compiled=subprocess.run(compile_command,capture_output=True,timeout=30)
+        self.assertEqual(compiled.returncode,0,compiled.stderr.decode())
+        source_sha,harness_sha,exe_sha=guard.sha(source),guard.sha(harness),guard.sha(executable)
+        for mode,reason in (('wait',None),('terminal-busy','TERMINAL_LOCK_BUSY'),
+            ('shared-deadline','TERMINAL_LOCK_BUSY'),('count','QUEUE_COUNT'),('memory','QUEUE_MEMORY'),
+            ('closed','CLOSED'),('write','WRITE'),('worker-busy','WRITE'),('line','LINE_CAPACITY'),
+            ('raw-encode','RAW_ENCODE'),('raw-write','RAW_WRITE'),('raw-capacity','RAW_CAPACITY'),
+            ('open','SIDECAR_OPEN'),('channel-full',None),('channel-closed',None)):
+            with self.subTest(mode=mode):
+                receiver,peer=socket.socketpair(socket.AF_UNIX,socket.SOCK_DGRAM)
+                receiver.setblocking(False);peer.setblocking(False)
+                sidecar=self.base/(mode+'.jsonl')
+                if mode=='open':sidecar.write_bytes(b'preexisting')
+                channel=None
+                try:
+                    if mode=='channel-full':
+                        peer.setsockopt(socket.SOL_SOCKET,socket.SO_SNDBUF,4096)
+                        for _ in range(10000):
+                            try:peer.send(b'x'*diag.FAILURE_LIMIT)
+                            except BlockingIOError:break
+                        else:self.fail('failed to fill actual channel')
+                    if mode=='channel-closed':receiver.close()
+                    env=dict(os.environ,RCAM_DIAG_FAILURE_FD=str(peer.fileno()),RCAM_DIAG_ROLE='owned',
+                             RCAM_DIAG_SOURCE_SHA=source_sha,RCAM_DIAG_EXECUTABLE_SHA=exe_sha)
+                    with subprocess.Popen([str(executable),mode,str(sidecar),NONCE],env=env,
+                        pass_fds=(peer.fileno(),),stdout=subprocess.PIPE,stderr=subprocess.PIPE) as child:
+                        peer.close()
+                        try:stdout,stderr=child.communicate(timeout=4)
+                        except subprocess.TimeoutExpired:
+                            child.kill();stdout,stderr=child.communicate();self.fail('FIFO harness exceeded bounded lifetime')
+                        self.assertEqual(child.returncode,74 if mode.startswith('raw-') or mode=='open' else 0,stderr.decode())
+                        if mode!='channel-closed':
+                            channel=diag.FailureChannel(receiver,NONCE,'owned',child.pid,source_sha,exe_sha)
+                            channel.poll()
+                    if mode=='wait':
+                        self.assertEqual(channel.summary()['status'],'UNKNOWN')
+                        rows=list(diag.sealed_rows(sidecar,NONCE,diag.OBSERVER_LIMIT,role='owned',pid=child.pid))
+                        emits=[r for r in rows if 'emit_start' in r.get('payload',{})]
+                        self.assertEqual([r['payload']['emit_start']['_0']['raw_record_ordinal'] for r in emits],list(range(1,101)))
+                        self.assertGreaterEqual(emits[0]['lock_acquired_ns']-emits[0]['submit_enter_ns'],20_000_000)
+                        self.assertTrue(all(0<r['submit_enter_ns']<=r['lock_acquired_ns'] for r in rows))
+                    elif reason:
+                        self.assertEqual(channel.summary()['status'],'OBSERVED',channel.summary())
+                        self.assertEqual(channel.receipt['reason'],reason)
+                        if mode=='closed':
+                            self.assertEqual(len(list(diag.sealed_rows(sidecar,NONCE,diag.OBSERVER_LIMIT))),2)
+                        else:
+                            with self.assertRaises(RuntimeError):list(diag.sealed_rows(sidecar,NONCE,diag.OBSERVER_LIMIT))
+                        if mode in ('terminal-busy','shared-deadline'):
+                            timings=json.loads(stdout)
+                            self.assertEqual(timings['deadline_ns']-timings['started_ns'],200_000_000)
+                            self.assertLessEqual(timings['returned_ns']-timings['started_ns'],250_000_000)
+                            self.assertNotIn('lock_acquired_ns',channel.receipt)
+                        if mode=='write':self.assertEqual(channel.receipt['errno_code'],9)
+                        if mode=='worker-busy':self.assertEqual(channel.receipt['errno_code'],32)
+                    elif mode=='channel-full':self.assertEqual(channel.summary()['status'],'INVALID')
+                finally:
+                    peer.close();receiver.close()
+        print(json.dumps(dict(swift_fifo_harness='SOURCE_ONLY_CONCURRENCY_TEST',source_sha256=source_sha,
+            harness_sha256=harness_sha,executable_sha256=exe_sha,stage_PASS_claim=False)))
+
 class ObserverProofTests(TemporaryTest):
     def setUp(self):
         super().setUp();self.raw=self.base/'raw';self.side=self.base/'side';self.rows=[]
         originals=[ready(),sample(),sample(2)];raws=[lines([row]) for row in originals];self.raw.write_bytes(b''.join(raws))
-        def add(kind,fact):self.rows.append({'role':'owned','pid':17,'payload':{kind:{'_0':fact}}})
+        def add(kind,fact):self.rows.append({'role':'owned','pid':17,'submit_enter_ns':BASE_NS-10000,
+            'lock_acquired_ns':BASE_NS-9999,'payload':{kind:{'_0':fact}}})
         add('header',dict(source_sha256=SHA,executable_sha256=SHA,queue_limit=256,memory_limit_bytes=1048576,
                          sidecar_limit_bytes=diag.OBSERVER_LIMIT,line_limit_bytes=8192,raw_limit_bytes=diag.RAW_LIMIT))
         offset=0;last=None;cycle=None
@@ -179,6 +571,15 @@ class ObserverProofTests(TemporaryTest):
         add('terminal',cycle);seal(self.side,self.rows)
     def verify(self):return diag.verify_observer(self.side,self.raw,NONCE,'owned',17,SHA,SHA)
     def test_full_synthetic_trace(self):self.assertEqual(self.verify()['cycles'],2)
+    def test_admission_wait_is_actual_and_missing_reversed_bool_fail(self):
+        for mutation in ('missing', 'reversed', 'bool'):
+            with self.subTest(mutation=mutation):
+                rows=deepcopy(self.rows)
+                if mutation=='missing':rows[0].pop('lock_acquired_ns')
+                elif mutation=='reversed':rows[0]['lock_acquired_ns']=rows[0]['submit_enter_ns']-1
+                else:rows[0]['lock_acquired_ns']=True
+                seal(self.side,rows)
+                with self.assertRaisesRegex(RuntimeError,'admission actual time'):self.verify()
     def test_raw_extra_partial_rejects_even_if_sealed(self):
         with self.raw.open('ab') as f:f.write(b'{partial')
         with self.assertRaisesRegex(RuntimeError,'raw EOF'):self.verify()

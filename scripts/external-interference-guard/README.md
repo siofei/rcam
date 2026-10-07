@@ -294,7 +294,16 @@ The observed full12 remains **0/12 FAIL before APP launch**: continuous35→36 g
 interval. The measured98 CG brackets are short. These facts do not identify
 WindowServer, runtime, scheduling, JSON/raw IO or control reads as the cause.
 No full12 retry, threshold relaxation or production optimization is part of this
-candidate. Raw packets remain private; no Library download/upload is needed.
+candidate. Raw packets remain private and never enter this repository.
+
+The later `d5bf492` controlled diagnostic remains **BLOCKED before child/helper
+launch**: continuous exited74 in its first cycle, with no terminal/seal; owned
+ended-15 but the original two-stream integrity check failed. Only one sample per
+observer exists, so no sampling gap can be measured. Source shows that d5 collapsed
+transient try-lock refusal, capacity, closing and writer failure into one `false`;
+the actual rejection cause was not recorded and remains UNKNOWN. This follow-up
+repairs diagnostic admission/reporting only. It does not explain the earlier
+full12 gaps or authorize another display run.
 
 A fourth observer argument explicitly enables its separate diagnostic sidecar.
 The original three-argument path retains original raw JSON,50ms main/common Timer,
@@ -307,14 +316,16 @@ this exact source with the original strict Swift6 command before any run.
 
 Each observer sidecar is schema1, with nonce/role/PID/sourceSHA/executableSHA,
 `darwin_uptime_raw_ns`, explicit queue/memory/byte/line limits and sequential rows.
-Typed payloads are encoded by a separate strict FIFO worker. Each raw event,
+Typed payloads are encoded by a separate strict FIFO worker. Each admitted row
+also records actual `submit_enter_ns` and `lock_acquired_ns`; the parent checks
+their presence and order. Each raw event,
 including ready/binding/sample/fatal, has its own ordinal and independent
 `emit_start`, `emit_progress` and `emit_return` facts; no intermediate emit is
 replaced by a later sample. A cycle contains the previous returned emit reference,
 control entry/return, the exact original sample endpoints,34 dictionary build
 brackets and timer entry/exit. The raw sample end remains before encoding/writing.
 `emit_progress` records only observed pre-write facts. Its write bracket includes
-the bounded diagnostic submission hook; instrumentation overhead cannot be treated
+the diagnostic submission hook; instrumentation overhead cannot be treated
 as an uninstrumented performance measurement. A missing return never gains a time
 from file length or a later sample. Partial cycle/emit traces remain incomplete.
 
@@ -322,14 +333,48 @@ Observer queue<=256; actual queue buffer and every retained field Array capacity
 are charged against768KiB, leaving256KiB for the live cycle/encoder/line. Additional
 queue/encoder budget<1MiB, sidecar<=16MiB, line<=8KiB and raw<=64MiB. The parent
 queue additionally accounts encoded bytes<=768KiB and count<=256, with sidecar<=8MiB
-and line<=8KiB; parent diagnostic memory budget is2MiB. Admission contention,
-capacity exhaustion or encode/write errors fail explicitly; no old row is dropped
-or replaced. Queue locks never encompass encoding/IO. There is no stdout worker,
+and line<=8KiB; parent diagnostic memory budget is2MiB. Ordinary admission uses a
+checked short queue lock rather than rejecting a transient lock miss. It may wait
+for a preempted queue owner; that actual wait is measured and the original250ms
+contract still fails if exceeded. Actual capacity, closed and writer failures
+reject explicitly; no old row is dropped or replaced. Memory accounting uses the
+new envelope stride and actual field Array capacities. Queue locks never encompass
+encoding/IO. There is no stdout worker,
 Timer replacement, new sampler or optimized snapshot algorithm.
 
+The parent passes one exact dedicated AF_UNIX/SOCK_DGRAM/O_NONBLOCK peer fd via
+`RCAM_DIAG_FAILURE_FD`; only explicit diagnosis validates/uses it. Outside queue
+locks, main or writer can claim at most one typed failure receipt and attempt one
+nonblocking send<=4096bytes. The winning reporter is not proof of the earliest
+chronological thread failure. It binds nonce/role/PID/source/executable SHA,
+reason enum, payload kind, actual observed timestamps and only known queue/errno
+facts. A busy claim, encode error, full/closed channel or failed send leaves the
+reason UNKNOWN; it never retries or blocks exit waiting for delivery. No stderr
+hook or additional raw/diagnostic worker is added. The parent retains the receive
+endpoint across adapter setup failures, closes the peer after Popen, and performs
+at most one receipt read plus a bounded duplicate probe per poll. Truncation,
+ancillary/control data, duplicate, partial, malformed or wrong binding/pins
+receipts fail. Valid receipts latch diagnostic failure, while raw/input first
+error retains priority. Missing receipt is not proof of clean operation: actual
+stream/exit/joins and independently checked raw/sidecar completeness still decide
+the result. The result retains the supplemental receipt/UNKNOWN/INVALID status.
+Known sidecar-open, raw-encode/write and cumulative raw-capacity failures use the
+same bounded hook; raw receipts carry only the original observed emit state,
+phase, ordinal and byte offsets. No failed write gains a return/offset-after.
+Known raw encode/write failure exits74 after its bounded receipt attempt without
+waiting for a redundant FIFO submit; the pending sidecar emit remains incomplete.
+Worker failure reports before touching queue state, tries its failed latch once
+and signals only itself; a busy latch can leave subsequent submit accepted until
+SIGTERM, but the ended writer/missing seal/receipt cannot certify completeness.
+
 Only diagnosis installs a SIGTERM dispatch source with a MainActor bridge. It
-stops the Timer, submits the last observed cycle and terminal, waits at most200ms
-for FIFO flush, restores default SIGTERM and re-sends it to the same PID. The seal
+starts one absolute200ms deadline, stops the Timer and makes one terminal
+try-lock attempt; no blocking queue snapshot or admission fallback is allowed.
+Busy admission leaves a missing terminal and explicit known cause if its receipt
+arrives. Admission, bounded receipt work and flush share that exact deadline;
+expired budgets start no new terminal work. A defer restores default SIGTERM and
+re-sends it to the same PID. Nonblocking work bounds waiting policy, not kernel or
+scheduler realtime; parent retains its original bounded TERM/KILL. The seal
 is written only after all submitted records have returned from write. Parent
 streaming validation independently checks nonce/role/PID/sequential rows, seal
 counts/bytes/exact EOF, emit ordinals and all actual raw expected bytes/offsets/
@@ -420,12 +465,33 @@ Portable verification:
 python3 -B -m unittest -v test_guard test_matrix test_diagnostics
 ```
 
-The original160 and38 new synthetic tests pass on cloud Python3.12/Linux, including
+The original160 and51 portable diagnostic tests pass on cloud Python3.12/Linux,
+including
 capacity/seal/raw EOF, unknown write return, original stream parity/null gap clock,
 no-APP policy, no late restore after intent, cancellation never complete,
 original deadline/ACK/UNKNOWN, paired failed-helper joins, journal failure retaining
-actual join and concurrent monitor stop. These are ordinary/static tests; the
-cloud has no Swift compiler, AppKit or real display. Strict Swift6 and one real
-controlled Mac diagnostic are **NOT_EXECUTED**. This source candidate must be
-independently reviewed and frozen before that one diagnostic; the historical
-full12 failure, native/full48 NOT_RUN and stage_PASS_claim=false remain unchanged.
+actual join and concurrent monitor stop. New tests exercise the actual concurrent
+parent FIFO, real datagram full/closed/ancillary/duplicate/partial paths, receipt
+identity/time/capacity checks, firstcause preservation, no child spawn, fd release
+after failed Popen/socket allocation and retained ownership after adapter failure.
+These are ordinary/static tests; the cloud has no
+Swift compiler, AppKit or real display.
+
+One additional Darwin-only test is **NOT_RUN on cloud**, not counted as a passing
+Swift test. It compiles the exact candidate FIFO/types extracted verbatim into a
+harness using strict Swift6/concurrency/warnings flags, and prints source/harness/
+executable SHA. Harness-only same-file extensions hold the real queue lock,
+exercise actual admit/dequeue code and inspect rejection without modifying the
+production sampler. It verifies ordinary contention wait/admission,100 ordered
+records and real seal/EOF, count/memory rejection without queue mutation, shared
+terminal deadline/lock-busy incompleteness, rejection after terminal, actual
+readonly-fd writer failure, EPIPE while holding the actual queue lock, line capacity
+and full/closed failure channel. A second extracted verbatim original emit method
+tests actual JSON NaN encode failure, closed stdout write and cumulative raw cap;
+preexisting sidecar tests open failure. Portable tests separately reject partial
+raw/progress and invented failed-write endpoints. No natural typed encode failure is
+injected; the generic encode-error path remains statically reviewed. Mac must run
+this harness and strictly compile the same full observer source after independent
+source review, before any separately authorized controlled diagnostic. This new
+source candidate has no real-display result. Historical full12 FAIL and d5 BLOCKED,
+native/full48 NOT_RUN and stage_PASS_claim=false remain unchanged.

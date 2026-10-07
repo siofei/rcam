@@ -59,6 +59,17 @@ private struct TraceHeader: Sendable, Encodable {
 private enum TracePayload: Sendable, Encodable {
     case header(TraceHeader), cycle_enter(CycleFact), cycle(CycleFact)
     case emit_start(EmitFact), emit_progress(EmitFact), emit_return(EmitFact), terminal(CycleFact?)
+    var kind: String {
+        switch self {
+        case .header: return "header"
+        case .cycle_enter: return "cycle_enter"
+        case .cycle: return "cycle"
+        case .emit_start: return "emit_start"
+        case .emit_progress: return "emit_progress"
+        case .emit_return: return "emit_return"
+        case .terminal: return "terminal"
+        }
+    }
     var retainedFieldBytes: Int {
         switch self {
         case .cycle_enter(let value), .cycle(let value):
@@ -74,14 +85,37 @@ private struct TraceRow: Sendable, Encodable {
     let clock_domain = "darwin_uptime_raw_ns"
     let nonce: String, role: String
     let pid: Int32, sequence: Int
+    let submit_enter_ns: UInt64, lock_acquired_ns: UInt64
     let payload: TracePayload
+}
+private struct QueuedTrace: Sendable {
+    let payload: TracePayload
+    let submit_enter_ns: UInt64, lock_acquired_ns: UInt64
+}
+private enum DiagnosticFailure: String, Sendable, Encodable {
+    case queueCount = "QUEUE_COUNT", queueMemory = "QUEUE_MEMORY", closed = "CLOSED"
+    case writerFailed = "WRITER_FAILED", terminalLockBusy = "TERMINAL_LOCK_BUSY"
+    case flushDeadline = "FLUSH_DEADLINE", encode = "ENCODE"
+    case lineCapacity = "LINE_CAPACITY", sidecarCapacity = "SIDECAR_CAPACITY", write = "WRITE"
+    case sidecarOpen = "SIDECAR_OPEN", rawEncode = "RAW_ENCODE", rawWrite = "RAW_WRITE", rawCapacity = "RAW_CAPACITY"
+}
+private struct FailureReceipt: Sendable, Encodable {
+    let schema_version = 1, event = "diagnostic_failure"
+    let clock_domain = "darwin_uptime_raw_ns"
+    let nonce: String, role: String, source_sha256: String, executable_sha256: String
+    let pid: Int32, reason: DiagnosticFailure, payload_kind: String
+    let observed_ns: UInt64, submit_enter_ns: UInt64?, lock_acquired_ns: UInt64?
+    let queue_count: Int?, retained_bytes: Int?, errno_code: Int32?
+    let raw_emit: EmitFact?
 }
 // At most 256 typed records. Actual queue/field Array capacity is charged
 // against 768KiB, leaving 256KiB for the current cycle, encoder and <=8KiB line.
-// Try-lock submission never waits for encoder/filesystem work.
+// Ordinary admission waits only for typed queue mutation, never encoding/IO.
+// Terminal admission is a single try-lock; admission/flush share one deadline.
 private protocol DiagnosticSink: Sendable {
     func submit(_ value: TracePayload) -> Bool
-    func flush()
+    func terminate(_ value: TracePayload, deadline: DispatchTime)
+    func rawFailure(_ reason: DiagnosticFailure, fact: EmitFact)
 }
 private struct TraceSeal: Sendable, Encodable {
     struct Counts: Sendable, Encodable {
@@ -96,13 +130,15 @@ private struct TraceSeal: Sendable, Encodable {
 @available(macOS 13.0, *)
 private final class DiagnosticFIFO: DiagnosticSink {
     private struct State: Sendable {
-        var queue: [TracePayload] = []
+        var queue: [QueuedTrace] = []
         var failed = false, closing = false
         var retainedFieldBytes = 0
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
+    private let reported = OSAllocatedUnfairLock(initialState: false)
     private let wake = DispatchSemaphore(value: 0), finished = DispatchSemaphore(value: 0)
-    private let fd: Int32, nonce: String, role: String
+    private let fd: Int32, failureFD: Int32, nonce: String, role: String
+    private let sourceSHA: String, executableSHA: String
     init(path: String, nonce: String) {
         func environment(_ name: String, limit: Int) -> String? {
             guard let value = getenv(name), strnlen(value, limit + 1) <= limit else { return nil }
@@ -114,40 +150,110 @@ private final class DiagnosticFIFO: DiagnosticSink {
               let executable = environment("RCAM_DIAG_EXECUTABLE_SHA", limit: 64),
               [source, executable].allSatisfy({ $0.count == 64 && $0.allSatisfy({ "0123456789abcdef".contains($0) }) })
         else { exit(64) }
-        self.role = role; self.nonce = nonce
+        guard let descriptor = environment("RCAM_DIAG_FAILURE_FD", limit: 10), let failureFD = Int32(descriptor),
+              failureFD >= 3 else { exit(64) }
+        let flags = fcntl(failureFD, F_GETFL)
+        var socketType: Int32 = 0
+        var socketLength = socklen_t(MemoryLayout<Int32>.size)
+        var address = sockaddr_un()
+        var addressLength = socklen_t(MemoryLayout<sockaddr_un>.size)
+        let addressResult = withUnsafeMutablePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(failureFD, $0, &addressLength) }
+        }
+        guard flags >= 0, flags & O_NONBLOCK != 0, addressResult == 0, address.sun_family == sa_family_t(AF_UNIX),
+              getsockopt(failureFD, SOL_SOCKET, SO_TYPE, &socketType, &socketLength) == 0,
+              socketType == SOCK_DGRAM else { exit(64) }
+        self.role = role; self.nonce = nonce; self.failureFD = failureFD
+        sourceSHA = source; executableSHA = executable
         fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-        guard fd >= 0 else { exit(74) }
+        guard fd >= 0 else { report(.sidecarOpen, kind: "header", code: errno); exit(74) }
         state.withLock { $0.queue.reserveCapacity(256) }
         guard submit(.header(TraceHeader(source_sha256: source, executable_sha256: executable))) else { exit(74) }
         Thread { [self] in work() }.start()
     }
     func submit(_ value: TracePayload) -> Bool {
-        let accepted = state.withLockIfAvailable { state in
-            guard !state.failed, !state.closing, state.queue.count < 256,
-                  state.queue.capacity * MemoryLayout<TracePayload>.stride +
-                    state.retainedFieldBytes + value.retainedFieldBytes <= 786432 else { return false }
-            state.queue.append(value)
-            state.retainedFieldBytes += value.retainedFieldBytes
-            if case .terminal = value { state.closing = true }
-            return true
-        } ?? false
-        if accepted { wake.signal() }
-        return accepted
+        let entered = DispatchTime.now().uptimeNanoseconds
+        let result = state.withLock { admit(value, entered: entered, state: &$0) }
+        return admitted(result, value: value, entered: entered)
     }
-    func flush() { _ = finished.wait(timeout: .now() + .milliseconds(200)) }
+    private struct Admission: Sendable {
+        let failure: DiagnosticFailure?, acquired: UInt64, count: Int, bytes: Int
+    }
+    private func admit(_ value: TracePayload, entered: UInt64, state: inout State) -> Admission {
+        let acquired = DispatchTime.now().uptimeNanoseconds
+        let bytes = state.queue.capacity * MemoryLayout<QueuedTrace>.stride + state.retainedFieldBytes
+        let failure: DiagnosticFailure?
+        if state.failed { failure = .writerFailed }
+        else if state.closing { failure = .closed }
+        else if state.queue.count >= 256 { failure = .queueCount }
+        else if bytes + value.retainedFieldBytes > 786432 { failure = .queueMemory }
+        else { failure = nil }
+        let result = Admission(failure: failure, acquired: acquired, count: state.queue.count, bytes: bytes)
+        guard failure == nil else { return result }
+        state.queue.append(QueuedTrace(payload: value, submit_enter_ns: entered, lock_acquired_ns: acquired))
+        state.retainedFieldBytes += value.retainedFieldBytes
+        if case .terminal = value { state.closing = true }
+        return result
+    }
+    private func admitted(_ result: Admission, value: TracePayload, entered: UInt64, deadline: DispatchTime? = nil) -> Bool {
+        if let failure = result.failure {
+            report(failure, kind: value.kind, entered: entered, acquired: result.acquired,
+                   count: result.count, bytes: result.bytes, deadline: deadline)
+            return false
+        }
+        wake.signal()
+        return true
+    }
+    func terminate(_ value: TracePayload, deadline: DispatchTime) {
+        let start = DispatchTime.now()
+        guard start < deadline else { return }
+        if let result = state.withLockIfAvailable({ admit(value, entered: start.uptimeNanoseconds, state: &$0) }) {
+            _ = admitted(result, value: value, entered: start.uptimeNanoseconds, deadline: deadline)
+        } else {
+            report(.terminalLockBusy, kind: value.kind, entered: start.uptimeNanoseconds, deadline: deadline)
+        }
+        if finished.wait(timeout: deadline) != .success {
+            report(.flushDeadline, kind: value.kind, entered: start.uptimeNanoseconds, deadline: deadline)
+        }
+    }
+    private func report(_ reason: DiagnosticFailure, kind: String, entered: UInt64? = nil,
+                        acquired: UInt64? = nil, count: Int? = nil, bytes: Int? = nil, code: Int32? = nil,
+                        rawEmit: EmitFact? = nil, deadline: DispatchTime? = nil) {
+        // One bounded nonblocking datagram, independent of the failed FIFO.
+        // Contended claim, encode/send error or a full/closed channel means UNKNOWN.
+        guard deadline == nil || DispatchTime.now() < deadline! else { return }
+        guard reported.withLockIfAvailable({ claimed in
+            if claimed { return false }; claimed = true; return true
+        }) == true else { return }
+        let receipt = FailureReceipt(nonce: nonce, role: role, source_sha256: sourceSHA,
+            executable_sha256: executableSHA, pid: getpid(), reason: reason, payload_kind: kind,
+            observed_ns: DispatchTime.now().uptimeNanoseconds, submit_enter_ns: entered,
+            lock_acquired_ns: acquired, queue_count: count, retained_bytes: bytes, errno_code: code, raw_emit: rawEmit)
+        guard var data = try? JSONEncoder().encode(receipt) else { return }
+        data.append(10)
+        guard data.count <= 4096, deadline == nil || DispatchTime.now() < deadline! else { return }
+        _ = data.withUnsafeBytes { Darwin.send(failureFD, $0.baseAddress!, $0.count, MSG_DONTWAIT) }
+    }
+    func rawFailure(_ reason: DiagnosticFailure, fact: EmitFact) {
+        report(reason, kind: "emit_return", rawEmit: fact)
+    }
     private func work() {
         var bytes = 0, count = 0
+        var failure: DiagnosticFailure = .encode, failureErrno: Int32?
+        var kind = "header"
         defer { close(fd); finished.signal() }
         func output(_ data: Data) throws {
-            guard data.count <= 8192, bytes + data.count <= 16777216 else {
-                throw NSError(domain: "diagnostic capacity", code: 74)
-            }
+            if data.count > 8192 { failure = .lineCapacity; throw NSError(domain: "diagnostic capacity", code: 74) }
+            if bytes + data.count > 16777216 { failure = .sidecarCapacity; throw NSError(domain: "diagnostic capacity", code: 74) }
             try data.withUnsafeBytes { raw in
                 var offset = 0
                 while offset < raw.count {
                     let n = Darwin.write(fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
                     if n < 0 && errno == EINTR { continue }
-                    guard n > 0 else { throw NSError(domain: "diagnostic write", code: Int(errno)) }
+                    guard n > 0 else {
+                        failure = .write; failureErrno = n < 0 ? errno : nil
+                        throw NSError(domain: "diagnostic write", code: Int(failureErrno ?? 0))
+                    }
                     offset += n
                 }
             }
@@ -158,24 +264,30 @@ private final class DiagnosticFIFO: DiagnosticSink {
                 wake.wait()
                 let value = state.withLock { state in
                     let value = state.queue.removeFirst()
-                    state.retainedFieldBytes -= value.retainedFieldBytes
+                    state.retainedFieldBytes -= value.payload.retainedFieldBytes
                     return value
                 }
                 count += 1
-                var data = try JSONEncoder().encode(TraceRow(nonce: nonce, role: role, pid: getpid(), sequence: count, payload: value))
+                kind = value.payload.kind; failure = .encode
+                var data = try JSONEncoder().encode(TraceRow(nonce: nonce, role: role, pid: getpid(), sequence: count,
+                    submit_enter_ns: value.submit_enter_ns, lock_acquired_ns: value.lock_acquired_ns, payload: value.payload))
                 data.append(10)
                 try output(data)
-                if case .terminal = value {
+                if case .terminal = value.payload {
                     // Seal is written only after every submitted row reached write return.
                     let seal = TraceSeal(nonce: nonce, role: role, pid: getpid(), sequence: count + 1,
                         seal: .init(records_before_seal: count, bytes_before_seal: bytes))
+                    failure = .encode
                     var last = try JSONEncoder().encode(seal)
                     last.append(10); try output(last); return
                 }
             }
         } catch {
-            state.withLock { $0.failed = true }
-            // Only this observer is owned. No stderr hook or main-thread IO.
+            report(failure, kind: kind, code: failureErrno)
+            // Failure delivery/termination cannot wait on a preempted queue owner.
+            // A missed latch never certifies success: writer has ended, no seal exists.
+            _ = state.withLockIfAvailable { $0.failed = true }
+            // Only this observer is owned. Parent still requires actual join.
             _ = kill(getpid(), SIGTERM)
         }
     }
@@ -314,8 +426,11 @@ private final class InterferenceObserver {
             if diagnostic != nil {
                 fact?.encode_return_ns = monotonicNowNS()
                 fact?.expected_bytes = data.count
-                guard rawBytes + UInt64(data.count) <= 67108864 else { exit(74) }
                 fact?.offset_before = rawBytes
+                guard rawBytes + UInt64(data.count) <= 67108864 else {
+                    diagnostic?.rawFailure(.rawCapacity, fact: fact!)
+                    exit(74)
+                }
                 fact?.write_enter_ns = monotonicNowNS()
                 trace(.emit_progress(fact!))
             }
@@ -331,7 +446,9 @@ private final class InterferenceObserver {
         } catch {
             if fact != nil {
                 fact?.state = "THREW"; fact?.error = "raw encode/write failed"
-                trace(.emit_return(fact!))
+                diagnostic?.rawFailure(fact?.encode_return_ns == nil ? .rawEncode : .rawWrite, fact: fact!)
+                // Known failed raw IO exits without waiting for FIFO admission.
+                // Receipt retains THREW; the pending sidecar emit stays incomplete.
             }
             exit(74)
         }
@@ -470,11 +587,13 @@ private final class InterferenceObserver {
             let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
             source.setEventHandler { [self] in
                 MainActor.assumeIsolated {
+                    let deadline = DispatchTime.now() + .milliseconds(200)
+                    defer {
+                        signal(SIGTERM, SIG_DFL)
+                        _ = kill(getpid(), SIGTERM)
+                    }
                     self.samplingTimer?.invalidate()
-                    _ = diagnostic.submit(.terminal(self.cycle))
-                    diagnostic.flush()
-                    signal(SIGTERM, SIG_DFL)
-                    _ = kill(getpid(), SIGTERM)
+                    diagnostic.terminate(.terminal(self.cycle), deadline: deadline)
                 }
             }
             termination = source

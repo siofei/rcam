@@ -30,6 +30,100 @@ QUEUE_BYTES = 768 * 1024
 RESERVE_NS = int((guard.MONITOR_STOP_SECONDS + guard.POST_JOIN_BARRIER_SECONDS) * 1e9)
 # owned_command's two group-drain grace periods remain in the same deadline.
 HELPER_WORST_NS = 14_000_000_000
+FAILURE_LIMIT = 4096
+FAILURE_REASONS = frozenset(('QUEUE_COUNT', 'QUEUE_MEMORY', 'CLOSED', 'WRITER_FAILED',
+    'TERMINAL_LOCK_BUSY', 'FLUSH_DEADLINE', 'ENCODE', 'LINE_CAPACITY', 'SIDECAR_CAPACITY', 'WRITE',
+    'SIDECAR_OPEN', 'RAW_ENCODE', 'RAW_WRITE', 'RAW_CAPACITY'))
+PAYLOAD_KINDS = frozenset(('header', 'cycle_enter', 'cycle', 'emit_start', 'emit_progress', 'emit_return', 'terminal'))
+
+
+class FailureChannel:
+    """One bounded atomic receipt independent of a possibly failed observer FIFO."""
+    def __init__(self, receiver, nonce, role, pid, source_sha, executable_sha):
+        self.receiver = receiver
+        self.identity = dict(nonce=nonce, role=role, pid=pid, source_sha256=source_sha,
+                             executable_sha256=executable_sha)
+        self.raw = self.receipt = self.error = None
+
+    def poll(self):
+        if self.error:
+            return
+        # At most one receipt and one duplicate probe, including across polls.
+        for _ in range(2):
+            try:
+                raw, ancillary, flags, _ = self.receiver.recvmsg(FAILURE_LIMIT, 1, socket.MSG_DONTWAIT)
+            except BlockingIOError:
+                return
+            try:
+                guard.require(self.raw is None and raw and len(raw) <= FAILURE_LIMIT and not ancillary and
+                              not flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC) and raw.endswith(b'\n'),
+                              'failure receipt duplicate/partial/truncated/control')
+                self.raw = raw
+                value = guard.strict_json(raw)
+                required = {'schema_version', 'event', 'clock_domain', *self.identity,
+                            'reason', 'payload_kind', 'observed_ns'}
+                optional = {'submit_enter_ns', 'lock_acquired_ns', 'queue_count', 'retained_bytes', 'errno_code', 'raw_emit'}
+                guard.require(type(value) is dict and required <= value.keys() <= required | optional and
+                              all(value.get(key) == expected for key, expected in self.identity.items()) and
+                              type(value['pid']) is int and type(value['schema_version']) is int and
+                              value['schema_version'] == 1 and value['event'] == 'diagnostic_failure' and
+                              value['clock_domain'] == CLOCK_DOMAIN and value['reason'] in FAILURE_REASONS and
+                              value['payload_kind'] in PAYLOAD_KINDS,
+                              'failure receipt binding/schema')
+                def timestamp(key):
+                    now = value.get(key)
+                    guard.require(now is None or type(now) is int and now > 0, 'failure receipt actual timestamp')
+                    return now
+                observed, entered, acquired = (timestamp(key) for key in ('observed_ns', 'submit_enter_ns', 'lock_acquired_ns'))
+                guard.require(observed is not None and (entered is None or entered <= observed) and
+                              (acquired is None or entered is not None and entered <= acquired <= observed),
+                              'failure receipt time order')
+                for key, maximum in (('queue_count', QUEUE_LIMIT), ('retained_bytes', QUEUE_BYTES), ('errno_code', 2**31-1)):
+                    number = value.get(key)
+                    guard.require(number is None or type(number) is int and 0 <= number <= maximum,
+                                  'failure receipt bounded facts')
+                emit = value.get('raw_emit')
+                if value['reason'].startswith('RAW_'):
+                    guard.require(value['payload_kind'] == 'emit_return' and type(emit) is dict and
+                                  type(emit.get('raw_record_ordinal')) is int and emit['raw_record_ordinal'] > 0 and
+                                  emit.get('event') in ('ready', 'runner_bound', 'owned_bound', 'sample', 'fatal') and
+                                  (emit.get('sample_seq') is None or type(emit.get('sample_seq')) is int and emit['sample_seq'] > 0) and
+                                  (emit['event'] == 'sample') == (emit.get('sample_seq') is not None),
+                                  'raw failure observed ordinal/event')
+                    keys = ('encode_enter_ns', 'encode_return_ns', 'write_enter_ns', 'write_return_ns')
+                    times = [emit.get(key) for key in keys]
+                    known = [t for t in times if t is not None]
+                    guard.require(all(type(t) is int and 0 < t <= observed for t in known) and known == sorted(known) and
+                                  times[0] is not None and times[3] is None and emit.get('offset_after') is None and
+                                  emit.get('state') == ('IN_PROGRESS' if value['reason'] == 'RAW_CAPACITY' else 'THREW'),
+                                  'raw failure never invents write return')
+                    guard.require((value['reason'] == 'RAW_ENCODE' and times[1:3] == [None, None]) or
+                                  (value['reason'] == 'RAW_WRITE' and times[1] is not None and times[2] is not None) or
+                                  (value['reason'] == 'RAW_CAPACITY' and times[1] is not None and times[2] is None),
+                                  'raw failure phase')
+                    guard.require(emit.keys() <= {'raw_record_ordinal', 'event', 'sample_seq', *keys, 'expected_bytes',
+                        'offset_before', 'offset_after', 'state', 'error'} and emit.get('error') ==
+                        (None if value['reason'] == 'RAW_CAPACITY' else 'raw encode/write failed'), 'raw failure fields')
+                    expected, offset = emit.get('expected_bytes'), emit.get('offset_before')
+                    if value['reason'] == 'RAW_ENCODE':
+                        guard.require(expected is None and offset is None, 'raw encode unknown bytes')
+                    else:
+                        guard.require(type(expected) is int and 0 < expected <= RAW_LIMIT and type(offset) is int and
+                                      0 <= offset <= RAW_LIMIT and (offset + expected > RAW_LIMIT) ==
+                                      (value['reason'] == 'RAW_CAPACITY'), 'raw failure actual bytes/capacity')
+                else:
+                    guard.require(emit is None, 'non-raw failure raw fact')
+                self.receipt = value
+            except BaseException as error:
+                self.error = type(error).__name__ + ': ' + str(error)
+                return
+
+    def summary(self):
+        return dict(status='INVALID' if self.error else 'OBSERVED' if self.receipt else 'UNKNOWN',
+                    receipt=self.receipt, error=self.error)
+
+    def close(self):
+        self.receiver.close()
 
 
 def immutable(path, value):
@@ -268,6 +362,9 @@ def verify_observer(sidecar, raw_path, nonce, role, pid, source_sha, executable_
     with raw_path.open('rb') as raw:
         for index, row in enumerate(sealed_rows(sidecar, nonce, OBSERVER_LIMIT, role=role, pid=pid)):
             payload = row.get('payload')
+            admission = [row.get('submit_enter_ns'), row.get('lock_acquired_ns')]
+            guard.require(all(type(t) is int and t > 0 for t in admission) and admission == sorted(admission),
+                          'observer admission actual time order')
             guard.require(type(payload) is dict and len(payload) == 1, 'typed observer payload')
             kind, wrapped = next(iter(payload.items()))
             fact = wrapped.get('_0') if type(wrapped) is dict else None
@@ -613,12 +710,18 @@ class DiagnosticRun:
         env = dict(os.environ, RCAM_DIAG_ROLE=role, RCAM_DIAG_SOURCE_SHA=source_sha,
                    RCAM_DIAG_EXECUTABLE_SHA=digest)
         monitor = None
+        receiver = peer = None
         try:
+            receiver, peer = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+            receiver.setblocking(False)
+            peer.setblocking(False)
+            env['RCAM_DIAG_FAILURE_FD'] = str(peer.fileno())
             monitor = subprocess.Popen([str(executable), str(path), nonce, str(base / (role + '.diag.jsonl'))],
-                                       stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=env)
+                                       stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=env, pass_fds=(peer.fileno(),))
             # Retain exact owned handle before any tail/adapter construction fails.
             item = dict(role=role, nonce=nonce, monitor=monitor, control=control, path=path,
-                        handles=(out, err), stream=None, tail=None)
+                        handles=(out, err), stream=None, tail=None,
+                        failure_channel=FailureChannel(receiver, nonce, role, monitor.pid, source_sha, digest))
             self.observers.append(item)
             tail = DiagnosticTail(base / (role + '.stdout'), self.trace, role, monitor.pid, nonce, self.clock)
             item['tail'] = tail
@@ -633,7 +736,22 @@ class DiagnosticRun:
             if monitor is None:
                 out.close()
                 err.close()
+                if receiver:
+                    receiver.close()
             raise
+        finally:
+            if peer:
+                peer.close()
+
+    def poll_failure_channels(self):
+        for item in self.observers:
+            channel = item.get('failure_channel')
+            if channel:
+                channel.poll()
+                if channel.error:
+                    self.fail('OBSERVER_FAILURE_RECEIPT_INVALID: ' + channel.error)
+                elif channel.receipt:
+                    self.fail('OBSERVER_DIAGNOSTIC_FAILURE: ' + item['role'] + ': ' + channel.receipt['reason'])
 
     def pump(self, allow_stop=False):
         if self.trace.error:
@@ -655,6 +773,8 @@ class DiagnosticRun:
         for observer in self.observers:
             guard.require((self.evidence / (observer['role'] + '.stdout')).stat().st_size <= RAW_LIMIT,
                           'diagnostic raw capacity')
+        # Raw stream/input retains first-error priority over supplemental receipts.
+        self.poll_failure_channels()
         if self.channel:
             self.phase_span += 1
             enter = self.clock()
@@ -935,6 +1055,10 @@ class DiagnosticRun:
             except BaseException as error:
                 self.fail(type(error).__name__ + ': ' + str(error))
             try:
+                self.poll_failure_channels()
+            except BaseException as error:
+                self.fail('OBSERVER_FAILURE_CHANNEL: ' + str(error))
+            try:
                 if self.trace:
                     timeout = .2 if self.deadline is None else max(0, min(.2, (self.deadline - self.clock()) / 1e9))
                     self.trace.finish(timeout)
@@ -947,6 +1071,8 @@ class DiagnosticRun:
                     item['tail'].close()
                 for handle in item['handles']:
                     handle.close()
+                if item.get('failure_channel'):
+                    item['failure_channel'].close()
             for handle in self.child_handles:
                 handle.close()
             if self.channel:
@@ -964,6 +1090,8 @@ class DiagnosticRun:
             cleanup_deadline_unknown=self.cleanup_unknown, interrupt_sent=self.interrupt_sent,
             post_join_barriers=self.barriers,
             observers=[dict(role=item['role'], pid=item['monitor'].pid, exit_code=item['monitor'].returncode,
+                diagnostic_failure=item['failure_channel'].summary() if item.get('failure_channel') else
+                    dict(status='UNKNOWN', receipt=None, error=None),
                 first_stream_error=item['stream'].first_stream_error if item['stream'] else None,
                 policy_phase=item['stream'].policy.phase if item['stream'] else None) for item in self.observers],
             clock_domain=CLOCK_DOMAIN, retry=False, external_activation=False, baseline_resets=0)
