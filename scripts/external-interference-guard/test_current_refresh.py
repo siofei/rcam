@@ -5,6 +5,7 @@ No Mac process, display API or native acquisition is executed by this suite.
 import ast
 from collections import Counter
 import copy
+from contextlib import nullcontext
 from dataclasses import replace
 import hashlib
 import json
@@ -207,13 +208,49 @@ class PreserveRawReplay(unittest.TestCase):
 class CopiedFunctionalPredicates(unittest.TestCase):
     def test_extra_product_adapter_shadows_cannot_override_external_copies(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary)
+            root=Path(temporary).resolve(strict=True)
             shutil.copytree(PRODUCT/'scripts',root/'scripts')
             for name in ('report_pmix_v1','report_batch_v1','performance_v1'):
                 (root/'scripts'/(name+'.py')).write_text("raise RuntimeError('unreviewed shadow executed')\n")
             external=Path(__file__).parent.resolve()
             code="import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); import current_refresh; verify=current_refresh.report_verifier(Path(sys.argv[2])); assert verify.__module__=='report_pmix_v1'"
             result=subprocess.run([sys.executable,'-B','-c',code,str(external),str(root)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_product_adapter_fixture_accepts_real_directory_alias_after_canonicalization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve(strict=True)
+            physical=root/'physical-product';physical.mkdir()
+            alias=root/'product-alias';alias.symlink_to(physical,target_is_directory=True)
+            self.assertNotEqual(alias,alias.resolve(strict=True))
+            with patch.object(tempfile,'TemporaryDirectory',return_value=nullcontext(str(alias))):
+                self.test_extra_product_adapter_shadows_cannot_override_external_copies()
+
+    def test_real_alias_does_not_allow_wrong_source_shadow_to_execute(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve(strict=True)
+            scripts=root/'product/scripts';scripts.mkdir(parents=True)
+            (scripts/'verify_s5m2_evidence.py').write_text('')
+            product_alias=root/'product-alias';product_alias.symlink_to(root/'product',target_is_directory=True)
+            shadow=root/'shadow';shadow.mkdir()
+            (shadow/'verify_s5m2_evidence.py').write_text("raise RuntimeError('unreviewed shadow executed')\n")
+            shadow_alias=root/'shadow-alias';shadow_alias.symlink_to(shadow,target_is_directory=True)
+            external=Path(__file__).parent.resolve(strict=True)
+            code="""import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import current_refresh
+sys.path.insert(0,sys.argv[2])
+expected=(Path(sys.argv[3])/'scripts/verify_s5m2_evidence.py').resolve(strict=True)
+try:
+    current_refresh.bound_import('verify_s5m2_evidence',expected)
+except RuntimeError as error:
+    assert str(error)=='shadow module: verify_s5m2_evidence',str(error)
+else:
+    raise AssertionError('wrong source shadow accepted')
+"""
+            result=subprocess.run([sys.executable,'-B','-c',code,str(external),str(shadow_alias),str(product_alias)],
+                                  capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
 
     def test_cached_wrong_external_module_origin_rejected_before_execution(self):
