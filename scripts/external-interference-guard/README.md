@@ -1,4 +1,4 @@
-# External guarded PMIX full12 coordinator, v3.6.2-bound candidate
+# External guarded PMIX full12 coordinator, v3.6.3-bound candidate
 
 This source-only candidate binds the independently reviewed product phase/helper
 contract and independently measured fresh Mac build identities below. Final
@@ -9,10 +9,10 @@ this guard candidate does not claim that the display API has been repaired.
 
 The five frozen identities are:
 
-- Product commit: d6e5fe8a542cca51a65a66100ffeed5a6abae1c8
-- Source manifest: a1692b3da28df336b81b030c19c9f84c568e6b274c3850e2987aea05e180f88f
-- Internal app: 3bea984b659cb15ae3b7e2b9be94ad68af1851b3b7504675c3901958431fca15
-- Capture producer: c5f207d3ac37dccb69f8dd1d15dded18e95fdf5bf6c647d3fc3c3dbcb05ebf22
+- Product commit: 42db040374b0c1643200b7f04e95b03d272ef792
+- Source manifest: 0235f9c9bd89d76dd5b101dc2fd99ba226582f1431464467696377664088067b
+- Internal app: 8223232d90072e7587cba09f6cf0963749f8e04a31f6ea89dce47b21ba02353f
+- Capture producer: bf3a6b2f879d28b9fe1aa8a3a724639bbd1ff6d1191fbc8666f0ffbd1f863270
 - Native runner: 20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c
 
 Missing or malformed pins still fail before filesystem changes, compilation or
@@ -271,8 +271,9 @@ portable tests. Both sealed and freshly extracted background qualification
 remain stage_PASS_claim=false with foreground initialization pending;
 no-eligible-window is preserved as the original background capture result.
 The source manifest now has672 entries. Runner, display/marker/qualifier and
-external guard interfaces retain their reviewed contract. The product's new
-PMIX input records and native verifier remain internal product predicates.
+external guard interfaces retain their reviewed contract. The product's
+uniform-cache, PMIX input and native verifier checks remain internal product
+predicates.
 This successor changes only product identity pins and their test/documentation.
 All earlier product native rows retain their original identities and cannot
 qualify this rebuilt candidate. No new native12, aggregate, actual48 attacks
