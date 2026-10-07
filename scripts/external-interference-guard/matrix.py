@@ -311,7 +311,7 @@ class OwnedReplayTail:
         self.handle.close()
 
 
-def verify_launch_phases(local, directory, case, receipt, launch, request, control):
+def verify_launch_phases(local, directory, case, receipt, launch, request, control, display_policy='frozen-60hz'):
     """Use the accepted actual bytes and original two-directory ownership graph."""
     runner_raw, runner, runner_sha = guard.raw_json(local / 'runner-binding.raw.json')
     source_raw, _, _ = guard.raw_json(directory / 'runner-binding.json')
@@ -339,7 +339,9 @@ def verify_launch_phases(local, directory, case, receipt, launch, request, contr
                         Path(command[command.index('--capture-producer') + 1]),
                         Path(command[command.index('--output') + 1]), case[0], case[1], DISPLAY_ID,
                         values['source_manifest_sha256'], values['binary_sha256'],
-                        values['capture_producer_sha256'], values['runner_sha256'])
+                        values['capture_producer_sha256'], values['runner_sha256'], display_policy=display_policy)
+    if display_policy == 'preserve':
+        full.validate()
     guard.validate_runner_binding(runner, runner_sha, request, full, control['nonce'], receipt['runner_pid'],
                                   launch['armed_end_ns'])
     origin = guard.validate_app_launch(app, runner, runner_sha)
@@ -353,7 +355,7 @@ def verify_launch_phases(local, directory, case, receipt, launch, request, contr
     return origin, observed, app_observed
 
 
-def verify_owned_evidence(local, directory, case, receipt):
+def verify_owned_evidence(local, directory, case, receipt, display_policy='frozen-60hz'):
     """Replay full owned policy, including actual foreground, without summary substitutions."""
     control = guard.strict_json((local / 'monitor-control.json').read_bytes())
     launch = guard.strict_json((local / 'runner-launch.json').read_bytes())
@@ -366,7 +368,8 @@ def verify_owned_evidence(local, directory, case, receipt):
                   type(control.get('commandID')) is int and control['commandID'] == 2 and
                   launch.get('nonce') == nonce and launch.get('clock_domain') == guard.CLOCK_DOMAIN,
                   'owned raw/control launch nonce/domain')
-    app_origin, phase_observed, app_observed = verify_launch_phases(local, directory, case, receipt, launch, request, control)
+    guard.require(display_policy in ('frozen-60hz', 'preserve'), 'owned replay display policy')
+    app_origin, phase_observed, app_observed = verify_launch_phases(local, directory, case, receipt, launch, request, control, display_policy)
     runner_pid = receipt.get('runner_pid')
     app_pid = binding.get('pid')
     binary = binding.get('binary_path')
@@ -394,14 +397,16 @@ def verify_owned_evidence(local, directory, case, receipt):
                   command[command.index('--mode') + 1] == case[0] and
                   command[command.index('--round') + 1] == str(case[1]) and
                   command[command.index('--display-id') + 1] == str(DISPLAY_ID) and
-                  command[command.index('--display-policy') + 1] == 'frozen-60hz' and
-                  command.count('--allow-display-mode-change') == command.count('--video') == 1,
+                  command[command.index('--display-policy') + 1] == display_policy and
+                  command.count('--allow-display-mode-change') == int(display_policy == 'frozen-60hz') and command.count('--video') == 1,
                   'owned launch exact formal case/display')
     expected_command = ['python3', '-B', 'scripts/run_pmix_native.py', '--binary', binary,
                         '--capture-producer', command[command.index('--capture-producer') + 1],
                         '--output', command[command.index('--output') + 1], '--mode', case[0],
                         '--round', str(case[1]), '--video', '--display-id', '2',
-                        '--display-policy', 'frozen-60hz', '--allow-display-mode-change']
+                        '--display-policy', display_policy]
+    if display_policy == 'frozen-60hz':
+        expected_command += ['--allow-display-mode-change']
     guard.require(('--fixture' in command) == (case[0] == 'workflow-reopen'), 'owned launch workflow chain argument')
     if case[0] == 'workflow-reopen':
         previous = Path(command[command.index('--output') + 1]).parent / 'workflow1/workflow-output.rcam'
@@ -470,9 +475,11 @@ def verify_owned_evidence(local, directory, case, receipt):
             tail.close()
     return True
 
-def validate_round(directory, case, receipt, seen_ids, workflow_sha, guard_directory=None):
+def validate_round(directory, case, receipt, seen_ids, workflow_sha, guard_directory=None, display_policy='frozen-60hz'):
     """Additional external guards; the original native verifier remains mandatory."""
     guard.require(case in CASES, 'matrix case')
+    guard.require(display_policy in ('frozen-60hz', 'preserve') and
+                  (display_policy != 'preserve' or case in (('nav', 1), ('move', 1))), 'round report scope')
     guard.require(receipt.get('success') is True and receipt.get('joined') is True and
                   type(receipt.get('actual_exit_code')) is int and receipt['actual_exit_code'] == 0 and
                   receipt.get('monitor_joined') is True and receipt.get('post_join_barrier_satisfied') is True and
@@ -487,7 +494,7 @@ def validate_round(directory, case, receipt, seen_ids, workflow_sha, guard_direc
                   receipt.get('external_activation') is False and receipt.get('retry') is False and
                   type(receipt.get('execution_budget_seconds')) is int and receipt['execution_budget_seconds'] == 190 and
                   type(receipt.get('cleanup_budget_seconds')) is int and receipt['cleanup_budget_seconds'] == 40 and
-                  receipt.get('display_policy') == 'frozen-60hz' and
+                  receipt.get('display_policy') == display_policy and
                   type(receipt.get('display_id')) is int and receipt['display_id'] == DISPLAY_ID and
                   type(receipt.get('round')) is int and
                   (receipt.get('mode'), receipt.get('round')) == case, 'formal external owned guard result')
@@ -498,9 +505,9 @@ def validate_round(directory, case, receipt, seen_ids, workflow_sha, guard_direc
     guard.require(type(request.get('schema_version')) is int and request['schema_version'] == 4 and
                   type(request.get('round')) is int and (request.get('mode'), request['round']) == case and
                   type(request.get('display_id')) is int and request['display_id'] == DISPLAY_ID and
-                  request.get('display_policy') == 'frozen-60hz' and
-                  request.get('display_mode_change_authorized') is True and
-                  request.get('evidence_scope') == 'full-pmix-native' and
+                  request.get('display_policy') == display_policy and
+                  request.get('display_mode_change_authorized') is (display_policy == 'frozen-60hz') and
+                  request.get('evidence_scope') == ('full-pmix-native' if display_policy == 'frozen-60hz' else 'capture-precheck-only') and
                   request.get('source_manifest_sha256') == receipt.get('source_manifest_sha256'),
                   'formal request/display contract')
     run_id = request.get('run_id')
@@ -512,23 +519,27 @@ def validate_round(directory, case, receipt, seen_ids, workflow_sha, guard_direc
     for index, display in enumerate(displays):
         for moment in ('before', 'after'):
             snapshot = display[moment]
-            guard.display_snapshot(snapshot, with_scale=index in (0, 2, 4))
+            guard.display_snapshot(snapshot, with_scale=display_policy == 'preserve' or index in (0, 2, 4))
     before, active, active_probe, restored, restored_probe = displays
     guard.require(type(before['after'].get('mode_id')) is int and before['after']['mode_id'] == ORIGINAL_MODE and
                   before['after']['refresh_hz'] == ORIGINAL_HZ and before['before'] == before['after'],
                   'original authorized 144Hz mode')
-    guard.require(guard.display_snapshot(active['before'], False) == guard.display_snapshot(before['after']) and
+    if display_policy == 'preserve':
+        guard.require(all(display[moment] == before['after'] for display in displays for moment in ('before', 'after')),
+                      'all five real nine-field probes preserve original144Hz mode')
+    else:
+        guard.require(guard.display_snapshot(active['before'], False) == guard.display_snapshot(before['after']) and
                   active['after']['refresh_hz'] == 60 and active_probe['before'] == active_probe['after'] and
                   guard.display_snapshot(active_probe['after']) == guard.display_snapshot(active['after'], False) and
                   guard.display_snapshot(restored['before'], False) == guard.display_snapshot(active_probe['after']) and
                   guard.display_snapshot(restored['after'], False) == guard.display_snapshot(before['after']) and
                   restored_probe['before'] == restored_probe['after'] == before['after'],
-                  'per-round real60Hz and exact same-target144Hz restoration')
+                      'per-round real60Hz and exact same-target144Hz restoration')
     if case[0] == 'workflow-reopen':
         copied = guard.sha(directory / 'reopen-input.rcam')
         guard.require(workflow_sha is not None and copied == workflow_sha == request.get('fixture_sha256'),
                       'fresh reopen must consume preceding workflow output bytes')
-    verify_owned_evidence(guard_directory or directory, directory, case, receipt)
+    verify_owned_evidence(guard_directory or directory, directory, case, receipt, display_policy)
     seen_ids.add(run_id)
     return guard.sha(directory / 'workflow-output.rcam') if case[0] == 'workflow' else workflow_sha
 

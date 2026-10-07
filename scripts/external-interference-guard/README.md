@@ -1,4 +1,84 @@
-# External guarded PMIX full12 coordinator, v3.6.3-bound candidate
+# External PMIX current-refresh functional/performance adapter, v1
+
+2026-10-07: the user removed the fixed60Hz test requirement. The current
+scope is `current-refresh-functional-performance`, stage S5 / bounded M2-C;
+R01/R08/R10/R11/R17/R18/R19/R21/R22, existing AT-001/025/026/030/031/072/075/086/087/090/091/092
+mappings only. This changes the external acquisition/report scope; it does not
+grant complete AT closure, smoothness, absence of flicker or stage acceptance.
+Allowed edits are this external package only. Frozen product sources, manifest,
+runner, binaries, old dirty diagnostics and all historical failures stay intact.
+
+The new `current_refresh.py run` entry uses the five exact product pins below.
+It authenticates every frozen manifest entry and the app/producer before any
+compiler or runner starts. It runs only nav round1, then move round1, each in a
+fresh evidence directory with its own UUID, nonce, owned observer and immutable
+launch channel. The existing continuous sentinel remains armed across both
+rounds, report verification and cleanup; owned raw replay and final continuous
+raw replay are mandatory. The original250ms freshness,20ms age tolerance,
+190s execution and40s cleanup budgets are unchanged.
+
+Every new runner receives `--display-id 2 --display-policy preserve --video`
+and **no** `--allow-display-mode-change`. All five display stages are real
+`display-probe.swift probe 2` operations. Their complete nine-field snapshots
+must be identical: mode113,144Hz,1920x1080 logical,3840x2160 physical,scale2,
+not mirrored. There is no setter, restorer, outer lease or exceptional display
+recovery in this path. Any guard, identity, input, functional or preservation
+failure stops before the next round, without retry.
+
+The unchanged product runner writes schema4/auth=false and its existing raw
+`evidence_scope=capture-precheck-only` label even for its complete nav/move
+paths. Raw evidence is never rewritten or relabelled. The independent external
+REPORT and driver receipt explicitly carry the new scope. `report_pmix_v1.py`
+is a versioned copy of product42db040's verifier (original SHA
+`c379e18249a2d7969b26142388340f79d2aa32875f1bc6e79417857d03fad06b`);
+`report_batch_v1.py` is its M2-B verifier copy (original SHA
+`c872e0eb84a572a4f94dff4507fd397a1d271f1b44fb2df3396b13d1fa11f69e`).
+The entry point binds every imported helper and external copy to its exact
+reviewed file origin before execution; product extras cannot shadow the copies.
+No runtime text replacement, global monkeypatch or swallowed assertion is used.
+
+All original functional checks remain:1e-9 manufacturing geometry, finite/positive
+timing, injected/processed input, complete frames/paint/events, constructor and
+worker versions, capture/ROI bindings, exactly one commit and exact Undo/Redo.
+Existing RSS/GPU admission checks remain; no new resource/RSS framework exists.
+Only nav/move interval/input→GPU historical budgets, the M2-B200ms preview stall
+and the300ms commit/Undo/Redo completion budgets become explicit comparisons.
+Each comparison records actual, historical limit and EXCEEDED or
+WITHIN_HISTORICAL_LIMIT; neither is a performance PASS. Over-budget timing
+continues through all later functional checks. A failed functional predicate
+produces FAIL and retains any partial comparisons already obtained.
+
+Reports contain actual interval and CPU/update/input→GPU-completion-upper-bound
+p50/p95/p99/max, >50ms/>200ms counts and indexed long stalls. GPU completion is
+not actual presentation FPS.60fps capture cannot establish144fps or absence of
+flicker. Performance is MEASURED_REPORT_ONLY; smoothness/flicker are UNVERIFIED,
+user flicker remains OPEN, overall_PASS_claim and stage_PASS_claim remain false.
+The original strict product verifier and frozen full12/aggregate entry points
+below retain their old behavior and old failure facts; the new driver does not
+invoke them. Mac measurements remain the responsibility of the original local
+task; this cloud implementation runs only source/portable regression checks.
+
+Use the complete12-file external source package (the original seven files below
+plus `current_refresh.py`, `performance_v1.py`, `report_pmix_v1.py`,
+`report_batch_v1.py`, `test_current_refresh.py`). Do not package runtime evidence.
+
+```sh
+# Portable regression checks; ROOT must be the exact frozen product42db040 tree.
+RCAM_REPORT_TEST_ROOT=/locked/product python3 -B -m unittest -v test_guard test_matrix test_current_refresh
+
+# Mac owner only, using existing authorized runtime binaries and fresh output.
+python3 -B current_refresh.py run --root /locked/product --binary /locked/internal-app \
+  --producer /locked/capture-producer --evidence /fresh/current-refresh-evidence
+```
+
+Portable coverage is the original160 unchanged tests plus25 new regressions,
+including real product diagnostic validators with synthetic probe journals,
+wrong auth/snapshot/nonce, unchanged launch origin, raw HID/foreground replay,
+copied predicate/provenance audit, >200ms continuation and late history/geometry
+failure, import shadows, nav→move order and continuous-tail/replay failure.
+No native acquisition, presentation, flicker or Mac functional result is claimed.
+
+## Preserved historical strict full12 contract: v3.6.3-bound candidate
 
 This source-only candidate binds the independently reviewed product phase/helper
 contract and independently measured fresh Mac build identities below. Final

@@ -49,8 +49,12 @@ class FullRun:
     producer_sha: str
     runner_sha: str
     fixture: object = None
+    display_policy: str = 'frozen-60hz'
 
     def validate(self):
+        require(self.display_policy in ('frozen-60hz', 'preserve'), 'explicit display policy')
+        require(self.display_policy != 'preserve' or (self.mode in ('nav', 'move') and self.round == 1),
+                'current-refresh nav1/move1 scope')
         require(self.mode in ('nav', 'move', 'points', 'escape', 'new-project',
                              'workflow', 'workflow-reopen', 'workflow-cross-layer'), 'formal mode')
         require(type(self.round) is int and self.round in ((1, 2, 3) if self.mode in ('nav', 'move') else (1,)),
@@ -288,12 +292,14 @@ def product_display_validators(root):
     return module
 
 
-def validate_app_preparation(native, root):
+def validate_app_preparation(native, root, display_policy='frozen-60hz'):
     """Prove the original owned three-stage success before accepting APP_LAUNCH."""
     states = []
     previous_finish = None
     validators = product_display_validators(root)
-    for label, operation in (('display-before', 'probe'), ('display-active', 'set60'),
+    require(display_policy in ('frozen-60hz', 'preserve'), 'preparation display policy')
+    preserve = display_policy == 'preserve'
+    for label, operation in (('display-before', 'probe'), ('display-active', 'probe' if preserve else 'set60'),
                              ('display-active-probe', 'probe')):
         _, launch, _ = raw_json(native / (label + '.subcommand-launch.json'))
         _, process, _ = raw_json(native / (label + '.subcommand-process.json'))
@@ -327,6 +333,12 @@ def validate_app_preparation(native, root):
         validators.validate_display_phases(stderr, operation, 2, process['pid'], receipt)
         states.append(receipt)
     before, active, probe = states
+    if preserve:
+        require(before['before'] == before['after'] and before['after']['mode_id'] == 113 and
+                before['after']['refresh_hz'] == 144 and
+                all(receipt[moment] == before['after'] for receipt in states for moment in ('before', 'after')),
+                'actual unchanged nine-field target144Hz preparation')
+        return before['after']
     require(before['before'] == before['after'] and before['after']['mode_id'] == 113 and
             before['after']['refresh_hz'] == 144 and
             display_snapshot(before['after']) == display_snapshot(active['before'], False) and
@@ -371,8 +383,9 @@ def validate_runner_binding(binding, digest, request, full, nonce, runner_pid, e
     require(type(request) is dict and type(request.get('schema_version')) is int and request['schema_version'] == 4 and
             type(request.get('round')) is int and (request.get('mode'), request['round']) == (full.mode, full.round) and
             type(request.get('display_id')) is int and request['display_id'] == full.display_id and
-            request.get('display_policy') == 'frozen-60hz' and request.get('display_mode_change_authorized') is True and
-            request.get('evidence_scope') == 'full-pmix-native' and
+            request.get('display_policy') == full.display_policy and
+            request.get('display_mode_change_authorized') is (full.display_policy == 'frozen-60hz') and
+            request.get('evidence_scope') == ('full-pmix-native' if full.display_policy == 'frozen-60hz' else 'capture-precheck-only') and
             request.get('source_manifest_sha256') == full.manifest_sha and
             request.get('run_id') == binding['run_id'] and request.get('launch_nonce') == nonce and
             type(request.get('runner_pid')) is int and request['runner_pid'] == runner_pid and
@@ -444,7 +457,10 @@ class OwnedLaunchPhase:
         mirror_raw, _, _ = raw_json(native / 'app-launch.json')
         require(mirror_raw == launch_raw, 'native/output app launch bytes')
         if self.launch is None:
-            validate_app_preparation(native, self.full.root)
+            if self.full.display_policy == 'preserve':
+                validate_app_preparation(native, self.full.root, 'preserve')
+            else:
+                validate_app_preparation(native, self.full.root)
             self.launch, self.launch_sha = launch, launch_sha
             (self.base / 'app-launch.raw.json').write_bytes(launch_raw)
             write(self.base / 'app-phase-observed.json', {'launch_sha256': launch_sha,
@@ -478,9 +494,9 @@ def discover_native(previous, binary, expected_run_id=None, full=None, known_nat
             require(type(request.get('schema_version')) is int and request['schema_version'] == 4 and
                     type(request.get('round')) is int and request['round'] == full.round and
                     type(request.get('display_id')) is int and request['display_id'] == full.display_id and
-                    request.get('display_policy') == 'frozen-60hz' and
-                    request.get('display_mode_change_authorized') is True and
-                    request.get('evidence_scope') == 'full-pmix-native', 'formal request policy mismatch')
+                    request.get('display_policy') == full.display_policy and
+                    request.get('display_mode_change_authorized') is (full.display_policy == 'frozen-60hz') and
+                    request.get('evidence_scope') == ('full-pmix-native' if full.display_policy == 'frozen-60hz' else 'capture-precheck-only'), 'formal request policy mismatch')
         else:
             require(request.get('schema_version') == 2 and request.get('round') == 1 and
                     request.get('display_policy') == 'preserve' and
@@ -610,6 +626,24 @@ def stop_monitor(monitor):
     return monitor.returncode is not None
 
 
+def runner_command(root, binary, producer, output, full=None):
+    command = ['python3', '-B', 'scripts/run_pmix_native.py', '--binary', str(binary),
+               '--capture-producer', str(producer), '--output', str(output),
+               '--mode', full.mode if full else 'workflow-reopen', '--round', str(full.round if full else 1),
+               '--video']
+    if full:
+        full.validate()
+        command += ['--display-id', str(full.display_id), '--display-policy', full.display_policy]
+        if full.display_policy == 'frozen-60hz':
+            command += ['--allow-display-mode-change']
+        if full.fixture is not None:
+            command += ['--fixture', str(full.fixture.resolve(strict=True))]
+    else:
+        command += ['--fixture', str(root / 'fixtures/synthetic/s5m2c/MIX_WORKFLOW.rcam'),
+                    '--display-policy', 'preserve']
+    return command
+
+
 def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
     require(sys.platform == 'darwin', 'this external supervisor runs only on macOS')
     if full:
@@ -630,18 +664,7 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
     require(sha(producer) == producer_sha, 'locked producer hash')
     require(sha(root / 'MANIFEST.sha256') == manifest_sha, 'locked product manifest')
     require(sha(root / 'scripts/run_pmix_native.py') == runner_sha, 'locked runner source')
-    command = ['python3', '-B', 'scripts/run_pmix_native.py', '--binary', str(binary),
-               '--capture-producer', str(producer), '--output', str(output),
-               '--mode', full.mode if full else 'workflow-reopen', '--round', str(full.round if full else 1),
-               '--video']
-    if full:
-        command += ['--display-id', str(full.display_id), '--display-policy', 'frozen-60hz',
-                    '--allow-display-mode-change']
-        if full.fixture is not None:
-            command += ['--fixture', str(full.fixture.resolve(strict=True))]
-    else:
-        command += ['--fixture', str(root / 'fixtures/synthetic/s5m2c/MIX_WORKFLOW.rcam'),
-                    '--display-policy', 'preserve']
+    command = runner_command(root, binary, producer, output, full)
     for name in ('monitor-control.json', 'interference-monitor', 'monitor-compile.stdout',
                  'monitor-compile.stderr', 'monitor-compile.json', 'runner.stdout', 'runner.stderr',
                  'monitor.stdout', 'monitor.stderr', 'SUPERVISOR_RESULT.json', 'workflow-reopen1',
@@ -720,7 +743,8 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
                     'armed_end_ns': armed_end_ns,
                     'soft_deadline_seconds': EXECUTION_SECONDS,
                     'cleanup_reserve_seconds': CLEANUP_SECONDS,
-                    'scope': ('formal single matrix case; frozen60; no retry' if full else
+                    'scope': (('formal single matrix case; frozen60; no retry' if full.display_policy == 'frozen-60hz'
+                               else 'current-refresh-functional-performance; preserved144; no retry') if full else
                               'single own-window capture microcheck; preserve; no retry')})
                 while True:
                     halt = stream.pump()
@@ -899,7 +923,7 @@ def run(base=None, *, full=None, continuous_guard=None, compiled_monitor=None):
             'app_launch_opportunity_ns': stream.policy.app_launch_ns if stream else None,
             'runner_binding_sha256': launch_phase.binding_sha if launch_phase else None,
             'human_input_attributed': False,
-            'display_policy': 'frozen-60hz' if full else 'preserve', 'retry': False,
+            'display_policy': full.display_policy if full else 'preserve', 'retry': False,
             'mode': full.mode if full else 'workflow-reopen', 'round': full.round if full else 1,
             'display_id': full.display_id if full else None,
             'source_manifest_sha256': manifest_sha, 'utc': utc(),
