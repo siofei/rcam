@@ -45,11 +45,24 @@ fn flash(shape: ApertureShape, transform: LocalTransform) -> SemanticDocument {
     )
 }
 fn check(d: &SemanticDocument, point: MmPoint, tol: f64, hit: bool) {
+    let ids = d.hit_test("layer", point, tol).unwrap();
+    assert_eq!(!ids.is_empty(), hit, "point={point:?} tol={tol}");
+    let scored = d
+        .hit_test_scored_cancellable("layer", point, tol, || false)
+        .unwrap();
     assert_eq!(
-        !d.hit_test("layer", point, tol).unwrap().is_empty(),
-        hit,
-        "point={point:?} tol={tol}"
+        scored.iter().map(|h| &h.object_id).collect::<Vec<_>>(),
+        ids.iter().collect::<Vec<_>>()
     );
+    let direct = d.hit_test("layer", point, 0.).unwrap();
+    for candidate in scored {
+        assert!(candidate.distance_mm.is_finite() && candidate.uncertainty_mm.is_finite());
+        assert!(candidate.distance_mm <= tol + candidate.uncertainty_mm);
+        assert_eq!(
+            candidate.direct_hit(),
+            direct.contains(&candidate.object_id)
+        );
+    }
 }
 fn circle(exposure: Exposure, r: f64, c: MmPoint) -> MacroPrimitive {
     MacroPrimitive::Circle {
@@ -511,6 +524,11 @@ fn hit_test_invalid_params_and_budget_are_fail_closed() {
             d.hit_test("layer", point, tol),
             Err(HitTestError::InvalidArgument(_))
         ));
+        assert_eq!(
+            d.hit_test("layer", point, tol).unwrap_err(),
+            d.hit_test_scored_cancellable("layer", point, tol, || false)
+                .unwrap_err()
+        );
     }
     assert_eq!(d, before);
     assert!(matches!(
@@ -526,6 +544,19 @@ fn hit_test_invalid_params_and_budget_are_fail_closed() {
         expensive.hit_test("layer", p(0., 0.), 0.),
         Err(HitTestError::ResourceLimit { limit: 2_000_000, attempted }) if attempted > 2_000_000
     ));
+    assert_eq!(
+        expensive.hit_test("layer", p(0., 0.), 0.).unwrap_err(),
+        expensive
+            .hit_test_scored_cancellable("layer", p(0., 0.), 0., || false)
+            .unwrap_err()
+    );
+    for layer in ["", "missing"] {
+        assert_eq!(
+            d.hit_test(layer, p(0., 0.), 0.).unwrap_err(),
+            d.hit_test_scored_cancellable(layer, p(0., 0.), 0., || false)
+                .unwrap_err()
+        );
+    }
 }
 
 #[test]
@@ -616,6 +647,11 @@ fn macro_near_coincident_boundary_is_rejected_not_guessed() {
         d.hit_test("layer", p(0., 0.), 0.),
         Err(HitTestError::Unsupported(_))
     ));
+    assert_eq!(
+        d.hit_test("layer", p(0., 0.), 0.).unwrap_err(),
+        d.hit_test_scored_cancellable("layer", p(0., 0.), 0., || false)
+            .unwrap_err()
+    );
 }
 
 #[test]
@@ -663,4 +699,103 @@ fn dark_union_rounded_pad_tangency_matches_independent_distance() {
             }
         }
     }
+}
+
+#[test]
+fn scored_query_visits_objects_once_and_cancellation_rejects_partial_hits() {
+    let mut d = doc(
+        SemanticGeometry::Line {
+            start: p(0., 0.),
+            end: p(1., 0.),
+            width_mm: 1.,
+        },
+        None,
+    );
+    let mut second = d.layers[0].objects[0].clone();
+    second.object_id = "clear".into();
+    second.exposure = Exposure::Clear;
+    d.layers[0].objects.push(second);
+    let mut checkpoints = 0;
+    let scored = d
+        .hit_test_scored_cancellable("layer", p(0., 0.), 0., || {
+            checkpoints += 1;
+            false
+        })
+        .unwrap();
+    assert_eq!(
+        checkpoints, 4,
+        "entry,each of two objects,final publication"
+    );
+    assert_eq!(
+        scored
+            .iter()
+            .map(|h| h.object_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["object", "clear"]
+    );
+    assert!(scored.iter().all(|h| h.direct_hit()));
+    let before = d.clone();
+    let mut checkpoints = 0;
+    assert_eq!(
+        d.hit_test_scored_cancellable("layer", p(0., 0.), 0., || {
+            checkpoints += 1;
+            checkpoints == 3
+        }),
+        Err(HitTestError::Cancelled)
+    );
+    assert_eq!(d, before);
+}
+
+#[test]
+fn scored_transformed_block_preserves_gaps_holes_and_clear_geometry_policy() {
+    use editor_core::block::*;
+    let id = BlockDefinitionId("block".into());
+    let mut d = doc(
+        SemanticGeometry::BlockInstance {
+            definition_id: id.clone(),
+            transform: BlockTransform {
+                translation: p(10., 20.),
+                rotation_deg: 90.,
+                mirror: true,
+            },
+        },
+        Some(ApertureShape::Circle {
+            diameter_mm: 0.2,
+            hole_diameter_mm: None,
+        }),
+    );
+    let primitive = |center, exposure| BlockObject {
+        geometry: BlockObjectGeometry::Flash {
+            center,
+            aperture_id: "ap".into(),
+            transform: LocalTransform::default(),
+        },
+        exposure,
+    };
+    d.block_definitions.push(BlockDefinition {
+        id,
+        name: "synthetic".into(),
+        local_origin: p(0., 0.),
+        objects: vec![
+            primitive(p(-5., 0.), Exposure::Dark),
+            primitive(p(5., 0.), Exposure::Dark),
+        ],
+        revision: 0,
+    });
+    check(&d, p(10., 20.), 0.6, false);
+    check(&d, p(10.12, 25.), 0.06, true);
+    d.apertures[0].shape = ApertureShape::Circle {
+        diameter_mm: 10.,
+        hole_diameter_mm: Some(6.),
+    };
+    d.block_definitions[0].objects = vec![primitive(p(0., 0.), Exposure::Dark)];
+    check(&d, p(10., 20.), 0.6, false);
+    d.apertures[0].shape = ApertureShape::Circle {
+        diameter_mm: 10.,
+        hole_diameter_mm: None,
+    };
+    d.block_definitions[0]
+        .objects
+        .push(primitive(p(0., 0.), Exposure::Clear));
+    check(&d, p(10., 20.), 0., true);
 }

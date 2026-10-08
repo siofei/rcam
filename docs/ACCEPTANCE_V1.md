@@ -1927,3 +1927,7 @@ R08/R18, AT-025 and S5-I2-C C-04: verify SmallCross centered endpoints at 36 phy
 ### S5 shortcut settings compact source follow-up
 
 R08/R12/R18, applicable AT-025/043/078: `S5_SHORTCUT_COMPACT.md` adds actual CPU egui geometry regressions for fixed columns/rows/actions, long names/bindings/errors, zero-result search, zero-to-four aliases, multiple DPI and small-viewport scrolling/click access. Existing recording/IME/router/configuration checks remain; native visual and platform obligations are external and are not marked passed by these source checks.
+
+### S5-I1 near-contour source amendment (2026-10-08)
+
+`S5_NEAR_CONTOUR_SELECTION.md` freezes the authorized near-only analytic distance ranking while direct hits keep zero-tolerance layer/exposure priority, one-pass score/error equivalence and anchor-stable logical cycling. Default six physical pixels, geometry/Clear/Block meanings, ProbeDrag and PointMove ownership remain. Incoming Ctrl Add/box Add/All now excludes locks; Replace/Remove supports inspection and mixed edits still reject atomically. This supersedes the earlier All/Add inspection-lock behavior. Ordinary source/CPU checks are distinct from pending native mouse/build validation; existing acceptance IDs and thresholds are unchanged.

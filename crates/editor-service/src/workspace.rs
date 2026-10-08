@@ -1796,6 +1796,15 @@ pub(crate) fn retain_selectable(
     layer_id: &str,
     object_ids: &mut Vec<String>,
 ) {
+    retain_selectable_by(record, layer_id, object_ids, String::as_str);
+}
+
+pub(crate) fn retain_selectable_by<T>(
+    record: &S1DocumentRecord,
+    layer_id: &str,
+    hits: &mut Vec<T>,
+    object_id: impl Fn(&T) -> &str,
+) {
     let Some(state) = record.workspace.get(layer_id) else {
         return;
     };
@@ -1817,5 +1826,5 @@ pub(crate) fn retain_selectable(
         .filter(|object| state.effective_selectable(classify_object(object, &shapes)))
         .map(|object| object.object_id.as_str())
         .collect();
-    object_ids.retain(|id| allowed.contains(id.as_str()));
+    hits.retain(|hit| allowed.contains(object_id(hit)));
 }

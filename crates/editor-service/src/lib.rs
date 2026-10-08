@@ -440,6 +440,16 @@ pub struct HitTestResult {
     pub object_ids: Vec<String>,
 }
 
+/// Internal Rust selection query; the automation HitTestResult schema is unchanged.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScoredHitTestResult {
+    pub document_id: String,
+    pub revision: String,
+    pub layer_id: String,
+    pub hits: Vec<editor_core::hit_test::HitTestCandidate>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SelectRectParams {
@@ -1288,18 +1298,10 @@ impl ApplicationService {
                 object_ids: Vec::new(),
             });
         }
-        let mut object_ids = record.document.hit_test(&params.layer_id, point, params.tolerance_mm)
-            .map_err(|error| {
-                use editor_core::hit_test::HitTestError;
-                match error {
-                    HitTestError::Cancelled => ServiceError { code: "CANCELLED".into(), message: "任务已取消".into(), details: serde_json::json!({}) },
-                    HitTestError::InvalidArgument(field) => ServiceError::invalid_field(field, "invalid hit-test parameter"),
-                    HitTestError::MissingLayer(id) => ServiceError::not_found("layer", &id),
-                    HitTestError::Geometry(error) => map_semantic_error(error),
-                    HitTestError::ResourceLimit { limit, attempted } => ServiceError::resource("hit_test_work", limit, attempted),
-                    HitTestError::Unsupported(reason) => ServiceError { code: "UNSUPPORTED_FEATURE".into(), message: reason.into(), details: serde_json::json!({"operation":"objects.hit_test","reason":reason}) },
-                }
-            })?;
+        let mut object_ids = record
+            .document
+            .hit_test(&params.layer_id, point, params.tolerance_mm)
+            .map_err(map_hit_test_error)?;
         if params.selectable_only {
             workspace::retain_selectable(record, &params.layer_id, &mut object_ids);
         }
@@ -1308,6 +1310,53 @@ impl ApplicationService {
             revision: record.revision.to_string(),
             layer_id: params.layer_id,
             object_ids,
+        })
+    }
+
+    /// Preserve the ordinary query's policy and errors while retaining scores
+    /// from its single analytic pass. This is not an automation operation.
+    #[doc(hidden)]
+    pub fn objects_hit_test_scored_with_cancel(
+        &self,
+        document_id: &str,
+        params: HitTestParams,
+        cancel: Option<&task::CancellationToken>,
+    ) -> Result<ScoredHitTestResult, ServiceError> {
+        if let Some(cancel) = cancel {
+            cancel.checkpoint()?;
+        }
+        let record = self
+            .documents
+            .get(document_id)
+            .ok_or_else(|| ServiceError::not_found("document", document_id))?;
+        let hits =
+            if params.selectable_only && !workspace::layer_selectable(record, &params.layer_id)? {
+                Vec::new()
+            } else {
+                let mut hits = record
+                    .document
+                    .hit_test_scored_cancellable(
+                        &params.layer_id,
+                        MmPoint::new(params.point.x_mm, params.point.y_mm),
+                        params.tolerance_mm,
+                        || cancel.is_some_and(|c| c.checkpoint().is_err()),
+                    )
+                    .map_err(map_hit_test_error)?;
+                if params.selectable_only {
+                    workspace::retain_selectable_by(record, &params.layer_id, &mut hits, |hit| {
+                        hit.object_id.as_str()
+                    });
+                }
+                hits
+            };
+        if let Some(cancel) = cancel {
+            cancel.checkpoint()?;
+        }
+        Ok(ScoredHitTestResult {
+            document_id: document_id.into(),
+            revision: record.revision.to_string(),
+            layer_id: params.layer_id,
+            hits,
         })
     }
 
@@ -4758,6 +4807,30 @@ pub fn diagnostic_context(
                         .map(|p| p.imported_sha256[..16].to_ascii_lowercase()),
                 })
                 .collect(),
+        },
+    }
+}
+
+fn map_hit_test_error(error: editor_core::hit_test::HitTestError) -> ServiceError {
+    use editor_core::hit_test::HitTestError;
+    match error {
+        HitTestError::Cancelled => ServiceError {
+            code: "CANCELLED".into(),
+            message: "任务已取消".into(),
+            details: serde_json::json!({}),
+        },
+        HitTestError::InvalidArgument(field) => {
+            ServiceError::invalid_field(field, "invalid hit-test parameter")
+        }
+        HitTestError::MissingLayer(id) => ServiceError::not_found("layer", &id),
+        HitTestError::Geometry(error) => map_semantic_error(error),
+        HitTestError::ResourceLimit { limit, attempted } => {
+            ServiceError::resource("hit_test_work", limit, attempted)
+        }
+        HitTestError::Unsupported(reason) => ServiceError {
+            code: "UNSUPPORTED_FEATURE".into(),
+            message: reason.into(),
+            details: serde_json::json!({"operation":"objects.hit_test","reason":reason}),
         },
     }
 }

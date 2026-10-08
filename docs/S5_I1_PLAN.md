@@ -24,3 +24,7 @@
 ## 流程与交付
 
 先保存真实双层回归失败，再实现，定向测试后执行 fmt/check/clippy/test/release、automation_contract、headless_workflow、服务正常依赖树。检查 A2 取消/TaskVersion 与 M2B 拖动回归，真实原生 Metal。记录所有失败与未执行项。候选源码/证据 manifest 独立冻结并交父任务审查；缺陷继续修，审查通过才阶段 commit（不 push），干净构建、同 commit Source/Evidence 包、fresh extraction 复核。当前不声称 PASS。
+
+## Authorized near-contour follow-up (2026-10-08)
+
+`S5_NEAR_CONTOUR_SELECTION.md` amends items5–7: direct hits retain existing zero-tolerance layer/reverse-exposure order; only exterior near candidates use analytic distance ranking. Repeat clicks keep anchor order while the logical candidate set/context is unchanged, with radius included in identity. Incoming Add/All excludes locks; Replace/Remove retains inspection. ProbeDrag, Move admission, geometry and performance thresholds remain unchanged. Native acceptance is pending.

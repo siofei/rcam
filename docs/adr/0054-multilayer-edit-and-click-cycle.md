@@ -7,3 +7,7 @@
 新增服务操作 objects.edit_selection，以全量预校验的跨层精确 delta 历史实现，禁止逐层调用多个服务修改。点选循环是 GUI 瞬态，来源仅为服务 analytic hit；不持久化、不产生制造 revision。按下探测与释放选择分离，拖动保留当前选择。完整细节及 reset/修饰规则见任务书，验收见 S5_I1_ACCEPTANCE_ADDENDUM。
 
 代价：跨层事务可能保守失效全局内容缓存；不降低资源门槛，不把旧 M2B/PMIX 原生证据归到新源码。无需新增第三方依赖。
+
+### S5-I1 near-contour source amendment (2026-10-08)
+
+`S5_NEAR_CONTOUR_SELECTION.md` freezes the authorized near-only analytic distance ranking while direct hits keep zero-tolerance layer/exposure priority, one-pass score/error equivalence and anchor-stable logical cycling. Default six physical pixels, geometry/Clear/Block meanings, ProbeDrag and PointMove ownership remain. Incoming Ctrl Add/box Add/All now excludes locks; Replace/Remove supports inspection and mixed edits still reject atomically. This supersedes the earlier All/Add inspection-lock behavior. Ordinary source/CPU checks are distinct from pending native mouse/build validation; existing acceptance IDs and thresholds are unchanged.

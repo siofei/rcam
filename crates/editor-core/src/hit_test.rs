@@ -92,6 +92,22 @@ pub fn display_boundary_edges(
     )
 }
 
+/// One analytic object hit, in source exposure order. This is object geometry,
+/// including standalone Clear and atomic Block primitive geometry, not a layer
+/// compositor result. Distances and uncertainty use manufacturing f64 mm.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HitTestCandidate {
+    pub object_id: String,
+    pub distance_mm: f64,
+    pub uncertainty_mm: f64,
+}
+impl HitTestCandidate {
+    /// Exactly the existing zero-tolerance hit predicate, including roundoff.
+    pub fn direct_hit(&self) -> bool {
+        self.distance_mm <= self.uncertainty_mm
+    }
+}
+
 impl SemanticDocument {
     /// The service supplies validated manufacturing geometry. A query either
     /// returns all matching IDs in exposure order, or one error (no partial IDs).
@@ -101,6 +117,48 @@ impl SemanticDocument {
         point: MmPoint,
         tolerance: f64,
     ) -> Result<Vec<String>, HitTestError> {
+        self.hit_test_query(
+            layer_id,
+            point,
+            tolerance,
+            || false,
+            |object, _, _| object.object_id.clone(),
+        )
+    }
+
+    /// Same analytic pass, validation, uncertainty and work budget as hit_test.
+    /// Cancellation rejects the complete query; no partial hits are published.
+    pub fn hit_test_scored_cancellable(
+        &self,
+        layer_id: &str,
+        point: MmPoint,
+        tolerance: f64,
+        cancelled: impl FnMut() -> bool,
+    ) -> Result<Vec<HitTestCandidate>, HitTestError> {
+        self.hit_test_query(
+            layer_id,
+            point,
+            tolerance,
+            cancelled,
+            |object, distance, uncertainty| HitTestCandidate {
+                object_id: object.object_id.clone(),
+                distance_mm: distance,
+                uncertainty_mm: uncertainty,
+            },
+        )
+    }
+
+    fn hit_test_query<T>(
+        &self,
+        layer_id: &str,
+        point: MmPoint,
+        tolerance: f64,
+        mut cancelled: impl FnMut() -> bool,
+        mut hit: impl FnMut(&SemanticObject, f64, f64) -> T,
+    ) -> Result<Vec<T>, HitTestError> {
+        if cancelled() {
+            return Err(HitTestError::Cancelled);
+        }
         validate_hit_point(point, tolerance)?;
         if layer_id.trim().is_empty() {
             return Err(HitTestError::InvalidArgument("layer_id"));
@@ -119,6 +177,9 @@ impl SemanticDocument {
         let mut budget = Budget(Some(MAX_HIT_TEST_WORK));
         let mut result = Vec::new();
         for object in &layer.objects {
+            if cancelled() {
+                return Err(HitTestError::Cancelled);
+            }
             budget.charge(1)?;
             let (distance, uncertainty) = if let SemanticGeometry::BlockInstance {
                 definition_id,
@@ -132,6 +193,9 @@ impl SemanticDocument {
                     .map_err(|_| HitTestError::Unsupported("block instance transform"))?;
                 let mut nearest: Option<(f64, f64)> = None;
                 for r in &resolved {
+                    if cancelled() {
+                        return Err(HitTestError::Cancelled);
+                    }
                     budget.charge(1)?;
                     let candidate = geometry_distance_with_uncertainty(
                         &r.geometry,
@@ -160,8 +224,11 @@ impl SemanticDocument {
                 ));
             }
             if distance <= tolerance + uncertainty {
-                result.push(object.object_id.clone());
+                result.push(hit(object, distance, uncertainty));
             }
+        }
+        if cancelled() {
+            return Err(HitTestError::Cancelled);
         }
         Ok(result)
     }

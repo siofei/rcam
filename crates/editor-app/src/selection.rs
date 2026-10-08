@@ -207,6 +207,7 @@ impl ClickContext {
             && self.rect == other.rect
             && self.ppp == other.ppp
             && self.navigation_epoch == other.navigation_epoch
+            && self.tolerance == other.tolerance
             && self.point.distance(other.point) * self.ppp <= 2.
     }
 }
@@ -216,9 +217,85 @@ pub struct ClickCycle {
     pub document: String,
     pub revision: String,
     pub workspace: String,
-    pub candidates: Vec<(String, String)>,
+    pub candidates: crate::shared_snapshot::SnapshotVec<(String, String)>,
+    pub logical_candidates: std::sync::Arc<std::collections::HashSet<ClickCandidateKey>>,
     pub index: usize,
 }
+/// Text operations are one candidate even when a nearby click hits another
+/// glyph. Kind is explicit so operation IDs cannot alias ordinary object IDs.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ClickCandidateKey {
+    pub layer: String,
+    pub text: bool,
+    pub id: String,
+}
+impl ClickCandidateKey {
+    pub fn new(layer: &str, object: &editor_core::SemanticObject) -> Self {
+        let (text, id) = match &object.origin {
+            editor_core::ObjectOrigin::GeneratedText { operation_id } => (true, operation_id),
+            _ => (false, &object.object_id),
+        };
+        Self {
+            layer: layer.into(),
+            text,
+            id: id.clone(),
+        }
+    }
+}
+
+pub(crate) struct ClickCandidate {
+    pub representative: (String, String),
+    pub distance_mm: f64,
+    pub direct_hit: bool,
+    pub direct_order: usize,
+}
+/// Group all eligible glyph hits before ranking; a later direct glyph supplies
+/// its own original exposure priority, never an earlier exterior glyph's rank.
+pub(crate) fn merge_click_candidate(
+    candidates: &mut Vec<ClickCandidate>,
+    logical: &mut std::collections::HashMap<ClickCandidateKey, usize>,
+    layer: &str,
+    object: &editor_core::SemanticObject,
+    hit: &editor_core::hit_test::HitTestCandidate,
+    order: usize,
+) {
+    let key = ClickCandidateKey::new(layer, object);
+    match logical.entry(key) {
+        std::collections::hash_map::Entry::Occupied(entry) => {
+            let candidate = &mut candidates[*entry.get()];
+            candidate.distance_mm = candidate.distance_mm.min(hit.distance_mm);
+            if hit.direct_hit() && !candidate.direct_hit {
+                candidate.direct_hit = true;
+                candidate.direct_order = order;
+                candidate.representative = (layer.into(), hit.object_id.clone());
+            }
+        }
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(candidates.len());
+            candidates.push(ClickCandidate {
+                representative: (layer.into(), hit.object_id.clone()),
+                distance_mm: hit.distance_mm,
+                direct_hit: hit.direct_hit(),
+                direct_order: order,
+            });
+        }
+    }
+}
+
+/// Stable sort: direct hits preserve layer/reverse-exposure priority; only
+/// exterior near hits rank by their analytic distance, with original-order ties.
+pub(crate) fn rank_click_candidates(candidates: &mut [ClickCandidate]) {
+    candidates.sort_by(|a, b| {
+        b.direct_hit.cmp(&a.direct_hit).then_with(|| {
+            if a.direct_hit {
+                a.direct_order.cmp(&b.direct_order)
+            } else {
+                a.distance_mm.total_cmp(&b.distance_mm)
+            }
+        })
+    });
+}
+
 #[derive(Default)]
 pub struct ClickNavigation {
     previous: Option<([f64; 3], eframe::egui::Rect, f32)>,

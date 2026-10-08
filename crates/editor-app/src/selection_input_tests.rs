@@ -168,7 +168,7 @@ fn select_all_uses_whole_snapshot_stable_order_and_every_selection_filter() {
     );
     f.run(Action::SelectAll);
     assert_eq!(f.model.view.selected.ordered.len(), 5);
-    // Existing policy: locks allow inspection, while the service refuses edits.
+    // Ctrl+A introduces only editable objects; Replace still supports inspection.
     let revision = f
         .model
         .view
@@ -185,8 +185,8 @@ fn select_all_uses_whole_snapshot_stable_order_and_every_selection_filter() {
         ..Default::default()
     }));
     f.run(Action::SelectAll);
-    assert_eq!(f.model.view.selected.ordered.len(), 8);
-    assert!(!crate::drag::editable_selection(&f.model.view));
+    assert_eq!(f.model.view.selected.ordered.len(), 4);
+    assert!(crate::drag::editable_selection(&f.model.view));
     assert_eq!(f.model.view.info.as_ref().unwrap().revision, info.revision);
     assert_eq!(
         f.model.view.info.as_ref().unwrap().undo_entries,

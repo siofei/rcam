@@ -101,17 +101,22 @@ impl<'a> Classifier<'a> {
                 .style(object)
                 .is_some_and(|(l, c)| l.selectable && c.is_none_or(|c| c.selectable))
     }
-    /// Same selection policy for borrowed manufacturing snapshot objects.
-    pub fn selectable_object(&self, layer_id: &str, object: &editor_core::SemanticObject) -> bool {
+    /// Incoming edit-selection policy. Inspection Replace/Remove keeps the
+    /// separate selectable policy; Add and SelectAll cannot introduce locks.
+    pub fn editable_object(&self, layer_id: &str, object: &editor_core::SemanticObject) -> bool {
         let Some(layer) = self.layers.iter().find(|l| l.layer_id == layer_id) else {
             return false;
         };
         let class = classify_object(object, &self.shapes);
-        let style = layer.classes.iter().find(|c| c.class == class);
         layer.visible
             && layer.effective_visible
             && layer.selectable
-            && style.is_none_or(|c| c.visible && c.selectable)
+            && !layer.locked
+            && layer
+                .classes
+                .iter()
+                .find(|c| c.class == class)
+                .is_none_or(|c| c.visible && c.selectable && !c.locked)
     }
     /// Which policy refuses an edit of this object, if any.
     pub fn edit_refusal(&self, object: &ObjectInfo) -> Option<&'static str> {
@@ -1036,14 +1041,25 @@ impl Model {
         );
     }
     fn hit(&self, point: MmPoint, tolerance: f64) -> Result<Option<ObjectInfo>, ServiceError> {
+        self.hit_with_policy(point, tolerance, false)
+    }
+    fn hit_with_policy(
+        &self,
+        point: MmPoint,
+        tolerance: f64,
+        editable_only: bool,
+    ) -> Result<Option<ObjectInfo>, ServiceError> {
         #[cfg(feature = "internal-evidence")]
         let _pmix_measure = crate::native_pmix::HitTimer::start(point, tolerance);
         #[cfg(feature = "internal-evidence")]
         let _measure = crate::native_s5m1::HitTimer::start();
         self.editable()?;
         let id = self.info()?.document_id;
+        let classifier =
+            editable_only.then(|| Classifier::new(&self.view.layers, &self.view.apertures));
         let hit = topmost_hit(&self.view.layers, |layer| {
-            self.service
+            let mut ids = self
+                .service
                 .objects_hit_test(
                     &id,
                     HitTestParams {
@@ -1056,7 +1072,32 @@ impl Model {
                         selectable_only: true,
                     },
                 )
-                .map(|r| r.object_ids)
+                .map(|r| r.object_ids)?;
+            if editable_only && !ids.is_empty() {
+                let source = self
+                    .snapshot
+                    .as_ref()
+                    .and_then(|s| s.layers.iter().find(|l| l.id == layer))
+                    .ok_or_else(|| error("NOT_FOUND", "点选快照缺少图层"))?;
+                let wanted: std::collections::HashSet<_> = ids.iter().map(String::as_str).collect();
+                let mut allowed = std::collections::HashSet::new();
+                for (index, object) in source.objects.iter().enumerate() {
+                    if index % 256 == 0
+                        && let Some(cancel) = &self.active_cancel
+                    {
+                        cancel.checkpoint()?;
+                    }
+                    if wanted.contains(object.object_id.as_str())
+                        && classifier
+                            .as_ref()
+                            .is_some_and(|c| c.editable_object(layer, object))
+                    {
+                        allowed.insert(object.object_id.clone());
+                    }
+                }
+                ids.retain(|id| allowed.contains(id));
+            }
+            Ok(ids)
         })?;
         let selected = match hit {
             Some((layer_id, object_id)) => Some(self.service.objects_get(
@@ -1076,7 +1117,11 @@ impl Model {
         tolerance: f64,
         mode: crate::selection::SelectionMode,
     ) -> Result<(), ServiceError> {
-        let hit = self.hit(point, tolerance)?;
+        let hit = self.hit_with_policy(
+            point,
+            tolerance,
+            mode == crate::selection::SelectionMode::Add,
+        )?;
         self.select_hit(hit, mode)?;
         self.view.click_cycle = None;
         Ok(())
@@ -1132,8 +1177,11 @@ impl Model {
         let _measure = crate::native_s5m1::HitTimer::start();
         self.editable()?;
         let document = self.info()?;
+        let classifier = (mode == crate::selection::SelectionMode::Add)
+            .then(|| Classifier::new(&self.view.layers, &self.view.apertures));
         let mut candidates = Vec::new();
-        let mut logical = std::collections::HashSet::new();
+        let mut logical = std::collections::HashMap::new();
+        let mut order = 0usize;
         for layer in self
             .view
             .layers
@@ -1143,7 +1191,7 @@ impl Model {
             if let Some(cancel) = &self.active_cancel {
                 cancel.checkpoint()?;
             }
-            let hits = self.service.objects_hit_test(
+            let hits = self.service.objects_hit_test_scored_with_cancel(
                 &document.document_id,
                 HitTestParams {
                     layer_id: layer.layer_id.clone(),
@@ -1154,12 +1202,13 @@ impl Model {
                     tolerance_mm: context.tolerance,
                     selectable_only: true,
                 },
+                self.active_cancel.as_ref(),
             )?;
-            if hits.object_ids.is_empty() {
+            if hits.hits.is_empty() {
                 continue;
             }
             let wanted: std::collections::HashSet<_> =
-                hits.object_ids.iter().map(String::as_str).collect();
+                hits.hits.iter().map(|hit| hit.object_id.as_str()).collect();
             let source = self
                 .snapshot
                 .as_ref()
@@ -1176,43 +1225,81 @@ impl Model {
                     found.insert(object.object_id.as_str(), object);
                 }
             }
-            for id in hits.object_ids.iter().rev() {
+            for hit in hits.hits.iter().rev() {
                 if let Some(cancel) = &self.active_cancel {
                     cancel.checkpoint()?;
                 }
                 let object = found
-                    .get(id.as_str())
+                    .get(hit.object_id.as_str())
                     .ok_or_else(|| error("NOT_FOUND", "点选快照缺少对象"))?;
-                let key = match &object.origin {
-                    editor_core::ObjectOrigin::GeneratedText { operation_id } => {
-                        (layer.layer_id.clone(), true, operation_id.clone())
-                    }
-                    _ => (layer.layer_id.clone(), false, id.clone()),
-                };
-                if logical.insert(key) {
-                    candidates.push((layer.layer_id.clone(), id.clone()));
+                if classifier
+                    .as_ref()
+                    .is_some_and(|c| !c.editable_object(&layer.layer_id, object))
+                {
+                    continue;
                 }
+                // GeneratedText members share the same layer and class policy,
+                // so this eligibility cannot split a logical text operation.
+                crate::selection::merge_click_candidate(
+                    &mut candidates,
+                    &mut logical,
+                    &layer.layer_id,
+                    object,
+                    hit,
+                    order,
+                );
+                order = order.saturating_add(1);
                 if candidates.len() > editor_core::edit::MAX_MOVE_OBJECTS {
                     return Err(error("RESOURCE_LIMIT", "点选候选过多"));
                 }
             }
         }
-        let previous = self.view.click_cycle.as_ref().filter(|c| {
+        let mut previous = self.view.click_cycle.as_ref().filter(|c| {
             c.context.same_place(&context)
                 && c.document == document.document_id
                 && c.revision == document.revision
                 && c.workspace == document.workspace_revision
-                && c.candidates == candidates
+                && c.logical_candidates.len() == logical.len()
         });
-        let index = previous.map_or(0, |c| {
-            if mode == crate::selection::SelectionMode::Replace {
-                (c.index + 1) % candidates.len().max(1)
-            } else {
-                c.index
+        if let Some(cycle) = previous {
+            for (index, key) in logical.keys().enumerate() {
+                if index % 256 == 0
+                    && let Some(cancel) = &self.active_cancel
+                {
+                    cancel.checkpoint()?;
+                }
+                if !cycle.logical_candidates.contains(key) {
+                    previous = None;
+                    break;
+                }
             }
-        });
-        // Keep the original screen anchor to prevent incremental clicks drifting arbitrarily.
-        let anchor = previous.map_or(context.clone(), |c| c.context.clone());
+        }
+        // Keep the original screen anchor and ranked representatives. Scores
+        // may cross under small pointer motion without changing the candidate set.
+        let (candidates, logical_candidates, index, anchor) = if let Some(cycle) = previous {
+            (
+                cycle.candidates.clone(),
+                cycle.logical_candidates.clone(),
+                if mode == crate::selection::SelectionMode::Replace {
+                    (cycle.index + 1) % cycle.candidates.len().max(1)
+                } else {
+                    cycle.index
+                },
+                cycle.context.clone(),
+            )
+        } else {
+            crate::selection::rank_click_candidates(&mut candidates);
+            let candidates: crate::shared_snapshot::SnapshotVec<_> = candidates
+                .into_iter()
+                .map(|candidate| candidate.representative)
+                .collect();
+            (
+                candidates,
+                Arc::new(logical.into_keys().collect()),
+                0,
+                context.clone(),
+            )
+        };
         let hit = candidates
             .get(index)
             .map(|(layer_id, object_id)| {
@@ -1239,6 +1326,7 @@ impl Model {
                     revision: document.revision,
                     workspace: document.workspace_revision,
                     candidates,
+                    logical_candidates,
                     index,
                 })
             };
@@ -1260,6 +1348,8 @@ impl Model {
             }
             _ => Arc::new(self.service.render_snapshot(&d.document_id)?),
         };
+        let classifier = (selection_mode == crate::selection::SelectionMode::Add)
+            .then(|| Classifier::new(&self.view.layers, &self.view.apertures));
         let mut selected = Vec::new();
         for l in self
             .view
@@ -1305,7 +1395,12 @@ impl Model {
                 let object = objects
                     .get(object_id.as_str())
                     .ok_or_else(|| error("NOT_FOUND", "框选快照缺少对象"))?;
-                selected.push((l.layer_id.as_str(), *object));
+                if classifier
+                    .as_ref()
+                    .is_none_or(|c| c.editable_object(&l.layer_id, object))
+                {
+                    selected.push((l.layer_id.as_str(), *object));
+                }
             }
         }
         self.view
@@ -1340,7 +1435,7 @@ impl Model {
                 {
                     cancel.checkpoint()?;
                 }
-                if classifier.selectable_object(&source.id, object) {
+                if classifier.editable_object(&source.id, object) {
                     selected.push((source.id.as_str(), object));
                 }
             }

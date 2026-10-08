@@ -25,3 +25,5 @@ I1-14：自动恢复到期与用户按下同帧时，用户 ProbeDrag 优先；�
 第二轮独审整改的新固定协议为129步：保留原119步（第112步强制恢复到期与同帧按下），追加框选重置、普通点击建立候选、三次实际后台RecoveryWrite完成及后续普通推进/下层Shift移除/绕回。I1-15：恢复任务完成前后完整click_cycle、制造info/geometry/history/dirty/selection相同，TaskReceipt completed且六维input/result版本相同，实际恢复.rcam与metadata SHA绑定；恢复后普通/Shift点击必须仍按当前候选执行。关联I1-06/07与AT028/030/032/043。
 
 I1-10/13补强：正常与诊断分支共用实际焦点/按钮/指针、screen/world、camera/canvas/ppp/navigation、Probe容差和CanvasSelect上下文校验。仅明确注入的foreign_move/PointerGone及early release确认次序有特殊差异；无关失焦、错误动作上下文/坐标或额外动作必须拒绝。整包落盘重清单负例新增三项独审反例及其余诊断边界，共28项。
+
+I1-16 (near-contour follow-up, native not executed): check the full matrix in `S5_NEAR_CONTOUR_SELECTION.md`, including distance reversal/ties/direct and interleaved-text priority, true holes/arcs/Block/Clear, six DPI values, anchor/glyph/membership/radius identity, editable incoming Add/All with inspection Remove, atomic locked mixed Move, cancellation/error equivalence and80k immutable snapshot reuse. Existing I1-05/06/07 near-only ordering and incoming Add/All lock expectations are amended explicitly; original geometry, gesture and native acceptance thresholds remain.

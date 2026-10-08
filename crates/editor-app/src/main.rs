@@ -22,6 +22,8 @@ mod layer_tests;
 mod metrics_panel;
 mod modal;
 #[cfg(test)]
+mod near_pick_tests;
+#[cfg(test)]
 mod perf_tests;
 #[cfg(test)]
 mod pmix_tests;

@@ -1329,3 +1329,7 @@ S5-I2-C display-only follow-up, R08/R18 and existing AT-025 local coverage (C-04
 ### S5 shortcut settings compact presentation follow-up
 
 `S5_SHORTCUT_COMPACT.md`/ADR0050 addendum specify a fixed compact list/editor layout, stable row/alias/status geometry and viewport scrolling for R08/R12/R18. Complete dynamic command catalogue, raw/effective key distinction and recording/save/import state machines remain. No mapping/schema/dependency change or native visual acceptance claim.
+
+### S5-I1 near-contour source amendment (2026-10-08)
+
+`S5_NEAR_CONTOUR_SELECTION.md` freezes the authorized near-only analytic distance ranking while direct hits keep zero-tolerance layer/exposure priority, one-pass score/error equivalence and anchor-stable logical cycling. Default six physical pixels, geometry/Clear/Block meanings, ProbeDrag and PointMove ownership remain. Incoming Ctrl Add/box Add/All now excludes locks; Replace/Remove supports inspection and mixed edits still reject atomically. This supersedes the earlier All/Add inspection-lock behavior. Ordinary source/CPU checks are distinct from pending native mouse/build validation; existing acceptance IDs and thresholds are unchanged.

@@ -434,3 +434,91 @@ fn hit_test_resource_limit_returns_no_partial_ids_and_no_side_effects() {
     assert_eq!(r.info(), before);
     assert_eq!(r.objects(), objects);
 }
+
+#[test]
+fn internal_scored_query_preserves_legacy_policy_errors_and_wire_schema() {
+    use editor_service::{HitTestParams, HitTestPoint};
+    let mut r = Run::new();
+    let query = |layer: &str, x, y, tolerance| HitTestParams {
+        layer_id: layer.into(),
+        point: HitTestPoint { x_mm: x, y_mm: y },
+        tolerance_mm: tolerance,
+        selectable_only: true,
+    };
+    for (x, y, tol) in [(2., 3., 0.), (3.1, 3., 0.2), (9., 9., 0.1)] {
+        let params = query(&r.layer, x, y, tol);
+        let old = r.service.objects_hit_test(&r.id, params.clone()).unwrap();
+        let new = r
+            .service
+            .objects_hit_test_scored_with_cancel(&r.id, params, None)
+            .unwrap();
+        assert_eq!(
+            old.object_ids,
+            new.hits
+                .iter()
+                .map(|h| h.object_id.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            (&old.document_id, &old.revision, &old.layer_id),
+            (&new.document_id, &new.revision, &new.layer_id)
+        );
+        let wire = serde_json::to_value(&old).unwrap();
+        assert!(wire.get("hits").is_none());
+        assert!(wire.get("distance_mm").is_none());
+    }
+    for (x, y, tol) in [
+        (f64::NAN, 3., 0.),
+        (2., f64::INFINITY, 0.),
+        (2., 3., -1.),
+        (2., 3., f64::INFINITY),
+    ] {
+        let params = query(&r.layer, x, y, tol);
+        assert_eq!(
+            r.service
+                .objects_hit_test(&r.id, params.clone())
+                .unwrap_err(),
+            r.service
+                .objects_hit_test_scored_with_cancel(&r.id, params, None)
+                .unwrap_err()
+        );
+    }
+    for layer in ["", "missing"] {
+        let params = query(layer, 2., 3., 0.);
+        assert_eq!(
+            r.service
+                .objects_hit_test(&r.id, params.clone())
+                .unwrap_err(),
+            r.service
+                .objects_hit_test_scored_with_cancel(&r.id, params, None)
+                .unwrap_err()
+        );
+    }
+    r.update(json!({"locked":true}));
+    assert_eq!(
+        r.service
+            .objects_hit_test_scored_with_cancel(&r.id, query(&r.layer, 2., 3., 0.), None)
+            .unwrap()
+            .hits
+            .len(),
+        1,
+        "locked geometry remains inspectable in both queries"
+    );
+    r.update(json!({"visible":false}));
+    assert!(
+        r.service
+            .objects_hit_test_scored_with_cancel(&r.id, query(&r.layer, 2., 3., 0.), None)
+            .unwrap()
+            .hits
+            .is_empty()
+    );
+    let cancel = editor_service::task::CancellationToken::default();
+    cancel.cancel();
+    assert_eq!(
+        r.service
+            .objects_hit_test_scored_with_cancel(&r.id, query(&r.layer, 2., 3., 0.), Some(&cancel))
+            .unwrap_err()
+            .code,
+        "CANCELLED"
+    );
+}
