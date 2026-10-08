@@ -64,7 +64,10 @@ fn raw_single_project_drop_opens_encoded_empty_project_through_real_worker() {
     assert!(model.view.error.is_none(), "{:?}", model.view.error);
     let opened = model.view.info.as_ref().unwrap();
     assert_eq!(opened.project_id, empty.project_id);
-    assert_eq!(opened.project_path.as_deref(), project.to_str());
+    // The service stores a canonical path; macOS temp_dir can use /var
+    // while canonicalize resolves the same file through /private/var.
+    let canonical_project = project.canonicalize().unwrap();
+    assert_eq!(opened.project_path.as_deref(), canonical_project.to_str());
     assert!(!opened.project_dirty);
     assert!(model.view.layers.is_empty());
     assert_eq!(std::fs::read(&project).unwrap(), bytes);

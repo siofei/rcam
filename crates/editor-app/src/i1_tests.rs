@@ -655,7 +655,8 @@ fn i1_release_before_probe_reply_preserves_modifier_and_selection_action() {
 #[test]
 fn i1_due_recovery_defers_to_pending_and_held_canvas_gesture() {
     let mut app = crate::modal::tests::app();
-    app.view = model().view;
+    let mut worker = model();
+    app.view = worker.view.clone();
     let (tx, requests) = std::sync::mpsc::sync_channel(4);
     app.tx = tx;
     let now = std::time::Instant::now();
@@ -679,16 +680,65 @@ fn i1_due_recovery_defers_to_pending_and_held_canvas_gesture() {
     assert!(requests.try_recv().is_err());
     assert!(!app.busy);
     assert!(app.pending_recovery_identity.is_none());
-    // At the end of the UI frame the accepted press owns busy before recovery.
+    // Read tasks own their separate lane without claiming write busy. Recovery
+    // must defer even when the pointer gesture has already been released.
     app.send(Action::ProbeDrag(MmPoint::new(0., 0.), 0.1));
-    assert!(app.busy);
+    assert!(!app.busy);
+    assert!(app.pending_task.is_none());
+    let (id, _, action, task) = requests.try_recv().unwrap();
+    assert!(matches!(action, Action::ProbeDrag(..)));
+    assert_eq!(app.canvas_read.as_ref().unwrap().task.task_id, id);
+    app.drag = None;
     app.tick_recovery(now);
-    assert!(matches!(
-        requests.try_recv().unwrap().2,
-        Action::ProbeDrag(..)
-    ));
     assert!(requests.try_recv().is_err());
     assert!(app.pending_recovery_identity.is_none());
+    task.cancel_token.cancel();
+    worker.run_task(task, action);
+    assert!(app.consume_canvas_reply(id, &worker.view));
+    assert!(app.canvas_read.is_none());
+
+    // Selection also remains a recovery barrier until its explicit rollback
+    // has been synchronized from the real worker.
+    app.send(Action::CanvasSelect(
+        crate::selection::ClickContext::new(p, Camera::default(), app.canvas_rect, 1.),
+        SelectionMode::Replace,
+    ));
+    assert!(app.selection_read_pending());
+    assert!(!app.busy);
+    assert!(app.pending_task.is_none());
+    let (id, _, action, task) = requests.try_recv().unwrap();
+    assert!(matches!(action, Action::CanvasSelect(..)));
+    app.tick_recovery(now);
+    assert!(requests.try_recv().is_err());
+    assert!(app.pending_recovery_identity.is_none());
+    task.cancel_token.cancel();
+    worker.run_task(task, action);
+    assert!(app.consume_canvas_reply(id, &worker.view));
+    assert!(!app.canvas_selection_unconfirmed);
+    assert!(app.canvas_read.is_none());
+
+    // A held gesture remains a barrier after both read tasks retire.
+    app.drag = Some(Gesture::arm(
+        &app.view,
+        p,
+        Camera::default(),
+        Rect::from_min_max(pos2(0., 0.), pos2(400., 400.)),
+        1.,
+        SelectionMode::Replace,
+    ));
+    app.tick_recovery(now);
+    assert!(requests.try_recv().is_err());
+    assert!(app.pending_recovery_identity.is_none());
+
+    // Once idle, the same due recovery must actually enter the write lane.
+    app.drag = None;
+    app.tick_recovery(now);
+    assert!(app.busy);
+    let (id, _, action, _) = requests.try_recv().unwrap();
+    assert!(matches!(action, Action::RecoveryWrite(..)));
+    assert_eq!(app.pending_task.as_ref().unwrap().task_id, id);
+    assert!(app.pending_recovery_identity.is_some());
+    assert!(requests.try_recv().is_err());
 }
 
 #[test]
