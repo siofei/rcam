@@ -1283,3 +1283,42 @@ Cloud verification executes Rust 1.89 formatting and Mac-target public/internal
 checks/Clippy, extracted fixed-recorder CPU regressions, unchanged cache tests and
 portable checks. Mac thread-clock execution, native release/Metal capture and
 performance results are not replaced by cross checks or auxiliary CPU tests.
+
+
+### PMIX snapshot SHA follow-up (2026-10-08, internal evidence only)
+
+Exact base 104c7d712ef177b3c57031ea4f823dd6777cbc24. Stage S5-M2-C,
+R07/R08/R21/R22, AT-067 within existing bounded mappings. Only native_pmix,
+this plan and source manifest may change. The parent reports a real Mac protected
+move1 functional/guard PASS and COMPLETE sidecar: four snapshot hash spans are
+approximately 193–199 ms wall and thread CPU. Cloud has not read that private
+package and does not relabel those results as evidence for this candidate.
+
+The existing snapshot SHA implementation is dependency-free scalar Rust in
+editor-core; the lock contains no alternative SHA crate. No workspace Release
+profile override was found. This candidate uses existing macOS libSystem's
+CommonCrypto CC_SHA256 only for the one semantic snapshot hash call, in its
+original SnapshotHash span. The API's uint32_t length is checked without casts;
+inputs beyond the limit, unexpected return pointers and other platforms use the
+original implementation. The result remains exactly 64 lowercase hex bytes,
+including leading zeroes. No returned pointer is dereferenced. Synchronous
+serialization/write/hash/record and the original at_ns placement remain intact.
+All other public/evidence hashes, snapshot bytes/bindings/statistics, dependencies,
+toolchain, thresholds, capture samples and prior records remain unchanged.
+
+API source: Apple CommonCrypto include/CommonDigest.h (CC_LONG, CC_SHA256 and
+libSystem linkage) and lib/CommonDigest.c (success returns md, error returns NULL),
+https://github.com/apple-oss-distributions/CommonCrypto . Only the system API is
+called; no third-party implementation source is copied or vendored. No crate,
+framework or new system library is added. Existing public SHA remains untouched.
+
+Regressions cover standard vectors, SHA padding/binary boundaries, large synthetic
+buffers, length-limit decision without a 4 GiB allocation, null/unexpected return
+fallback and every digest byte/leading zero. Mac regressions require the actual
+CommonCrypto call to succeed, preventing fallback from concealing link/runtime
+failure. An explicitly ignored REPORT_ONLY release probe compares five rounds
+per large buffer with the original hash. Cloud's non-Mac probe exercises fallback,
+not Mac acceleration; cross-target check/Clippy cannot prove Mac linking, runtime
+SHA equivalence or speed. Those checks and protected new-identity capture remain
+Mac work. No asynchronous lifecycle change or rendering adjustment is included;
+serialization cost, initial render gap and flicker remain separate/open.

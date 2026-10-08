@@ -483,6 +483,187 @@ pub mod spans {
     }
 }
 
+// Only PMIX semantic snapshots use this fast path. Public/import/project hashes
+// retain the dependency-free implementation and every evidence binding stays SHA-256.
+fn snapshot_sha256_hex(bytes: &[u8]) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        #[link(name = "System")]
+        unsafe extern "C" {
+            fn CC_SHA256(data: *const std::ffi::c_void, len: u32, digest: *mut u8) -> *mut u8;
+        }
+        snapshot_sha256_hex_with(bytes, |bytes, len, digest| {
+            // SAFETY: CommonDigest.h defines CC_LONG as uint32_t and the output
+            // as 32 writable bytes. The input remains borrowed for this synchronous
+            // call; len was checked, output is distinct, and neither pointer escapes.
+            unsafe { CC_SHA256(bytes.as_ptr().cast(), len, digest) }
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    sha256_hex(bytes)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn commoncrypto_length(length: usize) -> Option<u32> {
+    u32::try_from(length).ok()
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn snapshot_sha256_hex_with(
+    bytes: &[u8],
+    digest_call: impl FnOnce(&[u8], u32, *mut u8) -> *mut u8,
+) -> String {
+    let Some(len) = commoncrypto_length(bytes.len()) else {
+        return sha256_hex(bytes);
+    };
+    let mut digest = [0u8; 32];
+    let output = digest.as_mut_ptr();
+    if digest_call(bytes, len, output) != output {
+        // No dereference of a returned pointer, no partial/unverified digest.
+        return sha256_hex(bytes);
+    }
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        hex.push(HEX[(byte >> 4) as usize] as char);
+        hex.push(HEX[(byte & 15) as usize] as char);
+    }
+    hex
+}
+
+#[cfg(test)]
+mod snapshot_hash_tests {
+    use super::*;
+
+    fn patterned(length: usize) -> Vec<u8> {
+        (0..length).map(|i| ((i * 131 + 17) & 255) as u8).collect()
+    }
+    fn equivalent(bytes: &[u8]) {
+        assert_eq!(snapshot_sha256_hex(bytes), sha256_hex(bytes));
+        #[cfg(target_os = "macos")]
+        {
+            // The fallback must not hide a failed system call in Mac regressions.
+            unsafe extern "C" {
+                fn CC_SHA256(data: *const std::ffi::c_void, len: u32, digest: *mut u8) -> *mut u8;
+            }
+            let mut digest = [0u8; 32];
+            let output = digest.as_mut_ptr();
+            // SAFETY: same checked one-shot ABI and live disjoint buffers as above.
+            let returned = unsafe {
+                CC_SHA256(
+                    bytes.as_ptr().cast(),
+                    commoncrypto_length(bytes.len()).unwrap(),
+                    output,
+                )
+            };
+            assert_eq!(returned, output, "Mac CommonCrypto call must succeed");
+        }
+    }
+    #[test]
+    fn snapshot_sha256_standard_vectors_match() {
+        for (bytes, expected) in [
+            (
+                b"".as_slice(),
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+            (
+                b"abc".as_slice(),
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
+        ] {
+            assert_eq!(snapshot_sha256_hex(bytes), expected);
+            equivalent(bytes);
+        }
+        let million = vec![b'a'; 1_000_000];
+        assert_eq!(
+            snapshot_sha256_hex(&million),
+            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+        );
+        equivalent(&million);
+    }
+    #[test]
+    fn snapshot_sha256_padding_and_binary_boundaries_match() {
+        for len in [
+            1, 2, 54, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129, 255, 256, 257, 1023, 1024,
+            1025, 4095, 4096, 4097,
+        ] {
+            equivalent(&patterned(len));
+        }
+    }
+    #[test]
+    fn snapshot_sha256_large_buffers_match() {
+        for len in [1_048_583, 37_954_766, 38_081_126] {
+            equivalent(&patterned(len));
+        }
+    }
+    #[test]
+    fn snapshot_sha256_rejects_null_and_unexpected_return_pointers() {
+        let bytes = patterned(129);
+        let expected = sha256_hex(&bytes);
+        assert_eq!(
+            snapshot_sha256_hex_with(&bytes, |input, len, _| {
+                assert_eq!(input, bytes);
+                assert_eq!(len, 129);
+                std::ptr::null_mut()
+            }),
+            expected
+        );
+        let mut other = [0u8; 32];
+        assert_eq!(
+            snapshot_sha256_hex_with(&bytes, |_, _, _| other.as_mut_ptr()),
+            expected
+        );
+    }
+    #[test]
+    fn snapshot_sha256_hex_preserves_all_byte_values_and_leading_zeroes() {
+        for block in 0..8 {
+            let digest: [u8; 32] = std::array::from_fn(|i| (block * 32 + i) as u8);
+            let expected: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+            let actual = snapshot_sha256_hex_with(b"abc", |_, _, output| {
+                // SAFETY: helper supplies a distinct 32-byte output for the call.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(digest.as_ptr(), output, 32);
+                }
+                output
+            });
+            assert_eq!(actual, expected);
+            assert_eq!(actual.len(), 64);
+        }
+    }
+    #[test]
+    fn snapshot_sha256_length_limit_never_truncates() {
+        assert_eq!(commoncrypto_length(0), Some(0));
+        assert_eq!(commoncrypto_length(u32::MAX as usize), Some(u32::MAX));
+        if let Ok(over) = usize::try_from(u64::from(u32::MAX) + 1) {
+            assert_eq!(commoncrypto_length(over), None);
+            assert_eq!(commoncrypto_length(usize::MAX), None);
+        }
+    }
+    #[test]
+    #[ignore = "REPORT_ONLY release hash timing; run explicitly with --release --ignored --nocapture"]
+    fn snapshot_sha256_release_timing_probe() {
+        assert!(!cfg!(debug_assertions), "release timing requires --release");
+        use std::{hint::black_box, time::Instant};
+        for len in [37_954_766, 38_081_126] {
+            let bytes = patterned(len);
+            equivalent(&bytes);
+            for round in 0..5 {
+                let start = Instant::now();
+                let old = sha256_hex(black_box(&bytes));
+                let old_ms = start.elapsed().as_secs_f64() * 1000.;
+                let start = Instant::now();
+                let new = snapshot_sha256_hex(black_box(&bytes));
+                let new_ms = start.elapsed().as_secs_f64() * 1000.;
+                assert_eq!(old, new);
+                println!(
+                    "REPORT_ONLY_SNAPSHOT_SHA bytes={len} round={round} mac_fast_path={} rust_ms={old_ms:.6} candidate_ms={new_ms:.6} digest={new}",
+                    cfg!(target_os = "macos")
+                );
+            }
+        }
+    }
+}
+
 static REQUESTS: OnceLock<std::sync::Mutex<Vec<Value>>> = OnceLock::new();
 pub fn request_input(
     task: &editor_service::task::TaskContext,
@@ -1029,7 +1210,7 @@ impl Run {
         }
         let hash = {
             let _span = spans::enter(spans::Stage::SnapshotHash);
-            sha256_hex(&bytes)
+            snapshot_sha256_hex(&bytes)
         };
         let _span = spans::enter(spans::Stage::SnapshotRecord);
         self.snapshot_files.push(json!({"label":label,"path":name,"sha256":hash,"frame_id":self.frame_id,"at_ns":self.started.elapsed().as_nanos() as u64,"count":s.layers.iter().map(|l|l.objects.len()).sum::<usize>(),"selected_ids":app.view.selected.ids(),"state":state(app)}));
