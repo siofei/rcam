@@ -1,7 +1,9 @@
 //! A bounded, non-associative insertion into an ordered exposure stream.
 use super::*;
 
-pub const MAX_ARRAY_CELLS: u64 = 10_000;
+/// Advisory total cell count, including the unchanged source cell (0, 0).
+/// This is not a core count ceiling; the GUI may ask before a larger commit.
+pub const ARRAY_CELL_WARNING_THRESHOLD: usize = 500_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,11 +29,9 @@ impl RectangularArray {
             .rows
             .checked_mul(self.columns)
             .ok_or(EditError::ResourceLimit)?;
-        if cells > MAX_ARRAY_CELLS {
-            return Err(EditError::ResourceLimit);
-        }
-        self.offset(cells as usize - 1)?;
-        Ok(cells as usize)
+        let cells = usize::try_from(cells).map_err(|_| EditError::ResourceLimit)?;
+        self.offset(cells - 1)?;
+        Ok(cells)
     }
 
     /// Shared by the numeric preview and commit. Index zero is the unchanged source.
@@ -73,6 +73,7 @@ impl EditHistory {
         layer_id: &str,
         ids: &[String],
         spec: RectangularArray,
+        enforce_resources: bool,
     ) -> Result<(usize, Vec<usize>, ArrayEstimate), EditError> {
         let cells = spec.cell_count()?;
         let (layer_index, selected) = self.targets(document, layer_id, ids)?;
@@ -136,9 +137,9 @@ impl EditHistory {
             per_cell_bytes = add(per_cell_bytes, mul(add(bytes, 512)?, 3)?)?;
         }
         estimate.added_region_edges = mul(source_edges, cells - 1)?;
-        if created > MAX_MOVE_OBJECTS
-            || add(total, created)? > MAX_EDIT_DOCUMENT_OBJECTS
-            || add(edges, estimate.added_region_edges)? > MAX_EDIT_REGION_EDGES
+        if enforce_resources
+            && (add(total, created)? > MAX_EDIT_DOCUMENT_OBJECTS
+                || add(edges, estimate.added_region_edges)? > MAX_EDIT_REGION_EDGES)
         {
             return Err(EditError::ResourceLimit);
         }
@@ -153,7 +154,9 @@ impl EditHistory {
             )?;
         }
         bytes = add(bytes, mul(per_cell_bytes, cells - 1)?)?;
-        self.budget(bytes)?;
+        if enforce_resources {
+            self.budget(bytes)?;
+        }
         estimate.history_bytes = bytes;
         Ok((layer_index, selected, estimate))
     }
@@ -166,7 +169,20 @@ impl EditHistory {
         ids: &[String],
         spec: RectangularArray,
     ) -> Result<ArrayEstimate, EditError> {
-        self.array_plan(document, layer_id, ids, spec)
+        self.array_plan(document, layer_id, ids, spec, true)
+            .map(|(_, _, estimate)| estimate)
+    }
+
+    /// Read-only resource demand for explaining a failed preflight. This never
+    /// authorizes a commit or bypasses checked arithmetic and selection checks.
+    pub fn array_resource_requirements(
+        &self,
+        document: &SemanticDocument,
+        layer_id: &str,
+        ids: &[String],
+        spec: RectangularArray,
+    ) -> Result<ArrayEstimate, EditError> {
+        self.array_plan(document, layer_id, ids, spec, false)
             .map(|(_, _, estimate)| estimate)
     }
 
@@ -177,7 +193,8 @@ impl EditHistory {
         ids: &[String],
         spec: RectangularArray,
     ) -> Result<Vec<String>, EditError> {
-        let (layer_index, selected, estimate) = self.array_plan(document, layer_id, ids, spec)?;
+        let (layer_index, selected, estimate) =
+            self.array_plan(document, layer_id, ids, spec, true)?;
         if estimate.created_object_count == 0 {
             return Ok(vec![]);
         }

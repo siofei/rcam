@@ -175,13 +175,18 @@ impl EditorApp {
             .as_ref()
             .map_err(Clone::clone)
             .and_then(|p| self.preview_adapter_point(&mut session, p.world_mm));
-        if let Err(error) = &preview {
-            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
-        }
+        crate::ui::modal_widgets::status_slot(
+            ui,
+            preview.as_ref().err().map_or("", String::as_str),
+            38.,
+            true,
+        );
         let apply = ui.add_enabled(
             preview.is_ok() && !self.busy && !self.point_commit_blocked,
             egui::Button::new("使用此点"),
         );
+        #[cfg(test)]
+        crate::ui::modal_widgets::record_control(ui, "adapter-apply-rect", &apply);
         #[cfg(feature = "internal-evidence")]
         crate::native_i1::widget("adapter-apply", &apply);
         if apply.clicked() || (preview.is_ok() && self.dialog_enter(ui)) {

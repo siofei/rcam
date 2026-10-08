@@ -626,24 +626,33 @@ impl EditorApp {
                 let mut text = text;
                 let mut apply = false;
                 let mut cancel = false;
-                egui::Modal::new(egui::Id::new("layer-rename")).show(ctx, |ui| {
-                    ui.set_width(crate::ui::tokens::modal_width(ctx, 340., 180.));
-                    ui.heading("重命名图层");
-                    let edit =
-                        ui.add(egui::TextEdit::singleline(&mut text).desired_width(f32::INFINITY));
-                    edit.request_focus();
-                    let valid = !text.trim().is_empty();
-                    let (row_cancel, row_apply) =
-                        crate::ui::modal_widgets::cancel_apply_row(ui, "应用", valid && !self.busy);
-                    cancel = row_cancel;
-                    apply = row_apply || (valid && self.dialog_enter(ui));
-                    if let Some(error) = &self.view.error {
-                        ui.colored_label(
-                            crate::ui::tokens::warning_text(ui.visuals()),
-                            format!("{}: {}", error.code, error.message),
+                crate::ui::modal_widgets::fixed_modal(
+                    ctx,
+                    egui::Id::new("layer-rename"),
+                    egui::vec2(340., 200.),
+                    |ui| {
+                        ui.heading("重命名图层");
+                        let edit = ui.add(
+                            egui::TextEdit::singleline(&mut text).desired_width(f32::INFINITY),
                         );
-                    }
-                });
+                        edit.request_focus();
+                        let valid = !text.trim().is_empty();
+                        let (row_cancel, row_apply) = crate::ui::modal_widgets::cancel_apply_row(
+                            ui,
+                            "应用",
+                            valid && !self.busy,
+                        );
+                        cancel = row_cancel;
+                        apply = row_apply || (valid && self.dialog_enter(ui));
+                        let error = self
+                            .view
+                            .error
+                            .as_ref()
+                            .map(|e| format!("{}: {}", e.code, e.message))
+                            .unwrap_or_default();
+                        crate::ui::modal_widgets::status_slot(ui, &error, 38., true);
+                    },
+                );
                 self.layer_dialog = Some(LayerDialog::Rename {
                     layer: layer_id.clone(),
                     text: text.clone(),
@@ -665,16 +674,22 @@ impl EditorApp {
                 let mut close = false;
                 let mut apply_name = false;
                 let mut events: Vec<RowEvent> = Vec::new();
-                egui::Modal::new(egui::Id::new("layer-settings")).show(ctx, |ui| {
-                    ui.set_width(crate::ui::tokens::modal_width(ctx, 380., 200.));
-                    ui.heading(format!("图层设置 · {}", l.display_name));
-                    egui::ScrollArea::vertical()
-                        .max_height((ctx.content_rect().height() - 180.).max(120.))
+                crate::ui::modal_widgets::fixed_modal(
+                    ctx,
+                    egui::Id::new("layer-settings"),
+                    egui::vec2(380., 540.),
+                    |ui| {
+                        crate::ui::modal_widgets::heading(
+                            ui,
+                            &format!("图层设置 · {}", l.display_name),
+                        );
+                        egui::ScrollArea::vertical()
+                        .max_height((ui.available_height() - 44.).max(1.)).auto_shrink([false, false])
                         .show(ui, |ui| {
                             ui.add_enabled_ui(!self.busy, |ui| {
                                 ui.label("名称");
                                 ui.horizontal(|ui| {
-                                    ui.add(egui::TextEdit::singleline(&mut name).desired_width(220.));
+                                    ui.add(egui::TextEdit::singleline(&mut name).id(egui::Id::new("layer-settings-name")).desired_width(220.));
                                     if crate::ui::buttons::primary(
                                         ui,
                                         "应用名称",
@@ -775,10 +790,11 @@ impl EditorApp {
                                 }
                             }
                         });
-                    if crate::ui::buttons::secondary(ui, "关闭").clicked() {
-                        close = true;
-                    }
-                });
+                        if crate::ui::buttons::secondary(ui, "关闭").clicked() {
+                            close = true;
+                        }
+                    },
+                );
                 self.layer_dialog = Some(LayerDialog::Settings {
                     layer: layer_id.clone(),
                     name: name.clone(),
@@ -799,91 +815,112 @@ impl EditorApp {
                 let mut events: Vec<(ClassStyleUpdate, bool)> = Vec::new();
                 let mut color_mode = l.color_mode;
                 let mut reset = false;
-                egui::Modal::new(egui::Id::new("layer-categories")).show(ctx, |ui| {
-                    ui.set_width(crate::ui::tokens::modal_width(ctx, 460., 240.));
-                    ui.heading(format!("分类设置 · {}", l.display_name));
-                    ui.label(
+                crate::ui::modal_widgets::fixed_modal(
+                    ctx,
+                    egui::Id::new("layer-categories"),
+                    egui::vec2(460., 580.),
+                    |ui| {
+                        crate::ui::modal_widgets::heading(
+                            ui,
+                            &format!("分类设置 · {}", l.display_name),
+                        );
+                        ui.label(
                         RichText::new("显示 / 可选择 / 锁定 与颜色均只属于工作区视图，不改变制造几何和导出内容。")
                             .small()
                             .weak(),
                     );
-                    ui.add_enabled_ui(!self.busy, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("颜色模式");
-                            for candidate in [ColorMode::LayerColor, ColorMode::CategoryColor] {
-                                ui.selectable_value(&mut color_mode, candidate, color_mode_label(candidate));
-                            }
-                            if ui.button("全部重置").clicked() {
-                                reset = true;
-                            }
-                        });
-                        egui::ScrollArea::vertical()
-                            .max_height((ctx.content_rect().height() - 260.).max(120.))
-                            .show(ui, |ui| {
-                                egui::Grid::new("class-grid").striped(true).show(ui, |ui| {
-                                    ui.label("类别");
-                                    ui.label("显示");
-                                    ui.label("可选");
-                                    ui.label("锁定");
-                                    ui.label("颜色");
-                                    ui.end_row();
-                                    for style in &l.classes {
-                                        let class: DisplayClass = style.class;
-                                        ui.label(class.label());
-                                        let (mut visible, mut selectable, mut locked) =
-                                            (style.visible, style.selectable, style.locked);
-                                        let mut update = ClassStyleUpdate {
-                                            class: Some(class),
-                                            ..Default::default()
-                                        };
-                                        let mut changed = false;
-                                        if ui.checkbox(&mut visible, "").changed() {
-                                            update.visible = Some(visible);
-                                            changed = true;
-                                        }
-                                        if ui.checkbox(&mut selectable, "").changed() {
-                                            update.selectable = Some(selectable);
-                                            changed = true;
-                                        }
-                                        if ui.checkbox(&mut locked, "").changed() {
-                                            update.locked = Some(locked);
-                                            changed = true;
-                                        }
-                                        let swatch = RichText::new("■").color(color32(style.effective_color));
-                                        ui.menu_button(swatch, |ui| {
-                                            ui.label(format!("{} 颜色", class.label()));
-                                            if let Some(hex) = color_palette(ui, style.effective_color, &recent) {
-                                                update.color_override = Some(hex);
-                                                changed = true;
-                                                ui.close();
-                                            }
-                                            if ui
-                                                .add_enabled(
-                                                    style.color_override.is_some(),
-                                                    egui::Button::new("恢复自动颜色"),
-                                                )
-                                                .clicked()
-                                            {
-                                                update.color_override = Some("inherit".into());
-                                                changed = true;
-                                                ui.close();
-                                            }
-                                        });
-                                        if changed {
-                                            events.push((update, true));
-                                        }
-                                        ui.end_row();
-                                    }
-                                });
+                        ui.add_enabled_ui(!self.busy, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("颜色模式");
+                                for candidate in [ColorMode::LayerColor, ColorMode::CategoryColor] {
+                                    ui.selectable_value(
+                                        &mut color_mode,
+                                        candidate,
+                                        color_mode_label(candidate),
+                                    );
+                                }
+                                if ui.button("全部重置").clicked() {
+                                    reset = true;
+                                }
                             });
-                    });
-                    if let Some(error) = &self.view.error {
-                        ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), format!("{}: {}", error.code, error.message));
-                    }
-                    if crate::ui::buttons::secondary(ui, "关闭").clicked() {
-                        close = true;
-                    }
-                });
+                            egui::ScrollArea::vertical()
+                                .max_height((ui.available_height() - 100.).max(1.))
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    egui::Grid::new("class-grid").striped(true).show(ui, |ui| {
+                                        ui.label("类别");
+                                        ui.label("显示");
+                                        ui.label("可选");
+                                        ui.label("锁定");
+                                        ui.label("颜色");
+                                        ui.end_row();
+                                        for style in &l.classes {
+                                            let class: DisplayClass = style.class;
+                                            ui.label(class.label());
+                                            let (mut visible, mut selectable, mut locked) =
+                                                (style.visible, style.selectable, style.locked);
+                                            let mut update = ClassStyleUpdate {
+                                                class: Some(class),
+                                                ..Default::default()
+                                            };
+                                            let mut changed = false;
+                                            if ui.checkbox(&mut visible, "").changed() {
+                                                update.visible = Some(visible);
+                                                changed = true;
+                                            }
+                                            if ui.checkbox(&mut selectable, "").changed() {
+                                                update.selectable = Some(selectable);
+                                                changed = true;
+                                            }
+                                            if ui.checkbox(&mut locked, "").changed() {
+                                                update.locked = Some(locked);
+                                                changed = true;
+                                            }
+                                            let swatch = RichText::new("■")
+                                                .color(color32(style.effective_color));
+                                            ui.menu_button(swatch, |ui| {
+                                                ui.label(format!("{} 颜色", class.label()));
+                                                if let Some(hex) = color_palette(
+                                                    ui,
+                                                    style.effective_color,
+                                                    &recent,
+                                                ) {
+                                                    update.color_override = Some(hex);
+                                                    changed = true;
+                                                    ui.close();
+                                                }
+                                                if ui
+                                                    .add_enabled(
+                                                        style.color_override.is_some(),
+                                                        egui::Button::new("恢复自动颜色"),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    update.color_override = Some("inherit".into());
+                                                    changed = true;
+                                                    ui.close();
+                                                }
+                                            });
+                                            if changed {
+                                                events.push((update, true));
+                                            }
+                                            ui.end_row();
+                                        }
+                                    });
+                                });
+                        });
+                        let error = self
+                            .view
+                            .error
+                            .as_ref()
+                            .map(|e| format!("{}: {}", e.code, e.message))
+                            .unwrap_or_default();
+                        crate::ui::modal_widgets::status_slot(ui, &error, 38., true);
+                        if crate::ui::buttons::secondary(ui, "关闭").clicked() {
+                            close = true;
+                        }
+                    },
+                );
                 if color_mode != l.color_mode {
                     self.send_update(&layer_id, RowUpdate::ColorMode(color_mode));
                 } else if reset {
@@ -917,53 +954,62 @@ impl EditorApp {
                 let mut confirm = false;
                 let mut cancel = false;
                 let dirty = summary.risk == DeleteRisk::NonEmptyDirty;
-                egui::Modal::new(egui::Id::new("layer-delete")).show(ctx, |ui| {
-                    ui.set_width(crate::ui::tokens::modal_width(ctx, 420., 220.));
-                    // Only RCam workspace risk is discussed: a Gerber import is decoupled
-                    // from the file on disk, so the disk `.gbr` is never mentioned here.
-                    if dirty {
-                        ui.heading(format!(
-                            "删除包含未保存工程修改的图层“{}”？",
-                            summary.display_name
-                        ));
-                        ui.label(format!(
-                            "对象：{}",
-                            group_digits(summary.summary.object_count)
-                        ));
-                        ui.label(format!(
-                            "修改/删除的导入对象：{}",
-                            group_digits(summary.summary.modified_object_count)
-                        ));
-                        ui.label(format!(
-                            "生成对象：{}",
-                            group_digits(summary.summary.generated_object_count)
-                        ));
-                        ui.add_space(crate::ui::tokens::SPACING_MD);
-                        ui.label("这些修改将从当前 RCam 工程中移除。");
-                        ui.label("可通过“撤销”恢复。");
-                        ui.checkbox(&mut acknowledged, "我了解这些工程修改将被移除");
-                    } else {
-                        ui.heading(format!("删除图层“{}”？", summary.display_name));
-                        ui.label(format!(
-                            "对象：{}",
-                            group_digits(summary.summary.object_count)
-                        ));
-                        ui.add_space(crate::ui::tokens::SPACING_MD);
-                        ui.label("删除会从当前 RCam 工程中移除此图层。");
-                        ui.label("可通过“撤销”恢复。");
-                    }
-                    let enabled = !self.busy && (!dirty || acknowledged);
-                    let (row_cancel, row_confirm) =
-                        crate::ui::modal_widgets::cancel_destructive_row(ui, "删除图层", enabled);
-                    cancel = row_cancel;
-                    confirm = row_confirm;
-                    if let Some(error) = &self.view.error {
-                        ui.colored_label(
-                            crate::ui::tokens::warning_text(ui.visuals()),
-                            format!("{}: {}", error.code, error.message),
-                        );
-                    }
-                });
+                crate::ui::modal_widgets::fixed_modal(
+                    ctx,
+                    egui::Id::new("layer-delete"),
+                    egui::vec2(420., 320.),
+                    |ui| {
+                        // Only RCam workspace risk is discussed: a Gerber import is decoupled
+                        // from the file on disk, so the disk `.gbr` is never mentioned here.
+                        if dirty {
+                            ui.heading(format!(
+                                "删除包含未保存工程修改的图层“{}”？",
+                                summary.display_name
+                            ));
+                            ui.label(format!(
+                                "对象：{}",
+                                group_digits(summary.summary.object_count)
+                            ));
+                            ui.label(format!(
+                                "修改/删除的导入对象：{}",
+                                group_digits(summary.summary.modified_object_count)
+                            ));
+                            ui.label(format!(
+                                "生成对象：{}",
+                                group_digits(summary.summary.generated_object_count)
+                            ));
+                            ui.add_space(crate::ui::tokens::SPACING_MD);
+                            ui.label("这些修改将从当前 RCam 工程中移除。");
+                            ui.label("可通过“撤销”恢复。");
+                            ui.checkbox(&mut acknowledged, "我了解这些工程修改将被移除");
+                        } else {
+                            ui.heading(format!("删除图层“{}”？", summary.display_name));
+                            ui.label(format!(
+                                "对象：{}",
+                                group_digits(summary.summary.object_count)
+                            ));
+                            ui.add_space(crate::ui::tokens::SPACING_MD);
+                            ui.label("删除会从当前 RCam 工程中移除此图层。");
+                            ui.label("可通过“撤销”恢复。");
+                        }
+                        let enabled = !self.busy && (!dirty || acknowledged);
+                        let (row_cancel, row_confirm) =
+                            crate::ui::modal_widgets::cancel_destructive_row(
+                                ui,
+                                "删除图层",
+                                enabled,
+                            );
+                        cancel = row_cancel;
+                        confirm = row_confirm;
+                        let error = self
+                            .view
+                            .error
+                            .as_ref()
+                            .map(|e| format!("{}: {}", e.code, e.message))
+                            .unwrap_or_default();
+                        crate::ui::modal_widgets::status_slot(ui, &error, 38., true);
+                    },
+                );
                 self.layer_dialog = Some(LayerDialog::Delete {
                     layer: layer_id.clone(),
                     acknowledged,

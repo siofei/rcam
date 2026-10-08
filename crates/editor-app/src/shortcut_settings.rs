@@ -361,15 +361,18 @@ impl Settings {
             return;
         }
         let platform = Platform::current();
-        let response = egui::Modal::new(egui::Id::new("shortcut-settings")).show(ctx, |ui| {
-            ui.set_width(crate::ui::tokens::modal_width(ctx, 760., 220.));
-            ui.heading("设置 · 快捷键");
-            egui::ScrollArea::vertical().id_salt("shortcut-settings-body").max_height((ctx.content_rect().height()-150.).clamp(120., 580.)).auto_shrink([false, false]).show(ui, |ui| {
+        let response = crate::ui::modal_widgets::fixed_modal(
+            ctx,
+            egui::Id::new("shortcut-settings"),
+            egui::vec2(760., 620.),
+            |ui| {
+                ui.heading("设置 · 快捷键");
+                egui::ScrollArea::vertical().id_salt("shortcut-settings-body").max_height((ctx.content_rect().height()-150.).clamp(120., 580.)).auto_shrink([false, false]).show(ui, |ui| {
             ui.label("独立用户配置自动保存；不改变工程、制造内容或撤销历史。");
             ui.label("功能键可能被系统占用；可选择其他绑定，RCam不会更改系统键盘设置。");
             ui.label(if platform == Platform::MacOs { "Primary = Cmd · Secondary = Ctrl · Alt = Option · Shift = Shift" } else { "Primary = Ctrl · Secondary = Win（本版本不可绑定）· Alt = Alt" });
-            if let Some(warning) = &self.warning { ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), warning); }
-            if let Some(message) = &self.message { ui.label(message); }
+            crate::ui::modal_widgets::status_slot(ui, self.warning.as_deref().unwrap_or(""), 38., true);
+            crate::ui::modal_widgets::status_slot(ui, self.message.as_deref().unwrap_or(""), 38., false);
             ui.add_enabled_ui(self.pending.is_none() && !self.recording && !ime, |ui| {
                 ui.horizontal(|ui| {
                     if ui.button("导入快捷键文件…").clicked() { match crate::platform::choose_shortcuts(false) { Ok(Some(path)) => self.start(ctx, move || ResultMessage::Import(shortcut_store::import(&path, platform))), Ok(None) => {}, Err(e) => self.message = Some(e) } }
@@ -377,7 +380,8 @@ impl Settings {
                     if ui.button(if self.protected { "重新建立默认配置…" } else { "全部恢复默认…" }).clicked() { self.reset_confirm = true; self.preview = None; self.editing = None; }
                 });
             });
-            if self.pending.is_some() { ui.label("正在处理配置文件…"); ctx.request_repaint(); }
+            crate::ui::modal_widgets::status_slot(ui, if self.pending.is_some() { "正在处理配置文件…" } else { "" }, 20., false);
+            if self.pending.is_some() { ctx.request_repaint(); }
             if self.reset_confirm {
                 ui.separator(); ui.label(if self.protected { "原文件将被默认快捷键完整替换；此前已保护原文件。确认重新建立配置？" } else { "将全部41项绑定恢复为当前兼容默认值，并自动保存。" });
                 ui.add_enabled_ui(self.pending.is_none() && !ime, |ui| { ui.horizontal(|ui| { if ui.button("确认恢复默认并保存").clicked() { self.save(ctx, Config::defaults(platform), true); }
@@ -430,8 +434,18 @@ impl Settings {
                 }
             }
             });
-            ui.separator(); if ui.add_enabled(self.pending.is_none() && !self.recording && !ime, egui::Button::new("关闭设置")).clicked() { self.close(); }
-        });
+                ui.separator();
+                if ui
+                    .add_enabled(
+                        self.pending.is_none() && !self.recording && !ime,
+                        egui::Button::new("关闭设置"),
+                    )
+                    .clicked()
+                {
+                    self.close();
+                }
+            },
+        );
         if !self.recording
             && self.pending.is_none()
             && !ime

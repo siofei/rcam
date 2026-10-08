@@ -180,71 +180,95 @@ impl EditorApp {
 
     pub(crate) fn project_prompts(&mut self, ctx: &egui::Context) {
         if let Some((title, reason)) = self.project_error.clone() {
-            egui::Modal::new(egui::Id::new("project-error")).show(ctx, |ui| {
-                ui.set_width(crate::ui::tokens::modal_width(ctx, 440., 180.));
-                ui.heading(title);
-                ui.label(reason);
-                if crate::ui::buttons::secondary(ui, "关闭").clicked() {
-                    self.project_error = None;
-                    self.view.error = None;
-                    if self.transition.is_some() {
-                        self.close_prompt = true;
-                        self.waiting_save = false;
-                    }
-                }
-            });
-            return;
-        }
-        if self.close_prompt {
-            egui::Modal::new(egui::Id::new("project-dirty-confirmation")).show(ctx, |ui| {
-                ui.set_width(crate::ui::tokens::modal_width(ctx, 440., 180.));
-                ui.heading("保存当前工程的更改？");
-                ui.label("当前工程包含未保存的修改。");
-                ui.horizontal(|ui| {
-                    if crate::ui::buttons::secondary(ui, "取消").clicked() {
-                        self.cancel_transition();
-                    }
-                    if crate::ui::buttons::destructive(ui, "不保存", true).clicked() {
-                        self.perform_transition(true);
-                    }
-                    if crate::ui::buttons::primary(ui, "保存", true).clicked()
-                        && self.save_project(false)
-                    {
-                        self.waiting_save = true;
-                        self.close_prompt = false;
-                    }
-                });
-            });
-        }
-        if let Some(path) = self.replace_project_path.clone() {
-            egui::Modal::new(egui::Id::new("project-replace-confirmation")).show(ctx, |ui| {
-                ui.set_width(crate::ui::tokens::modal_width(ctx, 420., 180.));
-                ui.heading("替换现有工程？");
-                ui.label(format!(
-                    "替换“{}”？",
-                    path.file_name().unwrap_or_default().to_string_lossy()
-                ));
-                ui.horizontal(|ui| {
-                    if crate::ui::buttons::secondary(ui, "取消").clicked() {
-                        self.replace_project_path = None;
-                        if self.waiting_save {
+            crate::ui::modal_widgets::fixed_modal(
+                ctx,
+                egui::Id::new("project-error"),
+                egui::vec2(440., 300.),
+                |ui| {
+                    crate::ui::modal_widgets::heading(ui, &title);
+                    crate::ui::modal_widgets::status_slot(ui, &reason, 160., true);
+                    let close = crate::ui::buttons::secondary(ui, "关闭");
+                    #[cfg(test)]
+                    crate::ui::modal_widgets::record_control(
+                        ui,
+                        "project-error-close-rect",
+                        &close,
+                    );
+                    if close.clicked() {
+                        self.project_error = None;
+                        self.view.error = None;
+                        if self.transition.is_some() {
                             self.close_prompt = true;
                             self.waiting_save = false;
                         }
                     }
-                    if crate::ui::buttons::destructive(ui, "替换", true).clicked() {
-                        self.replace_project_path = None;
-                        self.send(Action::SaveProject(
-                            Some(path),
-                            true,
-                            Some(rcam_project::CameraState {
-                                center_mm: self.camera.center,
-                                scale: self.camera.scale,
-                            }),
-                        ));
-                    }
-                });
-            });
+                },
+            );
+            return;
+        }
+        if self.close_prompt {
+            crate::ui::modal_widgets::fixed_modal(
+                ctx,
+                egui::Id::new("project-dirty-confirmation"),
+                egui::vec2(440., 220.),
+                |ui| {
+                    ui.heading("保存当前工程的更改？");
+                    ui.label("当前工程包含未保存的修改。");
+                    ui.horizontal(|ui| {
+                        if crate::ui::buttons::secondary(ui, "取消").clicked() {
+                            self.cancel_transition();
+                        }
+                        if crate::ui::buttons::destructive(ui, "不保存", true).clicked() {
+                            self.perform_transition(true);
+                        }
+                        if crate::ui::buttons::primary(ui, "保存", true).clicked()
+                            && self.save_project(false)
+                        {
+                            self.waiting_save = true;
+                            self.close_prompt = false;
+                        }
+                    });
+                },
+            );
+        }
+        if let Some(path) = self.replace_project_path.clone() {
+            crate::ui::modal_widgets::fixed_modal(
+                ctx,
+                egui::Id::new("project-replace-confirmation"),
+                egui::vec2(420., 320.),
+                |ui| {
+                    ui.heading("替换现有工程？");
+                    crate::ui::modal_widgets::status_slot(
+                        ui,
+                        &format!(
+                            "替换“{}”？",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        ),
+                        56.,
+                        false,
+                    );
+                    ui.horizontal(|ui| {
+                        if crate::ui::buttons::secondary(ui, "取消").clicked() {
+                            self.replace_project_path = None;
+                            if self.waiting_save {
+                                self.close_prompt = true;
+                                self.waiting_save = false;
+                            }
+                        }
+                        if crate::ui::buttons::destructive(ui, "替换", true).clicked() {
+                            self.replace_project_path = None;
+                            self.send(Action::SaveProject(
+                                Some(path),
+                                true,
+                                Some(rcam_project::CameraState {
+                                    center_mm: self.camera.center,
+                                    scale: self.camera.scale,
+                                }),
+                            ));
+                        }
+                    });
+                },
+            );
         }
     }
 
@@ -488,5 +512,50 @@ mod drop_tests {
         );
         assert!(app.busy && !app.close_prompt && app.transition.is_none());
         assert!(app.gerber_import.as_ref().unwrap().active());
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    #[test]
+    fn production_project_error_keeps_close_rect_stable() {
+        for viewport in [egui::vec2(980., 760.), egui::vec2(320., 420.)] {
+            let ctx = egui::Context::default();
+            let mut app = crate::modal::tests::app();
+            let mut baseline = None;
+            for reason in [
+                "".to_owned(),
+                "正在处理…".to_owned(),
+                "无法保存工程：长错误与路径\n".repeat(200),
+            ] {
+                app.project_error = Some((
+                    "错误".repeat(if reason.len() > 100 { 100 } else { 1 }),
+                    reason,
+                ));
+                for _ in 0..3 {
+                    let _ = ctx.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                viewport,
+                            )),
+                            ..Default::default()
+                        },
+                        |ctx| app.project_prompts(ctx),
+                    );
+                }
+                let rect = ctx
+                    .data(|data| {
+                        data.get_temp::<egui::Rect>(egui::Id::new("project-error-close-rect"))
+                    })
+                    .unwrap();
+                if let Some(previous) = baseline {
+                    assert_eq!(rect, previous);
+                } else {
+                    baseline = Some(rect);
+                }
+            }
+        }
     }
 }

@@ -426,9 +426,18 @@ impl EditorApp {
     }
     pub(crate) fn pnp_modal(&mut self, ui: &mut egui::Ui) {
         ui.label("明确源格式、列、单位、方向和 Side；XLSX 不运行公式，TXT 保留空白面别。");
-        if let Some(path) = &self.components.path {
-            ui.label(path.file_name().unwrap_or_default().to_string_lossy());
-        }
+        let file_name = self
+            .components
+            .path
+            .as_ref()
+            .map(|path| {
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .unwrap_or_default();
+        crate::ui::modal_widgets::status_slot(ui, &file_name, 22., false);
         let before = self.components.mapping.clone();
         ui.horizontal(|ui| {
             if ui
@@ -584,26 +593,35 @@ impl EditorApp {
                 && Some(&r.request.path) == self.components.path.as_ref()
                 && r.request.context.valid(&self.view)
         });
-        if let Some(reply) = &table_reply {
-            if let Some(proposed) = reply.result.suggested_mapping.clone()
-                && ui.button("使用表头识别建议（仍需确认列用途）").clicked()
+        crate::ui::modal_widgets::fixed_region(ui, "pnp-source-table", 240., |ui| {
+            let proposed = table_reply
+                .as_ref()
+                .and_then(|reply| reply.result.suggested_mapping.clone());
+            if ui
+                .add_enabled(
+                    proposed.is_some(),
+                    egui::Button::new("使用表头识别建议（仍需确认列用途）"),
+                )
+                .clicked()
+                && let Some(proposed) = proposed
             {
                 apply_proposal(&mut self.components.mapping, &proposed);
             }
-            raw_table(ui, &reply.result.preview, &mut self.components.mapping);
-        }
+            if let Some(reply) = &table_reply {
+                raw_table(ui, &reply.result.preview, &mut self.components.mapping);
+            }
+        });
         let declared_unit = table_reply.as_ref().and_then(|r| r.result.declared_unit);
-        if let Some(unit) = declared_unit {
-            ui.label(format!(
-                "文件声明单位：{}",
-                if unit == PnpUnit::Mm { "mm" } else { "inch" }
-            ));
-        } else {
-            ui.colored_label(
-                crate::ui::tokens::warning_text(ui.visuals()),
-                "源文件未声明单位：必须手动选择 mm / inch，再确认。",
-            );
-        }
+        let unit_notice = declared_unit.map_or_else(
+            || "源文件未声明单位：必须手动选择 mm / inch，再确认。".to_owned(),
+            |unit| {
+                format!(
+                    "文件声明单位：{}",
+                    if unit == PnpUnit::Mm { "mm" } else { "inch" }
+                )
+            },
+        );
+        crate::ui::modal_widgets::status_slot(ui, &unit_notice, 38., declared_unit.is_none());
         ui.horizontal(|ui| {
             ui.label("源单位");
             for (unit, label) in [(PnpUnit::Mm, "mm"), (PnpUnit::Inch, "inch")] {
@@ -679,37 +697,40 @@ impl EditorApp {
                 && Some(&r.request.path) == self.components.path.as_ref()
                 && r.request.mapping == self.components.mapping
         });
-        if let Some(reply) = &reply {
-            ui.label(format!(
-                "{} 行 · {} 个错误",
-                reply.result.preview.row_count, reply.result.preview.diagnostic_count
-            ));
-            for d in &reply.result.preview.diagnostics {
-                ui.colored_label(
-                    egui::Color32::LIGHT_RED,
-                    format!("行 {} · {} · {}", d.line, d.field, d.code),
-                );
-            }
-            for c in reply.result.preview.components.iter().take(8) {
+        crate::ui::modal_widgets::fixed_region(ui, "pnp-result-details", 160., |ui| {
+            if let Some(reply) = &reply {
                 ui.label(format!(
-                    "{} {:?} ({:.6}, {:.6}) mm {:.3}°",
-                    c.refdes, c.side, c.position.x_mm, c.position.y_mm, c.rotation_deg
+                    "{} 行 · {} 个错误",
+                    reply.result.preview.row_count, reply.result.preview.diagnostic_count
                 ));
+                for d in &reply.result.preview.diagnostics {
+                    ui.colored_label(
+                        egui::Color32::LIGHT_RED,
+                        format!("行 {} · {} · {}", d.line, d.field, d.code),
+                    );
+                }
+                for c in reply.result.preview.components.iter().take(8) {
+                    ui.label(format!(
+                        "{} {:?} ({:.6}, {:.6}) mm {:.3}°",
+                        c.refdes, c.side, c.position.x_mm, c.position.y_mm, c.rotation_deg
+                    ));
+                }
             }
-        }
-        if self.view.board.is_some() {
+        });
+        ui.add_enabled_ui(self.view.board.is_some(), |ui| {
             ui.checkbox(
                 &mut self.components.replace,
                 "确认替换现有组件表（清除旧配准）",
             );
-        }
+        });
         let can_apply = reply.as_ref().is_some_and(|r| r.result.preview.valid())
             && self.components.import_confirmed(declared_unit)
             && (self.view.board.is_none() || self.components.replace);
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(can_apply, egui::Button::new("确认导入"))
-                .clicked()
+            let apply = ui.add_enabled(can_apply, egui::Button::new("确认导入"));
+            #[cfg(test)]
+            crate::ui::modal_widgets::record_control(ui, "pnp-import-apply-rect", &apply);
+            if apply.clicked()
                 && let Some(reply) = reply
             {
                 self.send(Action::PnpImport(
@@ -733,7 +754,9 @@ impl EditorApp {
             return;
         }
         let mut open = true;
-        egui::Window::new("PCB / PnP / RefDes").open(&mut open).default_width(480.).default_height(520.).show(ctx,|ui|{
+        let size = crate::ui::modal_widgets::dialog_size(ctx, egui::vec2(480., 520.));
+        egui::Window::new("PCB / PnP / RefDes").open(&mut open).fixed_size(size).show(ctx,|ui|{
+          crate::ui::modal_widgets::fixed_content(ui, size, |ui| {
             ui.add_enabled_ui(!self.busy&&self.modal.is_none(),|ui|{
                 if ui.button("Import PnP XLSX / TXT / CSV…").clicked(){match crate::platform::choose_path(false,"pnp"){Ok(Some(p))=>self.open_pnp(p),Ok(None)=>{},Err(e)=>self.ui_error=Some(e)}}
                 ui.checkbox(&mut self.components.overlay,"显示组件 Overlay");
@@ -768,13 +791,14 @@ impl EditorApp {
                         for i in 0..2{ui.label(format!("Board 点 {}（mm）",i+1));point_controls(ui,&mut self.components.board_points[i]);ui.label(format!("World 点 {}（mm）",i+1));point_controls(ui,&mut self.components.world_points[i]);if ui.button(format!("在 Canvas 捕捉 World 点 {}",i+1)).clicked(){self.open_point_adapter(crate::point_adapter::Adapter::BoardWorld(i),editor_core::MmPoint::new(self.components.world_points[i][0],self.components.world_points[i][1]));}}
                     }
                     let candidate=registration(self.components.registration_input());
-                    match &candidate{Ok(r)=>{ui.label(format!("Board distance {:?} mm · World distance {:?} mm · residual {:.6} mm",r.board_distance_mm,r.world_distance_mm,r.residual_mm));},Err(e)=>{ui.colored_label(egui::Color32::LIGHT_RED,*e);}}
+                    let (notice, warning) = match &candidate { Ok(r) => (format!("Board distance {:?} mm · World distance {:?} mm · residual {:.6} mm", r.board_distance_mm, r.world_distance_mm, r.residual_mm), false), Err(error) => (error.to_string(), true) }; crate::ui::modal_widgets::status_slot(ui, &notice, 56., warning);
                     if previous!=self.components.registration_input(){self.components.registration_confirmed=false;}
                     ui.checkbox(&mut self.components.registration_confirmed,"确认 Board / World 约定和配准结果");
                     if ui.add_enabled(candidate.is_ok()&&self.components.registration_confirmed,egui::Button::new("提交配准（可撤销）")).clicked()&&let Some(context)=Context::capture(&self.view){self.send(Action::BoardRegistration(context,self.components.registration_input()));self.components.registration_confirmed=false;}
                     if let Some(r)=&board.registration{ui.label(format!("当前：{:?}; residual {:.6} mm",r.transform,r.residual_mm));}
                 });
             });
+        });
         });
         self.components.open = open;
         if !open {
@@ -1144,5 +1168,51 @@ mod tests {
         app.cancel_modal();
         assert_eq!(app.view.info, before);
         assert!(app.view.pnp_preview.is_none());
+    }
+    #[test]
+    fn production_pnp_pending_table_and_diagnostics_keep_apply_rect() {
+        let mut m = model();
+        let request = PreviewRequest {
+            context: Context::capture(&m.view).unwrap(),
+            path: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s4d1/pnp.csv"),
+            mapping: UiState::default().mapping,
+        };
+        m.run(Action::PnpPreview(request.clone()));
+        let reply = m.view.pnp_preview.clone().unwrap();
+        for viewport in [egui::vec2(980., 760.), egui::vec2(320., 420.)] {
+            let ctx = egui::Context::default();
+            let mut app = crate::modal::tests::app();
+            app.view = m.view.clone();
+            app.components.path = Some(request.path.clone());
+            app.components.mapping = request.mapping.clone();
+            app.modal = Some(ActiveModal::Pnp);
+            let mut baseline = None;
+            for ready in [false, true, false] {
+                app.view.pnp_preview = ready.then(|| reply.clone());
+                for _ in 0..3 {
+                    let _ = ctx.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                viewport,
+                            )),
+                            ..Default::default()
+                        },
+                        |ctx| app.parameter_modal(ctx),
+                    );
+                }
+                let rect = ctx
+                    .data(|data| {
+                        data.get_temp::<egui::Rect>(egui::Id::new("pnp-import-apply-rect"))
+                    })
+                    .unwrap();
+                if let Some(previous) = baseline {
+                    assert_eq!(rect, previous, "viewport={viewport:?}");
+                } else {
+                    baseline = Some(rect);
+                }
+            }
+        }
     }
 }

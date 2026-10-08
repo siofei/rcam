@@ -10,7 +10,7 @@ mod array;
 mod selection_edit;
 pub use selection_edit::{SelectionEdit, SelectionGroup};
 
-pub use array::{ArrayEstimate, MAX_ARRAY_CELLS, RectangularArray};
+pub use array::{ARRAY_CELL_WARNING_THRESHOLD, ArrayEstimate, RectangularArray};
 
 /// World axes: horizontal y=coordinate_mm, vertical x=coordinate_mm.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

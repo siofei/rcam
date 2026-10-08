@@ -385,6 +385,9 @@ impl EditorApp {
             }
         }
         let operation = session.operation(&self.view, self.display_unit);
+        let mut ready = false;
+        let mut apply_request = None;
+        let mut notice = String::new();
         if let Ok(operation) = &operation {
             let changed = session
                 .requested
@@ -402,7 +405,7 @@ impl EditorApp {
                 .requested
                 .as_ref()
                 .filter(|r| r.operation == *operation && r.ppm == self.camera.scale);
-            let ready = request.is_some_and(|r| {
+            ready = request.is_some_and(|r| {
                 self.view
                     .point_preview
                     .as_ref()
@@ -414,21 +417,25 @@ impl EditorApp {
                     .as_ref()
                     .is_some_and(|p| p.request == *r && p.simplified)
             }) {
-                ui.label("大型选区预览已简化为制造边界框");
+                notice = "大型选区预览已简化为制造边界框".into();
             }
-            let apply = ui.add_enabled(
-                ready && !self.busy && !self.point_commit_blocked,
-                egui::Button::new("应用基点变换"),
-            );
-            #[cfg(feature = "internal-evidence")]
-            crate::native_i1::widget("transform-apply", &apply);
-            if (apply.clicked() || (ready && self.dialog_enter(ui)))
-                && let Some(request) = request
-            {
-                self.send(Action::PointApply(Box::new(request.clone())));
-            }
-        } else if let Err(error) = operation {
-            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
+            apply_request = request.cloned();
+        } else if let Err(error) = &operation {
+            notice = error.clone();
+        }
+        crate::ui::modal_widgets::status_slot(ui, &notice, 38., operation.is_err());
+        let apply = ui.add_enabled(
+            ready && !self.busy && !self.point_commit_blocked,
+            egui::Button::new("应用基点变换"),
+        );
+        #[cfg(test)]
+        crate::ui::modal_widgets::record_control(ui, "transform-apply-rect", &apply);
+        #[cfg(feature = "internal-evidence")]
+        crate::native_i1::widget("transform-apply", &apply);
+        if (apply.clicked() || (ready && self.dialog_enter(ui)))
+            && let Some(request) = apply_request
+        {
+            self.send(Action::PointApply(Box::new(request)));
         }
         if base_pick || target_pick {
             let field = if base_pick {

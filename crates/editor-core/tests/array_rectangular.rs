@@ -324,7 +324,7 @@ fn invalid_requests_are_atomic_and_do_not_consume_ids_or_redo() {
         spec(1, 2, f64::NAN, 0.),
         spec(1, 2, f64::INFINITY, 0.),
         spec(u64::MAX, 2, 1., 1.),
-        spec(101, 100, 1., 1.),
+        spec(1_000_001, 1, 1., 1.),
         spec(2, 2, 1e100, 1.),
     ] {
         assert!(run(&mut d, &mut h, &selected, s).is_err());
@@ -359,7 +359,7 @@ fn object_history_and_edge_budgets_preflight_exact_boundaries() {
     let mut d = doc(2);
     let selected = ids(&d);
     let before = d.clone();
-    let mut h = EditHistory::default();
+    let h = EditHistory::default();
     let mut exact_objects = d.clone();
     run(
         &mut exact_objects,
@@ -369,11 +369,18 @@ fn object_history_and_edge_budgets_preflight_exact_boundaries() {
     )
     .unwrap();
     assert_eq!(exact_objects.layers[0].objects.len(), 10_002);
-    assert_eq!(
-        run(&mut d, &mut h, &selected, spec(1, 5002, 1., 0.)),
-        Err(EditError::ResourceLimit)
-    );
-    assert_eq!(d, before);
+    let mut expanded = d.clone();
+    let mut expanded_history = EditHistory::default();
+    let made = run(
+        &mut expanded,
+        &mut expanded_history,
+        &selected,
+        spec(1, 5002, 1., 0.),
+    )
+    .unwrap();
+    assert_eq!(made.len(), 10_002); // Above the old new-object ceiling.
+    expanded_history.undo(&mut expanded).unwrap();
+    assert_eq!(expanded, before);
     let budget = h
         .estimate_array_rectangular(&d, "layer", &selected, spec(1, 2, 10., 0.))
         .unwrap()
@@ -459,4 +466,61 @@ fn document_object_budget_includes_other_layers_at_exact_boundary() {
     d.layers[1].objects.pop();
     let made = run(&mut d, &mut history, &selected, spec(1, 2, 20., 0.)).unwrap();
     assert_eq!(made, ["array-generated-object-1"]);
+}
+
+#[test]
+fn total_cells_are_advisory_and_resource_requirements_do_not_authorize_commit() {
+    use editor_core::edit::ARRAY_CELL_WARNING_THRESHOLD;
+    assert_eq!(ARRAY_CELL_WARNING_THRESHOLD, 500_000);
+    for cells in [10_001, 500_000, 500_001] {
+        assert_eq!(spec(1, cells, 1., 0.).cell_count().unwrap(), cells as usize);
+    }
+    // The threshold is not per axis; a huge product still has resource preflight.
+    assert_eq!(
+        spec(500_000, 500_000, 1e-6, 1e-6).cell_count().unwrap(),
+        250_000_000_000usize
+    );
+    let mut d = doc(1);
+    let selected = ids(&d);
+    let before = d.clone();
+    let mut h = EditHistory::default();
+    let s = spec(1, 500_001, 1., 0.);
+    let demand = h
+        .array_resource_requirements(&d, "layer", &selected, s)
+        .unwrap();
+    assert_eq!(demand.created_object_count, 500_000);
+    assert!(demand.history_bytes > h.max_bytes());
+    assert_eq!(
+        run(&mut d, &mut h, &selected, s),
+        Err(EditError::ResourceLimit)
+    );
+    assert_eq!(d, before);
+    assert_eq!(h.undo_len(), 0);
+    let larger = EditHistory::with_limits(100, demand.history_bytes).unwrap();
+    assert_eq!(
+        larger
+            .estimate_array_rectangular(&d, "layer", &selected, s)
+            .unwrap(),
+        demand
+    );
+    // Requirement metadata does not consume IDs or mutate state.
+    let made = run(&mut d, &mut h, &selected, spec(1, 2, 1., 0.)).unwrap();
+    assert_eq!(made[0], "array-generated-object-0");
+}
+
+#[test]
+fn above_old_cell_limit_commits_one_exact_undo_redo() {
+    let mut d = doc(1);
+    let before = d.clone();
+    let selected = ids(&d);
+    let mut h = EditHistory::default();
+    let made = run(&mut d, &mut h, &selected, spec(1, 10_001, -1., 0.)).unwrap();
+    assert_eq!(made.len(), 10_000);
+    assert_eq!(d.layers[0].objects.len(), 10_001);
+    assert_eq!(h.undo_len(), 1);
+    let after = d.clone();
+    h.undo(&mut d).unwrap();
+    assert_eq!(d, before);
+    h.redo(&mut d).unwrap();
+    assert_eq!(d, after);
 }

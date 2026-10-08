@@ -569,24 +569,30 @@ impl EditorApp {
             self.text.text.chars().count()
         ));
         changed |= text_editor(ui, &mut self.text.text).changed();
-        if self.ime_active {
-            ui.label("输入法组合中；确认候选后才生成预览");
-        }
+        fixed_status_line(
+            ui,
+            if self.ime_active {
+                "输入法组合中；确认候选后才生成预览"
+            } else {
+                ""
+            },
+            false,
+        );
         if changed {
             self.text.changed();
         }
-        match self.text.anchor() {
-            Ok(p) => {
-                ui.label(format!(
+        let (anchor_status, anchor_error) = match self.text.anchor() {
+            Ok(p) => (
+                format!(
                     "最终绝对坐标：{}",
                     self.display_unit
                         .point_label(p, self.precision().resolution_mm)
-                ));
-            }
-            Err(e) => {
-                ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), e);
-            }
-        }
+                ),
+                false,
+            ),
+            Err(error) => (error, true),
+        };
+        fixed_status_line(ui, &anchor_status, anchor_error).on_hover_text(&anchor_status);
         fixed_status_line(ui, &self.text.status, false).on_hover_text(&self.text.status);
         let preview_summary = if let Some(p) = &self.text.preview {
             let (mut contours, mut edges) = (0, 0);

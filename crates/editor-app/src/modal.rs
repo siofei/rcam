@@ -186,6 +186,7 @@ impl EditorApp {
             self.modal == Some(ActiveModal::Units) && self.tool == tools::ActiveTool::Measure;
         self.view.pnp_preview = None;
         self.array.requested = None;
+        self.array.confirmed = None;
         self.view.array_preview = None;
         self.point_pick = None;
         self.point_transform = None;
@@ -214,17 +215,27 @@ impl EditorApp {
         let Some(modal) = self.modal else {
             return;
         };
-        let response =
-            egui::Modal::new(egui::Id::new("manufacturing-parameters")).show(ctx, |ui| {
-                ui.set_width(crate::ui::tokens::modal_width(
-                    ctx,
-                    if modal == ActiveModal::Pnp {
-                        760.
-                    } else {
-                        440.
-                    },
-                    180.,
-                ));
+        let preferred = egui::vec2(
+            if modal == ActiveModal::Pnp {
+                760.
+            } else {
+                440.
+            },
+            match modal {
+                ActiveModal::Array => 660.,
+                ActiveModal::Grid => 260.,
+                ActiveModal::BlockRename => 240.,
+                ActiveModal::BlockDelete | ActiveModal::BlockExplode => 300.,
+                ActiveModal::BlockCreate => 360.,
+                ActiveModal::Move | ActiveModal::Text | ActiveModal::Pnp => 660.,
+                _ => 520.,
+            },
+        );
+        let response = crate::ui::modal_widgets::fixed_modal(
+            ctx,
+            egui::Id::new("manufacturing-parameters"),
+            preferred,
+            |ui| {
                 ui.heading(modal.title());
                 egui::ScrollArea::vertical()
                     .max_height((ctx.content_rect().height() - 160.).max(100.))
@@ -242,7 +253,9 @@ impl EditorApp {
                                 | ActiveModal::BlockExplode
                                 | ActiveModal::BlockTransform => self.block_modal(ui, modal),
                                 ActiveModal::Pnp => self.pnp_modal(ui),
-                                ActiveModal::Array => self.array_modal(ui),
+                                ActiveModal::Array => {
+                                    self.array_modal(ui);
+                                }
                                 ActiveModal::Units => self.units_modal(ui),
                                 ActiveModal::Text => self.text_controls(ui),
                                 ActiveModal::Rotate | ActiveModal::Mirror => {
@@ -289,25 +302,33 @@ impl EditorApp {
                                 ActiveModal::ObjectSnap => self.object_snap_controls(ui),
                             },
                         );
-                        if let Some(error) = &self.ui_error {
-                            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
-                        }
-                        if let Some(error) = &self.view.error {
-                            ui.colored_label(
-                                crate::ui::tokens::warning_text(ui.visuals()),
-                                format!("{}: {}", error.code, error.message),
-                            );
-                        }
+                        let errors = self
+                            .ui_error
+                            .iter()
+                            .cloned()
+                            .chain(
+                                self.view
+                                    .error
+                                    .iter()
+                                    .map(|e| format!("{}: {}", e.code, e.message)),
+                            )
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        crate::ui::modal_widgets::status_slot(ui, &errors, 56., true);
                     });
-                if self.busy {
-                    ui.spinner();
-                }
+                crate::ui::modal_widgets::status_slot(
+                    ui,
+                    if self.busy { "正在处理…" } else { "" },
+                    20.,
+                    false,
+                );
                 if crate::ui::buttons::secondary_enabled(ui, "取消", self.modal_pending.is_none())
                     .clicked()
                 {
                     self.cancel_modal();
                 }
-            });
+            },
+        );
         if self.modal_pending.is_none()
             && !self.ime_active
             && !self.ime_event

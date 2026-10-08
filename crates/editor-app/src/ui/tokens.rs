@@ -16,14 +16,11 @@ pub const PALETTE_SWATCH_SIZE: f32 = 20.;
 pub const ROW_TOGGLE_MIN_WIDTH: f32 = 22.;
 pub const ROW_CORNER_RADIUS: f32 = 3.;
 
-/// Modal sizing: `preferred` clamped to the viewport minus a fixed margin,
-/// never smaller than `min` — the exact `W.min(ctx.content_rect().width() -
-/// 48.).max(min)` shape every dialog already used ad hoc.
+/// Modal width is determined by style and viewport, never dynamic content.
 pub const MODAL_MARGIN: f32 = 48.;
 pub fn modal_width(ctx: &egui::Context, preferred: f32, min: f32) -> f32 {
-    preferred
-        .min(ctx.content_rect().width() - MODAL_MARGIN)
-        .max(min)
+    let available = (ctx.content_rect().width() - MODAL_MARGIN).max(1.);
+    preferred.min(available).max(min.min(available))
 }
 
 /// Semantic colours. `selection_highlight` is the active-row tint; egui's

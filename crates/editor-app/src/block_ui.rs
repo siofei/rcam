@@ -639,12 +639,17 @@ impl EditorApp {
                 ui.label("名称（1–128 字符，允许重名）");
                 ui.text_edit_singleline(&mut self.block.name);
                 if modal == ActiveModal::BlockCreate {
-                    ui.label(format!(
-                        "定义基点：X {} / Y {} {}",
-                        self.block.x,
-                        self.block.y,
-                        self.display_unit.suffix()
-                    ));
+                    crate::ui::modal_widgets::status_slot(
+                        ui,
+                        &format!(
+                            "定义基点：X {} / Y {} {}",
+                            self.block.x,
+                            self.block.y,
+                            self.display_unit.suffix()
+                        ),
+                        38.,
+                        false,
+                    );
                     let origin = ui.button("基点：数值 / 拾取 / 双中心…");
                     #[cfg(feature = "internal-evidence")]
                     crate::native_i1::widget("block-origin", &origin);

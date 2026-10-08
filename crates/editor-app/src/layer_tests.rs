@@ -654,3 +654,43 @@ fn nonselectable_retains_selection_but_refuses_grip_and_delete() {
     assert_eq!(f.m.view.selected.ids(), ids);
     assert!(!crate::grip::features(&f.m.view).unwrap().is_empty());
 }
+
+#[test]
+fn production_layer_settings_name_input_keeps_rect_with_long_title_and_statistics() {
+    use eframe::egui;
+    for viewport in [egui::vec2(980., 760.), egui::vec2(320., 420.)] {
+        let ctx = egui::Context::default();
+        let mut fixture = Fixture::new();
+        fixture.import(&["A.gbr"]);
+        let mut app = crate::modal::tests::app();
+        app.view = fixture.m.view.clone();
+        let layer = app.view.layers[0].layer_id.clone();
+        let mut baseline = None;
+        for value in ["a".to_owned(), "名称".repeat(128), "".to_owned()] {
+            app.view.layers[0].display_name = value.clone();
+            app.view.layers[0].object_count = if value.len() > 100 { 999999 } else { 0 };
+            app.layer_dialog = Some(crate::layer_panel::LayerDialog::Settings {
+                layer: layer.clone(),
+                name: value,
+            });
+            for _ in 0..3 {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, viewport)),
+                        ..Default::default()
+                    },
+                    |ctx| app.layer_dialogs(ctx),
+                );
+            }
+            let rect = ctx
+                .read_response(egui::Id::new("layer-settings-name"))
+                .unwrap()
+                .rect;
+            if let Some(previous) = baseline {
+                assert_eq!(rect, previous);
+            } else {
+                baseline = Some(rect);
+            }
+        }
+    }
+}

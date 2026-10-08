@@ -410,3 +410,26 @@ fn generate_native_array_block_fixture() {
         )
         .unwrap();
 }
+
+#[test]
+fn advisory_array_counts_and_resource_error_explain_demand_atomically() {
+    let mut r = Run::new(1);
+    let p = r.params(1, 500_001);
+    let original = r.snapshot();
+    let info = r.info();
+    let error = r.array(p).unwrap_err();
+    assert_eq!(error.code, "RESOURCE_LIMIT");
+    assert!(error.message.contains("没有阵列格数硬上限"));
+    assert_eq!(error.details["created_object_count"], 500_000);
+    assert!(
+        error.details["required_history_bytes"].as_u64().unwrap()
+            > error.details["max_history_bytes"].as_u64().unwrap()
+    );
+    assert_eq!(r.snapshot().layers, original.layers);
+    assert_eq!(r.info().revision, info.revision);
+    assert_eq!(r.info().undo_entries, info.undo_entries);
+    let made = r.array(r.params(1, 10_001)).unwrap();
+    assert_eq!(made.changed_object_ids.len(), 10_000);
+    assert_eq!(made.undo_entries_added, 1);
+    assert_eq!(r.snapshot().layers[0].objects.len(), 10_001);
+}

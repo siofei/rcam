@@ -1023,3 +1023,76 @@ fn adapter_cancel_and_ime_win_over_keyboard_and_mouse_confirmation() {
         }
     }
 }
+
+#[test]
+fn production_adapter_and_transform_buttons_keep_rect_for_invalid_and_preview_status() {
+    use eframe::egui;
+    for viewport in [egui::vec2(980., 760.), egui::vec2(320., 420.)] {
+        let mut m = model();
+        for adapter in [true, false] {
+            let ctx = egui::Context::default();
+            let mut app = crate::modal::tests::app();
+            app.view = m.view.clone();
+            app.camera.scale = 32.;
+            if adapter {
+                app.open_point_adapter(
+                    crate::point_adapter::Adapter::ArrayBase,
+                    MmPoint::new(0., 0.),
+                );
+            } else {
+                app.modal = Some(crate::modal::ActiveModal::Move);
+                let mut session = Session::new(&app.view, Mode::Move, app.display_unit);
+                session.target.set(p(2., 3.), app.display_unit);
+                let request = session
+                    .request(&app.view, app.display_unit, app.camera.scale)
+                    .unwrap();
+                m.point_preview(request.clone()).unwrap();
+                app.view.point_preview = m.view.point_preview.clone();
+                session.requested = Some(request);
+                app.point_transform = Some(session);
+            }
+            let mut baseline = None;
+            for (value, simplified) in [
+                ("0".to_owned(), false),
+                ("".to_owned(), false),
+                ("无效".repeat(100), false),
+                ("0".to_owned(), true),
+            ] {
+                if adapter {
+                    app.point_adapter.as_mut().unwrap().draft.x = value;
+                } else {
+                    app.point_transform.as_mut().unwrap().base.x = value;
+                    if let Some(preview) = &mut app.view.point_preview {
+                        std::sync::Arc::make_mut(preview).simplified = simplified;
+                    }
+                }
+                for _ in 0..3 {
+                    let _ = ctx.run(
+                        egui::RawInput {
+                            focused: true,
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                viewport,
+                            )),
+                            ..Default::default()
+                        },
+                        |ctx| app.parameter_modal(ctx),
+                    );
+                }
+                let id = if adapter {
+                    "adapter-apply-rect"
+                } else {
+                    "transform-apply-rect"
+                };
+                let rect = ctx
+                    .data(|data| data.get_temp::<egui::Rect>(egui::Id::new(id)))
+                    .unwrap();
+                if let Some(previous) = baseline {
+                    assert_eq!(rect, previous, "adapter={adapter} viewport={viewport:?}");
+                } else {
+                    baseline = Some(rect);
+                }
+            }
+        }
+    }
+}

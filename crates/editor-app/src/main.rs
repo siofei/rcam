@@ -3296,54 +3296,68 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
             && e.code == "CONFIRMATION_REQUIRED"
             && e.details.get("categories").is_some()
         {
-            egui::Modal::new(egui::Id::new("metadata-confirmation")).show(ctx, |ui| {
-                ui.heading("确认导出为几何文件");
-                if e.details["categories"]
-                    .as_array()
-                    .is_some_and(|items| items.iter().any(|item| item == "compatibility_issues"))
-                {
-                    ui.colored_label(
+            crate::ui::modal_widgets::fixed_modal(
+                ctx,
+                egui::Id::new("metadata-confirmation"),
+                egui::vec2(440., 360.),
+                |ui| {
+                    ui.heading("确认导出为几何文件");
+                    if e.details["categories"].as_array().is_some_and(|items| {
+                        items.iter().any(|item| item == "compatibility_issues")
+                    }) {
+                        ui.colored_label(
                         crate::ui::tokens::warning_text(ui.visuals()),
                         "此图层含非规范几何。导出保留 RCam 的兼容解释；其他 Gerber 软件可能显示不同。",
                     );
-                }
-                if e.details["compatibility_warning"]["contains_lossy_zero_aperture_conversion"] == true {
-                    ui.colored_label(egui::Color32::RED, "源文件的零直径光圈已被转换成 2 µm 有面积开口；导出会改变制造图形。");
-                }
-                if e.details["compatibility_warning"]["contains_nonstandard_compatibility_region"] == true {
-                    ui.colored_label(egui::Color32::RED, format!(
+                    }
+                    if e.details["compatibility_warning"]["contains_lossy_zero_aperture_conversion"]
+                        == true
+                    {
+                        ui.colored_label(
+                            egui::Color32::RED,
+                            "源文件的零直径光圈已被转换成 2 µm 有面积开口；导出会改变制造图形。",
+                        );
+                    }
+                    if e.details["compatibility_warning"]["contains_nonstandard_compatibility_region"]
+                        == true
+                    {
+                        ui.colored_label(egui::Color32::RED, format!(
                         "含 {} 个非标准兼容 Region；未获独立 CAM 制造等价认证。",
                         e.details["compatibility_warning"]["nonstandard_compatibility_region_count"]
                     ));
-                }
-                if let Some(issues) = e.details["compatibility_warning"]["issue_categories"].as_array() {
-                    for issue in issues.iter().take(12).filter_map(|value| value.as_str()) {
-                        ui.label(issue);
                     }
-                    if issues.len() > 12 {
-                        ui.label(format!("另有 {} 条兼容问题，见图层设置", issues.len() - 12));
+                    if let Some(issues) =
+                        e.details["compatibility_warning"]["issue_categories"].as_array()
+                    {
+                        for issue in issues.iter().take(12).filter_map(|value| value.as_str()) {
+                            ui.label(issue);
+                        }
+                        if issues.len() > 12 {
+                            ui.label(format!("另有 {} 条兼容问题，见图层设置", issues.len() - 12));
+                        }
                     }
-                }
-                ui.label("导出需确认以下来源信息或兼容告警：");
-                ui.label(e.details["categories"].to_string());
-                if ui.button("取消").clicked() {
-                    self.view.error = None;
-                }
-                if ui.button("确认移除并导出").clicked()
-                    && self.view.info.as_ref().is_some_and(|d| {
-                        e.details["gui_document_id"] == d.document_id
-                            && e.details["gui_revision"] == d.revision
-                    })
-                    && let (Some(path), Some(layer)) = (
-                        e.details["gui_target_path"].as_str(),
-                        e.details["gui_layer_id"].as_str(),
-                    )
-                {
-                    let categories = serde_json::from_value(e.details["categories"].clone()).ok();
-                    self.view.error = None;
-                    self.send(Action::Save(path.into(), layer.into(), categories));
-                }
-            });
+                    ui.label("导出需确认以下来源信息或兼容告警：");
+                    ui.label(e.details["categories"].to_string());
+                    if ui.button("取消").clicked() {
+                        self.view.error = None;
+                    }
+                    if ui.button("确认移除并导出").clicked()
+                        && self.view.info.as_ref().is_some_and(|d| {
+                            e.details["gui_document_id"] == d.document_id
+                                && e.details["gui_revision"] == d.revision
+                        })
+                        && let (Some(path), Some(layer)) = (
+                            e.details["gui_target_path"].as_str(),
+                            e.details["gui_layer_id"].as_str(),
+                        )
+                    {
+                        let categories =
+                            serde_json::from_value(e.details["categories"].clone()).ok();
+                        self.view.error = None;
+                        self.send(Action::Save(path.into(), layer.into(), categories));
+                    }
+                },
+            );
         }
         if self.modal.is_none()
             && !self.close_prompt
@@ -3351,8 +3365,10 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
             && e.code == "CONFIRMATION_REQUIRED"
             && e.details["reason"] == "compatibility_precision_override"
         {
-            egui::Modal::new(egui::Id::new("compatibility-precision-confirmation")).show(
+            crate::ui::modal_widgets::fixed_modal(
                 ctx,
+                egui::Id::new("compatibility-precision-confirmation"),
+                egui::vec2(440., 280.),
                 |ui| {
                     ui.heading("确认兼容几何导出精度");
                     ui.label(format!(

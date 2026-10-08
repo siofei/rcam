@@ -222,7 +222,7 @@ pub fn controls_with_centers_tagged(
             }
         }
     });
-    match draft.resolve(unit) {
+    let (notice, warning) = match draft.resolve(unit) {
         Ok(point) => {
             let source = match point.source {
                 Source::Numeric => "数值输入".into(),
@@ -234,11 +234,10 @@ pub fn controls_with_centers_tagged(
                 Source::Grid => "网格".into(),
                 Source::Raw => "画布坐标".into(),
             };
-            ui.label(format!("来源：{source}"));
+            (format!("来源：{source}"), false)
         }
-        Err(error) => {
-            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
-        }
-    }
+        Err(error) => (error, true),
+    };
+    crate::ui::modal_widgets::status_slot(ui, &notice, 38., warning);
     event
 }

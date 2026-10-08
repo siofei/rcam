@@ -296,50 +296,54 @@ impl EditorApp {
             event("recovery.prompt_shown");
             self.recovery_prompt_reported = Some(candidate.snapshot_hash.clone());
         }
-        egui::Modal::new(egui::Id::new("project-recovery")).show(ctx, |ui| {
-            ui.set_width(crate::ui::tokens::modal_width(ctx, 440., 180.));
-            ui.heading("检测到未恢复的工程");
-            ui.label("可将恢复副本作为未保存的工程打开，原工程不会被覆盖。");
-            ui.horizontal(|ui| {
-                if crate::ui::buttons::primary(ui, "打开恢复副本", !self.busy).clicked() {
-                    event("recovery.restore_requested");
-                    match directory().and_then(|dir| load(&dir, &candidate).ok()) {
-                        Some(bytes) => {
+        crate::ui::modal_widgets::fixed_modal(
+            ctx,
+            egui::Id::new("project-recovery"),
+            egui::vec2(440., 300.),
+            |ui| {
+                ui.heading("检测到未恢复的工程");
+                ui.label("可将恢复副本作为未保存的工程打开，原工程不会被覆盖。");
+                ui.horizontal(|ui| {
+                    if crate::ui::buttons::primary(ui, "打开恢复副本", !self.busy).clicked() {
+                        event("recovery.restore_requested");
+                        match directory().and_then(|dir| load(&dir, &candidate).ok()) {
+                            Some(bytes) => {
+                                self.recovery_candidate = None;
+                                self.send(Action::RestoreProject(bytes));
+                            }
+                            None => {
+                                event("recovery.restore_failed");
+                                self.ui_error = Some("恢复快照损坏或无法读取".into());
+                            }
+                        }
+                    }
+                    if crate::ui::buttons::secondary_enabled(ui, "忽略", !self.busy).clicked() {
+                        self.recovery_ignore_confirm = true;
+                    }
+                });
+                if self.recovery_ignore_confirm {
+                    ui.label("忽略将删除这个恢复副本。");
+                    let (cancel, delete) = crate::ui::modal_widgets::cancel_destructive_row(
+                        ui,
+                        "删除恢复副本",
+                        !self.busy,
+                    );
+                    if cancel {
+                        self.recovery_ignore_confirm = false;
+                    }
+                    if delete {
+                        event("recovery.dismissed");
+                        if let Some(dir) = directory() {
+                            remove(&dir, &candidate.project_id);
+                            self.recovery_candidate = discover(&dir).into_iter().next();
+                        } else {
                             self.recovery_candidate = None;
-                            self.send(Action::RestoreProject(bytes));
                         }
-                        None => {
-                            event("recovery.restore_failed");
-                            self.ui_error = Some("恢复快照损坏或无法读取".into());
-                        }
+                        self.recovery_ignore_confirm = false;
                     }
                 }
-                if crate::ui::buttons::secondary_enabled(ui, "忽略", !self.busy).clicked() {
-                    self.recovery_ignore_confirm = true;
-                }
-            });
-            if self.recovery_ignore_confirm {
-                ui.label("忽略将删除这个恢复副本。");
-                let (cancel, delete) = crate::ui::modal_widgets::cancel_destructive_row(
-                    ui,
-                    "删除恢复副本",
-                    !self.busy,
-                );
-                if cancel {
-                    self.recovery_ignore_confirm = false;
-                }
-                if delete {
-                    event("recovery.dismissed");
-                    if let Some(dir) = directory() {
-                        remove(&dir, &candidate.project_id);
-                        self.recovery_candidate = discover(&dir).into_iter().next();
-                    } else {
-                        self.recovery_candidate = None;
-                    }
-                    self.recovery_ignore_confirm = false;
-                }
-            }
-        });
+            },
+        );
     }
 }
 

@@ -2,6 +2,40 @@
 use super::*;
 use editor_core::edit::RectangularArray;
 
+fn array_edit_error(
+    record: &S1DocumentRecord,
+    params: &ArrayRectangularParams,
+    error: EditError,
+) -> ServiceError {
+    if error != EditError::ResourceLimit {
+        return map_edit_error(error);
+    }
+    let mut mapped = map_edit_error(error);
+    mapped.message = "阵列资源预算或数值容量不足；没有阵列格数硬上限".into();
+    mapped.details = serde_json::json!({
+        "max_source_objects": editor_core::edit::MAX_MOVE_OBJECTS,
+        "max_document_objects": editor_core::edit::MAX_EDIT_DOCUMENT_OBJECTS,
+        "max_region_edges": editor_core::edit::MAX_EDIT_REGION_EDGES,
+        "max_history_bytes": record.history.max_bytes(),
+    });
+    if let Ok(estimate) = record.history.array_resource_requirements(
+        &record.document,
+        &params.layer_id,
+        &params.object_ids,
+        RectangularArray {
+            rows: params.rows,
+            columns: params.columns,
+            pitch_x_mm: params.pitch_x_mm,
+            pitch_y_mm: params.pitch_y_mm,
+        },
+    ) {
+        mapped.details["required_history_bytes"] = estimate.history_bytes.into();
+        mapped.details["created_object_count"] = estimate.created_object_count.into();
+        mapped.details["added_region_edges"] = estimate.added_region_edges.into();
+    }
+    mapped
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArrayRectangularParams {
@@ -42,7 +76,7 @@ impl ApplicationService {
                     pitch_y_mm: params.pitch_y_mm,
                 },
             )
-            .map_err(map_edit_error)
+            .map_err(|error| array_edit_error(record, params, error))
     }
     pub fn objects_array_rectangular(
         &mut self,
@@ -86,7 +120,7 @@ impl ApplicationService {
                     &params.object_ids,
                     spec,
                 )
-                .map_err(map_edit_error)?;
+                .map_err(|error| array_edit_error(record, &params, error))?;
             let added = usize::from(!changed.is_empty());
             record.revision += added as u64;
             Ok(edit_result(document_id, record, changed, added))
