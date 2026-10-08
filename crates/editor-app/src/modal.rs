@@ -436,6 +436,7 @@ pub(crate) mod tests {
             block_point_reference: editor_core::MmPoint::new(0., 0.),
             point_transform: None,
             point_pick: None,
+            move_place_task: None,
             point_input_frame: None,
             point_input_cancelled: false,
             point_commit_blocked: false,

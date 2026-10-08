@@ -18,12 +18,20 @@ pub enum Mode {
     HorizontalMirror,
     VerticalMirror,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Request {
     pub context: Context,
     pub groups: Arc<Vec<SelectionGroup>>,
     pub operation: SelectionEdit,
     pub ppm: f64,
+}
+impl PartialEq for Request {
+    fn eq(&self, other: &Self) -> bool {
+        self.context == other.context
+            && (Arc::ptr_eq(&self.groups, &other.groups) || self.groups == other.groups)
+            && self.operation == other.operation
+            && self.ppm.to_bits() == other.ppm.to_bits()
+    }
 }
 #[derive(Clone)]
 pub struct Preview {
@@ -41,6 +49,7 @@ pub struct Session {
     pub angle: String,
     pub requested: Option<Request>,
     pub excluded: std::collections::HashSet<String>,
+    pub placement: Option<crate::move_place::Placement>,
 }
 impl Session {
     pub fn new(view: &View, mode: Mode, unit: editor_core::units::DisplayUnit) -> Self {
@@ -57,6 +66,7 @@ impl Session {
             angle: "90".into(),
             requested: None,
             excluded: view.selected.ids().into_iter().map(str::to_owned).collect(),
+            placement: None,
         }
     }
     pub fn operation(
@@ -512,6 +522,12 @@ impl EditorApp {
         self.point_transform = Some(session);
     }
     pub(crate) fn finish_point_pick(&mut self, point: Option<Point>) {
+        if self.move_placing() {
+            if point.is_none() {
+                self.cancel_move_place();
+            }
+            return;
+        }
         let Some(pick) = self.point_pick.take() else {
             return;
         };
@@ -540,6 +556,10 @@ impl EditorApp {
         rect: egui::Rect,
     ) {
         if !self.arbitrate_point_input_frame(ctx) {
+            return;
+        }
+        if self.move_placing() {
+            self.move_place_canvas(ctx, r, rect);
             return;
         }
         let Some(pick) = &self.point_pick else {
@@ -672,6 +692,10 @@ impl EditorApp {
         rect: egui::Rect,
         ppp: f32,
     ) {
+        if self.move_placing() {
+            self.paint_move_place(painter, rect, ppp);
+            return;
+        }
         if let Some(pick) = &self.point_pick {
             let label = match pick.field {
                 PickField::Base => "拾取基点 B",

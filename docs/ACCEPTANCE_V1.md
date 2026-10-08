@@ -1915,3 +1915,7 @@ CPU checks and Mac target compilation do not replace native input/frame checks.
 ### S5 selection input follow-up candidate
 
 For R07/R09/R16/R17/R18 and AT-022/026/028/029/043/064/065/067/074/078/089, ordinary regressions and scope are defined in `S5_SELECTION_INPUT.md`/ADR0059. Check complete filtered All and stable identity/order, physical Ctrl mapping and text/IME/modal priority, both modifier box directions and click cycling, unchanged manufacturing/history, large no-op snapshot reuse, cancellable copy and authoritative stale/terminal/project-transition behavior. Actual Mac event delivery remains to be verified locally; this addendum introduces no new native performance gate and makes no completed native acceptance claim.
+
+### S5 click-placement Move source candidate
+
+For R08/R09/R16/R17/R18 and AT-022/030/032/039/040/064/065/067/069/074/075/078, `S5_MOVE_CLICK_PLACE.md`/ADR0060 add ordinary input/state regressions: admitted exact B, pointer following without hold, click-event target/Alt and frozen request, actual final preview then one atomic Move/Undo, cancel/IME priority, stale/retired/duplicate/TooLate replies, complete synthetic large selection and deferred project transitions. Existing case identities and platform obligations remain. Actual Mac input and ordinary native checks are external; this batch adds no native performance gate or completed platform acceptance claim.

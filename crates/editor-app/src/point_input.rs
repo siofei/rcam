@@ -3,10 +3,20 @@ use crate::state::{View, selection_geometry_identity};
 use editor_core::{MmPoint, snap::SnapResolution};
 use editor_service::{CompositeMaterial, SelectionMaterialResult, task::TaskVersion};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Context {
     pub version: TaskVersion,
     pub selection_epoch: u64,
+    pub project_id: Option<String>,
+    selected: crate::shared_snapshot::SnapshotVec<editor_service::ObjectInfo>,
+}
+impl PartialEq for Context {
+    fn eq(&self, other: &Self) -> bool {
+        self.version == other.version
+            && self.selection_epoch == other.selection_epoch
+            && self.project_id == other.project_id
+            && self.selected.shares_storage(&other.selected)
+    }
 }
 impl Context {
     pub fn capture(view: &View) -> Self {
@@ -17,6 +27,8 @@ impl Context {
                 view.rule_revision,
             ),
             selection_epoch: view.selection_epoch,
+            project_id: view.info.as_ref().map(|d| d.project_id.clone()),
+            selected: view.selected.ordered.clone(),
         }
     }
     pub fn valid(&self, view: &View) -> bool {

@@ -31,6 +31,9 @@ mod status_bar;
 use modal::ActiveModal;
 #[cfg(test)]
 mod batch_drag_tests;
+mod move_place;
+#[cfg(test)]
+mod move_place_tests;
 #[cfg(feature = "internal-evidence")]
 mod native_a2;
 #[cfg(feature = "internal-evidence")]
@@ -216,6 +219,7 @@ struct EditorApp {
     block_point_reference: editor_core::MmPoint,
     point_transform: Option<point_transform::Session>,
     point_pick: Option<point_transform::Pick>,
+    move_place_task: Option<move_place::Pending>,
     point_input_frame: Option<u64>,
     point_input_cancelled: bool,
     point_commit_blocked: bool,
@@ -508,6 +512,7 @@ impl EditorApp {
             block_point_reference: editor_core::MmPoint::new(0., 0.),
             point_transform: None,
             point_pick: None,
+            move_place_task: None,
             point_input_frame: None,
             point_input_cancelled: false,
             point_commit_blocked: false,
@@ -692,8 +697,16 @@ impl EditorApp {
         #[cfg(feature = "internal-evidence")]
         let i1_action = native_i1::action_detail(&a);
         let previous_sequence = self.sequence;
+        let placement_request = self
+            .move_placing()
+            .then(|| match &a {
+                Action::PointPreview(request) => Some((request.as_ref().clone(), false)),
+                Action::PointApply(request) => Some((request.as_ref().clone(), true)),
+                _ => None,
+            })
+            .flatten();
         self.sequence += 1;
-        if self.modal.is_some()
+        if (self.modal.is_some() || placement_request.as_ref().is_some_and(|(_, apply)| *apply))
             && matches!(
                 a,
                 Action::ArrayApply(..)
@@ -732,6 +745,10 @@ impl EditorApp {
         let pmix_input = native_pmix::request_input(&task, &self.view, &a);
         match self.tx.try_send((self.sequence, source, a, task.clone())) {
             Ok(()) => {
+                if let Some((request, apply)) = placement_request {
+                    self.move_place_task =
+                        Some(move_place::Pending::new(task.clone(), request, apply));
+                }
                 #[cfg(feature = "internal-evidence")]
                 native_i1::accepted_action(i1_action, self.sequence);
                 #[cfg(feature = "internal-evidence")]
@@ -905,6 +922,7 @@ impl EditorApp {
             command_ids::EDIT_DUPLICATE
             | command_ids::EDIT_DELETE
             | command_ids::OBJECT_MOVE
+            | command_ids::OBJECT_MOVE_PLACE
             | command_ids::OBJECT_ROTATE
             | command_ids::OBJECT_MIRROR => editable,
             command_ids::OBJECT_ARRAY_RECTANGULAR => {
@@ -1097,6 +1115,7 @@ impl EditorApp {
             ui,
             &[
                 ("移动…", command_ids::OBJECT_MOVE),
+                ("移动（点击放置）", command_ids::OBJECT_MOVE_PLACE),
                 ("旋转…", command_ids::OBJECT_ROTATE),
                 ("镜像…", command_ids::OBJECT_MIRROR),
             ],
@@ -1332,6 +1351,10 @@ impl CommandDispatcher for EditorApp {
             }
             command_ids::OBJECT_MOVE => {
                 self.open_modal(ActiveModal::Move);
+                true
+            }
+            command_ids::OBJECT_MOVE_PLACE => {
+                self.start_move_place();
                 true
             }
             command_ids::OBJECT_ROTATE => {
@@ -1582,6 +1605,7 @@ impl eframe::App for EditorApp {
             Ok(reply) => Some(reply),
             Err(std::sync::mpsc::TryRecvError::Empty) => None,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.move_place_disconnected();
                 self.canvas_read_disconnected();
                 if self.gerber_import.as_ref().is_some_and(|q| q.active()) {
                     self.stop_gerber_import(
@@ -1593,6 +1617,11 @@ impl eframe::App for EditorApp {
                 None
             }
         };
+        if let Some((id, view)) = &reply
+            && self.filter_move_place_reply(*id, view)
+        {
+            reply = None;
+        }
         if let Some((id, view)) = &reply
             && self.consume_canvas_reply(*id, view)
         {
@@ -1786,6 +1815,7 @@ impl eframe::App for EditorApp {
             }
             self.last_structure_serial = self.view.structure_serial;
             self.accept_gerber_import_reply(id);
+            self.complete_move_place_reply(id);
         }
         if self.drag.is_none()
             || self.view.scene.is_none()
@@ -1822,7 +1852,10 @@ impl eframe::App for EditorApp {
         }
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            if !self.busy || self.gerber_import.as_ref().is_some_and(|q| q.active()) {
+            if !self.busy
+                || self.move_place_task.is_some()
+                || self.gerber_import.as_ref().is_some_and(|q| q.active())
+            {
                 self.close(true);
             }
         }
@@ -2855,7 +2888,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                             Err(e) => self.ui_error = Some(e),
                         }
                     }
-                    if self.point_pick.is_none() && let Some((press, modifiers)) = ctx.input(|i| {
+                    if !point_child_owns_frame && self.point_pick.is_none() && let Some((press, modifiers)) = ctx.input(|i| {
                         i.events.iter().find_map(|e| match e {
                             egui::Event::PointerButton {
                                 pos,

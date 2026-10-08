@@ -30,6 +30,7 @@ pub mod ids {
     pub const EDIT_DELETE: CommandId = CommandId("edit.delete");
     pub const EDIT_DUPLICATE: CommandId = CommandId("edit.duplicate");
     pub const OBJECT_MOVE: CommandId = CommandId("object.move");
+    pub const OBJECT_MOVE_PLACE: CommandId = CommandId("object.move_place");
     pub const OBJECT_ROTATE: CommandId = CommandId("object.rotate");
     pub const OBJECT_MIRROR: CommandId = CommandId("object.mirror");
     pub const OBJECT_ARRAY_RECTANGULAR: CommandId = CommandId("objects.array_rectangular");
@@ -345,6 +346,13 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
             X::Canvas,
         ),
         d(ids::OBJECT_MOVE, "移动…", C::Object, None, X::Canvas),
+        d(
+            ids::OBJECT_MOVE_PLACE,
+            "移动（点击放置）",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
         d(ids::OBJECT_ROTATE, "旋转…", C::Object, None, X::Canvas),
         d(ids::OBJECT_MIRROR, "镜像…", C::Object, None, X::Canvas),
         d(

@@ -814,15 +814,18 @@ mod tests {
             .config;
         let bytes = cfg.bytes().unwrap();
         let mut legacy = cfg.clone();
-        legacy
-            .bindings
-            .retain(|e| e.command_id != ids::EDIT_SELECT_ALL.0);
+        legacy.bindings.retain(|e| {
+            ![ids::EDIT_SELECT_ALL.0, ids::OBJECT_MOVE_PLACE.0].contains(&e.command_id.as_str())
+        });
         assert_eq!(
             legacy.bytes().unwrap(),
             include_bytes!("../../../fixtures/synthetic/s5k1/default-shortcuts.json")
         );
         let migrated = decode(&legacy.bytes().unwrap(), Platform::MacOs).unwrap();
-        assert_eq!(migrated.missing, [ids::EDIT_SELECT_ALL.0]);
+        assert_eq!(
+            migrated.missing,
+            [ids::EDIT_SELECT_ALL.0, ids::OBJECT_MOVE_PLACE.0]
+        );
         assert_eq!(
             migrated.config.entry(ids::EDIT_SELECT_ALL),
             cfg.entry(ids::EDIT_SELECT_ALL)

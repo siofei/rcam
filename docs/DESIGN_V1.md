@@ -1317,3 +1317,7 @@ samples and platform acceptance gates stay unchanged.
 ### S5 selection input follow-up
 
 The independently scoped `docs/S5_SELECTION_INPUT.md` and ADR0059 specify complete manufacturing-snapshot All, physical Ctrl+A on both platforms, and press-time Ctrl-add/Shift-remove for click and Window/Crossing box. Actual Mac app keymap uses Secondary+A, preserving Command and text/IME ownership. Selection stays workspace-only, follows existing filters/inspection locks, and uses cancellable immutable set construction plus serial terminal synchronization. Native input validation remains external; subsequent click-place Move is a separate batch.
+
+### S5 click-placement Move follow-up
+
+`S5_MOVE_CLICK_PLACE.md` and ADR0060 define a separate shared Move command: complete manufacturing bounding-center B, pointer-resolved T without holding, frozen actual final preview and one service commit. The admitted zero-delta preview is only a display template; existing numeric/drag/Snap/Alt paths and atomic geometry validation remain. Strong project/selection identity and a retired task owner fence replies and defer project transitions until terminal confirmation. Source candidate; ordinary native interaction remains external.

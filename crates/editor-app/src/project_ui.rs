@@ -85,6 +85,9 @@ impl EditorApp {
         if self.defer_canvas_transition(transition.clone()) {
             return;
         }
+        if self.defer_move_place_transition(transition.clone()) {
+            return;
+        }
         if let Some(queue) = self.gerber_import.as_mut().filter(|q| q.active()) {
             queue.defer_transition(transition);
             if let Some(task) = &self.pending_task {
