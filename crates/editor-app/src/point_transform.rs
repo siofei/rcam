@@ -428,7 +428,7 @@ impl EditorApp {
                 self.send(Action::PointApply(Box::new(request.clone())));
             }
         } else if let Err(error) = operation {
-            ui.colored_label(egui::Color32::YELLOW, error);
+            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
         }
         if base_pick || target_pick {
             let field = if base_pick {

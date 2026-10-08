@@ -2377,14 +2377,46 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
         // Process cancellation widgets before dispatching the next file, and
         // reserve the worker before automatic canvas/viewport requests run.
         self.advance_gerber_import();
+        let mut fields = status_bar::fields(
+            &self.view,
+            self.display_unit,
+            self.precision().resolution_mm,
+        );
+        let message = self
+            .ui_error
+            .clone()
+            .or_else(|| {
+                self.view
+                    .error
+                    .as_ref()
+                    .map(|e| format!("{} · {}", e.code, e.message))
+            })
+            .or_else(|| self.toast.as_ref().map(|(text, _)| text.clone()))
+            .or_else(|| self.display_error.clone())
+            .unwrap_or_else(|| self.view.message.clone());
+        let message = status_bar::message(message, &fields);
+        let warning = self.ui_error.is_some()
+            || self.view.error.is_some()
+            || self.display_error.is_some()
+            || fields.state == "unavailable"
+            || message.contains('⚠');
+        fields.tooltip.push_str(&format!("\n{message}"));
+        let controls_width = status_bar::controls_width(
+            self.toast.is_some(),
+            self.ui_error.is_some() || self.toast.is_some(),
+            self.view.error.is_some(),
+        );
+        let frame = egui::Frame::side_top_panel(&ctx.style());
+        let margins = frame.total_margin().sum();
+        let status_height = status_bar::height(
+            (ctx.content_rect().width() - margins.x).max(0.),
+            &fields,
+            controls_width,
+        ) + margins.y;
         egui::TopBottomPanel::bottom("status")
-            .exact_height(52.)
+            .frame(frame)
+            .exact_height(status_height)
             .show(ctx, |ui| {
-                let fields = status_bar::fields(
-                    &self.view,
-                    self.display_unit,
-                    self.precision().resolution_mm,
-                );
                 let coordinates = ctx
                     .input(|i| i.pointer.hover_pos())
                     .filter(|p| self.canvas_rect.contains(*p))
@@ -2393,49 +2425,55 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         format!("X {}  Y {}", self.length(w.x_mm), self.length(w.y_mm))
                     })
                     .unwrap_or_else(|| format!("X —  Y — {}", self.display_unit.suffix()));
-                let _slots = status_bar::paint(ui, &fields, &coordinates);
+                let layout = status_bar::paint(ui, &fields, &coordinates, controls_width);
                 #[cfg(feature = "internal-evidence")]
-                native_i1::status(&fields, _slots);
-                ui.horizontal(|ui| {
-                    let message = self
-                        .ui_error
-                        .clone()
-                        .or_else(|| {
-                            self.view
-                                .error
-                                .as_ref()
-                                .map(|e| format!("{} · {}", e.code, e.message))
-                        })
-                        .or_else(|| self.toast.as_ref().map(|(text, _)| text.clone()))
-                        .or_else(|| self.display_error.clone())
-                        .unwrap_or_else(|| self.view.message.clone());
-                    let width = (ui.available_width() - 354.).max(0.);
-                    ui.add_sized(
-                        [width, 20.],
-                        egui::Label::new(status_bar::display_line(&message)).truncate(),
+                native_i1::status(&fields, layout.fields);
+                if let Some(slot) = layout.message {
+                    ui.put(
+                        slot,
+                        egui::Label::new(
+                            egui::RichText::new(status_bar::display_line(&message)).color(
+                                if warning {
+                                    crate::ui::tokens::warning_text(ui.visuals())
+                                } else {
+                                    ui.visuals().text_color()
+                                },
+                            ),
+                        )
+                        .truncate(),
                     )
-                    .on_hover_text(&message);
-                    if self.toast.is_some()
-                        && self
-                            .command_button(ui, command_ids::EDIT_UNDO, "撤销")
-                            .clicked()
-                    {
-                        self.toast = None;
-                        self.dispatch(command_ids::EDIT_UNDO);
-                    }
-                    if (self.ui_error.is_some() || self.toast.is_some())
-                        && ui.small_button("关闭提示").clicked()
-                    {
-                        self.ui_error = None;
-                        self.toast = None;
-                    }
-                    if let Some(error) = &self.view.error {
-                        ui.small_button("详情")
-                            .on_hover_text(error.details.to_string());
-                    }
-                    let _scale_rect =
-                        status_bar::paint_scale(ui, self.camera.scale, ctx.pixels_per_point());
-                });
+                    .on_hover_text(&fields.tooltip);
+                }
+                if let Some(slot) = layout.controls {
+                    status_bar::paint_controls(ui, slot, |controls| {
+                        if self.toast.is_some()
+                            && self
+                                .command_button(controls, command_ids::EDIT_UNDO, "撤销")
+                                .clicked()
+                        {
+                            self.toast = None;
+                            self.dispatch(command_ids::EDIT_UNDO);
+                        }
+                        if (self.ui_error.is_some() || self.toast.is_some())
+                            && controls.small_button("关闭提示").clicked()
+                        {
+                            self.ui_error = None;
+                            self.toast = None;
+                        }
+                        if let Some(error) = &self.view.error {
+                            controls
+                                .small_button("详情")
+                                .on_hover_text(error.details.to_string());
+                        }
+                    });
+                }
+                let mut scale_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(layout.scale)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
+                scale_ui.set_clip_rect(ui.clip_rect().intersect(layout.scale));
+                status_bar::paint_scale(&mut scale_ui, self.camera.scale, ctx.pixels_per_point());
             });
         #[cfg(feature = "internal-evidence")]
         native_ui::profile("status");
@@ -3265,7 +3303,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                     .is_some_and(|items| items.iter().any(|item| item == "compatibility_issues"))
                 {
                     ui.colored_label(
-                        egui::Color32::YELLOW,
+                        crate::ui::tokens::warning_text(ui.visuals()),
                         "此图层含非规范几何。导出保留 RCam 的兼容解释；其他 Gerber 软件可能显示不同。",
                     );
                 }

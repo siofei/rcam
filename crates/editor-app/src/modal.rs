@@ -290,11 +290,11 @@ impl EditorApp {
                             },
                         );
                         if let Some(error) = &self.ui_error {
-                            ui.colored_label(egui::Color32::YELLOW, error);
+                            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
                         }
                         if let Some(error) = &self.view.error {
                             ui.colored_label(
-                                egui::Color32::YELLOW,
+                                crate::ui::tokens::warning_text(ui.visuals()),
                                 format!("{}: {}", error.code, error.message),
                             );
                         }

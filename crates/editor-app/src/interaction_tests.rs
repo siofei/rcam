@@ -413,6 +413,7 @@ fn c_status_stale_matrix_never_reuses_previous_material_values() {
         let f = status_bar::fields(&v, crate::tools::DisplayUnit::Millimeter, 0.0001);
         assert_ne!(f.state, "ready", "matrix {kind}");
         assert!(!f.area.contains("14.890"));
+        assert!(f.area.is_empty() && f.perimeter.is_empty(), "matrix {kind}");
     }
     let mut v = m.view.clone();
     v.selection_geometry = None;
@@ -422,11 +423,120 @@ fn c_status_stale_matrix_never_reuses_previous_material_values() {
         "unavailable"
     );
 }
+
+#[test]
+fn c_status_only_current_data_is_visible_and_zero_is_a_value() {
+    use editor_service::{CompositeMaterial, SelectionMaterialResult};
+    let mut m = model();
+    let unit = crate::tools::DisplayUnit::Millimeter;
+    let ready = status_bar::fields(&m.view, unit, 0.0001);
+    assert!(!ready.selection.is_empty() && !ready.area.is_empty() && !ready.perimeter.is_empty());
+    let result = std::sync::Arc::make_mut(m.view.selection_geometry.as_mut().unwrap());
+    result.material = SelectionMaterialResult::Computed {
+        value: CompositeMaterial::ZeroArea,
+    };
+    let zero = status_bar::fields(&m.view, unit, 0.0001);
+    assert_eq!(zero.state, "zero");
+    assert!(zero.area.contains('0') && zero.perimeter.contains('0'));
+    assert!(zero.notice().is_none());
+    m.view.selection_geometry = None;
+    let pending = status_bar::fields(&m.view, unit, 0.0001);
+    assert_eq!(pending.state, "pending");
+    assert!(!pending.selection.is_empty());
+    assert!(pending.area.is_empty() && pending.perimeter.is_empty());
+    assert!(pending.notice().unwrap().contains("计算中"));
+    m.view.selection_geometry_error = Some("resource limit".into());
+    let failed = status_bar::fields(&m.view, unit, 0.0001);
+    assert_eq!(failed.state, "unavailable");
+    assert!(failed.area.is_empty() && failed.perimeter.is_empty());
+    assert!(failed.notice().unwrap().contains("不可用"));
+    assert!(failed.tooltip.contains("resource limit"));
+    m.view.selected.ordered.clear();
+    let empty = status_bar::fields(&m.view, unit, 0.0001);
+    assert!(empty.selection.is_empty() && empty.area.is_empty() && empty.perimeter.is_empty());
+    assert!(empty.notice().is_none());
+}
+
+#[test]
+fn c_status_hides_only_invalid_numeric_fields_and_keeps_the_warning() {
+    use editor_service::{CompositeMaterial, SelectionMaterialResult};
+    for (bad_area, bad_perimeter) in [(true, false), (false, true), (true, true)] {
+        let mut m = model();
+        let result = std::sync::Arc::make_mut(m.view.selection_geometry.as_mut().unwrap());
+        let SelectionMaterialResult::Computed {
+            value:
+                CompositeMaterial::Ready {
+                    area_mm2,
+                    perimeter_mm,
+                    ..
+                },
+        } = &mut result.material
+        else {
+            panic!("expected ready material")
+        };
+        if bad_area {
+            *area_mm2 = f64::NAN;
+        }
+        if bad_perimeter {
+            *perimeter_mm = f64::INFINITY;
+        }
+        let fields = status_bar::fields(&m.view, crate::tools::DisplayUnit::Millimeter, 0.0001);
+        assert_eq!(fields.area.is_empty(), bad_area);
+        assert_eq!(fields.perimeter.is_empty(), bad_perimeter);
+        assert!(!fields.selection.is_empty());
+        assert_eq!(fields.state, "unavailable");
+        assert!(fields.notice().unwrap().contains("不可用"));
+    }
+}
+
+#[test]
+fn c_status_single_aperture_and_block_descriptions_are_preserved() {
+    use editor_core::{
+        SemanticGeometry,
+        block::{BlockDefinition, BlockDefinitionId, BlockTransform},
+    };
+    let mut m = model();
+    let flash = m
+        .view
+        .selected
+        .ordered
+        .iter()
+        .find(|item| matches!(item.object.geometry, SemanticGeometry::Flash { .. }))
+        .unwrap()
+        .clone();
+    m.view.selected.ordered = vec![flash];
+    let aperture = status_bar::fields(&m.view, crate::tools::DisplayUnit::Millimeter, 0.0001);
+    assert!(aperture.selection.starts_with("光圈 "));
+    assert!(!aperture.selection.contains("选中"));
+    let id = BlockDefinitionId("presentation-only-test".into());
+    m.view.block_definitions.push(BlockDefinition {
+        id: id.clone(),
+        name: "中文 Block name".into(),
+        local_origin: MmPoint::new(0., 0.),
+        objects: vec![],
+        revision: 1,
+    });
+    m.view.selected.ordered[0].object.geometry = SemanticGeometry::BlockInstance {
+        definition_id: id,
+        transform: BlockTransform::IDENTITY,
+    };
+    let block = status_bar::fields(&m.view, crate::tools::DisplayUnit::Millimeter, 0.0001);
+    assert_eq!(block.selection, "Block 中文 Block name");
+}
 #[test]
 fn c_status_rects_are_content_independent_nonoverlapping_and_coords_right() {
     for width in [280., 420., 600., 850., 1200.] {
         let rect = Rect::from_min_size(Pos2::new(5., 9.), Vec2::new(width, 20.));
-        let slots = status_bar::layout(rect);
+        let f = status_bar::Fields {
+            selection: "selection".into(),
+            area: "area".into(),
+            perimeter: "perimeter".into(),
+            tooltip: "full".into(),
+            state: "ready",
+        };
+        let layout = status_bar::layout(rect, &f, 0.);
+        let rect = Rect::from_min_size(rect.min, Vec2::new(width, layout.height));
+        let slots = layout.fields;
         assert_eq!(slots[3].unwrap().right(), rect.right());
         for a in slots.iter().flatten() {
             assert!(rect.contains_rect(*a));
@@ -453,7 +563,8 @@ fn c_status_rects_are_content_independent_nonoverlapping_and_coords_right() {
                             tooltip: "full".into(),
                             state: "ready",
                         };
-                        footprints.push(status_bar::paint(ui, &f, &"-999999".repeat(len)));
+                        footprints
+                            .push(status_bar::paint(ui, &f, &"-999999".repeat(len), 0.).fields);
                     });
                 },
             );
@@ -534,7 +645,7 @@ fn c_untrusted_multiline_labels_cannot_grow_the_status_line() {
                         state: "zero",
                     };
                     ui.scope(|ui| {
-                        status_bar::paint(ui, &f, "X 0 Y 0");
+                        status_bar::paint(ui, &f, "X 0 Y 0", 0.);
                         heights.push(ui.min_rect().height());
                     });
                 });
@@ -542,7 +653,7 @@ fn c_untrusted_multiline_labels_cannot_grow_the_status_line() {
         );
     }
     assert_eq!(heights[0], heights[1]);
-    assert!(heights[1] <= 20.);
+    assert_eq!(heights[1], 44.);
 }
 #[test]
 fn c_cursor_is_ordinary_over_an_actual_foreground_menu_area() {

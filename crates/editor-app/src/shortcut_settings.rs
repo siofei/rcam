@@ -368,7 +368,7 @@ impl Settings {
             ui.label("独立用户配置自动保存；不改变工程、制造内容或撤销历史。");
             ui.label("功能键可能被系统占用；可选择其他绑定，RCam不会更改系统键盘设置。");
             ui.label(if platform == Platform::MacOs { "Primary = Cmd · Secondary = Ctrl · Alt = Option · Shift = Shift" } else { "Primary = Ctrl · Secondary = Win（本版本不可绑定）· Alt = Alt" });
-            if let Some(warning) = &self.warning { ui.colored_label(egui::Color32::YELLOW, warning); }
+            if let Some(warning) = &self.warning { ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), warning); }
             if let Some(message) = &self.message { ui.label(message); }
             ui.add_enabled_ui(self.pending.is_none() && !self.recording && !ime, |ui| {
                 ui.horizontal(|ui| {
@@ -419,7 +419,7 @@ impl Settings {
                     ui.add_enabled_ui(self.pending.is_none() && !ime, |ui| {
                         if !self.recording {
                             if ui.add_enabled(self.keys.len() < 4, egui::Button::new("录制快捷键")).clicked() { self.recording = true; self.candidate = None; self.barrier = !self.held.is_empty() || self.modifiers_down; ui.memory_mut(|m| { if let Some(id) = m.focused() { m.surrender_focus(id); } }); }
-                            if let Some(candidate) = self.candidate { ui.label(format!("录制候选：{}", format_shortcut(candidate, platform))); match shortcut_config::check_key(candidate, platform) { Ok(()) => { if ui.add_enabled(self.keys.len() < 4 && !self.keys.contains(&candidate), egui::Button::new("加入绑定列表")).clicked() { self.keys.push(candidate); self.candidate = None; } }, Err(e) => { ui.colored_label(egui::Color32::YELLOW, e.to_string()); } } }
+                            if let Some(candidate) = self.candidate { ui.label(format!("录制候选：{}", format_shortcut(candidate, platform))); match shortcut_config::check_key(candidate, platform) { Ok(()) => { if ui.add_enabled(self.keys.len() < 4 && !self.keys.contains(&candidate), egui::Button::new("加入绑定列表")).clicked() { self.keys.push(candidate); self.candidate = None; } }, Err(e) => { ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), e.to_string()); } } }
                             ui.horizontal(|ui| {
                                 if ui.button("确认此命令并自动保存").clicked() { match self.current.config.replace(id, self.keys.clone(), platform) { Ok(v) => self.save(ctx, v.config, false), Err(e) => self.message = Some(e.to_string()) } }
                                 if ui.button("清除此命令绑定").clicked() { let next = self.current.config.replace(id, vec![], platform).expect("clearing cannot conflict"); self.save(ctx, next.config, false); }

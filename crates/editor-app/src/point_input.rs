@@ -237,7 +237,7 @@ pub fn controls_with_centers_tagged(
             ui.label(format!("来源：{source}"));
         }
         Err(error) => {
-            ui.colored_label(eframe::egui::Color32::YELLOW, error);
+            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
         }
     }
     event

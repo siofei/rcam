@@ -639,7 +639,7 @@ impl EditorApp {
                     apply = row_apply || (valid && self.dialog_enter(ui));
                     if let Some(error) = &self.view.error {
                         ui.colored_label(
-                            Color32::YELLOW,
+                            crate::ui::tokens::warning_text(ui.visuals()),
                             format!("{}: {}", error.code, error.message),
                         );
                     }
@@ -878,7 +878,7 @@ impl EditorApp {
                             });
                     });
                     if let Some(error) = &self.view.error {
-                        ui.colored_label(Color32::YELLOW, format!("{}: {}", error.code, error.message));
+                        ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), format!("{}: {}", error.code, error.message));
                     }
                     if crate::ui::buttons::secondary(ui, "关闭").clicked() {
                         close = true;
@@ -959,7 +959,7 @@ impl EditorApp {
                     confirm = row_confirm;
                     if let Some(error) = &self.view.error {
                         ui.colored_label(
-                            Color32::YELLOW,
+                            crate::ui::tokens::warning_text(ui.visuals()),
                             format!("{}: {}", error.code, error.message),
                         );
                     }

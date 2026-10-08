@@ -600,7 +600,7 @@ impl EditorApp {
             ));
         } else {
             ui.colored_label(
-                egui::Color32::YELLOW,
+                crate::ui::tokens::warning_text(ui.visuals()),
                 "源文件未声明单位：必须手动选择 mm / inch，再确认。",
             );
         }

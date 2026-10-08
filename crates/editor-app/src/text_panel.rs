@@ -584,7 +584,7 @@ impl EditorApp {
                 ));
             }
             Err(e) => {
-                ui.colored_label(egui::Color32::YELLOW, e);
+                ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), e);
             }
         }
         fixed_status_line(ui, &self.text.status, false).on_hover_text(&self.text.status);

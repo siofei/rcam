@@ -1,5 +1,13 @@
 # S5-I2-C — Interaction preferences, canvas cursor, stable status and flicker investigation
 
+## Ordinary UI readability follow-up (2026-10-08)
+
+Scope: S5-I2-C presentation only, R16/R17/R18, local AT-063/065/069/077/082/097 regressions. Baseline 354027c70a6c500e8b9d41feb2e507c8439645fd. Allowed modules: app status presentation, theme text tokens, existing panel warning call sites and focused UI regressions. No geometry, material statistics calculation, service, import/cancel, shader, dependency, acceptance identity or threshold changes. This task does not resume crash investigation or native experiments; earlier native failures remain in their original evidence.
+
+The user explicitly replaces the earlier permanently fixed two-line status presentation with a compact default single line. Selection descriptions/counts appear only for a nonempty selection. Area/perimeter appear only from the current valid cache result; numeric 0 and ZeroArea are valid data. Pending/unavailable/stale results have no placeholder metric slots; their notice and detailed tooltip remain. Scale and right-aligned coordinates stay on the first line. Fixed maximum widths and truncation prevent long text from resizing the layout. Only present data that cannot fit the first line adds a second data line; shrinking to one line is immediate when that data disappears. Narrow data rows share the available width without overflow.
+
+Panel warning/attention text uses an opaque dark amber/brown foreground in the light theme and a light amber foreground in the dark theme. Compatibility marks and existing warning text are retained. Fixed dark-canvas overlays and manufacturing rendering remain unchanged. Synthetic egui regressions cover visibility, 0, stale/pending/error states, row transitions, all field-presence combinations, clipping, theme contrast, logical-point scale and coordinate alignment. Mac ordinary Test/Release and visual confirmation remain the local executor's task; cloud CPU UI tests are supporting evidence only.
+
 ## Read-only click task follow-up (2026-10-08; native validation pending)
 
 Scope: S5-I2-C, R05/R09/R16/R17/R21/R22; local AT-011–018/025–037/065–069/074–075/086–092 regressions. Allowed modules: editor-app canvas task routing, worker View selection caches, gesture ownership, status presentation, project transition guards, import/recovery isolation and focused tests. Existing service hit tests, f64 manufacturing geometry, Snap/Alt, shaders, resource budgets, trajectories, performance intervals and thresholds remain frozen.

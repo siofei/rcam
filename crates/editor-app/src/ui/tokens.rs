@@ -1,7 +1,5 @@
 //! Centralized layout/colour constants (S4-B2 Final Closeout UI Component
-//! Foundation). Every value here is copied from the call site it replaces,
-//! not redesigned — this module only gives the scattered literals one name
-//! and one place to change, it does not alter any current layout or colour.
+//! Foundation), with theme-aware semantic text colours.
 use eframe::egui;
 use egui::Color32;
 
@@ -38,6 +36,15 @@ pub fn destructive() -> Color32 {
     Color32::from_rgb(255, 120, 110)
 }
 
+/// Warning/attention text on themed panels. Pure yellow is unreadable on light panels.
+pub fn warning_text(visuals: &egui::Visuals) -> Color32 {
+    if visuals.dark_mode {
+        Color32::from_rgb(255, 205, 96)
+    } else {
+        Color32::from_rgb(120, 65, 0)
+    }
+}
+
 /// Grip sizes are physical pixels; divide by pixels_per_point when painting.
 pub const GRIP_MARKER_PX: f32 = 8.;
 pub const GRIP_HIT_PX: f32 = 10.;
@@ -49,3 +56,45 @@ pub const GRIP_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 pub const CANDIDATE_WINDOW: Color32 = Color32::GOLD;
 pub const CANDIDATE_BOUNDS: Color32 = Color32::LIGHT_BLUE;
 pub const CANDIDATE_OUTLINE_PX: f32 = 1.5;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn luminance(color: Color32) -> f64 {
+        let linear = |value: u8| {
+            let value = f64::from(value) / 255.;
+            if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(color.r()) + 0.7152 * linear(color.g()) + 0.0722 * linear(color.b())
+    }
+    #[test]
+    fn warning_text_has_high_contrast_on_light_and_dark_panel_surfaces() {
+        for visuals in [egui::Visuals::light(), egui::Visuals::dark()] {
+            let foreground = warning_text(&visuals);
+            assert_eq!(foreground.a(), 255);
+            for background in [
+                visuals.panel_fill,
+                visuals.window_fill,
+                visuals.extreme_bg_color,
+                visuals.widgets.noninteractive.bg_fill,
+                visuals.widgets.hovered.bg_fill,
+            ] {
+                let (fg, bg) = (luminance(foreground), luminance(background));
+                let contrast = (fg.max(bg) + 0.05) / (fg.min(bg) + 0.05);
+                assert!(
+                    contrast >= 4.5,
+                    "dark={} contrast={contrast}",
+                    visuals.dark_mode
+                );
+            }
+        }
+        assert_ne!(
+            warning_text(&egui::Visuals::light()),
+            warning_text(&egui::Visuals::dark())
+        );
+    }
+}

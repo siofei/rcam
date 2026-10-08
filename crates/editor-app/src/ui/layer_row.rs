@@ -107,7 +107,7 @@ impl EditorApp {
                         };
                         let mut name = RichText::new(label.clone());
                         if compatibility {
-                            name = name.color(egui::Color32::YELLOW);
+                            name = name.color(crate::ui::tokens::warning_text(ui.visuals()));
                         }
                         if l.is_active {
                             name = name.strong();
@@ -167,7 +167,7 @@ impl EditorApp {
                                 if !l.import_diagnostics.is_empty() {
                                     if compatibility {
                                         ui.colored_label(
-                                            egui::Color32::YELLOW,
+                                            crate::ui::tokens::warning_text(ui.visuals()),
                                             "含兼容解释的几何，编辑和导出前请查看图层设置",
                                         );
                                     }
@@ -291,7 +291,7 @@ impl EditorApp {
                                 .label(
                                     RichText::new(crate::ui::icons::RcamIcon::Solo.glyph())
                                         .strong()
-                                        .color(Color32::YELLOW),
+                                        .color(crate::ui::tokens::warning_text(ui.visuals())),
                                 )
                                 .on_hover_text("独奏中");
                             note("solo", solo.rect);

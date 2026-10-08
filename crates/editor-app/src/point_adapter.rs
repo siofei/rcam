@@ -176,7 +176,7 @@ impl EditorApp {
             .map_err(Clone::clone)
             .and_then(|p| self.preview_adapter_point(&mut session, p.world_mm));
         if let Err(error) = &preview {
-            ui.colored_label(egui::Color32::YELLOW, error);
+            ui.colored_label(crate::ui::tokens::warning_text(ui.visuals()), error);
         }
         let apply = ui.add_enabled(
             preview.is_ok() && !self.busy && !self.point_commit_blocked,
