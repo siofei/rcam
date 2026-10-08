@@ -1683,8 +1683,7 @@ impl eframe::App for EditorApp {
                 probe.action(&format!("DROP_FILES n={}", paths.len()));
             }
             if !paths.is_empty() && self.layer_dialog.is_none() {
-                // Every dropped file becomes its own layer; all succeed or none is added.
-                self.send(Action::ImportGerbers(paths));
+                self.drop_files(paths);
             }
         }
         // Validate the current view before enabling manufacturing actions.

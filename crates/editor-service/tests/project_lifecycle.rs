@@ -32,6 +32,172 @@ fn setup() -> (ApplicationService, std::path::PathBuf) {
 }
 
 #[test]
+fn project_container_in_gerber_service_has_clear_error_without_mutating_document() {
+    let (mut service, root) = setup();
+    let first = service.document_new().unwrap();
+    let project = root.join("empty.rcam");
+    service
+        .project_save(
+            &first.document_id,
+            &first.revision,
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+    let bytes = fs::read(&project).unwrap();
+    let decoded = rcam_project::decode(&bytes).unwrap();
+    assert!(decoded.layers.is_empty());
+    let renamed = root.join("project.custom");
+    fs::write(&renamed, &bytes).unwrap();
+    let before = service.document_get(&first.document_id).unwrap();
+    let snapshot = service.render_snapshot(&first.document_id).unwrap();
+    for path in [&project, &renamed] {
+        let error = service.open(path.to_str().unwrap()).unwrap_err();
+        assert_eq!(error.code, "INVALID_ARGUMENT");
+        assert!(error.message.contains("RCam 工程容器"));
+        assert!(error.message.contains("project.open"));
+        assert!(!error.message.contains("unterminated"));
+        assert_eq!(service.document_get(&first.document_id).unwrap(), before);
+        assert_eq!(
+            service.render_snapshot(&first.document_id).unwrap(),
+            snapshot
+        );
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+    let reopened = service.project_open(project.to_str().unwrap()).unwrap();
+    assert_eq!(reopened.project_id, first.project_id);
+    assert!(
+        service
+            .render_snapshot(&reopened.document_id)
+            .unwrap()
+            .layers
+            .is_empty()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_container_rejects_whole_gerber_batch_with_original_import_context() {
+    let (mut service, root) = setup();
+    let first = service.document_new().unwrap();
+    let project = root.join("empty.rcam");
+    service
+        .project_save(
+            &first.document_id,
+            &first.revision,
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+    let gerber = root.join("valid.custom");
+    fs::write(&gerber, "%FSLAX26Y26*%%MOMM*%%ADD10C,1*%D10*X0Y0D03*M02*").unwrap();
+    let before = service.document_get(&first.document_id).unwrap();
+    let snapshot = service.render_snapshot(&first.document_id).unwrap();
+    for paths in [[&gerber, &project], [&project, &gerber]] {
+        let index = usize::from(paths[0] == &gerber);
+        let error = service
+            .import_gerber_layers(
+                &first.document_id,
+                &before.revision,
+                ImportGerberLayersParams {
+                    paths: paths
+                        .iter()
+                        .map(|path| path.to_str().unwrap().into())
+                        .collect(),
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_ARGUMENT");
+        assert!(error.message.contains("project.open"));
+        assert_eq!(error.details["import_index"], index);
+        assert_eq!(error.details["import_atomic"], true);
+        assert_eq!(error.details["import_path"], project.to_str().unwrap());
+        assert_eq!(service.document_get(&first.document_id).unwrap(), before);
+        assert_eq!(
+            service.render_snapshot(&first.document_id).unwrap(),
+            snapshot
+        );
+    }
+    let cancel = editor_service::task::CancellationToken::default();
+    cancel.cancel();
+    let error = service
+        .import_gerber_layers_with_cancel(
+            &first.document_id,
+            &before.revision,
+            ImportGerberLayersParams {
+                paths: vec![project.to_str().unwrap().into()],
+            },
+            Some(&cancel),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "CANCELLED");
+    assert_eq!(service.document_get(&first.document_id).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn gerber_pk_comments_and_custom_extensions_keep_atomic_import_and_single_undo() {
+    let (mut service, root) = setup();
+    let first = service.document_new().unwrap();
+    let source = b"G04 PK project text*%FSLAX26Y26*%%MOMM*%%ADD10C,1*%D10*X0Y0D03*M02*";
+    let paths = [root.join("中文 # layer.custom"), root.join("gerber.rcam")];
+    for path in &paths {
+        fs::write(path, source).unwrap();
+    }
+    let imported = service
+        .import_gerber_layers(
+            &first.document_id,
+            &first.revision,
+            ImportGerberLayersParams {
+                paths: paths
+                    .iter()
+                    .map(|path| path.to_str().unwrap().into())
+                    .collect(),
+            },
+        )
+        .unwrap();
+    assert_eq!(imported.layers.len(), 2);
+    let after = service.document_get(&first.document_id).unwrap();
+    assert_eq!(after.undo_entries, 1);
+    assert_eq!(
+        service
+            .render_snapshot(&first.document_id)
+            .unwrap()
+            .layers
+            .len(),
+        2
+    );
+    service
+        .history_undo(&first.document_id, &after.revision)
+        .unwrap();
+    let undone = service.document_get(&first.document_id).unwrap();
+    assert!(
+        service
+            .render_snapshot(&first.document_id)
+            .unwrap()
+            .layers
+            .is_empty()
+    );
+    assert!(!undone.project_dirty);
+    for path in &paths {
+        assert_eq!(fs::read(path).unwrap(), source);
+    }
+    // A generic ZIP prefix or arbitrary PK text must retain its ordinary
+    // parser diagnostic; neither is proof of a valid RCam container.
+    for bytes in [
+        b"PK arbitrary text".as_slice(),
+        b"PK\x03\x04not a project".as_slice(),
+    ] {
+        let path = root.join("invalid.custom");
+        fs::write(&path, bytes).unwrap();
+        let error = service.open(path.to_str().unwrap()).unwrap_err();
+        assert!(!error.message.contains("RCam 工程容器"));
+        assert_eq!(service.document_get(&first.document_id).unwrap(), undone);
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn new_projects_have_distinct_stable_ids_across_service_sessions() {
     let (mut first_service, first_root) = setup();
     let (mut second_service, second_root) = setup();

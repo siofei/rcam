@@ -12,6 +12,46 @@ pub(crate) enum Transition {
 }
 
 impl EditorApp {
+    pub(crate) fn drop_files(&mut self, paths: Vec<PathBuf>) {
+        if paths.is_empty() {
+            return;
+        }
+        // A second drop must not replace the intent awaiting save/discard/cancel
+        // or mutate the document underneath that confirmation.
+        if self.busy
+            || self.transition.is_some()
+            || self.close_prompt
+            || self.waiting_save
+            || self.replace_project_path.is_some()
+            || self.project_error.is_some()
+        {
+            self.ui_error = Some("请先完成当前工程操作，再拖入文件".into());
+            return;
+        }
+        let projects = paths
+            .iter()
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("rcam"))
+            })
+            .count();
+        if projects > 0 {
+            if paths.len() != 1 {
+                self.ui_error =
+                    Some("工程文件必须单独拖入；不能与其他工程或 Gerber 混合拖入".into());
+                return;
+            }
+            self.begin_transition(Transition::Open(paths.into_iter().next().unwrap()));
+        } else {
+            self.send(Action::ImportGerbers(paths));
+        }
+    }
+
+    fn cancel_transition(&mut self) {
+        self.close_prompt = false;
+        self.transition = None;
+    }
+
     pub(crate) fn dispatch_file_command(&mut self, id: CommandId) {
         match id {
             ids::FILE_NEW | ids::FILE_NEW_PROJECT => self.new_workspace(),
@@ -140,8 +180,7 @@ impl EditorApp {
                 ui.label("当前工程包含未保存的修改。");
                 ui.horizontal(|ui| {
                     if crate::ui::buttons::secondary(ui, "取消").clicked() {
-                        self.close_prompt = false;
-                        self.transition = None;
+                        self.cancel_transition();
                     }
                     if crate::ui::buttons::destructive(ui, "不保存", true).clicked() {
                         self.perform_transition(true);
@@ -247,5 +286,184 @@ impl EditorApp {
             tools::DisplayUnit::Micrometer => rcam_project::DisplayUnit::Micrometers,
         };
         self.send(Action::ProjectWorkspace(settings));
+    }
+}
+
+#[cfg(test)]
+mod drop_tests {
+    use super::*;
+    use editor_service::task::{TaskContext, TaskVersion};
+    use std::sync::mpsc::{Receiver, sync_channel};
+
+    type Request = (u64, rcam_diagnostics::Source, Action, TaskContext);
+
+    fn app(dirty: bool) -> (EditorApp, Receiver<Request>) {
+        let mut app = crate::modal::tests::app();
+        let (tx, requests) = sync_channel(8);
+        app.tx = tx;
+        let mut service = editor_service::ApplicationService::default();
+        let info = service.document_new().unwrap();
+        if dirty {
+            service
+                .create_empty_layer(&info.document_id, &info.revision, Default::default())
+                .unwrap();
+        }
+        app.view.info = Some(service.document_get(&info.document_id).unwrap());
+        app.view.task_generation = 7;
+        app.view.rule_revision = 3;
+        (app, requests)
+    }
+
+    fn pending_open(app: &EditorApp, expected: &str) {
+        assert!(
+            matches!(app.transition.as_ref(), Some(Transition::Open(path)) if path == &PathBuf::from(expected))
+        );
+    }
+
+    #[test]
+    fn single_project_drop_uses_open_task_and_captured_version() {
+        for suffix in ["rcam", "RCAM", "rCaM"] {
+            for current_document in [false, true] {
+                let (mut app, requests) = app(false);
+                if !current_document {
+                    app.view.info = None;
+                }
+                let expected = TaskVersion::capture(
+                    app.view.info.as_ref(),
+                    app.view.task_generation,
+                    app.view.rule_revision,
+                );
+                let path = PathBuf::from(format!("中文 # empty.{suffix}"));
+                app.drop_files(vec![path.clone()]);
+                let (sequence, _, action, task) = requests.try_recv().unwrap();
+                assert!(matches!(action, Action::OpenProject(actual, false) if actual == path));
+                assert_eq!(sequence, 1);
+                assert_eq!(task.input, expected);
+                assert!(app.busy);
+                assert_eq!(app.pending_project_error_title, Some("无法打开工程"));
+                assert!(app.transition.is_none() && !app.close_prompt);
+            }
+        }
+    }
+
+    #[test]
+    fn dirty_drop_waits_cancel_keeps_document_and_discard_uses_existing_transition() {
+        let (mut app, requests) = app(true);
+        let before = app.view.info.clone();
+        app.drop_files(vec!["first.rcam".into()]);
+        assert!(app.close_prompt && !app.busy);
+        pending_open(&app, "first.rcam");
+        assert!(requests.try_recv().is_err());
+        app.drop_files(vec!["second.rcam".into()]);
+        pending_open(&app, "first.rcam");
+        assert!(app.ui_error.is_some());
+        app.cancel_transition();
+        assert!(app.transition.is_none() && !app.close_prompt);
+        assert_eq!(app.view.info, before);
+        assert!(requests.try_recv().is_err());
+        app.drop_files(vec!["second.rcam".into()]);
+        app.perform_transition(true);
+        assert!(
+            matches!(requests.try_recv().unwrap().2, Action::OpenProject(path, true) if path == PathBuf::from("second.rcam"))
+        );
+        assert_eq!(app.view.info, before);
+    }
+
+    #[test]
+    fn dirty_drop_save_success_opens_after_save_and_failure_preserves_intent() {
+        for success in [false, true] {
+            let (mut app, requests) = app(true);
+            app.view.info.as_mut().unwrap().project_path = Some("current.rcam".into());
+            app.drop_files(vec!["next.rcam".into()]);
+            assert!(app.save_project(false));
+            assert!(matches!(
+                requests.try_recv().unwrap().2,
+                Action::SaveProject(None, false, Some(_))
+            ));
+            // These are the existing prompt's state changes and the worker
+            // reply's busy release, before saved_for_transition is invoked.
+            app.waiting_save = true;
+            app.close_prompt = false;
+            app.busy = false;
+            app.drop_files(vec!["other.rcam".into()]);
+            pending_open(&app, "next.rcam");
+            assert!(requests.try_recv().is_err());
+            app.view.info.as_mut().unwrap().project_dirty = !success;
+            if !success {
+                app.project_error = Some(("无法保存工程".into(), "write failed".into()));
+            }
+            app.saved_for_transition();
+            assert!(!app.waiting_save);
+            if success {
+                assert!(
+                    matches!(requests.try_recv().unwrap().2, Action::OpenProject(path, false) if path == PathBuf::from("next.rcam"))
+                );
+            } else {
+                pending_open(&app, "next.rcam");
+                assert!(app.project_error.is_some());
+                assert!(app.view.info.as_ref().unwrap().project_dirty);
+                assert!(requests.try_recv().is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_and_multiple_project_drops_reject_without_partial_import() {
+        for paths in [
+            vec!["first.rcam", "second.RCAM"],
+            vec!["first.rcam", "layer.gbx"],
+            vec!["layer.custom", "first.RCAM"],
+        ] {
+            let (mut app, requests) = app(true);
+            let before = app.view.info.clone();
+            app.drop_files(paths.into_iter().map(PathBuf::from).collect());
+            assert!(app.ui_error.is_some());
+            assert!(!app.busy && !app.close_prompt && app.transition.is_none());
+            assert_eq!(app.view.info, before);
+            assert_eq!(app.sequence, 0);
+            assert!(requests.try_recv().is_err());
+        }
+    }
+
+    #[test]
+    fn pending_project_states_keep_first_intent_and_block_gerber_drops() {
+        for state in 0..6 {
+            let (mut app, requests) = app(false);
+            match state {
+                0 => app.busy = true,
+                1 => app.transition = Some(Transition::Open("first.rcam".into())),
+                2 => app.close_prompt = true,
+                3 => app.waiting_save = true,
+                4 => app.replace_project_path = Some("save.rcam".into()),
+                5 => app.project_error = Some(("original".into(), "failure".into())),
+                _ => unreachable!(),
+            }
+            let before = app.view.info.clone();
+            let error = app.project_error.clone();
+            let replace = app.replace_project_path.clone();
+            for path in ["second.rcam", "layer.custom"] {
+                app.drop_files(vec![path.into()]);
+                assert!(app.ui_error.is_some());
+                assert_eq!(app.project_error, error);
+                assert_eq!(app.replace_project_path, replace);
+                assert_eq!(app.view.info, before);
+                assert_eq!(app.sequence, 0);
+                assert!(requests.try_recv().is_err());
+                if state == 1 {
+                    pending_open(&app, "first.rcam");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gerber_only_drop_preserves_order_and_existing_import_action() {
+        let (mut app, requests) = app(true);
+        let paths = vec![PathBuf::from("中文 # layer.gbx"), "other.custom".into()];
+        app.drop_files(paths.clone());
+        assert!(
+            matches!(requests.try_recv().unwrap().2, Action::ImportGerbers(actual) if actual == paths)
+        );
+        assert!(app.busy && !app.close_prompt && app.transition.is_none());
     }
 }

@@ -9,3 +9,12 @@
 门禁：从固定提交运行 fmt/check/clippy/workspace test、`project_lifecycle`/recovery/`rcam-project`/Block/Multi-layer workflow、release build、source/package gates，以及 Mac Metal parity、原生 New→Import→Save→Open→Export 和 Recovery GUI smoke。证据和未执行项按运行 ID 保存到 `evidence/`，交付副本到 `exports/`。只有所有 S4-B3 Exit Gate 实测通过才能标记 PASS（Mac-first）。
 
 决策见 [ADR 0033](adr/0033-project-lifecycle.md)、[ADR 0034](adr/0034-project-recovery.md)。执行记录见 [S4_B3_REVIEW](S4_B3_REVIEW.md)。
+
+## 单工程拖放分派修复
+
+阶段 S4-B3 生命周期局部修复；关联 R02/R15/R16/R20/R21/R22、AT-005/058/059/060/064/065/086/093/094。
+允许修改 `editor-app` 拖放与既有工程确认入口、`editor-service` Gerber 读取入口的格式诊断、对应回归测试与本计划。
+单个 `.rcam`（大小写不敏感）复用 Open 的保存／不保存／取消及任务版本保护；多工程和工程／Gerber 混合拖放整批拒绝。
+确认期间再次拖放不得覆盖原打开意图。Gerber 服务收到真实、通过 codec 验证的工程容器时提示使用工程打开入口，
+普通 Gerber 的内容识别、自定义扩展名、安全验证和限额不变。本提交不实现后续多 Gerber 顺序导入队列，
+也不声明 Mac GUI、闪烁或性能验收通过；使用仓库服务生成的空工程验证，不保存或上传用户设计。

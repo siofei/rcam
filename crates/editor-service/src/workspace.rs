@@ -782,6 +782,20 @@ impl ApplicationService {
         if let Some(cancel) = cancel {
             cancel.checkpoint()?;
         }
+        // Recognize a validated project container, not a filename or arbitrary
+        // "PK" text. Gerber files retain content-based parsing and custom suffixes.
+        if bytes.starts_with(b"PK\x03\x04") {
+            let project = rcam_project::decode(&bytes).is_ok();
+            if let Some(cancel) = cancel {
+                cancel.checkpoint()?;
+            }
+            if project {
+                return Err(ServiceError::invalid_field(
+                    "params.path",
+                    "这是 RCam 工程容器，请使用“打开工程”（project.open），不能作为 Gerber 导入",
+                ));
+            }
+        }
         let sha256 = sha256_hex(&bytes);
         let parse_started = std::time::Instant::now();
         let mut compatibility = false;

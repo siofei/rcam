@@ -9,6 +9,105 @@ use std::{
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn raw_single_project_drop_opens_encoded_empty_project_through_real_worker() {
+    use eframe::{App, egui};
+
+    let (mut model, dir) = setup();
+    model.run(Action::SaveProject(
+        Some(dir.join("current.rcam")),
+        false,
+        None,
+    ));
+    assert!(model.view.error.is_none());
+    let current = model.view.info.clone().unwrap();
+    let empty = model.service.document_new().unwrap();
+    let project = dir.join("中文 # empty.RCAM");
+    model.service.grant_file_access(&dir, true).unwrap();
+    model
+        .service
+        .project_save(
+            &empty.document_id,
+            &empty.revision,
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+    let bytes = std::fs::read(&project).unwrap();
+    assert!(rcam_project::decode(&bytes).unwrap().layers.is_empty());
+    let mut app = crate::modal::tests::app();
+    let (tx, requests) = std::sync::mpsc::sync_channel(8);
+    app.tx = tx;
+    app.view = model.view.clone();
+    let ctx = egui::Context::default();
+    ctx.options_mut(|options| options.max_passes = std::num::NonZeroUsize::new(1).unwrap());
+    let mut frame = eframe::Frame::_new_kittest();
+    let raw = egui::RawInput {
+        focused: true,
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200., 900.),
+        )),
+        dropped_files: vec![egui::DroppedFile {
+            path: Some(project.clone()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let _ = ctx.run(raw, |ctx| app.update(ctx, &mut frame));
+    let (_, _, action, task) = requests.try_recv().unwrap();
+    assert!(matches!(&action, Action::OpenProject(path, false) if path == &project));
+    assert_eq!(
+        task.input.document_id.as_deref(),
+        Some(current.document_id.as_str())
+    );
+    model.run_task(task, action);
+    assert!(model.view.error.is_none(), "{:?}", model.view.error);
+    let opened = model.view.info.as_ref().unwrap();
+    assert_eq!(opened.project_id, empty.project_id);
+    assert_eq!(opened.project_path.as_deref(), project.to_str());
+    assert!(!opened.project_dirty);
+    assert!(model.view.layers.is_empty());
+    assert_eq!(std::fs::read(&project).unwrap(), bytes);
+    assert!(model.service.document_get(&current.document_id).is_err());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn project_drop_task_rejects_stale_or_cancelled_request_without_replacing_document() {
+    for cancelled in [false, true] {
+        let (mut model, dir) = setup();
+        model.run(Action::SaveProject(
+            Some(dir.join("current.rcam")),
+            false,
+            None,
+        ));
+        let mut app = crate::modal::tests::app();
+        let (tx, requests) = std::sync::mpsc::sync_channel(8);
+        app.tx = tx;
+        app.view = model.view.clone();
+        // A nonexistent target also proves the fence rejects before file I/O.
+        app.drop_files(vec![dir.join("next.rcam")]);
+        let (_, _, action, task) = requests.try_recv().unwrap();
+        if cancelled {
+            task.cancel_token.cancel();
+        } else {
+            select(&mut model);
+            model.numeric_move("1", "0").unwrap();
+        }
+        let before = model.view.info.clone();
+        let snapshot = model.view.snap_snapshot.clone();
+        model.run_task(task, action);
+        assert_eq!(
+            model.view.error.as_ref().unwrap().code,
+            if cancelled { "CANCELLED" } else { "STALE_TASK" }
+        );
+        assert_eq!(model.view.info, before);
+        assert_eq!(model.view.snap_snapshot, snapshot);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[test]
 fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
     use eframe::{App, egui};
     use std::sync::Arc;
