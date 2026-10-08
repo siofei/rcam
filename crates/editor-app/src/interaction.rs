@@ -93,7 +93,7 @@ pub(crate) fn segments(style: Cursor, point: Pos2, rect: Rect, ppp: f32) -> Vec<
     if style == Cursor::Normal || !ppp.is_finite() || ppp <= 0. || !rect.contains(point) {
         return vec![];
     }
-    let half = 6. / ppp;
+    let half = 18. / ppp;
     let (left, right, top, bottom) = if style == Cursor::LargeCross {
         (rect.left(), rect.right(), rect.top(), rect.bottom())
     } else {

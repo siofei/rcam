@@ -585,11 +585,43 @@ fn c_status_rects_are_content_independent_nonoverlapping_and_coords_right() {
 }
 #[test]
 fn c_cursor_physical_size_clipping_and_popup_ownership() {
-    for ppp in [1., 2.] {
+    for ppp in [1., 1.25, 1.5, 2., 3., 4.] {
         let r = Rect::from_min_size(Pos2::ZERO, Vec2::new(200., 100.));
         let point = Pos2::new(50., 50.);
         let lines = crate::interaction::segments(Cursor::SmallCross, point, r, ppp);
-        assert_eq!(lines[0][0].distance(lines[0][1]) * ppp, 12.);
+        assert_eq!(lines.len(), 2);
+        for line in &lines {
+            assert!((line[0].distance(line[1]) * ppp - 36.).abs() < 0.0001);
+            assert_eq!(line[0] + (line[1] - line[0]) / 2., point);
+        }
+        assert_eq!(
+            lines[0],
+            [
+                point - Vec2::new(18. / ppp, 0.),
+                point + Vec2::new(18. / ppp, 0.)
+            ]
+        );
+        assert_eq!(
+            lines[1],
+            [
+                point - Vec2::new(0., 18. / ppp),
+                point + Vec2::new(0., 18. / ppp)
+            ]
+        );
+        assert_eq!(
+            crate::interaction::segments(Cursor::LargeCross, point, r, ppp),
+            vec![
+                [Pos2::new(r.left(), point.y), Pos2::new(r.right(), point.y)],
+                [Pos2::new(point.x, r.top()), Pos2::new(point.x, r.bottom())],
+            ]
+        );
+        assert_eq!(
+            crate::interaction::segments(Cursor::SmallCross, r.left_top(), r, ppp),
+            vec![
+                [r.left_top(), r.left_top() + Vec2::new(18. / ppp, 0.)],
+                [r.left_top(), r.left_top() + Vec2::new(0., 18. / ppp)],
+            ]
+        );
         for style in [Cursor::SmallCross, Cursor::LargeCross] {
             for point in [r.left_top(), r.center(), r.right_bottom()] {
                 for line in crate::interaction::segments(style, point, r, ppp) {
@@ -628,6 +660,89 @@ fn c_cursor_physical_size_clipping_and_popup_ownership() {
     }
     assert!(results[1]);
     assert!(!results[2]);
+}
+
+#[test]
+fn c_cursor_painted_endpoints_dpi_stroke_and_clip_preserve_modes() {
+    for ppp in [1., 1.25, 1.5, 2., 3., 4.] {
+        for style in [Cursor::Normal, Cursor::SmallCross, Cursor::LargeCross] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(ppp);
+            let point = Pos2::new(100., 100.);
+            let mut canvas = Rect::NOTHING;
+            let mut output = None;
+            for _ in 0..2 {
+                output = Some(ctx.run(
+                    egui::RawInput {
+                        focused: true,
+                        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.))),
+                        events: vec![egui::Event::PointerMoved(point)],
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            let (response, painter) = ui
+                                .allocate_painter(Vec2::splat(300.), egui::Sense::click_and_drag());
+                            canvas = response.rect;
+                            crate::interaction::paint_cursor(
+                                ctx, &response, &painter, style, false,
+                            );
+                        });
+                    },
+                ));
+            }
+            let output = output.unwrap();
+            let painted: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| {
+                    if let egui::Shape::LineSegment { points, stroke } = shape.shape
+                        && stroke.color == egui::Color32::LIGHT_GRAY
+                    {
+                        Some((points, stroke.width, shape.clip_rect))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if style == Cursor::Normal {
+                assert!(painted.is_empty());
+                assert_ne!(output.platform_output.cursor_icon, egui::CursorIcon::None);
+                continue;
+            }
+            assert_eq!(painted.len(), 2);
+            assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::None);
+            let expected = if style == Cursor::SmallCross {
+                [
+                    [
+                        point - Vec2::new(18. / ppp, 0.),
+                        point + Vec2::new(18. / ppp, 0.),
+                    ],
+                    [
+                        point - Vec2::new(0., 18. / ppp),
+                        point + Vec2::new(0., 18. / ppp),
+                    ],
+                ]
+            } else {
+                [
+                    [
+                        Pos2::new(canvas.left(), point.y),
+                        Pos2::new(canvas.right(), point.y),
+                    ],
+                    [
+                        Pos2::new(point.x, canvas.top()),
+                        Pos2::new(point.x, canvas.bottom()),
+                    ],
+                ]
+            };
+            for ((points, width, clip), expected) in painted.iter().zip(expected) {
+                assert_eq!(*points, expected);
+                assert_eq!(*width * ppp, 1.);
+                assert!(canvas.contains_rect(*clip));
+                assert!(clip.contains(points[0]) && clip.contains(points[1]));
+            }
+        }
+    }
 }
 
 #[test]

@@ -1919,3 +1919,7 @@ For R07/R09/R16/R17/R18 and AT-022/026/028/029/043/064/065/067/074/078/089, ordi
 ### S5 click-placement Move source candidate
 
 For R08/R09/R16/R17/R18 and AT-022/030/032/039/040/064/065/067/069/074/075/078, `S5_MOVE_CLICK_PLACE.md`/ADR0060 add ordinary input/state regressions: admitted exact B, pointer following without hold, click-event target/Alt and frozen request, actual final preview then one atomic Move/Undo, cancel/IME priority, stale/retired/duplicate/TooLate replies, complete synthetic large selection and deferred project transitions. Existing case identities and platform obligations remain. Actual Mac input and ordinary native checks are external; this batch adds no native performance gate or completed platform acceptance claim.
+
+### S5 small cross cursor source follow-up
+
+R08/R18, AT-025 and S5-I2-C C-04: verify SmallCross centered endpoints at 36 physical pixels per axis for DPI1/1.25/1.5/2/3/4, original one-physical-pixel stroke and edge clipping, unchanged Normal/LargeCross and popup/modal ownership. CPU painted endpoints and clipping supplement existing input tests; native macOS visual checks remain external. Scope adds no manufacturing, selection, shortcut or performance acceptance change.
