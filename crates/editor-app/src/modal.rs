@@ -117,7 +117,7 @@ impl EditorApp {
         true
     }
     pub(crate) fn open_modal(&mut self, modal: ActiveModal) {
-        if self.busy || self.close_prompt || self.modal.is_some() {
+        if self.busy || self.selection_read_pending() || self.close_prompt || self.modal.is_some() {
             return;
         }
         self.cancel_block();
@@ -381,6 +381,8 @@ pub(crate) mod tests {
         let (_reply, rx) = std::sync::mpsc::sync_channel(1);
         EditorApp {
             pending_task: None,
+            canvas_read: None,
+            canvas_selection_unconfirmed: false,
             gerber_import: None,
             viewport_task: None,
             geometry_task: None,

@@ -5,6 +5,7 @@ mod block_display;
 mod block_ui;
 mod camera;
 mod candidates_ui;
+mod canvas_read;
 mod components_ui;
 mod display;
 #[cfg(test)]
@@ -181,6 +182,8 @@ struct EditorApp {
         editor_service::task::TaskContext,
     )>,
     pending_task: Option<editor_service::task::TaskContext>,
+    canvas_read: Option<canvas_read::Pending>,
+    canvas_selection_unconfirmed: bool,
     gerber_import: Option<gerber_import::ImportQueue>,
     viewport_task: Option<editor_service::task::TaskContext>,
     geometry_task: Option<editor_service::task::TaskContext>,
@@ -469,6 +472,8 @@ impl EditorApp {
             diagnostic_export: None,
             tx,
             pending_task: None,
+            canvas_read: None,
+            canvas_selection_unconfirmed: false,
             gerber_import: None,
             viewport_task: None,
             geometry_task: None,
@@ -575,6 +580,20 @@ impl EditorApp {
         app
     }
     fn send(&mut self, a: Action) {
+        if self.canvas_selection_unconfirmed
+            && !matches!(
+                a,
+                Action::OpenProject(..)
+                    | Action::RestoreProject(..)
+                    | Action::SaveProject(..)
+                    | Action::Close(..)
+                    | Action::NewWorkspace
+                    | Action::DiscardNewWorkspace
+            )
+        {
+            self.ui_error = Some("选择结果未确认；请重新打开工程后再编辑".into());
+            return;
+        }
         // The import controller takes its queue while sending its own next file.
         if self
             .gerber_import
@@ -583,6 +602,22 @@ impl EditorApp {
         {
             return;
         }
+        if self.selection_read_pending() {
+            // Keep the terminal worker selection in sync before any service
+            // action can read or mutate it. This is separate from write busy.
+            if !matches!(
+                a,
+                Action::Viewport(..) | Action::SelectionCenters(..) | Action::RecoveryWrite(..)
+            ) {
+                self.ui_error = Some("请等待选择确认完成，再执行此操作".into());
+            }
+            return;
+        }
+        let canvas_read = matches!(
+            a,
+            Action::ProbeDrag(..) | Action::CanvasSelect(..) | Action::SelectRect(..)
+        );
+        let canvas_probe = matches!(a, Action::ProbeDrag(..));
         if self.point_commit_blocked
             && matches!(
                 &a,
@@ -613,6 +648,19 @@ impl EditorApp {
             }
         };
         if self.busy || (matches!(a, Action::Viewport(..)) && self.viewport_sequence.is_some()) {
+            return;
+        }
+        if !canvas_read
+            && self.canvas_read.is_some()
+            && matches!(
+                a,
+                Action::Viewport(..) | Action::SelectionCenters(..) | Action::RecoveryWrite(..)
+            )
+        {
+            return;
+        }
+        if canvas_read && self.viewport_sequence.is_some() {
+            self.drag = None;
             return;
         }
         // A background measurement must not supersede a pending viewport reply
@@ -677,7 +725,9 @@ impl EditorApp {
                 native_i1::accepted_action(i1_action, self.sequence);
                 #[cfg(feature = "internal-evidence")]
                 native_pmix::accepted_request(pmix_input);
-                if geometry {
+                if canvas_read {
+                    self.accept_canvas_request(task, canvas_probe);
+                } else if geometry {
                     #[cfg(feature = "internal-evidence")]
                     native_ui::geometry_request(
                         self.sequence,
@@ -692,6 +742,7 @@ impl EditorApp {
                     self.viewport_sequence = Some(self.sequence);
                     self.viewport_task = Some(task);
                 } else {
+                    self.cancel_canvas_probe();
                     if let Some(old) = &self.geometry_task {
                         old.cancel_token.cancel();
                     }
@@ -801,6 +852,24 @@ impl EditorApp {
         layer: Option<&str>,
         definition: Option<&str>,
     ) -> bool {
+        if self.canvas_selection_unconfirmed
+            && !matches!(
+                command,
+                command_ids::FILE_NEW
+                    | command_ids::FILE_NEW_PROJECT
+                    | command_ids::FILE_OPEN_PROJECT
+                    | command_ids::FILE_CLOSE_PROJECT
+                    | command_ids::FILE_SAVE_PROJECT
+                    | command_ids::FILE_SAVE_PROJECT_AS
+                    | command_ids::VIEW_FIT
+                    | command_ids::VIEW_GRID_TOGGLE
+                    | command_ids::SNAP_TOGGLE
+                    | command_ids::TOOL_SELECT
+                    | command_ids::TOOL_MEASURE
+            )
+        {
+            return false;
+        }
         if command == command_ids::GRIP_CANCEL {
             return self.grip.is_some();
         }
@@ -884,6 +953,7 @@ impl EditorApp {
     }
     fn usable(&self) -> bool {
         !self.busy
+            && !self.canvas_selection_unconfirmed
             && self.view.info.is_some()
             && self.view.blocked.is_none()
             && self.view.scene.is_some()
@@ -1181,6 +1251,24 @@ impl CommandDispatcher for EditorApp {
         if !self.command_enabled(command) {
             return false;
         }
+        if self.selection_read_pending()
+            && !matches!(
+                command,
+                command_ids::FILE_NEW
+                    | command_ids::FILE_NEW_PROJECT
+                    | command_ids::FILE_OPEN_PROJECT
+                    | command_ids::FILE_CLOSE_PROJECT
+                    | command_ids::VIEW_FIT
+                    | command_ids::VIEW_GRID_TOGGLE
+                    | command_ids::SNAP_TOGGLE
+                    | command_ids::TOOL_SELECT
+                    | command_ids::TOOL_MEASURE
+                    | command_ids::GRIP_CANCEL
+            )
+        {
+            self.ui_error = Some("请等待选择确认完成，再执行此操作".into());
+            return false;
+        }
         if shortcut_config::commands()
             .iter()
             .any(|c| c.id == command && c.category == editor_core::command::CommandCategory::File)
@@ -1349,9 +1437,13 @@ impl eframe::App for EditorApp {
                 self.pmix = Some(run);
             }
         }
-        for task in [&self.pending_task, &self.viewport_task]
-            .into_iter()
-            .flatten()
+        for task in [
+            self.pending_task.as_ref(),
+            self.viewport_task.as_ref(),
+            self.canvas_read.as_ref().map(|p| &p.task),
+        ]
+        .into_iter()
+        .flatten()
         {
             task.cancel_token.cancel();
         }
@@ -1464,6 +1556,7 @@ impl eframe::App for EditorApp {
             Ok(reply) => Some(reply),
             Err(std::sync::mpsc::TryRecvError::Empty) => None,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.canvas_read_disconnected();
                 if self.gerber_import.as_ref().is_some_and(|q| q.active()) {
                     self.stop_gerber_import(
                         "后台连接已关闭；当前文件结果未确认，请检查图层后再操作",
@@ -1474,6 +1567,11 @@ impl eframe::App for EditorApp {
                 None
             }
         };
+        if let Some((id, view)) = &reply
+            && self.consume_canvas_reply(*id, view)
+        {
+            reply = None;
+        }
         if let Some((id, view)) = &reply
             && self
                 .geometry_task
@@ -1493,6 +1591,14 @@ impl eframe::App for EditorApp {
             self.geometry_context = None;
             #[cfg(feature = "internal-evidence")]
             native_a2::reply(*id, accepted);
+            reply = None;
+        }
+        // Only an accepted ordinary/viewport request may install a full View.
+        // Retired canvas probes can still be the latest global sequence ID.
+        if reply.as_ref().is_some_and(|(id, _)| {
+            self.pending_task.as_ref().is_none_or(|t| t.task_id != *id)
+                && self.viewport_task.as_ref().is_none_or(|t| t.task_id != *id)
+        }) {
             reply = None;
         }
         #[cfg(feature = "internal-evidence")]
@@ -1535,6 +1641,9 @@ impl eframe::App for EditorApp {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
+            if changed && self.view.error.is_none() {
+                self.canvas_selection_unconfirmed = false;
+            }
             self.accept_array_reply();
             self.accept_component_reply(changed);
             recovery::complete_write(
@@ -1615,13 +1724,6 @@ impl eframe::App for EditorApp {
                     || self.view.message.clone(),
                     |e| format!("{}: {}", e.code, e.message),
                 );
-            }
-            if let Some(drag) = &mut self.drag {
-                if self.view.error.is_none() {
-                    drag.confirm(&self.view);
-                } else {
-                    self.drag = None;
-                }
             }
             if changed {
                 self.object_snap_runtime.clear_cache();
@@ -1864,6 +1966,26 @@ impl eframe::App for EditorApp {
         self.fence_mouse_preferences();
         if cancel_drag || modal_open || self.display_error.is_some() {
             self.drag = None;
+            self.cancel_canvas_probe();
+        }
+        if self.selection_read_pending()
+            && ctx.input(|i| {
+                !i.focused
+                    || i.events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::PointerGone))
+                    || (!self.text_input_at_event
+                        && !self.ime_event
+                        && !self.ime_active
+                        && i.key_pressed(egui::Key::Escape))
+            })
+        {
+            self.canvas_read
+                .as_ref()
+                .unwrap()
+                .task
+                .cancel_token
+                .cancel();
         }
         if self.grip.is_some()
             && (cancel_drag
@@ -2241,6 +2363,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                             }
                         }
                     }
+                    self.canvas_read_status(ui);
                 });
             });
         });
@@ -2285,7 +2408,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         .or_else(|| self.toast.as_ref().map(|(text, _)| text.clone()))
                         .or_else(|| self.display_error.clone())
                         .unwrap_or_else(|| self.view.message.clone());
-                    let width = (ui.available_width() - 120.).max(0.);
+                    let width = (ui.available_width() - 354.).max(0.);
                     ui.add_sized(
                         [width, 20.],
                         egui::Label::new(status_bar::display_line(&message)).truncate(),
@@ -2309,6 +2432,8 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         ui.small_button("详情")
                             .on_hover_text(error.details.to_string());
                     }
+                    let _scale_rect =
+                        status_bar::paint_scale(ui, self.camera.scale, ctx.pixels_per_point());
                 });
             });
         #[cfg(feature = "internal-evidence")]
@@ -2664,6 +2789,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                             _ => None,
                         })
                     }) && self.components.pick.is_none() && self.tool == tools::ActiveTool::Select
+                        && !self.selection_read_pending()
                         && !ctx.wants_keyboard_input()
                         && self.usable()
                         && !cancel_drag
@@ -2710,6 +2836,10 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                 // Tool/menu input above can change context in this same frame.
                 // Recheck before release, rather than waiting for the next frame.
                 self.fence_mouse_preferences();
+                if self.tool != tools::ActiveTool::Select || self.modal.is_some() || self.layer_dialog.is_some() || self.close_prompt {
+                    self.drag = None;
+                    self.cancel_canvas_probe();
+                }
                 if self.grip.is_some() && (self.tool != tools::ActiveTool::Select
                     || self.modal.is_some() || self.layer_dialog.is_some() || self.close_prompt) {
                     self.grip = None;
@@ -3231,6 +3361,9 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
         self.operation_source = rcam_diagnostics::Source::Menu;
         // User input must claim the worker before an idle recovery write. In
         // particular, a same-frame press must not lose its ProbeDrag to busy.
+        if self.drag.is_none() {
+            self.cancel_canvas_probe();
+        }
         self.tick_recovery(now);
         #[cfg(feature = "internal-evidence")]
         if let Some(mut run) = self.i1.take() {

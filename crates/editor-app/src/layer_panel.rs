@@ -507,7 +507,7 @@ impl EditorApp {
 
     /// The Layer panel (left side). Compact single-column rows, top layer first.
     pub(crate) fn layer_panel(&mut self, ui: &mut egui::Ui) {
-        let busy = self.command_context_blocked();
+        let busy = self.command_context_blocked() || self.canvas_selection_unconfirmed;
         let events: RefCell<Vec<RowEvent>> = RefCell::new(Vec::new());
         let mut new_layer = false;
         let mut import = false;

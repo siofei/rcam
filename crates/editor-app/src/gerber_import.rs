@@ -63,7 +63,12 @@ impl EditorApp {
                 Some("工程文件请使用“打开工程”或单独拖入，不能混入 Gerber 导入队列".into());
             return;
         }
-        if self.command_context_blocked() || self.transition.is_some() || self.waiting_save {
+        if self.canvas_selection_unconfirmed
+            || self.command_context_blocked()
+            || self.selection_read_pending()
+            || self.transition.is_some()
+            || self.waiting_save
+        {
             self.ui_error = Some("请先完成当前操作，再导入文件".into());
             return;
         }

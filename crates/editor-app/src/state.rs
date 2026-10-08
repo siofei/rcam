@@ -1718,6 +1718,11 @@ impl Model {
         self.view.import_committed_task = None;
         let old_viewport = self.viewport;
         let old_ppm = self.ppm;
+        let old_metrics_identity = matches!(
+            &action,
+            Action::ProbeDrag(..) | Action::CanvasSelect(..) | Action::SelectRect(..)
+        )
+        .then(|| self.metrics_identity.clone());
         let readonly = matches!(
             &action,
             Action::SelectionCenters(..)
@@ -1771,6 +1776,9 @@ impl Model {
                 self.ppm = old_ppm;
                 self.block_display_cache = Default::default();
                 self.metrics_identity.clear();
+                if let Some(identity) = old_metrics_identity {
+                    self.metrics_identity = identity;
+                }
             }
             self.view.error = Some(error);
         }
@@ -1789,6 +1797,7 @@ impl Model {
         });
     }
     pub fn run(&mut self, action: Action) {
+        let probe_only = matches!(&action, Action::ProbeDrag(..));
         let reset_cycle = !matches!(
             &action,
             Action::SelectionCenters(..)
@@ -2244,10 +2253,11 @@ impl Model {
             eprintln!("service_error {} {} {}", e.code, e.message, e.details);
             self.view.error = Some(e);
         }
-        if self
-            .active_cancel
-            .as_ref()
-            .is_none_or(|c| c.checkpoint().is_ok())
+        if !probe_only
+            && self
+                .active_cancel
+                .as_ref()
+                .is_none_or(|c| c.checkpoint().is_ok())
         {
             self.refresh_metrics();
         }

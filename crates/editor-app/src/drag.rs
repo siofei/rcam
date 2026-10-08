@@ -110,6 +110,7 @@ pub fn shortcuts_allowed(text_focus: bool, busy: bool, modal: bool) -> bool {
 /// The pending hit retains press/release coordinates across the worker reply.
 /// Selection changes only on release, so cancelling never loses the old set.
 pub struct Gesture {
+    pub(crate) probe_task_id: Option<u64>,
     pub start: Pos2,
     pub last: Pos2,
     pub released: bool,
@@ -134,6 +135,7 @@ impl Gesture {
         mode: crate::selection::SelectionMode,
     ) -> Self {
         Self {
+            probe_task_id: None,
             start,
             last: start,
             released: false,

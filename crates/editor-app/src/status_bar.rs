@@ -176,6 +176,24 @@ pub(crate) fn display_line(value: &str) -> String {
         })
         .collect()
 }
+pub(crate) fn scale_text(scale: f64) -> String {
+    if scale.is_finite() && scale > 0. {
+        if (0.0001..100_000.).contains(&scale) {
+            format!("缩放 {scale:.4} 逻辑点/mm")
+        } else {
+            format!("缩放 {scale:.4e} 逻辑点/mm")
+        }
+    } else {
+        "缩放 — 逻辑点/mm".into()
+    }
+}
+pub(crate) fn paint_scale(ui: &mut egui::Ui, scale: f64, ppp: f32) -> Rect {
+    let text = scale_text(scale);
+    ui.add_sized([230., 20.], egui::Label::new(text).truncate().halign(egui::Align::Max))
+        .on_hover_text(format!(
+            "画布比例：{scale:.12} 逻辑屏幕点/mm。基准 1 表示 1 mm 占 1 个逻辑点。\n每逻辑点 {ppp} 个物理像素；屏幕尺寸/DPI 不决定实物比例，不表示实际尺寸倍率。"
+    )).rect
+}
 pub(crate) fn paint(ui: &mut egui::Ui, fields: &Fields, coordinates: &str) -> [Option<Rect>; 4] {
     let (rect, _) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 20.), egui::Sense::hover());
@@ -213,4 +231,26 @@ pub(crate) fn paint(ui: &mut egui::Ui, fields: &Fields, coordinates: &str) -> [O
         }
     }
     slots
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::*;
+    #[test]
+    fn scale_is_logical_points_and_fixed_width_across_numbers_and_dpi() {
+        assert_eq!(scale_text(11.8313), "缩放 11.8313 逻辑点/mm");
+        assert!(scale_text(1e-30).contains("e-30"));
+        assert!(scale_text(f64::NAN).contains('—'));
+        let ctx = egui::Context::default();
+        let mut rects = Vec::new();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                for (scale, ppp) in [(1., 1.), (11.8313, 2.), (1e-30, 3.), (1e12, 1.)] {
+                    rects.push(paint_scale(ui, scale, ppp));
+                }
+            });
+        });
+        assert!(rects.iter().all(|r| r.width() == 230. && r.height() == 20.));
+        assert!(rects.iter().all(|r| r.left() == rects[0].left()));
+    }
 }

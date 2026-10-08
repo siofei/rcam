@@ -74,6 +74,17 @@ impl EditorApp {
     }
 
     pub(crate) fn begin_transition(&mut self, transition: Transition) {
+        if self.transition.is_some()
+            || self.close_prompt
+            || self.waiting_save
+            || self.replace_project_path.is_some()
+            || self.project_error.is_some()
+        {
+            return;
+        }
+        if self.defer_canvas_transition(transition.clone()) {
+            return;
+        }
         if let Some(queue) = self.gerber_import.as_mut().filter(|q| q.active()) {
             queue.defer_transition(transition);
             if let Some(task) = &self.pending_task {
