@@ -49,10 +49,10 @@ class ProductPins:
 
 # Reviewed clean product source and independently measured fresh Mac builds.
 PRODUCT_PINS = ProductPins(
-    commit='104c7d712ef177b3c57031ea4f823dd6777cbc24',
-    manifest_sha='cf20d4c7d064a5550f4a2aa990fa6539af38bbea805fee1a1483b43ab8841490',
-    binary_sha='08924f72458e22065c1ed50f14131d0fe0ef09049bc9d92b96cfaf8ac8cb08c1',
-    producer_sha='129412aebefc3e1451c69aa5a4f9598e1ea9a1be02688c89f0ade3cf7d4e34b4',
+    commit='32800302b697b6996fb3bdae852cddee4cab0357',
+    manifest_sha='32422693e592b70ac155fdadd5ac0d915cd1352d0ef3770cd148572c30a84cea',
+    binary_sha='295201cdd962649aee166076389e4b95206aa133d5c67850cc74c59eef3da149',
+    producer_sha='1d22b1b99d5621adf2882d1153609a81a9bf7ff62d93bc9c008b9b186456e9a1',
     runner_sha='20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c',
 )
 

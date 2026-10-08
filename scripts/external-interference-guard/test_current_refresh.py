@@ -54,7 +54,9 @@ class ReboundIdentity(unittest.TestCase):
         for commit,manifest in (('42db040374b0c1643200b7f04e95b03d272ef792',
                                  '0235f9c9bd89d76dd5b101dc2fd99ba226582f1431464467696377664088067b'),
                                 ('5349c4ba7665ad665832ef423acc35a939bed6ea',
-                                 '618f3a2871f818f944f857af5ba4244079e5c3b7c3a935f4b35dbae944ce29f4')):
+                                 '618f3a2871f818f944f857af5ba4244079e5c3b7c3a935f4b35dbae944ce29f4'),
+                                ('104c7d712ef177b3c57031ea4f823dd6777cbc24',
+                                 'cf20d4c7d064a5550f4a2aa990fa6539af38bbea805fee1a1483b43ab8841490')):
             old=replace(matrix.require_pins(),commit=commit,manifest_sha=manifest)
             with self.subTest(commit=commit),self.assertRaisesRegex(RuntimeError,'locked source manifest'):
                 matrix.verify_source(PRODUCT,old)
@@ -63,10 +65,13 @@ class ReboundIdentity(unittest.TestCase):
         pins=matrix.require_pins()
         wrong=[('8223232d90072e7587cba09f6cf0963749f8e04a31f6ea89dce47b21ba02353f',pins.producer_sha),
                ('ec405c5249f43b6e4d4144a9c053724bf070971f4725bfa187216b89361e2661',pins.producer_sha),
+               ('08924f72458e22065c1ed50f14131d0fe0ef09049bc9d92b96cfaf8ac8cb08c1',pins.producer_sha),
                ('3638c91accecabd86b7d50e898ecdcd6b65cf099592e3a8befa20883d24a94f2',pins.producer_sha),
                ('2f73dcd224662e09398e9fe0b78e6bba0486725463dc2eb5aa97d07ade71d753',pins.producer_sha),
+               ('ffb03290050893ab6b2705dc7023772cee92e79ad34f8ff0263dd01b8e863ea5',pins.producer_sha),
                (pins.binary_sha,'bf3a6b2f879d28b9fe1aa8a3a724639bbd1ff6d1191fbc8666f0ffbd1f863270'),
-               (pins.binary_sha,'b35a67b341a1efcd4190a88e4dede6e9c7dd2982a08ff1999a459cf321b9b63e')]
+               (pins.binary_sha,'b35a67b341a1efcd4190a88e4dede6e9c7dd2982a08ff1999a459cf321b9b63e'),
+               (pins.binary_sha,'129412aebefc3e1451c69aa5a4f9598e1ea9a1be02688c89f0ade3cf7d4e34b4')]
         actual_sha=guard.sha
         with tempfile.TemporaryDirectory() as temporary:
             home=Path(temporary).resolve(strict=True)

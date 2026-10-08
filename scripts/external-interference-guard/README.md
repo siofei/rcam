@@ -8,25 +8,26 @@ grant complete AT closure, smoothness, absence of flicker or stage acceptance.
 Allowed edits are this external package only. Frozen product sources, manifest,
 runner, binaries, old dirty diagnostics and all historical failures stay intact.
 
-## Current frozen identity: stage-timing diagnostic candidate
+## Current frozen identity: Mac snapshot hash candidate
 
-This adapter successor to `e4d4f87fd4ab678dbe0abc3d42cba1488080b291`
+This adapter successor to `eef02a50a62b0ab42fc1828bea01b841f9b5e8a3`
 binds the following owner-supplied Mac build identities. The source commit is
-the direct child of `5349c4ba7665ad665832ef423acc35a939bed6ea`; all672 manifest
+the direct child of `104c7d712ef177b3c57031ea4f823dd6777cbc24`; all672 manifest
 entries were authenticated in the cloud. The runner, original native/batch
 verifiers and all six imported product report helpers are byte-identical to
 that parent, so the reviewed external verifier copies remain unchanged.
 
-- Product commit: `104c7d712ef177b3c57031ea4f823dd6777cbc24`
-- Source manifest: `cf20d4c7d064a5550f4a2aa990fa6539af38bbea805fee1a1483b43ab8841490`
-- Internal app (required runtime): `08924f72458e22065c1ed50f14131d0fe0ef09049bc9d92b96cfaf8ac8cb08c1`
-- Capture producer: `129412aebefc3e1451c69aa5a4f9598e1ea9a1be02688c89f0ade3cf7d4e34b4`
+- Product commit: `32800302b697b6996fb3bdae852cddee4cab0357`
+- Source manifest: `32422693e592b70ac155fdadd5ac0d915cd1352d0ef3770cd148572c30a84cea`
+- Internal app (required runtime): `295201cdd962649aee166076389e4b95206aa133d5c67850cc74c59eef3da149`
+- Capture producer: `1d22b1b99d5621adf2882d1153609a81a9bf7ff62d93bc9c008b9b186456e9a1`
 - Native runner: `20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c`
-- Public app (provenance only, rejected as runtime): `2f73dcd224662e09398e9fe0b78e6bba0486725463dc2eb5aa97d07ade71d753`
-- External gate ledger (background provenance): `d6591717a5beff1116d1de8853509ca11bde97cfb7450e917328f1f2ba3de2aa`
+- Public app (provenance only, rejected as runtime): `ffb03290050893ab6b2705dc7023772cee92e79ad34f8ff0263dd01b8e863ea5`
+- External gate ledger (background provenance): `0f77f8bdb1fc59d9fff26753ae2edd1c42092bbcf27334e4f6533a7f6b0b5b2f`
 
-The Mac owner reports29 targeted tests and31 gates, with seed/fresh-extraction
-qualification exits0/0. Native acquisition has not run; qualification remains
+The Mac owner reports the real C-path tests:6 PASS and1 ignored, then an explicit
+1 PASS over10 samples, plus31 gates PASS and seed/fresh-extraction exits0/0.
+Foreground performance qualification remains
 `BACKGROUND_QUALIFIED_FOREGROUND_PENDING`. The cloud authenticates source and
 runs adapter regressions only; it does not independently remeasure Mac binaries,
 rerun native acquisition or claim a performance improvement. The current-refresh
@@ -35,7 +36,11 @@ a gate ledger. This identity update changes no guard threshold, input protection
 functional predicate, display policy or report budget. All earlier measurements
 and failures keep their original identities.
 
-The new product observations bind a `stage_timing` sidecar. The unchanged
+The owner-supplied pure-hash microbenchmark is Rust193–197ms versus C15.7–16.2ms.
+These are hash-only measurements, not actual snapshot or native performance gains.
+This rebind changes no statistics or diagnostic validation scope.
+
+Product observations bind a `stage_timing` sidecar. The unchanged
 functional verifier does not validate its spans. That is a separate diagnostic
 check; this identity rebind adds no span assertions and weakens no existing
 functional checks. This rebind does not filter measurements or subtract timing
@@ -98,7 +103,7 @@ plus `current_refresh.py`, `performance_v1.py`, `report_pmix_v1.py`,
 `report_batch_v1.py`, `test_current_refresh.py`). Do not package runtime evidence.
 
 ```sh
-# Portable regression checks; ROOT must be the exact frozen product104c7d71 tree.
+# Portable regression checks; ROOT must be the exact frozen product32800302 tree.
 RCAM_REPORT_TEST_ROOT=/locked/product python3 -B -m unittest -v test_guard test_matrix test_current_refresh
 
 # Mac owner only, next move comparison using the new runtime pins and fresh output.
