@@ -8,25 +8,25 @@ grant complete AT closure, smoothness, absence of flicker or stage acceptance.
 Allowed edits are this external package only. Frozen product sources, manifest,
 runner, binaries, old dirty diagnostics and all historical failures stay intact.
 
-## Current frozen identity: stationary-work cache comparison candidate
+## Current frozen identity: stage-timing diagnostic candidate
 
-This adapter successor to `e27f0c67eb55ff600de385dd76eef426fcbb8a92`
+This adapter successor to `e4d4f87fd4ab678dbe0abc3d42cba1488080b291`
 binds the following owner-supplied Mac build identities. The source commit is
-the direct child of `42db040374b0c1643200b7f04e95b03d272ef792`; all672 manifest
+the direct child of `5349c4ba7665ad665832ef423acc35a939bed6ea`; all672 manifest
 entries were authenticated in the cloud. The runner, original native/batch
 verifiers and all six imported product report helpers are byte-identical to
 that parent, so the reviewed external verifier copies remain unchanged.
 
-- Product commit: `5349c4ba7665ad665832ef423acc35a939bed6ea`
-- Source manifest: `618f3a2871f818f944f857af5ba4244079e5c3b7c3a935f4b35dbae944ce29f4`
-- Internal app (required runtime): `ec405c5249f43b6e4d4144a9c053724bf070971f4725bfa187216b89361e2661`
-- Capture producer: `b35a67b341a1efcd4190a88e4dede6e9c7dd2982a08ff1999a459cf321b9b63e`
+- Product commit: `104c7d712ef177b3c57031ea4f823dd6777cbc24`
+- Source manifest: `cf20d4c7d064a5550f4a2aa990fa6539af38bbea805fee1a1483b43ab8841490`
+- Internal app (required runtime): `08924f72458e22065c1ed50f14131d0fe0ef09049bc9d92b96cfaf8ac8cb08c1`
+- Capture producer: `129412aebefc3e1451c69aa5a4f9598e1ea9a1be02688c89f0ade3cf7d4e34b4`
 - Native runner: `20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c`
-- Public app (provenance only, rejected as runtime): `3638c91accecabd86b7d50e898ecdcd6b65cf099592e3a8befa20883d24a94f2`
-- External gate ledger (background provenance): `dfc1b34d01134648233bc4eb54de1ad880f626063ef4641ae1b622e766eb7891`
+- Public app (provenance only, rejected as runtime): `2f73dcd224662e09398e9fe0b78e6bba0486725463dc2eb5aa97d07ade71d753`
+- External gate ledger (background provenance): `d6591717a5beff1116d1de8853509ca11bde97cfb7450e917328f1f2ba3de2aa`
 
-The Mac owner reports24 product tests and31 gates, plus seed and fresh-extraction
-qualification. Both qualification results remain
+The Mac owner reports29 targeted tests and31 gates, with seed/fresh-extraction
+qualification exits0/0. Native acquisition has not run; qualification remains
 `BACKGROUND_QUALIFIED_FOREGROUND_PENDING`. The cloud authenticates source and
 runs adapter regressions only; it does not independently remeasure Mac binaries,
 rerun native acquisition or claim a performance improvement. The current-refresh
@@ -34,6 +34,12 @@ driver does not run the historical background/full12/aggregate commands or consu
 a gate ledger. This identity update changes no guard threshold, input protection,
 functional predicate, display policy or report budget. All earlier measurements
 and failures keep their original identities.
+
+The new product observations bind a `stage_timing` sidecar. The unchanged
+functional verifier does not validate its spans. That is a separate diagnostic
+check; this identity rebind adds no span assertions and weakens no existing
+functional checks. This rebind does not filter measurements or subtract timing
+overhead.
 
 The `current_refresh.py run` entry uses the five current runtime pins above.
 It authenticates every frozen manifest entry and the app/producer before any
@@ -92,7 +98,7 @@ plus `current_refresh.py`, `performance_v1.py`, `report_pmix_v1.py`,
 `report_batch_v1.py`, `test_current_refresh.py`). Do not package runtime evidence.
 
 ```sh
-# Portable regression checks; ROOT must be the exact frozen product5349c4ba tree.
+# Portable regression checks; ROOT must be the exact frozen product104c7d71 tree.
 RCAM_REPORT_TEST_ROOT=/locked/product python3 -B -m unittest -v test_guard test_matrix test_current_refresh
 
 # Mac owner only, next move comparison using the new runtime pins and fresh output.

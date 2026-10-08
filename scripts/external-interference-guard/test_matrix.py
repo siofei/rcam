@@ -251,10 +251,10 @@ class MatrixContract(unittest.TestCase):
         self.assertIsInstance(matrix.CASES, tuple)
         self.assertEqual(matrix.CASES, EXPECTED_CASES)
         self.assertEqual(matrix.PRODUCT_PINS, matrix.ProductPins(
-            commit='5349c4ba7665ad665832ef423acc35a939bed6ea',
-            manifest_sha='618f3a2871f818f944f857af5ba4244079e5c3b7c3a935f4b35dbae944ce29f4',
-            binary_sha='ec405c5249f43b6e4d4144a9c053724bf070971f4725bfa187216b89361e2661',
-            producer_sha='b35a67b341a1efcd4190a88e4dede6e9c7dd2982a08ff1999a459cf321b9b63e',
+            commit='104c7d712ef177b3c57031ea4f823dd6777cbc24',
+            manifest_sha='cf20d4c7d064a5550f4a2aa990fa6539af38bbea805fee1a1483b43ab8841490',
+            binary_sha='08924f72458e22065c1ed50f14131d0fe0ef09049bc9d92b96cfaf8ac8cb08c1',
+            producer_sha='129412aebefc3e1451c69aa5a4f9598e1ea9a1be02688c89f0ade3cf7d4e34b4',
             runner_sha='20dba8c15a2ed547c98c00ba7d994ffac0dbc610c3f2f0178c046dd6b390a74c',
         ))
         self.assertEqual(self.pins.commit, COMMIT)
