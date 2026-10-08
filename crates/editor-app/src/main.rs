@@ -1343,6 +1343,8 @@ impl eframe::App for EditorApp {
     }
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         #[cfg(feature = "internal-evidence")]
+        let _span = native_pmix::spans::enter(native_pmix::spans::Stage::RawInputHook);
+        #[cfg(feature = "internal-evidence")]
         self.closeout_raw_input(raw);
         #[cfg(feature = "internal-evidence")]
         if let Some(mut run) = self.s5m1.take() {
@@ -2805,7 +2807,10 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                 if let Some(scene) = &self.view.scene
                     && !needs_lod
                 {
-                    match self.prepare_work.prepare_measured(
+                    let prepared_result = {
+                        #[cfg(feature = "internal-evidence")]
+                        let _span = native_pmix::spans::enter(native_pmix::spans::Stage::CpuCanvasPrepare);
+                        self.prepare_work.prepare_measured(
                         scene,
                         self.camera,
                         rect,
@@ -2814,7 +2819,9 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         self.drag
                             .as_ref()
                             .map_or(editor_core::MmPoint::new(0., 0.), |d| d.delta),
-                    ) {
+                        )
+                    };
+                    match prepared_result {
                         Ok(mut prepared) => {
                             prepared.stats.cpu_prepare_ms += validation_ms;
                             #[cfg(feature = "internal-evidence")]

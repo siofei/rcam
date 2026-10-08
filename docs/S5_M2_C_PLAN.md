@@ -1230,3 +1230,56 @@ against the exact frozen 42 GPU source on the public PMIX fixture. Locked Rust
 cannot replace native App update, Metal or the full matrix. Existing Linux editor
 configuration/dependency restrictions are not bypassed in product code. Native
 performance and overall stage acceptance remain pending coordinated execution.
+
+
+### PMIX stage timing follow-up (2026-10-08, REPORT_ONLY candidate)
+
+Exact base 5349c4ba7665ad665832ef423acc35a939bed6ea, preserving both CPU work
+caches. Stage S5-M2-C, R07/R08/R21/R22 and AT-067 within the existing bounded
+PMIX mappings. Allowed changes: internal recorder/UI hooks, canvas preparation
+and production callback timing hooks, this plan and source manifest. No geometry,
+Snap/Alt/shader/trajectory/threshold, capture filtering or manufacturing change.
+
+The snapshot mark remains after serialization, synchronous write and SHA-256.
+Its preceding wall interval cannot establish CPU, disk, GPU or scheduling cause.
+CPU-update's original mark remains before PMIX phase actions. New diagnostic
+`pmix-stage-timing.json` is bound by path/SHA in observation_version=3 and uses
+that recorder's exact Instant origin. Its fixed stages cover snapshot total,
+serialize/write/hash/record, tick/phase actions, raw hook/PMIX input/fence poll,
+canvas prepare, resource initialization/callback prepare/paint, ROI callback,
+raw readback/frame and original bounded blocking writer send (capacity 16). The sample-send span
+also includes its existing metadata construction; it is not pure queue-wait time.
+Raw-hook/input/poll entry binds the preceding PMIX frame; submitted GPU callbacks
+bind their painted id. No submission, present, wakeup or scanout claim is made.
+
+Mac thread CPU uses the same thread's CLOCK_THREAD_CPUTIME_ID (Apple time API,
+macOS 10.12+); missing/invalid/nonmonotonic reads yield null and INCOMPLETE CPU
+diagnostics. Other platforms explicitly report unsupported CPU diagnostics.
+Start CPU read precedes wall entry; end CPU read follows wall exit. Each row
+reports those probe windows. Nested spans overlap: do not add their durations or
+call callback CPU time independent GPU execution. Do not subtract clocks from
+the existing UI/producer recorders or infer unexplained gaps as GPU compilation.
+
+Only valid PMIX activation preallocates up to 131072 fixed records. Probe append
+uses try_lock and never waits for the diagnostic log; full/contention/poison/late
+and open-at-cutoff counters make loss explicit. Estimated wall overhead of the CPU/wall probes is
+reported, never removed from original measurements. No hot-path JSON/file I/O is
+added. Rows serialize directly from their fixed struct storage at exit, avoiding
+per-row JSON value trees; row storage and encoded bytes are released before the
+existing binary/report allocations. The original ROI send remains blocking and evidence jobs are preserved.
+After ROI writer join and terminal fence poll, the terminal hook seals the log;
+serialization/write happen outside observed frame work. Loss gives diagnostic
+INCOMPLETE without changing old verifier decisions or discarding long frames.
+
+Existing warmup/tail/repaint checks are elapsed conditions, not UI sleep proof.
+Four snapshot-adjacent stalls and the initial paint-to-next-input gap remain
+unattributed until new same-commit Mac data arrive. Noncanvas flicker remains
+OPEN. Keep original 50 ms / 1e-9 gates and all screenshot/initial/terminal samples.
+The user's restored development/testing authorization applies; the former 60 Hz
+requirement was explicitly removed. Native Metal and foreground capture remain
+on Mac, using its requested display setting, separate new evidence identities.
+
+Cloud verification executes Rust 1.89 formatting and Mac-target public/internal
+checks/Clippy, extracted fixed-recorder CPU regressions, unchanged cache tests and
+portable checks. Mac thread-clock execution, native release/Metal capture and
+performance results are not replaced by cross checks or auxiliary CPU tests.

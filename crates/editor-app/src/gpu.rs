@@ -628,6 +628,9 @@ pub struct Resources {
 }
 impl Resources {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, scene: &Scene) -> Self {
+        #[cfg(feature = "internal-evidence")]
+        let _span =
+            crate::native_pmix::spans::enter(crate::native_pmix::spans::Stage::GpuResourcesNew);
         let storage = |name, bytes: &[u8]| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(name),
@@ -792,6 +795,11 @@ impl egui_wgpu::CallbackTrait for Callback {
         _: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        #[cfg(feature = "internal-evidence")]
+        let _span = crate::native_pmix::spans::enter_frame(
+            crate::native_pmix::spans::Stage::GpuCallbackPrepare,
+            self.painted.as_ref().map_or(0, |p| p.1),
+        );
         if resources
             .get::<Resources>()
             .is_none_or(|r| r.serial != self.scene.serial)
@@ -871,6 +879,11 @@ impl egui_wgpu::CallbackTrait for Callback {
         pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources,
     ) {
+        #[cfg(feature = "internal-evidence")]
+        let _span = crate::native_pmix::spans::enter_frame(
+            crate::native_pmix::spans::Stage::GpuCallbackPaint,
+            self.painted.as_ref().map_or(0, |p| p.1),
+        );
         #[cfg(feature = "internal-evidence")]
         crate::native_ui::callback(&info);
         let v = info.viewport_in_pixels();

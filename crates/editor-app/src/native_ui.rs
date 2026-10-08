@@ -97,6 +97,7 @@ fn rect(r: Rect) -> [f32; 4] {
     [r.min.x, r.min.y, r.max.x, r.max.y]
 }
 fn append(c: &Capture, name: &'static str, value: Value) {
+    let _span = crate::native_pmix::spans::enter(crate::native_pmix::spans::Stage::RoiWriterSend);
     c.writer
         .as_ref()
         .unwrap()
@@ -141,6 +142,7 @@ pub fn menu(label: &str, response: &egui::Response) {
     }
 }
 pub fn callback(info: &egui::PaintCallbackInfo) {
+    let _span = crate::native_pmix::spans::enter(crate::native_pmix::spans::Stage::RoiCallback);
     if let Some(c) = capture().lock().unwrap().as_mut() {
         let v = info.viewport_in_pixels();
         let p = info.clip_rect_in_pixels();
@@ -159,6 +161,7 @@ pub fn callback(info: &egui::PaintCallbackInfo) {
     }
 }
 pub fn raw_input(raw: &egui::RawInput) {
+    let _span = crate::native_pmix::spans::enter(crate::native_pmix::spans::Stage::RoiRawInput);
     let mut guard = capture().lock().unwrap();
     let Some(c) = guard.as_mut() else {
         return;
@@ -205,6 +208,8 @@ pub fn raw_input(raw: &egui::RawInput) {
                 crops.push(json!({"name":name,"path":file,"sha256":editor_core::hash::sha256_hex(&bytes),"rect_px":px,"metadata":metadata}));
                 files.push((file, bytes));
             }
+            let _span =
+                crate::native_pmix::spans::enter(crate::native_pmix::spans::Stage::RoiWriterSend);
             c.writer.as_ref().unwrap().send(WriteJob::Sample(files,
                 json!({"sample":n,"callback_ns":t,"callback_after_ui_frame":c.frame,"callback_last_ui":c.last_ui,"surface_size_px":image.size,"request":tag.requested,"crops":crops,"latest_paints":c.callbacks}),
             )).unwrap();
@@ -216,6 +221,7 @@ pub fn raw_input(raw: &egui::RawInput) {
     c.profile_at = Instant::now();
 }
 pub fn frame(app: &EditorApp, ctx: &egui::Context) {
+    let _span = crate::native_pmix::spans::enter(crate::native_pmix::spans::Stage::RoiFrame);
     let mut guard = capture().lock().unwrap();
     let Some(c) = guard.as_mut() else {
         return;

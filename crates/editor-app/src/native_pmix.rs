@@ -17,6 +17,472 @@ use std::{
 static ORIGIN: OnceLock<Instant> = OnceLock::new();
 static WORKERS: OnceLock<std::sync::Mutex<Vec<Value>>> = OnceLock::new();
 static FRAME: AtomicU64 = AtomicU64::new(0);
+
+/// PMIX-only diagnostic spans. All endpoints use ORIGIN; no UI/producer clock subtraction.
+/// Fixed stages, bounded storage and nonblocking append; no JSON or I/O in a hot probe.
+pub mod spans {
+    use serde::Serialize;
+    use serde_json::{Value, json};
+    use std::{
+        cell::Cell,
+        marker::PhantomData,
+        rc::Rc,
+        sync::{
+            Mutex, OnceLock, TryLockError,
+            atomic::{AtomicU64, Ordering},
+        },
+        time::Instant,
+    };
+
+    const CAPACITY: usize = 131_072;
+    const CLOSED: u64 = 1 << 63;
+    static RECORDER: OnceLock<Recorder> = OnceLock::new();
+    static NEXT_THREAD: AtomicU64 = AtomicU64::new(1);
+    thread_local! { static THREAD: Cell<u64> = const { Cell::new(0) }; }
+
+    #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum Stage {
+        RawInputHook,
+        PmixInput,
+        FencePoll,
+        Tick,
+        PhaseActions,
+        SnapshotTotal,
+        SnapshotSerialize,
+        SnapshotWrite,
+        SnapshotHash,
+        SnapshotRecord,
+        CpuCanvasPrepare,
+        GpuResourcesNew,
+        GpuCallbackPrepare,
+        GpuCallbackPaint,
+        RoiCallback,
+        RoiRawInput,
+        RoiFrame,
+        RoiWriterSend,
+    }
+    #[derive(Serialize)]
+    struct Row {
+        stage: Stage,
+        frame_at_entry: u64,
+        thread: u64,
+        start_ns: u64,
+        end_ns: u64,
+        thread_cpu_ns: Option<u64>,
+        cpu_start_probe_ns: u64,
+        cpu_end_probe_ns: u64,
+        entry_probe_ns: u64,
+    }
+    #[derive(Serialize)]
+    pub(super) struct Report {
+        #[serde(flatten)]
+        pub(super) metadata: Value,
+        rows: Vec<Row>,
+    }
+    struct Recorder {
+        origin: Instant,
+        rows: Mutex<Vec<Row>>,
+        lifecycle: AtomicU64,
+        capacity: usize,
+        started: AtomicU64,
+        ended: AtomicU64,
+        full: AtomicU64,
+        contended: AtomicU64,
+        poisoned: AtomicU64,
+        late: AtomicU64,
+        cpu_failures: AtomicU64,
+        probe_ns: AtomicU64,
+        max_probe_ns: AtomicU64,
+    }
+    impl Recorder {
+        fn new(origin: Instant, capacity: usize) -> Self {
+            Self {
+                origin,
+                rows: Mutex::new(Vec::with_capacity(capacity)),
+                lifecycle: AtomicU64::new(0),
+                capacity,
+                started: AtomicU64::new(0),
+                ended: AtomicU64::new(0),
+                full: AtomicU64::new(0),
+                contended: AtomicU64::new(0),
+                poisoned: AtomicU64::new(0),
+                late: AtomicU64::new(0),
+                cpu_failures: AtomicU64::new(0),
+                probe_ns: AtomicU64::new(0),
+                max_probe_ns: AtomicU64::new(0),
+            }
+        }
+        fn start(&self, stage: Stage, frame: u64) -> Option<Span<'_>> {
+            let probe = Instant::now();
+            // One atomic gate binds open spans to the terminal cutoff, including
+            // starts racing finalization. No new span can pass a sealed gate.
+            if self
+                .lifecycle
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                    (value & CLOSED == 0).then_some(value + 1)
+                })
+                .is_err()
+            {
+                self.late.fetch_add(1, Ordering::Relaxed);
+                return None;
+            }
+            self.started.fetch_add(1, Ordering::Relaxed);
+            let thread = THREAD.with(|id| {
+                if id.get() == 0 {
+                    id.set(NEXT_THREAD.fetch_add(1, Ordering::Relaxed));
+                }
+                id.get()
+            });
+            let cpu_probe = Instant::now();
+            let cpu = self.cpu();
+            let start = Instant::now();
+            Some(Span {
+                recorder: self,
+                stage,
+                frame,
+                thread,
+                start,
+                cpu,
+                cpu_start_probe_ns: ns(start.duration_since(cpu_probe)),
+                entry_probe_ns: ns(start.duration_since(probe)),
+                _same_thread: PhantomData,
+            })
+        }
+        fn cpu(&self) -> Option<u64> {
+            let value = thread_cpu();
+            if cfg!(target_os = "macos") && value.is_none() {
+                self.cpu_failures.fetch_add(1, Ordering::Relaxed);
+            }
+            value
+        }
+        fn append(&self, row: Row) {
+            if self.lifecycle.load(Ordering::Acquire) & CLOSED != 0 {
+                self.late.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+            match self.rows.try_lock() {
+                Ok(mut rows) => {
+                    if self.lifecycle.load(Ordering::Acquire) & CLOSED != 0 {
+                        self.late.fetch_add(1, Ordering::Relaxed);
+                    } else if rows.len() >= self.capacity {
+                        self.full.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        rows.push(row);
+                    }
+                }
+                Err(TryLockError::WouldBlock) => {
+                    self.contended.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(TryLockError::Poisoned(_)) => {
+                    self.poisoned.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+        fn finish(&self) -> Report {
+            // Terminal UI hook: ROI writer joined and terminal poll returned. The
+            // cutoff seals storage before serialization; an open span is INCOMPLETE.
+            let (mut rows, finalization_lock_poisoned) = match self.rows.lock() {
+                Ok(rows) => (rows, false),
+                Err(poison) => (poison.into_inner(), true),
+            };
+            let lifecycle = self.lifecycle.fetch_or(CLOSED, Ordering::AcqRel);
+            let cutoff_ns = ns(self.origin.elapsed());
+            let frozen = std::mem::take(&mut *rows);
+            drop(rows);
+            let read = |a: &AtomicU64| a.load(Ordering::Acquire);
+            // Read each counter once. With an open span these are a post-seal
+            // snapshot, not an atomic cutoff snapshot; open_at_cutoff already
+            // forces INCOMPLETE. Later rejected probes cannot alter this report.
+            let full = read(&self.full);
+            let contended = read(&self.contended);
+            let poisoned = read(&self.poisoned);
+            let late = read(&self.late);
+            let cpu_failures = read(&self.cpu_failures);
+            let probe_ns = read(&self.probe_ns);
+            let max_probe_ns = read(&self.max_probe_ns);
+            let active = lifecycle & !CLOSED;
+            let started = read(&self.started);
+            let ended = read(&self.ended);
+            let complete = !finalization_lock_poisoned
+                && active == 0
+                && full == 0
+                && contended == 0
+                && poisoned == 0
+                && late == 0
+                && started == ended
+                && ended == frozen.len() as u64;
+            let metadata = json!({"schema_version":1,"diagnostic_status":if complete {"COMPLETE"} else {"INCOMPLETE"},
+                "clock":"same PMIX Instant origin as observations.json; nanoseconds", "cutoff_ns":cutoff_ns,
+                "frame_binding":"frame_at_entry is the atomic PMIX frame at entry; raw-input-hook/pmix-input/poll start before increment and bind the preceding frame; GPU callbacks bind their submitted painted id",
+                "scope":"REPORT_ONLY; nested spans overlap and must not be summed; callback spans are CPU command recording, not GPU execution/submit/present/wakeup/scanout; old intervals remain intact",
+                "thread_cpu_clock":if cfg!(target_os="macos") {"clock_gettime(CLOCK_THREAD_CPUTIME_ID)"} else {"UNSUPPORTED; null values"},
+                "thread_cpu_scope":"same-thread CPU delta, start read before wall start and end read after wall end; boundary uncertainty is cpu_start_probe_ns + cpu_end_probe_ns; never process CPU or independently timed GPU",
+                "cpu_diagnostic_status":if !cfg!(target_os="macos") {"UNSUPPORTED"} else if cpu_failures>0 {"INCOMPLETE"} else {"AVAILABLE"},
+                "capacity":self.capacity,"row_size_bytes":std::mem::size_of::<Row>(),"row_count":frozen.len(),
+                "started":started,"ended":ended,"open_at_cutoff":active,"finalization_lock_poisoned":finalization_lock_poisoned,
+                "loss":{"full":full,"contended":contended,"poisoned":poisoned,"late_at_snapshot":late},
+                "cpu_clock_failures":cpu_failures,
+                "probe_wall_ns_total":probe_ns,"probe_wall_ns_max":max_probe_ns,
+                "probe_scope":"estimated wall overhead of entry/exit probes and nonblocking append; excludes trailing counter updates and rejected-start probes; not subtracted from old statistics; aggregate excludes static dispatch, startup preallocation and final serialization; each counter is read once after sealing; open_at_cutoff binds the atomic cutoff and makes racing endings INCOMPLETE; later probes are outside this diagnostic observation",
+                "roi_writer_queue_capacity":16,"roi_send_scope":"original blocking SyncSender::send plus sender access and Sample metadata construction; wall includes any queue wait, not pure send, queue wait or occupancy"});
+            Report {
+                metadata,
+                rows: frozen,
+            }
+        }
+        #[cfg(test)]
+        fn finish_value(&self) -> Value {
+            serde_json::to_value(self.finish()).unwrap()
+        }
+    }
+    pub struct Span<'a> {
+        recorder: &'a Recorder,
+        stage: Stage,
+        frame: u64,
+        thread: u64,
+        start: Instant,
+        cpu: Option<u64>,
+        cpu_start_probe_ns: u64,
+        entry_probe_ns: u64,
+        // A thread CPU delta must never cross threads.
+        _same_thread: PhantomData<Rc<()>>,
+    }
+    impl Drop for Span<'_> {
+        fn drop(&mut self) {
+            let end = Instant::now();
+            let cpu = self.recorder.cpu();
+            let cpu_end_probe_ns = ns(end.elapsed());
+            let thread_cpu_ns = self.cpu.zip(cpu).and_then(|(a, b)| b.checked_sub(a));
+            if self.cpu.is_some() && cpu.is_some() && thread_cpu_ns.is_none() {
+                self.recorder.cpu_failures.fetch_add(1, Ordering::Relaxed);
+            }
+            self.recorder.append(Row {
+                stage: self.stage,
+                frame_at_entry: self.frame,
+                thread: self.thread,
+                start_ns: ns(self.start.duration_since(self.recorder.origin)),
+                end_ns: ns(end.duration_since(self.recorder.origin)),
+                thread_cpu_ns,
+                cpu_start_probe_ns: self.cpu_start_probe_ns,
+                cpu_end_probe_ns,
+                entry_probe_ns: self.entry_probe_ns,
+            });
+            self.recorder.ended.fetch_add(1, Ordering::Relaxed);
+            let overhead = self.entry_probe_ns.saturating_add(ns(end.elapsed()));
+            self.recorder
+                .probe_ns
+                .fetch_add(overhead, Ordering::Relaxed);
+            self.recorder
+                .max_probe_ns
+                .fetch_max(overhead, Ordering::Relaxed);
+            self.recorder.lifecycle.fetch_sub(1, Ordering::Release);
+        }
+    }
+    fn ns(duration: std::time::Duration) -> u64 {
+        u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+    }
+    #[cfg(any(target_os = "macos", test))]
+    fn cpu_ns(seconds: i64, nanos: i64) -> Option<u64> {
+        if !(0..1_000_000_000).contains(&nanos) {
+            return None;
+        }
+        u64::try_from(seconds)
+            .ok()?
+            .checked_mul(1_000_000_000)?
+            .checked_add(nanos as u64)
+    }
+    #[cfg(target_os = "macos")]
+    fn thread_cpu() -> Option<u64> {
+        // Apple _time.h: clockid_t is unsigned, thread CPU clock is 16 (macOS 10.12+).
+        #[repr(C)]
+        struct Timespec {
+            seconds: std::ffi::c_long,
+            nanos: std::ffi::c_long,
+        }
+        unsafe extern "C" {
+            fn clock_gettime(clock: std::ffi::c_uint, time: *mut Timespec) -> std::ffi::c_int;
+        }
+        let mut time = Timespec {
+            seconds: 0,
+            nanos: 0,
+        };
+        // SAFETY: writable timespec with the platform ABI; no borrowed pointers retained.
+        if unsafe { clock_gettime(16, &mut time) } != 0 {
+            return None;
+        }
+        cpu_ns(time.seconds, time.nanos)
+    }
+    #[cfg(not(target_os = "macos"))]
+    fn thread_cpu() -> Option<u64> {
+        None
+    }
+    pub(super) fn activate(origin: Instant) {
+        RECORDER.get_or_init(|| Recorder::new(origin, CAPACITY));
+    }
+    pub fn enter(stage: Stage) -> Option<Span<'static>> {
+        enter_frame(stage, super::FRAME.load(Ordering::Acquire))
+    }
+    pub fn enter_frame(stage: Stage, frame: u64) -> Option<Span<'static>> {
+        RECORDER.get()?.start(stage, frame)
+    }
+    pub(super) fn finish() -> Report {
+        RECORDER.get().expect("active PMIX spans").finish()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn cpu_clock_rejects_invalid_and_overflowing_values() {
+            assert_eq!(cpu_ns(2, 3), Some(2_000_000_003));
+            for (s, n) in [(-1, 0), (0, -1), (0, 1_000_000_000), (i64::MAX, 0)] {
+                assert_eq!(cpu_ns(s, n), None);
+            }
+        }
+        #[test]
+        fn nested_spans_keep_endpoints_and_frames_instead_of_adding_durations() {
+            let r = Recorder::new(Instant::now(), 8);
+            let outer = r.start(Stage::SnapshotTotal, 7).unwrap();
+            drop(r.start(Stage::SnapshotSerialize, 7));
+            drop(outer);
+            let report = r.finish_value();
+            assert_eq!(report["diagnostic_status"], "COMPLETE");
+            let rows = report["rows"].as_array().unwrap();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0]["frame_at_entry"], 7);
+            assert_eq!(rows[0]["thread"], rows[1]["thread"]);
+            assert!(rows[1]["start_ns"].as_u64() <= rows[0]["start_ns"].as_u64());
+            assert!(rows[1]["end_ns"].as_u64() >= rows[0]["end_ns"].as_u64());
+        }
+        #[test]
+        fn full_storage_counts_loss_without_growing_or_blocking() {
+            let r = Recorder::new(Instant::now(), 1);
+            for frame in 0..3 {
+                drop(r.start(Stage::Tick, frame));
+            }
+            let report = r.finish_value();
+            assert_eq!(report["rows"].as_array().unwrap().len(), 1);
+            assert_eq!(report["loss"]["full"], 2);
+            assert_eq!(report["diagnostic_status"], "INCOMPLETE");
+        }
+        #[test]
+        fn contended_storage_never_waits_and_reports_missing_sample() {
+            let r = Recorder::new(Instant::now(), 2);
+            let guard = r.rows.lock().unwrap();
+            drop(r.start(Stage::RoiWriterSend, 11));
+            drop(guard);
+            let report = r.finish_value();
+            assert_eq!(report["loss"]["contended"], 1);
+            assert_eq!(report["diagnostic_status"], "INCOMPLETE");
+        }
+        #[test]
+        fn early_return_and_unwinding_drop_spans() {
+            let r = Recorder::new(Instant::now(), 4);
+            let early = || {
+                let _span = r.start(Stage::GpuCallbackPaint, 3);
+                false
+            };
+            assert!(!early());
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _span = r.start(Stage::SnapshotWrite, 4);
+                panic!("write failure");
+            }));
+            assert!(result.is_err());
+            let report = r.finish_value();
+            assert_eq!(report["diagnostic_status"], "COMPLETE");
+            assert_eq!(report["ended"], 2);
+        }
+        #[test]
+        fn poisoned_storage_is_explicit_incomplete_and_can_be_finalized() {
+            let r = Recorder::new(Instant::now(), 2);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _guard = r.rows.lock().unwrap();
+                panic!("poison");
+            }));
+            drop(r.start(Stage::Tick, 1));
+            let report = r.finish_value();
+            assert_eq!(report["loss"]["poisoned"], 1);
+            assert_eq!(report["diagnostic_status"], "INCOMPLETE");
+        }
+        #[test]
+        fn poisoned_finalization_without_append_is_incomplete() {
+            let r = Recorder::new(Instant::now(), 2);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _guard = r.rows.lock().unwrap();
+                panic!("poison before any append");
+            }));
+            let report = r.finish_value();
+            assert_eq!(report["diagnostic_status"], "INCOMPLETE");
+            assert_eq!(report["finalization_lock_poisoned"], true);
+            assert_eq!(report["started"], 0);
+        }
+        #[test]
+        fn cutoff_with_an_open_span_is_incomplete_and_late_append_is_rejected() {
+            let r = Recorder::new(Instant::now(), 2);
+            let active = r.start(Stage::Tick, 1);
+            let report = r.finish_value();
+            assert_eq!(report["open_at_cutoff"], 1);
+            assert_eq!(report["diagnostic_status"], "INCOMPLETE");
+            drop(active);
+            assert!(r.start(Stage::Tick, 2).is_none());
+            assert_eq!(r.late.load(Ordering::Relaxed), 2);
+            assert!(r.rows.lock().unwrap().is_empty());
+        }
+        #[test]
+        fn inactive_recorder_does_not_create_or_probe_a_clock() {
+            assert!(enter_frame(Stage::Tick, 0).is_none());
+            assert!(RECORDER.get().is_none());
+        }
+        #[test]
+        fn different_threads_have_distinct_ids_and_no_cross_thread_cpu_delta() {
+            let r = Recorder::new(Instant::now(), 4);
+            drop(r.start(Stage::Tick, 1));
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(|| drop(r.start(Stage::Tick, 1)))
+                    .join()
+                    .unwrap();
+            });
+            let report = r.finish_value();
+            assert_eq!(report["diagnostic_status"], "COMPLETE");
+            assert_ne!(report["rows"][0]["thread"], report["rows"][1]["thread"]);
+        }
+        #[test]
+        fn report_is_self_consistent_when_rejected_starts_race_sealing() {
+            let r = Recorder::new(Instant::now(), 4);
+            drop(r.start(Stage::Tick, 1));
+            std::thread::scope(|scope| {
+                let thread = scope.spawn(|| {
+                    while r.lifecycle.load(Ordering::Acquire) & CLOSED == 0 {
+                        std::thread::yield_now();
+                    }
+                    for _ in 0..1000 {
+                        assert!(r.start(Stage::Tick, 2).is_none());
+                    }
+                });
+                let report = r.finish_value();
+                thread.join().unwrap();
+                let late = report["loss"]["late_at_snapshot"].as_u64().unwrap();
+                assert_eq!(report["diagnostic_status"] == "COMPLETE", late == 0);
+                assert_eq!(report["rows"].as_array().unwrap().len(), 1);
+                assert_eq!(report["started"], report["ended"]);
+                assert_eq!(report["open_at_cutoff"], 0);
+                assert_eq!(r.late.load(Ordering::Relaxed), 1000);
+            });
+        }
+        #[test]
+        fn submitted_gpu_id_and_preincrement_raw_id_are_preserved() {
+            let r = Recorder::new(Instant::now(), 4);
+            drop(r.start(Stage::RawInputHook, 10));
+            drop(r.start(Stage::GpuCallbackPaint, 11));
+            let report = r.finish_value();
+            assert_eq!(report["rows"][0]["frame_at_entry"], 10);
+            assert_eq!(report["rows"][1]["frame_at_entry"], 11);
+        }
+    }
+}
+
 static REQUESTS: OnceLock<std::sync::Mutex<Vec<Value>>> = OnceLock::new();
 pub fn request_input(
     task: &editor_service::task::TaskContext,
@@ -225,6 +691,7 @@ impl Run {
         );
         crate::native_s5m1::activate_counters();
         let started = *ORIGIN.get_or_init(Instant::now);
+        spans::activate(started);
         Some(Self {
             dir,
             request,
@@ -308,6 +775,7 @@ impl Run {
         }
     }
     pub fn input(&mut self, app: &mut EditorApp, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let _span = spans::enter(spans::Stage::PmixInput);
         self.complete = None;
         if let Some(frame) = self.complete_pending() {
             if frame["painted"] == true {
@@ -494,6 +962,7 @@ impl Run {
         let frame = self.log.complete_pending(
             self.painted.load(Ordering::Acquire),
             || {
+                let _span = spans::enter(spans::Stage::FencePoll);
                 device
                     .poll(wgpu::PollType::Wait {
                         submission_index: None,
@@ -548,10 +1017,22 @@ impl Run {
         let Some(s) = &app.view.snap_snapshot else {
             return;
         };
-        let bytes = serde_json::to_vec(&**s).unwrap();
+        let _total = spans::enter(spans::Stage::SnapshotTotal);
+        let bytes = {
+            let _span = spans::enter(spans::Stage::SnapshotSerialize);
+            serde_json::to_vec(&**s).unwrap()
+        };
         let name = format!("{label}-semantic.json");
-        std::fs::write(self.dir.join(&name), &bytes).unwrap();
-        self.snapshot_files.push(json!({"label":label,"path":name,"sha256":sha256_hex(&bytes),"frame_id":self.frame_id,"at_ns":self.started.elapsed().as_nanos() as u64,"count":s.layers.iter().map(|l|l.objects.len()).sum::<usize>(),"selected_ids":app.view.selected.ids(),"state":state(app)}));
+        {
+            let _span = spans::enter(spans::Stage::SnapshotWrite);
+            std::fs::write(self.dir.join(&name), &bytes).unwrap();
+        }
+        let hash = {
+            let _span = spans::enter(spans::Stage::SnapshotHash);
+            sha256_hex(&bytes)
+        };
+        let _span = spans::enter(spans::Stage::SnapshotRecord);
+        self.snapshot_files.push(json!({"label":label,"path":name,"sha256":hash,"frame_id":self.frame_id,"at_ns":self.started.elapsed().as_nanos() as u64,"count":s.layers.iter().map(|l|l.objects.len()).sum::<usize>(),"selected_ids":app.view.selected.ids(),"state":state(app)}));
     }
     fn finish(&mut self, _app: &mut EditorApp, _ctx: &egui::Context) {
         let done_path = self.dir.join("protocol-done.json");
@@ -628,9 +1109,22 @@ impl Run {
                 .push("ROI readbacks/writer not finalized at exit".into());
         }
         let exit = json!({"close_requested_frame_id":self.close_requested.map(|c|c.0),"close_requested_ns":self.close_requested.map(|c|c.1),"exited_ns":self.started.elapsed().as_nanos() as u64,"roi_finalization":roi_finalization,"full_surface_requests_drained":self.surface_pending.is_empty()});
+        let mut timing = spans::finish();
+        timing.metadata["commit"] = json!(option_env!("RCAM_BUILD_COMMIT"));
+        timing.metadata["source_manifest_sha256"] =
+            json!(sha256_hex(include_bytes!("../../../MANIFEST.sha256")));
+        let timing_bytes = serde_json::to_vec_pretty(&timing).unwrap();
+        let timing_path = self.dir.join("pmix-stage-timing.json");
+        assert!(!timing_path.exists(), "PMIX stage timing already finalized");
+        std::fs::write(timing_path, &timing_bytes).unwrap();
+        let timing_binding = json!({"path":"pmix-stage-timing.json","sha256":sha256_hex(&timing_bytes),"diagnostic_status":timing.metadata["diagnostic_status"]});
+        // Release the fixed records and encoded sidecar before the existing
+        // binary/report allocations; rows serialize directly, without per-row Value trees.
+        drop(timing_bytes);
+        drop(timing);
         let binary = std::fs::read(std::env::current_exe().unwrap()).unwrap();
         let fixture = Path::new(self.request["fixture"].as_str().unwrap());
-        let report = json!({"schema_version":2,"stage":"S5-M2-C","profile":"release","observation_version":3,"last_observed_frame_id":self.log.frames.len(),"request":self.request,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"source_manifest_sha256":sha256_hex(include_bytes!("../../../MANIFEST.sha256")),"pid":std::process::id(),"fixture_sha256":sha256_hex(&std::fs::read(fixture).unwrap()),"protocol_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/protocol.json")),"native_inputs_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/native-inputs.json")),"adapter":app.adapter,"frames":self.log.frames,"terminal_frame":terminal_frame,"exit":exit,"events":self.events,"snapshots":self.snapshot_files,"worker":worker_snapshot(),"requests":*REQUESTS.get_or_init(Default::default).lock().unwrap(),"hits":*HITS.get_or_init(Default::default).lock().unwrap(),"failures":self.failures,"counters":crate::native_s5m1::counter_snapshot(),"measurement_scope":"synthetic egui input; production Metal callback completion upper bound including the terminal update, no physical input/scanout claim; peak RSS and cumulative CPU from owned-child wait4"});
+        let report = json!({"schema_version":2,"stage":"S5-M2-C","profile":"release","observation_version":3,"stage_timing":timing_binding,"last_observed_frame_id":self.log.frames.len(),"request":self.request,"commit":option_env!("RCAM_BUILD_COMMIT"),"build_source":option_env!("RCAM_BUILD_SOURCE"),"binary_sha256":sha256_hex(&binary),"source_manifest_sha256":sha256_hex(include_bytes!("../../../MANIFEST.sha256")),"pid":std::process::id(),"fixture_sha256":sha256_hex(&std::fs::read(fixture).unwrap()),"protocol_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/protocol.json")),"native_inputs_sha256":sha256_hex(include_bytes!("../../../fixtures/synthetic/s5m2c/native-inputs.json")),"adapter":app.adapter,"frames":self.log.frames,"terminal_frame":terminal_frame,"exit":exit,"events":self.events,"snapshots":self.snapshot_files,"worker":worker_snapshot(),"requests":*REQUESTS.get_or_init(Default::default).lock().unwrap(),"hits":*HITS.get_or_init(Default::default).lock().unwrap(),"failures":self.failures,"counters":crate::native_s5m1::counter_snapshot(),"measurement_scope":"synthetic egui input; production Metal callback completion upper bound including the terminal update, no physical input/scanout claim; peak RSS and cumulative CPU from owned-child wait4"});
         let report_path = self.dir.join("observations.json");
         assert!(!report_path.exists(), "PMIX report already finalized");
         std::fs::write(report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
@@ -857,6 +1351,7 @@ impl Run {
     }
     pub fn tick(&mut self, app: &mut EditorApp, ctx: &egui::Context) {
         let cpu_ms = self.input_at.elapsed().as_secs_f64() * 1000.;
+        let _tick = spans::enter(spans::Stage::Tick);
         let locked_step = if self.mode == "workflow-cross-layer" {
             5
         } else {
@@ -914,6 +1409,7 @@ impl Run {
         if app.busy {
             return;
         }
+        let _phase = spans::enter(spans::Stage::PhaseActions);
         match self.phase {
             0 => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
