@@ -1923,3 +1923,7 @@ For R08/R09/R16/R17/R18 and AT-022/030/032/039/040/064/065/067/069/074/075/078, 
 ### S5 small cross cursor source follow-up
 
 R08/R18, AT-025 and S5-I2-C C-04: verify SmallCross centered endpoints at 36 physical pixels per axis for DPI1/1.25/1.5/2/3/4, original one-physical-pixel stroke and edge clipping, unchanged Normal/LargeCross and popup/modal ownership. CPU painted endpoints and clipping supplement existing input tests; native macOS visual checks remain external. Scope adds no manufacturing, selection, shortcut or performance acceptance change.
+
+### S5 shortcut settings compact source follow-up
+
+R08/R12/R18, applicable AT-025/043/078: `S5_SHORTCUT_COMPACT.md` adds actual CPU egui geometry regressions for fixed columns/rows/actions, long names/bindings/errors, zero-result search, zero-to-four aliases, multiple DPI and small-viewport scrolling/click access. Existing recording/IME/router/configuration checks remain; native visual and platform obligations are external and are not marked passed by these source checks.

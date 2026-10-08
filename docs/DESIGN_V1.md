@@ -1325,3 +1325,7 @@ The independently scoped `docs/S5_SELECTION_INPUT.md` and ADR0059 specify comple
 ### S5 small cross cursor size follow-up
 
 S5-I2-C display-only follow-up, R08/R18 and existing AT-025 local coverage (C-04): SmallCross changes from 12 to 36 physical pixels per axis, centered on the pointer with logical half-length `18 / pixels_per_point`. Existing one-physical-pixel stroke, canvas clipping, cursor ownership, Normal/LargeCross modes and input/world/Snap geometry remain unchanged. Scope is `editor-app` cursor painting and ordinary CPU regressions only; no configuration or dependency change. See ADR0057 addendum. Native visual validation remains external.
+
+### S5 shortcut settings compact presentation follow-up
+
+`S5_SHORTCUT_COMPACT.md`/ADR0050 addendum specify a fixed compact list/editor layout, stable row/alias/status geometry and viewport scrolling for R08/R12/R18. Complete dynamic command catalogue, raw/effective key distinction and recording/save/import state machines remain. No mapping/schema/dependency change or native visual acceptance claim.

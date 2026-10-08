@@ -5,3 +5,7 @@ Accepted for implementation，2026-10-02；不是PASS。以正式整合任务为
 单项确认/清除/恢复走同一完整校验→预编译→OS锁内fingerprint→唯一临时文件sync→原子替换→runtime安装。没有全局Apply草稿。导入预览immutable候选与独立generation，确认一次replace；导出已提交完整快照，拒绝写当前配置目标。提交前失败旧内存/字节不变；提交后目录sync警告保持新状态而不谎报回滚。坏启动文件保留，需明确重新建立确认。
 
 六项原未接GUI默认不激活，保留PrimaryY/PrimaryShiftZ和Delete/Backspace。41动作复用原handler与enabled，固定输入/取消协议，record独占与release屏障，IME/事件时text owner优先。独立shortcuts文件不改revision/dirty/Undo/selection/camera/工程与其它prefs。Windows native未验；不扩Palette/chord或其它S5功能。
+
+## Compact presentation addendum (2026-10-08)
+
+User-authorized independent UI follow-up based on9114772: replace stacked wrapped list/editor and three empty status slots with fixed compact columns, fixed rows/four alias slots and bounded scrollable details. See `../S5_SHORTCUT_COMPACT.md` for dimensions and CPU checks. Preserve the complete dynamic catalogue and raw/effective key identities, all record/IME/barrier/save/clear/reset/import/export behavior, and physical-Control SelectAll default guidance. No keymap, schema, dependency, user configuration, manufacturing or native/performance experiment change. Native visual validation remains external.
