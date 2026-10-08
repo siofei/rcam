@@ -824,7 +824,11 @@ fn pmix_native_marquee_margin_has_independent_hit_boundary_and_full_id_oracle() 
     let action = gesture.release().unwrap();
     assert!(matches!(
         action,
-        Action::SelectRect(_, editor_core::hit_test::SelectRectMode::Window)
+        Action::CanvasSelectRect(
+            _,
+            editor_core::hit_test::SelectRectMode::Window,
+            crate::selection::SelectionMode::Replace
+        )
     ));
     m.run(action);
     checked(&m);

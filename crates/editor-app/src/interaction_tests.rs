@@ -239,7 +239,10 @@ fn c_four_preference_combinations_preserve_selection_and_explicit_service_edits(
                 .with_movement_enabled(movement);
             box_select.confirm(&view);
             box_select.update(p + Vec2::splat(30.));
-            assert!(matches!(box_select.release(), Some(Action::SelectRect(..))));
+            assert!(matches!(
+                box_select.release(),
+                Some(Action::CanvasSelectRect(..))
+            ));
         }
     }
 }

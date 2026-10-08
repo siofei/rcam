@@ -237,7 +237,8 @@ impl Gesture {
     }
     pub fn confirm(&mut self, view: &View) {
         self.confirmed = true;
-        self.box_select = view.press_hit.is_none();
+        self.box_select =
+            self.mode != crate::selection::SelectionMode::Replace || view.press_hit.is_none();
         if !view.drag_hit {
             self.object_drag = None;
         }
@@ -276,9 +277,12 @@ impl Gesture {
             return None;
         }
         if self.box_select && self.moved {
+            if self.last == self.start {
+                return None;
+            }
             let a = self.camera.world(self.start, self.rect);
             let b = self.camera.world(self.last, self.rect);
-            return Some(Action::SelectRect(
+            return Some(Action::CanvasSelectRect(
                 editor_core::BoundsMm {
                     min_x_mm: a.x_mm.min(b.x_mm),
                     min_y_mm: a.y_mm.min(b.y_mm),
@@ -290,6 +294,7 @@ impl Gesture {
                 } else {
                     editor_core::hit_test::SelectRectMode::Crossing
                 },
+                self.mode,
             ));
         }
         if let Some(d) = self.object_drag

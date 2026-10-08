@@ -383,7 +383,7 @@ impl Settings {
             crate::ui::modal_widgets::status_slot(ui, if self.pending.is_some() { "正在处理配置文件…" } else { "" }, 20., false);
             if self.pending.is_some() { ctx.request_repaint(); }
             if self.reset_confirm {
-                ui.separator(); ui.label(if self.protected { "原文件将被默认快捷键完整替换；此前已保护原文件。确认重新建立配置？" } else { "将全部41项绑定恢复为当前兼容默认值，并自动保存。" });
+                ui.separator(); ui.label(if self.protected { "原文件将被默认快捷键完整替换；此前已保护原文件。确认重新建立配置？" } else { "将全部绑定恢复为当前兼容默认值，并自动保存。" });
                 ui.add_enabled_ui(self.pending.is_none() && !ime, |ui| { ui.horizontal(|ui| { if ui.button("确认恢复默认并保存").clicked() { self.save(ctx, Config::defaults(platform), true); }
  if ui.button("取消恢复").clicked() { self.reset_confirm = false; } }); });
             } else if let Some(preview) = &self.preview {
@@ -391,10 +391,10 @@ impl Settings {
                 let changed = preview.candidate.config.bindings.iter().filter(|entry| self.current.config.bindings.iter().find(|e| e.command_id == entry.command_id) != Some(*entry)).count();
                 let cleared = preview.candidate.config.bindings.iter().filter(|entry| entry.shortcuts.is_empty() && self.current.config.bindings.iter().any(|old| old.command_id == entry.command_id && !old.shortcuts.is_empty())).count();
                 ui.label(format!("变更 {changed} 项 · 清空 {cleared} 项"));
-                if preview.candidate.cross_platform { ui.label("逻辑键按当前平台映射：Primary在Mac为Cmd、Windows为Ctrl；Secondary在Mac为Ctrl、Windows为Win（本版本拒绝）。Alt在Mac为Option。物理组合可能不同，请确认。Windows原生未验收。"); }
+                if preview.candidate.cross_platform { ui.label("全选的源平台默认键在两平台均为物理Ctrl+A；其它逻辑键按当前平台映射：Primary在Mac为Cmd、Windows为Ctrl；Secondary在Mac为Ctrl、Windows为Win（本版本拒绝）。Alt在Mac为Option。物理组合可能不同，请确认。Windows原生未验收。"); }
                 if !preview.candidate.default_conflicts.is_empty() { ui.label(format!("默认退让并保持未绑定：{}", preview.candidate.default_conflicts.join(", "))); }
-                ui.label(format!("来源 {:?} · 41项命令 · 补缺 {} · 默认退让 {} · 跨平台 {}", preview.candidate.config.source_platform, preview.candidate.missing.len(), preview.candidate.default_conflicts.len(), preview.candidate.cross_platform));
-                egui::ScrollArea::vertical().id_salt("shortcut-import").max_height(220.).show(ui, |ui| { for entry in &preview.candidate.config.bindings { if self.current.config.bindings.iter().find(|e| e.command_id == entry.command_id) != Some(entry) { ui.label(format!("{} → {}", entry.command_id, display_keys(&entry.shortcuts, platform))); } } });
+                ui.label(format!("来源 {:?} · {}项命令 · 补缺 {} · 默认退让 {} · 跨平台 {}", preview.candidate.config.source_platform, shortcut_config::commands().len(), preview.candidate.missing.len(), preview.candidate.default_conflicts.len(), preview.candidate.cross_platform));
+                egui::ScrollArea::vertical().id_salt("shortcut-import").max_height(220.).show(ui, |ui| { for entry in &preview.candidate.config.bindings { if self.current.config.bindings.iter().find(|e| e.command_id == entry.command_id) != Some(entry) { ui.label(format!("{} → {}", entry.command_id, display_keys(&preview.candidate.config.effective_shortcuts(entry, platform), platform))); } } });
                 ui.add_enabled_ui(self.pending.is_none() && !self.protected && !ime, |ui| { if ui.button("确认完整替换并保存").clicked() { self.apply_preview(ctx); } });
                 if ui.button("取消导入").clicked() { self.preview = None; }
             } else {
@@ -403,19 +403,19 @@ impl Settings {
                 egui::ScrollArea::vertical().id_salt("shortcut-command-list").max_height(260.).show(ui, |ui| {
                     let search = self.search.to_lowercase();
                     for command in shortcut_config::commands() {
-                        let keys = &self.current.config.entry(command.id).shortcuts;
-                        let display = display_keys(keys, platform);
+                        let keys = self.current.config.effective_shortcuts(self.current.config.entry(command.id), platform);
+                        let display = display_keys(&keys, platform);
                         let defaults = Config::defaults(platform);
                         let default_keys = &defaults.entry(command.id).shortcuts;
-                        let status = if keys == default_keys { "默认" } else { "已修改" };
+                        let status = if &keys == default_keys { "默认" } else { "已修改" };
                         if !format!("{} {} {} {:?}", command.name, command.id.0, display, command.category).to_lowercase().contains(&search) { continue; }
-                        ui.horizontal_wrapped(|ui| { if ui.add_enabled(self.pending.is_none() && !self.recording && !self.protected, egui::Button::new(format!("{} · {}", command.name, display)).selected(self.editing == Some(command.id))).clicked() { self.editing = Some(command.id); self.keys = keys.clone(); self.candidate = None; self.message = None; } ui.small(format!("{} · {:?} · {:?} · {status} · 默认 {}", command.id.0, command.category, command.context, display_keys(default_keys, platform))); });
+                        ui.horizontal_wrapped(|ui| { if ui.add_enabled(self.pending.is_none() && !self.recording && !self.protected, egui::Button::new(format!("{} · {}", command.name, display)).selected(self.editing == Some(command.id))).clicked() { self.editing = Some(command.id); self.keys = self.current.config.entry(command.id).shortcuts.clone(); self.candidate = None; self.message = None; } ui.small(format!("{} · {:?} · {:?} · {status} · 默认 {}", command.id.0, command.category, command.context, display_keys(default_keys, platform))); });
                     }
                     ui.label("Esc · 固定安全取消键（不可配置）");
                 });
                 if let Some(id) = self.editing {
                     ui.separator(); ui.strong(format!("编辑 {}", id.0)); ui.label("只保存此命令的完整绑定列表（最多4项）；关闭或切换命令会丢弃候选。");
-                    let mut remove = None; for (i, &key) in self.keys.iter().enumerate() { ui.horizontal(|ui| { ui.label(format_shortcut(key, platform)); if ui.add_enabled(!self.recording && self.pending.is_none(), egui::Button::new("移除此项")).clicked() { remove = Some(i); } }); } if let Some(i) = remove { self.keys.remove(i); }
+                    let mut remove = None; for i in 0..self.keys.len() { ui.horizontal(|ui| { let shown = self.current.config.effective_shortcuts(&shortcut_config::Entry { command_id:id.0.into(), shortcuts:self.keys.clone() }, platform); ui.label(format_shortcut(shown[i], platform)); if ui.add_enabled(!self.recording && self.pending.is_none(), egui::Button::new("移除此项")).clicked() { remove = Some(i); } }); } if let Some(i) = remove { self.keys.remove(i); }
                     if self.recording {
                         ui.label(if ime { "IME正在输入；暂停捕获，组合结束并释放按键后可继续。" } else { "按下组合键… Esc取消录制，Tab结束；不会执行编辑命令。" });
                         if ui.button("取消录制").clicked() { self.recording = false; self.candidate = None; self.barrier = !self.held.is_empty() || self.modifiers_down; }
@@ -427,7 +427,7 @@ impl Settings {
                             ui.horizontal(|ui| {
                                 if ui.button("确认此命令并自动保存").clicked() { match self.current.config.replace(id, self.keys.clone(), platform) { Ok(v) => self.save(ctx, v.config, false), Err(e) => self.message = Some(e.to_string()) } }
                                 if ui.button("清除此命令绑定").clicked() { let next = self.current.config.replace(id, vec![], platform).expect("clearing cannot conflict"); self.save(ctx, next.config, false); }
-                                if ui.button("此命令恢复默认").clicked() { match self.current.config.replace(id, Config::defaults(platform).entry(id).shortcuts.clone(), platform) { Ok(v) => self.save(ctx, v.config, false), Err(e) => self.message = Some(e.to_string()) } }
+                                if ui.button("此命令恢复默认").clicked() { match self.current.config.replace(id, self.current.config.default_shortcuts(id, platform), platform) { Ok(v) => self.save(ctx, v.config, false), Err(e) => self.message = Some(e.to_string()) } }
                             });
                         }
                     });

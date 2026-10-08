@@ -1313,3 +1313,7 @@ or native frame time. Read-only drag resource preflight is version/selection/tas
 fenced; final delta still receives complete geometry/permission/revision checks.
 See S5_MOVE_CAPACITY_ADMISSION.md and ADR0058. Existing 50ms/1e-9/performance
 samples and platform acceptance gates stay unchanged.
+
+### S5 selection input follow-up
+
+The independently scoped `docs/S5_SELECTION_INPUT.md` and ADR0059 specify complete manufacturing-snapshot All, physical Ctrl+A on both platforms, and press-time Ctrl-add/Shift-remove for click and Window/Crossing box. Actual Mac app keymap uses Secondary+A, preserving Command and text/IME ownership. Selection stays workspace-only, follows existing filters/inspection locks, and uses cancellable immutable set construction plus serial terminal synchronization. Native input validation remains external; subsequent click-place Move is a separate batch.

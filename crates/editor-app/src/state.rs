@@ -101,6 +101,18 @@ impl<'a> Classifier<'a> {
                 .style(object)
                 .is_some_and(|(l, c)| l.selectable && c.is_none_or(|c| c.selectable))
     }
+    /// Same selection policy for borrowed manufacturing snapshot objects.
+    pub fn selectable_object(&self, layer_id: &str, object: &editor_core::SemanticObject) -> bool {
+        let Some(layer) = self.layers.iter().find(|l| l.layer_id == layer_id) else {
+            return false;
+        };
+        let class = classify_object(object, &self.shapes);
+        let style = layer.classes.iter().find(|c| c.class == class);
+        layer.visible
+            && layer.effective_visible
+            && layer.selectable
+            && style.is_none_or(|c| c.visible && c.selectable)
+    }
     /// Which policy refuses an edit of this object, if any.
     pub fn edit_refusal(&self, object: &ObjectInfo) -> Option<&'static str> {
         match self.style(object) {
@@ -291,6 +303,12 @@ pub enum Action {
         crate::selection::SelectionMode,
     ),
     SelectRect(BoundsMm, editor_core::hit_test::SelectRectMode),
+    CanvasSelectRect(
+        BoundsMm,
+        editor_core::hit_test::SelectRectMode,
+        crate::selection::SelectionMode,
+    ),
+    SelectAll,
     Move(String, String),
     Align(AlignmentMode),
     Distribute(DistributionAxis),
@@ -1068,7 +1086,6 @@ impl Model {
         hit: Option<ObjectInfo>,
         mode: crate::selection::SelectionMode,
     ) -> Result<(), ServiceError> {
-        let mut selection = self.view.selected.clone();
         if let Some(hit) = &hit
             && let Some(operation_id) = operation_id(&hit.object.origin)
             && let Some(snapshot) = &self.snapshot
@@ -1082,39 +1099,26 @@ impl Model {
                         cancel.checkpoint()?;
                     }
                     if self::operation_id(&object.origin) == Some(operation_id) {
-                        objects.push(ObjectInfo {
-                            layer_id: layer.id.clone(),
-                            object: object.clone(),
-                        });
+                        objects.push((layer.id.as_str(), object));
                     }
                 }
             }
-            match mode {
-                crate::selection::SelectionMode::Replace => selection.ordered = objects.into(),
-                crate::selection::SelectionMode::Add => {
-                    let mut existing: std::collections::HashSet<_> = selection
-                        .ordered
-                        .iter()
-                        .map(|o| (o.layer_id.clone(), o.object.object_id.clone()))
-                        .collect();
-                    selection.ordered.extend(objects.into_iter().filter(|o| {
-                        existing.insert((o.layer_id.clone(), o.object.object_id.clone()))
-                    }));
-                }
-                crate::selection::SelectionMode::Remove => {
-                    let ids: std::collections::HashSet<_> = objects
-                        .iter()
-                        .map(|o| o.object.object_id.as_str())
-                        .collect();
-                    selection.ordered.retain(|o| {
-                        o.layer_id != hit.layer_id || !ids.contains(o.object.object_id.as_str())
-                    });
-                }
-            }
+            self.view.selected.apply_checked(objects, mode, || {
+                self.active_cancel
+                    .as_ref()
+                    .map_or(Ok(()), |c| c.checkpoint())
+            })?;
         } else {
-            selection.click(hit, mode);
+            self.view.selected.apply_checked(
+                hit.as_ref().map(|o| (o.layer_id.as_str(), &o.object)),
+                mode,
+                || {
+                    self.active_cancel
+                        .as_ref()
+                        .map_or(Ok(()), |c| c.checkpoint())
+                },
+            )?;
         }
-        self.view.selected = selection;
         Ok(())
     }
     fn canvas_select(
@@ -1244,6 +1248,7 @@ impl Model {
         &mut self,
         rect_mm: BoundsMm,
         mode: editor_core::hit_test::SelectRectMode,
+        selection_mode: crate::selection::SelectionMode,
     ) -> Result<(), ServiceError> {
         self.editable()?;
         let d = self.info()?;
@@ -1280,11 +1285,19 @@ impl Model {
                 .iter()
                 .find(|layer| layer.id == l.layer_id)
                 .ok_or_else(|| error("NOT_FOUND", "框选快照缺少图层"))?;
-            let objects: std::collections::HashMap<_, _> = layer
-                .objects
-                .iter()
-                .map(|object| (object.object_id.as_str(), object))
-                .collect();
+            let wanted: std::collections::HashSet<_> =
+                result.object_ids.iter().map(String::as_str).collect();
+            let mut objects = std::collections::HashMap::with_capacity(wanted.len());
+            for (index, object) in layer.objects.iter().enumerate() {
+                if index % 256 == 0
+                    && let Some(cancel) = &self.active_cancel
+                {
+                    cancel.checkpoint()?;
+                }
+                if wanted.contains(object.object_id.as_str()) {
+                    objects.insert(object.object_id.as_str(), object);
+                }
+            }
             for object_id in result.object_ids {
                 if let Some(cancel) = &self.active_cancel {
                     cancel.checkpoint()?;
@@ -1292,13 +1305,58 @@ impl Model {
                 let object = objects
                     .get(object_id.as_str())
                     .ok_or_else(|| error("NOT_FOUND", "框选快照缺少对象"))?;
-                selected.push(ObjectInfo {
-                    layer_id: l.layer_id.clone(),
-                    object: (*object).clone(),
-                });
+                selected.push((l.layer_id.as_str(), *object));
             }
         }
-        self.view.selected.ordered = selected.into();
+        self.view
+            .selected
+            .apply_checked(selected, selection_mode, || {
+                self.active_cancel
+                    .as_ref()
+                    .map_or(Ok(()), |c| c.checkpoint())
+            })?;
+        Ok(())
+    }
+    fn select_all(&mut self) -> Result<(), ServiceError> {
+        self.editable()?;
+        let document = self.info()?;
+        let snapshot = self
+            .snapshot
+            .as_ref()
+            .filter(|s| s.document_id == document.document_id && s.revision == document.revision)
+            .ok_or_else(|| error("STALE_REVISION", "全选快照未确认"))?;
+        let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
+        let mut selected = Vec::new();
+        // Panel order and original exposure order; no viewport/renderer subset.
+        for layer in &self.view.layers {
+            let source = snapshot
+                .layers
+                .iter()
+                .find(|l| l.id == layer.layer_id)
+                .ok_or_else(|| error("NOT_FOUND", "全选快照缺少图层"))?;
+            for (index, object) in source.objects.iter().enumerate() {
+                if index % 256 == 0
+                    && let Some(cancel) = &self.active_cancel
+                {
+                    cancel.checkpoint()?;
+                }
+                if classifier.selectable_object(&source.id, object) {
+                    selected.push((source.id.as_str(), object));
+                }
+            }
+        }
+        if let Some(cancel) = &self.active_cancel {
+            cancel.checkpoint()?;
+        }
+        self.view.selected.apply_checked(
+            selected,
+            crate::selection::SelectionMode::Replace,
+            || {
+                self.active_cancel
+                    .as_ref()
+                    .map_or(Ok(()), |c| c.checkpoint())
+            },
+        )?;
         Ok(())
     }
     pub(crate) fn edit_groups(&self) -> Result<Vec<SelectionGroup>, ServiceError> {
@@ -1722,7 +1780,11 @@ impl Model {
         let old_ppm = self.ppm;
         let old_metrics_identity = matches!(
             &action,
-            Action::ProbeDrag(..) | Action::CanvasSelect(..) | Action::SelectRect(..)
+            Action::ProbeDrag(..)
+                | Action::CanvasSelect(..)
+                | Action::SelectRect(..)
+                | Action::CanvasSelectRect(..)
+                | Action::SelectAll
         )
         .then(|| self.metrics_identity.clone());
         let readonly = matches!(
@@ -1734,6 +1796,8 @@ impl Model {
                 | Action::Select(..)
                 | Action::CanvasSelect(..)
                 | Action::SelectRect(..)
+                | Action::CanvasSelectRect(..)
+                | Action::SelectAll
                 | Action::ProbeDrag(..)
                 | Action::FitLayer(..)
                 | Action::LayerSummary(..)
@@ -2075,7 +2139,13 @@ impl Model {
             }
             Action::Select(p, t, mode) => self.select(p, t, mode),
             Action::CanvasSelect(context, mode) => self.canvas_select(context, mode),
-            Action::SelectRect(r, m) => self.select_rect(r, m),
+            Action::SelectRect(r, m) => {
+                self.select_rect(r, m, crate::selection::SelectionMode::Replace)
+            }
+            Action::CanvasSelectRect(r, m, selection_mode) => {
+                self.select_rect(r, m, selection_mode)
+            }
+            Action::SelectAll => self.select_all(),
             Action::Move(dx, dy) => self.numeric_move(&dx, &dy),
             Action::Align(mode) => self.align_selection(mode),
             Action::Distribute(axis) => self.distribute_selection(axis),

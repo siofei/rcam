@@ -80,6 +80,19 @@ pub(crate) fn commands() -> Vec<command::CommandDescriptor> {
         .filter(|c| c.id != ids::GRIP_CANCEL)
         .collect()
 }
+fn control_all(platform: Platform) -> Shortcut {
+    Shortcut::new(
+        if platform == Platform::MacOs {
+            Modifiers {
+                secondary: true,
+                ..Modifiers::NONE
+            }
+        } else {
+            Modifiers::PRIMARY
+        },
+        Key::Char('a'),
+    )
+}
 impl Config {
     pub fn defaults(platform: Platform) -> Self {
         let bindings = commands()
@@ -90,6 +103,16 @@ impl Config {
                 } else {
                     c.default_shortcut.into_iter().collect()
                 };
+                // Physical Control was explicitly requested on both platforms.
+                if c.id == ids::EDIT_SELECT_ALL && platform == Platform::MacOs {
+                    shortcuts = vec![Shortcut::new(
+                        Modifiers {
+                            secondary: true,
+                            ..Modifiers::NONE
+                        },
+                        Key::Char('a'),
+                    )];
+                }
                 if c.id == ids::EDIT_DELETE {
                     shortcuts.push(Shortcut::new(Modifiers::NONE, Key::Backspace));
                 }
@@ -115,6 +138,30 @@ impl Config {
             .iter()
             .find(|e| e.command_id == id.0)
             .expect("validated complete command snapshot")
+    }
+    pub fn source(&self) -> Platform {
+        match self.source_platform {
+            SourcePlatform::Macos => Platform::MacOs,
+            SourcePlatform::Windows => Platform::Windows,
+        }
+    }
+    /// Config identity stays unchanged; only this exact physical-Control
+    /// default transfers to the actual target keymap and its displayed hints.
+    pub fn effective_shortcuts(&self, entry: &Entry, platform: Platform) -> Vec<Shortcut> {
+        if entry.command_id == ids::EDIT_SELECT_ALL.0
+            && entry.shortcuts == [control_all(self.source())]
+        {
+            vec![control_all(platform)]
+        } else {
+            entry.shortcuts.clone()
+        }
+    }
+    pub fn default_shortcuts(&self, id: CommandId, platform: Platform) -> Vec<Shortcut> {
+        if id == ids::EDIT_SELECT_ALL {
+            vec![control_all(self.source())]
+        } else {
+            Config::defaults(platform).entry(id).shortcuts.clone()
+        }
     }
     pub fn replace(
         &self,
@@ -240,6 +287,7 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
         ));
     }
     let catalogue = commands();
+    let cross_platform = config.source_platform != SourcePlatform::for_platform(platform);
     if config.bindings.len() > catalogue.len() {
         return Err(Error::new("ResourceLimit", "命令条目超过目录数量"));
     }
@@ -267,7 +315,16 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
             ));
         }
         for (i, &s) in e.shortcuts.iter().enumerate() {
-            check_key(s, platform)?;
+            let portable_default = e.command_id == ids::EDIT_SELECT_ALL.0
+                && e.shortcuts == [control_all(config.source())];
+            check_key(
+                s,
+                if portable_default {
+                    config.source()
+                } else {
+                    platform
+                },
+            )?;
             if e.shortcuts[..i].contains(&s) {
                 return Err(Error::new(
                     "DuplicateEntry",
@@ -310,15 +367,27 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
     let mut missing = vec![];
     let mut default_conflicts = vec![];
     for mut entry in defaults.bindings {
+        if entry.command_id == ids::EDIT_SELECT_ALL.0 {
+            entry.shortcuts = vec![control_all(config.source())];
+        }
         if seen.contains(&entry.command_id) {
             continue;
         }
         missing.push(entry.command_id.clone());
-        if config
-            .bindings
-            .iter()
-            .any(|other| conflicts(&entry, other, &catalogue))
-        {
+        if config.bindings.iter().any(|other| {
+            conflicts(&entry, other, &catalogue)
+                || conflicts(
+                    &Entry {
+                        command_id: entry.command_id.clone(),
+                        shortcuts: config.effective_shortcuts(&entry, platform),
+                    },
+                    &Entry {
+                        command_id: other.command_id.clone(),
+                        shortcuts: config.effective_shortcuts(other, platform),
+                    },
+                    &catalogue,
+                )
+        }) {
             default_conflicts.push(entry.command_id.clone());
             entry.shortcuts.clear();
         }
@@ -327,12 +396,29 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
     config
         .bindings
         .sort_by(|a, b| a.command_id.cmp(&b.command_id));
+    // Reject both the original explicit conflicts (above) and any collision
+    // introduced when compiling a target-platform physical default.
+    let effective: Vec<_> = config
+        .bindings
+        .iter()
+        .map(|e| Entry {
+            command_id: e.command_id.clone(),
+            shortcuts: config.effective_shortcuts(e, platform),
+        })
+        .collect();
+    for (index, entry) in effective.iter().enumerate() {
+        for other in &effective[index + 1..] {
+            if conflicts(entry, other, &catalogue) {
+                return Err(Error::new("Conflict", "跨平台实际快捷键冲突；现有配置不变"));
+            }
+        }
+    }
     let mut bindings = vec![Binding {
         shortcut: Shortcut::new(Modifiers::NONE, Key::Escape),
         context: ShortcutContext::ObjectEdit,
         command: Some(ids::GRIP_CANCEL),
     }];
-    for e in &config.bindings {
+    for e in &effective {
         let c = catalogue
             .iter()
             .find(|c| c.id.0 == e.command_id)
@@ -345,7 +431,6 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
             });
         }
     }
-    let cross_platform = config.source_platform != SourcePlatform::for_platform(platform);
     Ok(Validated {
         config,
         keymap: Keymap::from_bindings(bindings),
@@ -475,7 +560,7 @@ mod tests {
     #[test]
     fn compatible_default_snapshot_and_aliases() {
         let v = validate(Config::defaults(Platform::MacOs), Platform::MacOs).unwrap();
-        assert_eq!(v.config.bindings.len(), 41);
+        assert_eq!(v.config.bindings.len(), commands().len());
         for id in INACTIVE_DEFAULTS {
             assert!(v.config.entry(id).shortcuts.is_empty());
         }
@@ -728,9 +813,19 @@ mod tests {
             .unwrap()
             .config;
         let bytes = cfg.bytes().unwrap();
+        let mut legacy = cfg.clone();
+        legacy
+            .bindings
+            .retain(|e| e.command_id != ids::EDIT_SELECT_ALL.0);
         assert_eq!(
-            bytes,
+            legacy.bytes().unwrap(),
             include_bytes!("../../../fixtures/synthetic/s5k1/default-shortcuts.json")
+        );
+        let migrated = decode(&legacy.bytes().unwrap(), Platform::MacOs).unwrap();
+        assert_eq!(migrated.missing, [ids::EDIT_SELECT_ALL.0]);
+        assert_eq!(
+            migrated.config.entry(ids::EDIT_SELECT_ALL),
+            cfg.entry(ids::EDIT_SELECT_ALL)
         );
         let read = decode(&bytes, Platform::MacOs).unwrap();
         assert_eq!(read.config.bytes().unwrap(), bytes);
@@ -741,7 +836,7 @@ mod tests {
                 .map(|e| &e.command_id)
                 .collect::<BTreeSet<_>>()
                 .len(),
-            41
+            commands().len()
         );
         assert!(overlap(ShortcutContext::Global, ShortcutContext::Canvas));
         assert!(!overlap(

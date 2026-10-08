@@ -173,9 +173,14 @@ fn i1_covered_selected_object_drag_and_modifiers_are_safe() {
         m.run(Action::ProbeDrag(MmPoint::new(0., 0.), c.tolerance(1.)));
         g.confirm(&m.view);
         g.update(pos2(220., 200.));
-        assert!(
-            g.release().is_none(),
-            "modifier-drag over object must neither edit nor cycle"
+        assert_eq!(g.delta, MmPoint::new(0., 0.));
+        let action = g.release().expect("modifier box from object hit");
+        assert!(matches!(action,Action::CanvasSelectRect(_,_,actual) if actual==mode));
+        m.run(action);
+        assert!(m.view.error.is_none());
+        assert_eq!(
+            m.view.selected, selected,
+            "zero-height Window contains no whole object"
         );
     }
     assert_eq!(m.view.info, after);

@@ -25,6 +25,8 @@ mod modal;
 mod perf_tests;
 #[cfg(test)]
 mod pmix_tests;
+#[cfg(test)]
+mod selection_input_tests;
 mod status_bar;
 use modal::ActiveModal;
 #[cfg(test)]
@@ -620,7 +622,11 @@ impl EditorApp {
         }
         let canvas_read = matches!(
             a,
-            Action::ProbeDrag(..) | Action::CanvasSelect(..) | Action::SelectRect(..)
+            Action::ProbeDrag(..)
+                | Action::CanvasSelect(..)
+                | Action::SelectRect(..)
+                | Action::CanvasSelectRect(..)
+                | Action::SelectAll
         );
         let canvas_probe = matches!(a, Action::ProbeDrag(..));
         if self.point_commit_blocked
@@ -893,6 +899,7 @@ impl EditorApp {
             | command_ids::FILE_SAVE_PROJECT_AS
             | command_ids::FILE_CLOSE_PROJECT => doc.is_some(),
             command_ids::FILE_EXPORT_GERBER => self.usable() && layer.is_some(),
+            command_ids::EDIT_SELECT_ALL => self.usable(),
             command_ids::EDIT_UNDO => doc.is_some_and(|d| d.undo_entries > 0),
             command_ids::EDIT_REDO => doc.is_some_and(|d| d.redo_entries > 0),
             command_ids::EDIT_DUPLICATE
@@ -1030,6 +1037,7 @@ impl EditorApp {
         self.command_entries(
             ui,
             &[
+                ("全选可选对象", command_ids::EDIT_SELECT_ALL),
                 ("原位复制", command_ids::EDIT_DUPLICATE),
                 ("删除对象", command_ids::EDIT_DELETE),
             ],
@@ -1297,6 +1305,15 @@ impl CommandDispatcher for EditorApp {
             return true;
         }
         match command {
+            command_ids::EDIT_SELECT_ALL => {
+                self.cancel_canvas_probe();
+                self.drag = None;
+                self.grip = None;
+                self.view.move_admission = None;
+                self.object_snap_runtime.reset();
+                self.send(Action::SelectAll);
+                true
+            }
             command_ids::EDIT_UNDO => {
                 self.send(Action::History(false));
                 true

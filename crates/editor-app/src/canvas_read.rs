@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 pub(crate) struct Pending {
     pub task: TaskContext,
     selection_identity: String,
+    project_id: Option<String>,
+    selected: crate::shared_snapshot::SnapshotVec<editor_service::ObjectInfo>,
     probe: bool,
     started: Instant,
     after_stop: Option<Transition>,
@@ -49,6 +51,8 @@ impl EditorApp {
         self.canvas_read = Some(Pending {
             task,
             selection_identity: crate::state::selection_geometry_identity(&self.view),
+            project_id: self.view.info.as_ref().map(|d| d.project_id.clone()),
+            selected: self.view.selected.ordered.clone(),
             probe,
             started: Instant::now(),
             after_stop: None,
@@ -70,7 +74,11 @@ impl EditorApp {
                 .task_receipt
                 .as_ref()
                 .is_some_and(|r| r.result_version == pending.task.input)
-            && pending.selection_identity == crate::state::selection_geometry_identity(&self.view);
+            && pending.selection_identity == crate::state::selection_geometry_identity(&self.view)
+            && pending.project_id.as_deref()
+                == self.view.info.as_ref().map(|d| d.project_id.as_str())
+            && pending.project_id.as_deref() == result.info.as_ref().map(|d| d.project_id.as_str())
+            && pending.selected.shares_storage(&self.view.selected.ordered);
         #[cfg(feature = "internal-evidence")]
         crate::native_a2::reply(id, identity);
         if !identity {
@@ -262,7 +270,7 @@ mod tests {
             run
         }
         fn update(&mut self, events: Vec<egui::Event>) {
-            let raw = egui::RawInput {
+            let mut raw = egui::RawInput {
                 focused: true,
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -271,6 +279,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
+            self.app.raw_input_hook(&self.ctx, &mut raw);
             let _ = self
                 .ctx
                 .run(raw, |ctx| self.app.update(ctx, &mut self.frame));
@@ -974,5 +983,165 @@ mod tests {
         assert!(r.app.view.move_admission.is_none());
         assert!(r.model.view.move_admission.is_none());
         assert!(weak.upgrade().is_none());
+    }
+    #[test]
+    fn select_all_and_modifier_box_use_serial_read_terminal_lane() {
+        for box_mode in [None, Some(SelectionMode::Add), Some(SelectionMode::Remove)] {
+            let mut run = Run::new();
+            let before = run.model.view.info.clone();
+            let action = box_mode.map_or(Action::SelectAll, |mode| {
+                Action::CanvasSelectRect(
+                    editor_core::BoundsMm {
+                        min_x_mm: -1.,
+                        min_y_mm: -1.,
+                        max_x_mm: 3.,
+                        max_y_mm: 1.,
+                    },
+                    editor_core::hit_test::SelectRectMode::Window,
+                    mode,
+                )
+            });
+            run.app.send(action);
+            assert!(run.app.selection_read_pending());
+            assert!(!run.app.busy);
+            run.app.send(Action::Move("1".into(), "0".into()));
+            assert!(run.app.ui_error.is_some());
+            let (id, _) = run.work();
+            run.reply(id);
+            assert!(!run.app.selection_read_pending());
+            assert!(!run.app.canvas_selection_unconfirmed);
+            assert_eq!(run.app.view.selected, run.model.view.selected);
+            assert_eq!(run.model.view.info, before);
+            run.drain_geometry();
+        }
+    }
+    #[test]
+    fn select_all_cancel_and_late_cancel_preserve_authoritative_terminal_set() {
+        for early in [true, false] {
+            let mut run = Run::new();
+            let original = run.model.view.selected.clone();
+            run.app.send(Action::SelectAll);
+            if early {
+                run.app
+                    .canvas_read
+                    .as_ref()
+                    .unwrap()
+                    .task
+                    .cancel_token
+                    .cancel();
+            }
+            let (id, task) = run.work();
+            if !early {
+                task.cancel_token.cancel();
+            }
+            run.reply(id);
+            assert!(!run.app.canvas_selection_unconfirmed);
+            assert_eq!(run.app.view.selected, run.model.view.selected);
+            if early {
+                assert!(
+                    original
+                        .ordered
+                        .shares_storage(&run.model.view.selected.ordered)
+                );
+            } else {
+                assert_eq!(run.app.view.selected.ordered.len(), 2);
+            }
+            run.drain_geometry();
+        }
+    }
+    #[test]
+    fn select_all_rejects_project_and_selection_snapshot_identity_changes() {
+        for change in ["project", "selection"] {
+            let mut run = Run::new();
+            run.app.send(Action::SelectAll);
+            let (id, _) = run.work();
+            if change == "project" {
+                run.app.view.info.as_mut().unwrap().project_id.push('x');
+            } else {
+                run.app.view.selected.ordered = Vec::new().into();
+            }
+            run.reply(id);
+            assert!(run.app.canvas_selection_unconfirmed);
+            assert!(run.app.view.blocked.is_some());
+            assert!(run.app.view.selected.ordered.is_empty());
+        }
+    }
+    #[test]
+    fn select_all_deferred_project_transition_waits_for_rollback_receipt() {
+        let mut run = Run::new();
+        let original = run.model.view.selected.clone();
+        run.app.send(Action::SelectAll);
+        assert!(run.app.defer_canvas_transition(Transition::Quit));
+        assert!(!run.app.close_prompt);
+        let (id, _) = run.work();
+        assert!(
+            original
+                .ordered
+                .shares_storage(&run.model.view.selected.ordered)
+        );
+        run.reply(id);
+        assert!(!run.app.selection_read_pending());
+        assert!(!run.app.canvas_selection_unconfirmed);
+        assert!(run.app.close_prompt && matches!(run.app.transition, Some(Transition::Quit)));
+    }
+    #[test]
+    fn actual_raw_control_a_queues_all_and_modifier_pointer_retains_press_mode() {
+        let mut run = Run::new();
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: editor_core::command::Platform::current()
+                == editor_core::command::Platform::Windows,
+            ..Default::default()
+        };
+        run.update(vec![egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: Some(egui::Key::A),
+            pressed: true,
+            repeat: false,
+            modifiers: ctrl,
+        }]);
+        assert!(run.app.selection_read_pending());
+        assert!(!run.app.busy);
+        let (id, _) = run.work();
+        run.reply(id);
+        run.drain_geometry();
+        assert_eq!(run.app.view.selected.ordered.len(), 2);
+        run.update(vec![egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: Some(egui::Key::A),
+            pressed: false,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        let p = run
+            .app
+            .camera
+            .screen(MmPoint::new(0., 0.), run.app.canvas_rect);
+        run.update(vec![
+            egui::Event::PointerMoved(p),
+            egui::Event::PointerButton {
+                pos: p,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::SHIFT,
+            },
+        ]);
+        let (id, _) = run.work();
+        // Modifier released before the late probe reply; original Shift intent owns release.
+        run.update(vec![egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: ctrl,
+        }]);
+        run.reply(id);
+        let (id, _) = run.work();
+        run.reply(id);
+        run.drain_geometry();
+        assert_eq!(run.app.view.selected.ordered.len(), 1);
+        assert_eq!(
+            run.app.view.selected.primary().unwrap().object.object_id,
+            "src-1::object-2"
+        );
     }
 }

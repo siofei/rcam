@@ -1911,3 +1911,7 @@ commit once and Undo/Redo exactly; history/work refusal must precede movement
 preview and mutate nothing, including after cancellation/stale input. New count
 ceiling is distinct from actual admission; default 64MiB history is preserved.
 CPU checks and Mac target compilation do not replace native input/frame checks.
+
+### S5 selection input follow-up candidate
+
+For R07/R09/R16/R17/R18 and AT-022/026/028/029/043/064/065/067/074/078/089, ordinary regressions and scope are defined in `S5_SELECTION_INPUT.md`/ADR0059. Check complete filtered All and stable identity/order, physical Ctrl mapping and text/IME/modal priority, both modifier box directions and click cycling, unchanged manufacturing/history, large no-op snapshot reuse, cancellable copy and authoritative stale/terminal/project-transition behavior. Actual Mac event delivery remains to be verified locally; this addendum introduces no new native performance gate and makes no completed native acceptance claim.

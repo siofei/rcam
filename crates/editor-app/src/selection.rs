@@ -44,23 +44,127 @@ impl SelectionSet {
             .iter()
             .any(|o| o.layer_id == layer && o.object.object_id == id)
     }
-    pub fn click(&mut self, object: Option<ObjectInfo>, mode: SelectionMode) {
-        if mode == SelectionMode::Replace {
-            self.ordered.clear();
-        }
-        if let Some(o) = object {
-            if let Some(i) = self
-                .ordered
-                .iter()
-                .position(|x| x.layer_id == o.layer_id && x.object.object_id == o.object.object_id)
-            {
-                if mode == SelectionMode::Remove {
-                    self.ordered.remove(i);
-                }
-            } else if mode != SelectionMode::Remove {
-                self.ordered.push(o);
+    /// Stable set operations on borrowed manufacturing objects. Geometry is
+    /// copied once only for a changed set; publication follows the last checkpoint.
+    pub fn apply_checked<'a>(
+        &mut self,
+        objects: impl IntoIterator<Item = (&'a str, &'a editor_core::SemanticObject)>,
+        mode: SelectionMode,
+        mut checkpoint: impl FnMut() -> Result<(), editor_service::ServiceError>,
+    ) -> Result<(), editor_service::ServiceError> {
+        use std::collections::HashSet;
+        checkpoint()?;
+        let mut incoming = HashSet::new();
+        let mut unique = Vec::new();
+        for (index, (layer, object)) in objects.into_iter().enumerate() {
+            if index % 256 == 0 {
+                checkpoint()?;
+            }
+            if incoming.insert((layer, object.object_id.as_str())) {
+                unique.push((layer, object));
             }
         }
+        let mut next = Vec::new();
+        match mode {
+            SelectionMode::Replace => {
+                let mut same = unique.len() == self.ordered.len();
+                if same {
+                    for (index, ((layer, object), old)) in
+                        unique.iter().zip(self.ordered.iter()).enumerate()
+                    {
+                        if index % 256 == 0 {
+                            checkpoint()?;
+                        }
+                        if *layer != old.layer_id || **object != old.object {
+                            same = false;
+                            break;
+                        }
+                    }
+                }
+                if same {
+                    return checkpoint();
+                }
+                for (index, (layer, object)) in unique.into_iter().enumerate() {
+                    if index % 256 == 0 {
+                        checkpoint()?;
+                    }
+                    next.push(ObjectInfo {
+                        layer_id: layer.into(),
+                        object: object.clone(),
+                    });
+                }
+            }
+            SelectionMode::Add => {
+                let mut old = HashSet::with_capacity(self.ordered.len());
+                for (index, o) in self.ordered.iter().enumerate() {
+                    if index % 256 == 0 {
+                        checkpoint()?;
+                    }
+                    old.insert((o.layer_id.as_str(), o.object.object_id.as_str()));
+                }
+                let mut additions = Vec::new();
+                for (index, (layer, object)) in unique.into_iter().enumerate() {
+                    if index % 256 == 0 {
+                        checkpoint()?;
+                    }
+                    if !old.contains(&(layer, object.object_id.as_str())) {
+                        additions.push((layer, object));
+                    }
+                }
+                if additions.is_empty() {
+                    return checkpoint();
+                }
+                for (index, o) in self.ordered.iter().enumerate() {
+                    if index % 256 == 0 {
+                        checkpoint()?;
+                    }
+                    next.push(o.clone());
+                }
+                for (index, (layer, object)) in additions.into_iter().enumerate() {
+                    if index % 256 == 0 {
+                        checkpoint()?;
+                    }
+                    next.push(ObjectInfo {
+                        layer_id: layer.into(),
+                        object: object.clone(),
+                    });
+                }
+            }
+            SelectionMode::Remove => {
+                let mut changed = false;
+                for (index, o) in self.ordered.iter().enumerate() {
+                    if index % 256 == 0 {
+                        checkpoint()?;
+                    }
+                    if incoming.contains(&(o.layer_id.as_str(), o.object.object_id.as_str())) {
+                        changed = true;
+                        break;
+                    }
+                }
+                if !changed {
+                    return checkpoint();
+                }
+                for (index, o) in self.ordered.iter().enumerate() {
+                    if index % 256 == 0 {
+                        checkpoint()?;
+                    }
+                    if !incoming.contains(&(o.layer_id.as_str(), o.object.object_id.as_str())) {
+                        next.push(o.clone());
+                    }
+                }
+            }
+        }
+        checkpoint()?;
+        self.ordered = next.into();
+        Ok(())
+    }
+    #[cfg(test)]
+    pub fn apply<'a>(
+        &mut self,
+        objects: impl IntoIterator<Item = (&'a str, &'a editor_core::SemanticObject)>,
+        mode: SelectionMode,
+    ) {
+        self.apply_checked(objects, mode, || Ok(())).unwrap();
     }
     pub fn ids(&self) -> Vec<&str> {
         self.ordered

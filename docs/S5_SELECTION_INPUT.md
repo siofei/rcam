@@ -1,0 +1,20 @@
+# S5 selection input follow-up
+
+This independently deliverable batch follows the Move resource admission candidate. It is source development, not native input acceptance.
+
+Scope: S5-M2 follow-up, R07/R09/R16/R17/R18; AT-022/026/028/029/043/064/065/067/074/078/089. Allowed changes: command catalogue and shortcut configuration, UI selection/gesture and serial read lane, synthetic regressions, design and acceptance addenda. No service mutation API, manufacturing geometry, renderer/shader, project schema or dependency change.
+
+## Input and selection behavior
+
+- `edit.select_all` uses physical Control+A on Windows and macOS. The actual app's logical keymap binds Primary+A on Windows and Secondary+A on macOS. Command+A is not silently substituted. Existing system text/IME focus and modal ownership take precedence; menu and shortcut invoke the same command.
+- Old shortcut schema v1 configurations acquire the missing command through existing migration. Explicit user bindings win if they conflict with its default. The historical 41-command fixture remains unchanged and verifies migration to the expanded catalogue. Cross-platform import transfers only this command's exact source default to target physical Ctrl+A; other/custom logical bindings keep their original semantics and validation. Explicit conflicts reject the whole import. Serialized source platform and bindings stay unchanged; only target keymap and UI hints show the physical default mapping, preserving exact default and custom logical-binding roundtrips.
+- All selects the complete accepted manufacturing snapshot, independent of viewport/render coverage. Order is current panel layer order followed by original exposure order. Visible, effective visibility/Solo, layer selectable and class visible/selectable filters match existing selection policy. Locks retain existing inspection selection; edit permissions remain authoritative in the service.
+- Physical Ctrl adds and Shift removes for both click and rectangle; Shift wins when both are held. Modes are captured at press. Modified dragging can start over an object and makes a selection rectangle, without arming Move/Grip. Left-to-right Window and right-to-left Crossing geometry retain existing service queries and the four physical-pixel gesture threshold. Ordinary Replace click cycling and Move remain intact.
+- Set operations deduplicate `(LayerId,ObjectId)`. Add keeps old order and appends newly selected objects; Remove preserves survivor order. Primary is the last object. Empty Add/Remove and unchanged All retain the shared selection Arc and selection epoch. Changed selections copy retained/new geometry once; scan/merge/copy checkpoints and a final checkpoint precede atomic installation.
+- All and modifier rectangles use the serial cancellable selection read lane. Pending selection blocks intersecting edits; legal terminal results synchronize authoritative selection before a deferred project transition. Task/version, selection epoch, strong immutable selection identity and independent project identity fence stale replies. No manufacturing revision, dirty state or Undo is created by selection.
+
+## Verification boundaries
+
+Ordinary synthetic CPU/egui regressions cover exact Mac/Windows logical keymap mapping, legacy binding migration/conflict, full selection and all filters, stable IDs/order/primary, 80k complete selection, no-op Arc reuse, modified drags from object hits, direction and empty selection, copy cancellation, terminal/late cancellation, stale project/snapshot and deferred transitions, plus existing I1/canvas/drag and text-focus regressions.
+
+Mac physical input and ordinary native validation are handed to the local task. Cloud synthetic egui events and locked dependency source mapping are not evidence of actual macOS event delivery, nor a native cancellation latency certification. This batch introduces no new native performance acceptance requirement. Command-follow-pointer/click-place Move is a subsequent independent batch.

@@ -88,13 +88,11 @@ pub(crate) fn hint(ui: &egui::Ui, id: CommandId) -> String {
         .unwrap_or_else(|| {
             crate::shortcut_config::Config::defaults(editor_core::command::Platform::current())
         });
-    if hint.entry(id).shortcuts.is_empty() {
+    let keys = hint.effective_shortcuts(hint.entry(id), editor_core::command::Platform::current());
+    if keys.is_empty() {
         String::new()
     } else {
-        crate::shortcut_settings::display_keys(
-            &hint.entry(id).shortcuts,
-            editor_core::command::Platform::current(),
-        )
+        crate::shortcut_settings::display_keys(&keys, editor_core::command::Platform::current())
     }
 }
 fn effective_label(ui: &egui::Ui, id: CommandId, checked: bool) -> String {

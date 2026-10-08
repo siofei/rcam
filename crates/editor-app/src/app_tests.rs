@@ -1942,8 +1942,8 @@ fn modifier_click_gestures_preserve_press_intent_without_starting_move() {
                 assert!(matches!(released,Some(Action::CanvasSelect(_,mode)) if mode==expected));
             } else {
                 assert!(
-                    released.is_none(),
-                    "ADR0054: modifier movement beyond threshold does not edit or advance selection"
+                    matches!(released, Some(Action::CanvasSelectRect(_, _, mode)) if mode == expected),
+                    "ADR0059: modifier movement creates a set-operation box, never a Move"
                 );
             }
             assert_eq!(m.view.info, before);

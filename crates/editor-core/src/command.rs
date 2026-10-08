@@ -26,6 +26,7 @@ pub mod ids {
     pub const FILE_CLOSE_PROJECT: CommandId = CommandId("file.close_project");
     pub const EDIT_UNDO: CommandId = CommandId("edit.undo");
     pub const EDIT_REDO: CommandId = CommandId("edit.redo");
+    pub const EDIT_SELECT_ALL: CommandId = CommandId("edit.select_all");
     pub const EDIT_DELETE: CommandId = CommandId("edit.delete");
     pub const EDIT_DUPLICATE: CommandId = CommandId("edit.duplicate");
     pub const OBJECT_MOVE: CommandId = CommandId("object.move");
@@ -284,6 +285,13 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
             C::Edit,
             Some(Shortcut::new(Modifiers::PRIMARY_SHIFT, ch('z'))),
             X::Global,
+        ),
+        d(
+            ids::EDIT_SELECT_ALL,
+            "全选可选对象",
+            C::Edit,
+            Some(Shortcut::new(Modifiers::PRIMARY, ch('a'))),
+            X::Canvas,
         ),
         d(
             ids::EDIT_DELETE,
