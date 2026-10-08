@@ -273,3 +273,7 @@ S4-D1 is PASS (Mac-first bounded). Candidate implementation acceptance, native a
 ### S4-D2 RefDes-assisted manufacturing candidate selection (PASS, Mac-first bounded; 2026-10-02)
 
 S4-D2 is PASS (Mac-first bounded; 2026-10-02). Registered component-local rectangle queries use explicit Gerber layers and shared f64 WorldIndex, preserve Dark/Clear and object type, aggregate whole text groups and atomic blocks, and provide deterministic revision-fenced bounded pages. Candidate != Association, final Boolean opening or footprint ownership. GUI highlight/focus/Replace/Add selection are transient and follow existing permissions/edit paths. No project schema change, footprint guess or persistent link. See S4_D2_PLAN, S4_D2_ACCEPTANCE_ADDENDUM, S4_D2_REVIEW and ADR0047 (0043 was occupied by D1 input compatibility). Windows/full V1/CORE10/P100K deferred. Stop after D2.
+
+## 用户增补计划（2026-10-08）
+
+统一图形编辑器、定义编辑、阵列与稳定布局、选择/锁定/配色、轮廓节点、保存和后续兼容的确认规则、待决策项与阶段验收见 [编辑体验与制造几何增补开发计划](USER_EDITOR_DEVELOPMENT_PLAN_20261008.md)。这是后续工作计划，不改变各历史阶段的证据或 PASS 范围。
