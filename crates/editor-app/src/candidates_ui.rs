@@ -94,7 +94,7 @@ impl Model {
         let mut selected = if add {
             self.view.selected.ordered.clone()
         } else {
-            vec![]
+            Default::default()
         };
         let mut seen: HashSet<_> = selected
             .iter()

@@ -120,11 +120,17 @@ pub fn create_targets(view: &View) -> Result<(String, Vec<String>), String> {
         .iter()
         .find(|l| l.id == first.layer_id)
         .ok_or("图层不存在")?;
+    let selected: std::collections::HashSet<_> = view
+        .selected
+        .ordered
+        .iter()
+        .map(|o| (o.layer_id.as_str(), o.object.object_id.as_str()))
+        .collect();
     let positions: Vec<_> = layer
         .objects
         .iter()
         .enumerate()
-        .filter(|(_, o)| view.selected.contains(&layer.id, &o.object_id))
+        .filter(|(_, o)| selected.contains(&(layer.id.as_str(), o.object_id.as_str())))
         .map(|(i, _)| i)
         .collect();
     if positions.windows(2).any(|p| p[1] != p[0] + 1) {

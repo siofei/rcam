@@ -504,7 +504,7 @@ fn c_status_single_aperture_and_block_descriptions_are_preserved() {
         .find(|item| matches!(item.object.geometry, SemanticGeometry::Flash { .. }))
         .unwrap()
         .clone();
-    m.view.selected.ordered = vec![flash];
+    *m.view.selected.ordered = vec![flash];
     let aperture = status_bar::fields(&m.view, crate::tools::DisplayUnit::Millimeter, 0.0001);
     assert!(aperture.selection.starts_with("光圈 "));
     assert!(!aperture.selection.contains("选中"));

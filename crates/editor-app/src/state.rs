@@ -23,11 +23,11 @@ pub struct View {
     pub selection_geometry: Option<Arc<SelectionCentersResult>>,
     pub selection_geometry_identity: String,
     pub selection_geometry_error: Option<String>,
-    pub metrics: Vec<MetricsItem>,
+    pub metrics: crate::shared_snapshot::SnapshotVec<MetricsItem>,
     pub metrics_error: Option<String>,
     pub info: Option<DocumentInfo>,
-    pub layers: Vec<LayerInfo>,
-    pub apertures: Vec<editor_core::ApertureDefinition>,
+    pub layers: crate::shared_snapshot::SnapshotVec<LayerInfo>,
+    pub apertures: crate::shared_snapshot::SnapshotVec<editor_core::ApertureDefinition>,
     pub block_cache_stats: (usize, usize),
     pub definition_centers: Option<Arc<crate::point_adapter::DefinitionReply>>,
     pub point_preview: Option<Arc<crate::point_transform::Preview>>,
@@ -809,7 +809,7 @@ impl Model {
             );
         }
         phase = std::time::Instant::now();
-        self.view.layers = layers;
+        self.view.layers = layers.into();
         if display_changed && !geometry {
             self.view.bounds = self.service.visible_bounds(&id)?.bounds;
         }
@@ -830,7 +830,7 @@ impl Model {
                 .snapshot
                 .as_deref()
                 .and_then(|old| crate::world_index::changed_objects(&snapshot, old));
-            self.view.apertures = snapshot.apertures.clone();
+            self.view.apertures = snapshot.apertures.clone().into();
             self.view.block_definitions = snapshot.block_definitions.clone();
             self.view.block_counts.clear();
             for object in snapshot.layers.iter().flat_map(|l| &l.objects) {
@@ -904,7 +904,7 @@ impl Model {
             .collect();
         let classifier = Classifier::new(&self.view.layers, &self.view.apertures);
         selected.retain(|o| classifier.visible(o));
-        self.view.selected.ordered = selected;
+        self.view.selected.ordered = selected.into();
         if display_changed {
             self.rebuild_changed(if styles_changed {
                 None
@@ -1089,7 +1089,7 @@ impl Model {
                 }
             }
             match mode {
-                crate::selection::SelectionMode::Replace => selection.ordered = objects,
+                crate::selection::SelectionMode::Replace => selection.ordered = objects.into(),
                 crate::selection::SelectionMode::Add => {
                     let mut existing: std::collections::HashSet<_> = selection
                         .ordered
@@ -1297,7 +1297,7 @@ impl Model {
                 });
             }
         }
-        self.view.selected.ordered = selected;
+        self.view.selected.ordered = selected.into();
         Ok(())
     }
     pub(crate) fn edit_groups(&self) -> Result<Vec<SelectionGroup>, ServiceError> {
@@ -2194,7 +2194,7 @@ impl Model {
                         }
                     }
                 }
-                self.view.selected.ordered = selected;
+                self.view.selected.ordered = selected.into();
                 self.view.message = if duplicate {
                     "已原位复制，可拖动副本"
                 } else {

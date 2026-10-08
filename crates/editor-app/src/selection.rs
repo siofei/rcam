@@ -19,7 +19,7 @@ impl SelectionMode {
 }
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct SelectionSet {
-    pub ordered: Vec<ObjectInfo>,
+    pub ordered: crate::shared_snapshot::SnapshotVec<ObjectInfo>,
 }
 impl SelectionSet {
     pub fn groups(&self) -> Vec<editor_service::SelectionGroup> {

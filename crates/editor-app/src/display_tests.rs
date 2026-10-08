@@ -47,7 +47,7 @@ fn fixture(name: &str) -> (RenderSnapshot, Vec<LayerInfo>) {
         .service
         .render_snapshot(&m.view.info.as_ref().unwrap().document_id)
         .unwrap();
-    (s, m.view.layers)
+    (s, m.view.layers.to_vec())
 }
 
 #[test]
@@ -448,7 +448,7 @@ fn block_fixture() -> (RenderSnapshot, Vec<LayerInfo>, Vec<String>) {
         .collect();
     assert_eq!(object_ids.len(), 2, "the original instance + the new one");
     let s = m.service.render_snapshot(&doc_id).unwrap();
-    (s, m.view.layers.clone(), object_ids)
+    (s, m.view.layers.to_vec(), object_ids)
 }
 #[test]
 fn block_instance_resolves_display_across_modes_color_and_selection() {

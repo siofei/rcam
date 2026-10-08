@@ -63,6 +63,8 @@ mod s5m1_tests;
 #[cfg(test)]
 mod s5m2_tests;
 mod selection;
+mod selection_presentation;
+mod shared_snapshot;
 mod shortcut_config;
 mod shortcut_settings;
 mod shortcut_store;
@@ -284,6 +286,7 @@ struct EditorApp {
     timing: bool,
     selected_flags: std::sync::Arc<Vec<u32>>,
     uniform_validation: UniformValidationCache,
+    selection_presentation: selection_presentation::Cache,
     prepare_work: gpu::PrepareWorkCache,
     last_frame: Instant,
     text_input_at_event: bool,
@@ -569,6 +572,7 @@ impl EditorApp {
             layer_panel_rect: egui::Rect::NOTHING,
             selected_flags: Default::default(),
             uniform_validation: Default::default(),
+            selection_presentation: Default::default(),
             prepare_work: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
             last_frame: Instant::now(),
@@ -878,7 +882,7 @@ impl EditorApp {
             return false;
         }
         let doc = self.view.info.as_ref();
-        let editable = self.usable() && drag::editable_selection(&self.view);
+        let editable = self.usable() && self.selection_presentation.editable(&self.view);
         match command {
             command_ids::FILE_NEW
             | command_ids::FILE_NEW_PROJECT
@@ -897,7 +901,7 @@ impl EditorApp {
             | command_ids::OBJECT_ROTATE
             | command_ids::OBJECT_MIRROR => editable,
             command_ids::OBJECT_ARRAY_RECTANGULAR => {
-                self.usable() && array_ui::eligible(&self.view)
+                self.usable() && self.selection_presentation.array(&self.view)
             }
             command_ids::OBJECT_ALIGN_LEFT
             | command_ids::OBJECT_ALIGN_RIGHT
@@ -905,10 +909,14 @@ impl EditorApp {
             | command_ids::OBJECT_ALIGN_BOTTOM
             | command_ids::OBJECT_ALIGN_HCENTER
             | command_ids::OBJECT_ALIGN_VCENTER => {
-                self.usable() && state::arrangement_eligibility(&self.view).align
+                self.usable() && self.selection_presentation.arrangement(&self.view).align
             }
             command_ids::OBJECT_DISTRIBUTE_HORIZONTAL | command_ids::OBJECT_DISTRIBUTE_VERTICAL => {
-                self.usable() && state::arrangement_eligibility(&self.view).distribute
+                self.usable()
+                    && self
+                        .selection_presentation
+                        .arrangement(&self.view)
+                        .distribute
             }
             command_ids::VIEW_FIT => self.view.scene.is_some(),
             command_ids::VIEW_FIT_ACTIVE_LAYER
@@ -922,7 +930,7 @@ impl EditorApp {
             | command_ids::TOOL_MEASURE => true,
             command_ids::TOOL_TEXT => self.usable(),
             command_ids::BLOCK_CREATE => {
-                self.usable() && block_ui::create_targets(&self.view).is_ok()
+                self.usable() && self.selection_presentation.block(&self.view)
             }
             command_ids::BLOCK_EXPLODE | command_ids::BLOCK_TRANSFORM => {
                 editable && self.selected_instance().is_some()
@@ -1642,6 +1650,7 @@ impl eframe::App for EditorApp {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
+            self.selection_presentation.synchronize(&self.view);
             if changed && self.view.error.is_none() {
                 self.canvas_selection_unconfirmed = false;
             }
@@ -1761,6 +1770,7 @@ impl eframe::App for EditorApp {
             self.last_structure_serial = self.view.structure_serial;
             self.accept_gerber_import_reply(id);
         }
+        self.selection_presentation.synchronize(&self.view);
         if self
             .view
             .info
@@ -2535,7 +2545,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                     ));
                     ui.label("Ctrl 点击加选，Shift 点击减选；空白处拖框：左→右包含，右→左相交");
                     if !self.view.selected.ordered.is_empty()
-                        && !drag::editable_selection(&self.view)
+                        && !self.selection_presentation.editable(&self.view)
                     {
                         ui.label("选择含锁定或不可编辑对象：整组编辑禁止（仅可查看）");
                     }
@@ -2554,7 +2564,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                     if self.tool==tools::ActiveTool::Select && let Ok(features)=grip::features(&self.view) {
                         ui.menu_button("Grip 目标点…",|ui|{for feature in features {if ui.button(format!("{:?}",feature.id)).clicked(){self.open_point_adapter(point_adapter::Adapter::Grip(feature.id),feature.position_mm);ui.close();}}});
                     }
-                    for line in metrics_panel::lines(
+                    for line in self.selection_presentation.metric_lines(
                         &self.view,
                         self.display_unit,
                         self.precision().resolution_mm,

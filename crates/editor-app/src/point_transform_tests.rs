@@ -276,7 +276,7 @@ fn common_world_mirror_preview_and_commit_reverse_arc_direction_keep_radius() {
     let snapshot = m.view.snap_snapshot.as_ref().unwrap();
     let id = snapshot.layers[0].objects[0].object_id.clone();
     let doc = m.view.info.as_ref().unwrap().document_id.clone();
-    m.view.selected.ordered = vec![
+    *m.view.selected.ordered = vec![
         m.service
             .objects_get(
                 &doc,
@@ -308,7 +308,7 @@ fn common_world_mirror_preview_and_commit_reverse_arc_direction_keep_radius() {
 #[test]
 fn numeric_grip_keeps_opposite_edge_and_commits_its_shown_preview_once() {
     let mut m = model();
-    m.view.selected.ordered = vec![m.view.selected.ordered.last().unwrap().clone()];
+    *m.view.selected.ordered = vec![m.view.selected.ordered.last().unwrap().clone()];
     m.run(Action::SetActiveLayer(Some(
         m.view.selected.ordered[0].layer_id.clone(),
     )));

@@ -376,7 +376,7 @@ impl NativeBench {
                         .push("Crossing selection did not select P1K".into());
                 }
                 self.tools_records.push(json!({"phase":"crossing_selection","selected":app.view.selected.ordered.len(),"info":app.view.info}));
-                self.baseline = app.view.selected.ordered.clone();
+                self.baseline = app.view.selected.ordered.to_vec();
                 self.save(app, "baseline.gbr");
                 self.enter(3);
             }

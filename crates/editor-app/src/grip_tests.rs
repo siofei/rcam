@@ -23,7 +23,7 @@ fn fixture() -> Model {
     std::fs::remove_file(path).unwrap();
     let info = model.view.info.as_ref().unwrap();
     let snapshot = model.service.render_snapshot(&info.document_id).unwrap();
-    model.view.selected.ordered = vec![ObjectInfo {
+    *model.view.selected.ordered = vec![ObjectInfo {
         layer_id: snapshot.layers[0].id.clone(),
         object: snapshot.layers[0].objects[0].clone(),
     }];

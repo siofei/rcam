@@ -82,6 +82,7 @@ impl EditorApp {
                 self.ui_error = self.view.blocked.clone();
             }
             self.drag = None;
+            self.selection_presentation.synchronize(&self.view);
             return true;
         }
         if pending.probe {
@@ -124,6 +125,7 @@ impl EditorApp {
                 self.begin_transition(transition);
             }
         }
+        self.selection_presentation.synchronize(&self.view);
         true
     }
 
@@ -775,5 +777,81 @@ mod tests {
         let (id, _) = run.work();
         run.reply(id);
         assert!(run.app.canvas_read.is_none() && run.app.view.selected.ordered.is_empty());
+    }
+    #[test]
+    fn presentation_cache_respects_cancelled_and_stale_selection_replies() {
+        for stale in [false, true] {
+            let mut run = Run::new();
+            run.selection(MmPoint::new(0., 0.));
+            let (id, _) = run.work();
+            assert!(run.app.consume_canvas_reply(id, &run.model.view));
+            run.drain_geometry();
+            let before = run.app.view.selected.clone();
+            assert!(run.app.selection_presentation.editable(&run.app.view));
+            let _ = run.app.selection_presentation.metric_lines(
+                &run.app.view,
+                crate::tools::DisplayUnit::Millimeter,
+                0.0001,
+            );
+            run.selection(MmPoint::new(2., 0.));
+            if !stale {
+                run.app
+                    .canvas_read
+                    .as_ref()
+                    .unwrap()
+                    .task
+                    .cancel_token
+                    .cancel();
+            }
+            let (id, _) = run.work();
+            if stale {
+                run.model
+                    .view
+                    .task_receipt
+                    .as_mut()
+                    .unwrap()
+                    .result_version
+                    .workspace_revision = Some("stale".into());
+            }
+            assert!(run.app.consume_canvas_reply(id, &run.model.view));
+            assert_eq!(run.app.view.selected, before);
+            assert_eq!(
+                run.app.selection_presentation.editable(&run.app.view),
+                crate::drag::editable_selection(&run.app.view)
+            );
+            assert_eq!(
+                run.app.selection_presentation.metric_lines(
+                    &run.app.view,
+                    crate::tools::DisplayUnit::Millimeter,
+                    0.0001
+                ),
+                crate::metrics_panel::lines(
+                    &run.app.view,
+                    crate::tools::DisplayUnit::Millimeter,
+                    0.0001
+                )
+            );
+            if stale {
+                assert!(!run.app.command_enabled(ids::OBJECT_MOVE));
+            }
+        }
+    }
+    #[test]
+    fn actual_close_retires_cached_manufacturing_snapshot_before_ui_queries() {
+        let mut run = Run::new();
+        run.selection(MmPoint::new(0., 0.));
+        let (id, _) = run.work();
+        run.reply(id);
+        run.drain_geometry();
+        assert!(run.app.selection_presentation.editable(&run.app.view));
+        let weak = std::sync::Arc::downgrade(run.app.view.snap_snapshot.as_ref().unwrap());
+        run.app.send(Action::Close(true));
+        let (id, _) = run.work();
+        run.reply(id);
+        assert!(run.app.view.info.is_none());
+        assert!(
+            weak.upgrade().is_none(),
+            "closed snapshot must not be retained behind usable/empty-selection guards"
+        );
     }
 }

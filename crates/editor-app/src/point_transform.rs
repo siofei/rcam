@@ -317,7 +317,7 @@ impl Model {
                 )?);
             }
         }
-        self.view.selected.ordered = selected;
+        self.view.selected.ordered = selected.into();
         self.refresh(true)?;
         self.view.message = "已通过共同基点提交一次原子变换".into();
         Ok(())
