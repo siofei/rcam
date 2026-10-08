@@ -59,6 +59,8 @@ pub struct View {
     pub layer_summary: Option<LayerSummaryResult>,
     /// The last successful batch import, for the diagnostics summary.
     pub import: Option<ImportLayersResult>,
+    /// The worker request whose import committed, including a later refresh failure.
+    pub import_committed_task: Option<u64>,
     /// The layer removed by the last `Action::RemoveLayer` (drives the Undo toast).
     pub removed: Option<RemoveLayerResult>,
     /// Bumped whenever a layer was created or imported; the UI fits/refocuses on it.
@@ -1712,6 +1714,8 @@ impl Model {
     pub(crate) fn run_task(&mut self, task: editor_service::task::TaskContext, action: Action) {
         use editor_service::task::{TaskReceipt, TaskState};
         let before = self.view.clone();
+        self.view.import = None;
+        self.view.import_committed_task = None;
         let old_viewport = self.viewport;
         let old_ppm = self.ppm;
         let readonly = matches!(
@@ -1749,6 +1753,9 @@ impl Model {
             }
             self.active_cancel = Some(task.cancel_token.clone());
             self.run(action);
+            if cancellable_import && self.view.import.is_some() {
+                self.view.import_committed_task = Some(task.task_id);
+            }
             if (readonly || (cancellable_import && self.view.error.is_none()))
                 && task.cancel_token.state() != TaskState::Committing
             {
@@ -1809,6 +1816,7 @@ impl Model {
         self.view.text_reply = None;
         self.view.layer_summary = None;
         self.view.import = None;
+        self.view.import_committed_task = None;
         self.view.removed = None;
         self.view.focus_bounds = None;
         let result = (|| match action {

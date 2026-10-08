@@ -13,6 +13,102 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
+#[test]
+fn default_history_payload_limit_rejects_atomic_batch_but_same_files_import_separately() {
+    const OBJECTS_PER_FILE: usize = 80_000;
+    const FILES: usize = 4;
+    let dir = temp_dir("single-file-history-budget");
+    let mut source = String::from("%FSLAX36Y36*%\n%MOMM*%\n%ADD10C,1*%\nD10*\n");
+    use std::fmt::Write;
+    for i in 0..OBJECTS_PER_FILE {
+        writeln!(
+            source,
+            "X{}Y{}D03*",
+            (i % 1000) * 1_000_000,
+            (i / 1000) * 1_000_000
+        )
+        .unwrap();
+    }
+    source.push_str("M02*\n");
+    assert!(source.len() * FILES < MAX_IMPORT_BATCH_BYTES);
+    let paths: Vec<_> = (0..FILES)
+        .map(|i| dir.join(format!("synthetic-{i}.gbr")))
+        .collect();
+    assert!(paths.len() < MAX_IMPORT_FILES);
+    assert!(OBJECTS_PER_FILE * paths.len() < editor_core::edit::MAX_EDIT_DOCUMENT_OBJECTS);
+    for path in &paths {
+        std::fs::write(path, &source).unwrap();
+    }
+    let root = dir.canonicalize().unwrap();
+    let mut service = ApplicationService::with_file_access(FileAccessPolicy::new(
+        &root,
+        [root.clone()],
+        [root.clone()],
+    ));
+    let first = service.document_new().unwrap();
+    let before = service.render_snapshot(&first.document_id).unwrap();
+    let error = service
+        .import_gerber_layers(
+            &first.document_id,
+            &first.revision,
+            ImportGerberLayersParams {
+                paths: paths.iter().map(|p| p.to_str().unwrap().into()).collect(),
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "RESOURCE_LIMIT");
+    assert_eq!(
+        error.details["max_history_bytes"],
+        editor_core::edit::MAX_HISTORY_BYTES
+    );
+    assert_eq!(service.document_get(&first.document_id).unwrap(), first);
+    assert_eq!(service.render_snapshot(&first.document_id).unwrap(), before);
+    for (i, path) in paths.iter().enumerate() {
+        let current = service.document_get(&first.document_id).unwrap();
+        let result = service
+            .import_gerber_layers(
+                &first.document_id,
+                &current.revision,
+                ImportGerberLayersParams {
+                    paths: vec![path.to_str().unwrap().into()],
+                },
+            )
+            .unwrap();
+        assert_eq!(result.layers[0].object_count, OBJECTS_PER_FILE);
+        assert_eq!(result.layers[0].source_id, format!("src-{}", i + 1));
+        let after = service.document_get(&first.document_id).unwrap();
+        assert_eq!(after.revision, (i + 1).to_string());
+        assert_eq!(after.undo_entries, i + 1);
+        assert_eq!(after.history_truncated_entries, 0);
+        assert_eq!(after.layer_ids.len(), i + 1);
+        assert_eq!(std::fs::read(path).unwrap(), source.as_bytes());
+    }
+    let imported = service.document_get(&first.document_id).unwrap();
+    let undone = service
+        .history_undo(&first.document_id, &imported.revision)
+        .unwrap();
+    assert_eq!(
+        service
+            .document_get(&first.document_id)
+            .unwrap()
+            .layer_ids
+            .len(),
+        FILES - 1
+    );
+    service
+        .history_redo(&first.document_id, &undone.revision)
+        .unwrap();
+    assert_eq!(
+        service
+            .document_get(&first.document_id)
+            .unwrap()
+            .layer_ids
+            .len(),
+        FILES
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 const A: &str = "G04 A*
 %FSLAX26Y26*%
 %MOMM*%

@@ -19,6 +19,10 @@ impl EditorApp {
         // A second drop must not replace the intent awaiting save/discard/cancel
         // or mutate the document underneath that confirmation.
         if self.busy
+            || self
+                .gerber_import
+                .as_ref()
+                .is_some_and(|queue| queue.active())
             || self.transition.is_some()
             || self.close_prompt
             || self.waiting_save
@@ -43,7 +47,7 @@ impl EditorApp {
             }
             self.begin_transition(Transition::Open(paths.into_iter().next().unwrap()));
         } else {
-            self.send(Action::ImportGerbers(paths));
+            self.start_gerber_import(paths);
         }
     }
 
@@ -70,6 +74,13 @@ impl EditorApp {
     }
 
     pub(crate) fn begin_transition(&mut self, transition: Transition) {
+        if let Some(queue) = self.gerber_import.as_mut().filter(|q| q.active()) {
+            queue.defer_transition(transition);
+            if let Some(task) = &self.pending_task {
+                task.cancel_token.cancel();
+            }
+            return;
+        }
         self.modal = None;
         self.text.cancel();
         self.tool = tools::ActiveTool::Select;
@@ -457,13 +468,14 @@ mod drop_tests {
     }
 
     #[test]
-    fn gerber_only_drop_preserves_order_and_existing_import_action() {
+    fn gerber_only_drop_starts_sequential_import_in_input_order() {
         let (mut app, requests) = app(true);
         let paths = vec![PathBuf::from("中文 # layer.gbx"), "other.custom".into()];
         app.drop_files(paths.clone());
         assert!(
-            matches!(requests.try_recv().unwrap().2, Action::ImportGerbers(actual) if actual == paths)
+            matches!(requests.try_recv().unwrap().2, Action::ImportGerbers(actual) if actual == paths[..1])
         );
         assert!(app.busy && !app.close_prompt && app.transition.is_none());
+        assert!(app.gerber_import.as_ref().unwrap().active());
     }
 }

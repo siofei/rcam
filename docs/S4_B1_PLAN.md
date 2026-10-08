@@ -5,6 +5,17 @@ Mac-first，2026-09-21。任务书：`RCam_MAC_FIRST_S4B1_MULTI_GERBER_WORKSPACE
 [ADR 0030](adr/0030-reusable-blocks-and-forward-reservations.md)（Block/Snap/Command/Board 长期预留）。
 证据与状态见 [S4_B1_REVIEW](S4_B1_REVIEW.md)。Windows deferred / not executed。
 
+## GUI 顺序导入修复
+
+阶段 S4-B1 导入局部修复，基于 S4-B3 单工程拖放分派修复；R02/R07/R11/R15/R16/R20/R21/R22，
+AT-005/041/060/064/065/086/093/094。允许修改 `editor-app` 导入队列／进度／任务结果标识、
+现有 `editor-service` 集成回归与本计划／DESIGN；服务原子批次 API、历史与制造预算不变。
+GUI 多选和 Gerber-only 拖放逐文件提交，普通文件失败汇总后继续，取消保留成功；确认中工程拖放保护不变。
+队列每次使用已接受回复的新 TaskVersion，提交结果绑定 task_id；显示刷新失败标为已导入并停止，不自动重试。
+按输入顺序逐层导入，新层在顶部，等同手工逐层操作。合成 Flash 回归需在默认 64 MiB 预算下证明
+原子批次失败无变更、相同文件单独成功并有独立 Undo，不使用用户设计或降低／提高限额。
+Mac GUI／真实目录／闪烁仍需原生验证，此源码提交不复用旧原生证据或声明通过。
+
 ## 范围（允许修改：editor-core、editor-service、editor-app、scripts/package_release*、文档）
 
 - **Gate 0**：`system.capabilities` 与实际 operation 一致（含 `document.set_manufacturing_precision`）；

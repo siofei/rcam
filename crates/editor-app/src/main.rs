@@ -11,6 +11,7 @@ mod display;
 mod display_tests;
 mod drag;
 mod font_catalog;
+mod gerber_import;
 mod gpu;
 mod grip;
 mod interaction;
@@ -180,6 +181,7 @@ struct EditorApp {
         editor_service::task::TaskContext,
     )>,
     pending_task: Option<editor_service::task::TaskContext>,
+    gerber_import: Option<gerber_import::ImportQueue>,
     viewport_task: Option<editor_service::task::TaskContext>,
     geometry_task: Option<editor_service::task::TaskContext>,
     geometry_context: Option<String>,
@@ -467,6 +469,7 @@ impl EditorApp {
             diagnostic_export: None,
             tx,
             pending_task: None,
+            gerber_import: None,
             viewport_task: None,
             geometry_task: None,
             geometry_context: None,
@@ -572,6 +575,14 @@ impl EditorApp {
         app
     }
     fn send(&mut self, a: Action) {
+        // The import controller takes its queue while sending its own next file.
+        if self
+            .gerber_import
+            .as_ref()
+            .is_some_and(|queue| queue.active())
+        {
+            return;
+        }
         if self.point_commit_blocked
             && matches!(
                 &a,
@@ -752,6 +763,10 @@ impl EditorApp {
     }
     fn command_context_blocked(&self) -> bool {
         self.busy
+            || self
+                .gerber_import
+                .as_ref()
+                .is_some_and(|queue| queue.active())
             || self.shortcuts.loading
             || self.shortcuts.open
             || self.modal.is_some()
@@ -1445,7 +1460,20 @@ impl eframe::App for EditorApp {
         }
         self.last_frame = now;
 
-        let mut reply = self.rx.try_recv().ok();
+        let mut reply = match self.rx.try_recv() {
+            Ok(reply) => Some(reply),
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                if self.gerber_import.as_ref().is_some_and(|q| q.active()) {
+                    self.stop_gerber_import(
+                        "后台连接已关闭；当前文件结果未确认，请检查图层后再操作",
+                    );
+                    self.busy = false;
+                    self.pending_task = None;
+                }
+                None
+            }
+        };
         if let Some((id, view)) = &reply
             && self
                 .geometry_task
@@ -1486,6 +1514,7 @@ impl eframe::App for EditorApp {
         {
             // Release only this request's busy state; never install a stale snapshot.
             self.ui_error = Some("后台结果身份已失效，结果未安装".into());
+            self.reject_gerber_import_reply(*id, view);
             self.busy = false;
             self.pending_task = None;
             self.viewport_sequence = None;
@@ -1627,6 +1656,7 @@ impl eframe::App for EditorApp {
                 self.camera.fit(Some(bounds), self.canvas_rect);
             }
             self.last_structure_serial = self.view.structure_serial;
+            self.accept_gerber_import_reply(id);
         }
         if self
             .view
@@ -1651,7 +1681,7 @@ impl eframe::App for EditorApp {
         }
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            if !self.busy {
+            if !self.busy || self.gerber_import.as_ref().is_some_and(|q| q.active()) {
                 self.close(true);
             }
         }
@@ -2198,6 +2228,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                                 #[cfg(feature = "internal-evidence")]
                                 if let Some(run) = &mut self.a2 { run.cancel_rect = response.rect; run.cancel_state = Some(cancel_state); }
                                 if response.clicked() {
+                                if let Some(queue) = &mut self.gerber_import { queue.request_stop(); }
                                 let outcome = task.cancel_token.cancel();
                                 #[cfg(feature = "internal-evidence")]
                                 native_a2::cancel_clicked(task.task_id, outcome, ctx);
@@ -2215,6 +2246,13 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
         });
         #[cfg(feature = "internal-evidence")]
         native_ui::profile("toolbar");
+        if self.gerber_import.is_some() {
+            egui::TopBottomPanel::bottom("gerber-import-progress")
+                .show(ctx, |ui| self.gerber_import_progress(ui));
+        }
+        // Process cancellation widgets before dispatching the next file, and
+        // reserve the worker before automatic canvas/viewport requests run.
+        self.advance_gerber_import();
         egui::TopBottomPanel::bottom("status")
             .exact_height(52.)
             .show(ctx, |ui| {

@@ -381,6 +381,7 @@ pub(crate) mod tests {
         let (_reply, rx) = std::sync::mpsc::sync_channel(1);
         EditorApp {
             pending_task: None,
+            gerber_import: None,
             viewport_task: None,
             geometry_task: None,
             geometry_context: None,
