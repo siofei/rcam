@@ -635,7 +635,9 @@ fn rejected_json_and_failed_export_preserve_geometry_history_and_saved_baseline(
         assert_eq!(run.info()["revision"], "0");
         assert_eq!(run.info()["undo_entries"], 0);
     }
-    let too_many: Vec<_> = (0..10001).map(|i| format!("object-{i}")).collect();
+    let too_many: Vec<_> = (0..=editor_core::edit::MAX_MOVE_TARGETS)
+        .map(|i| format!("object-{i}"))
+        .collect();
     assert_eq!(
         run.call(
             "objects.move",

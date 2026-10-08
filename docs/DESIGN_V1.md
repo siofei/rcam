@@ -1300,3 +1300,16 @@ paused dirty source/binary and all failures. See S5_M2_C_PLAN, addendum and ADR0
 Full frozen 100k/three-round performance gates remain unchanged. IN PROGRESS;
 no resumed native acceptance yet. Noncanvas flicker OPEN; whole I2 not all PASS.
 Windows/K1 native deferred. No PPOL/PSTRESS/Recovery or M2 scope expansion.
+
+
+### S5 Move capacity admission follow-up (2026-10-08)
+
+User-authorized phase after Array 4aa5520 and selection presentation cache 2cb6656:
+dedicated Move target ceiling uses the existing 1000000 document-object boundary;
+other edit/batch/source ceilings remain 10000. Actual route/configured 64MiB
+history admission stays authoritative, with finite 256MiB incremental work and
+2000000 conservative validation units. These ceilings do not promise admission
+or native frame time. Read-only drag resource preflight is version/selection/task
+fenced; final delta still receives complete geometry/permission/revision checks.
+See S5_MOVE_CAPACITY_ADMISSION.md and ADR0058. Existing 50ms/1e-9/performance
+samples and platform acceptance gates stay unchanged.

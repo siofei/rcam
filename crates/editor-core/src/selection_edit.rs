@@ -62,12 +62,12 @@ impl SelectionEdit {
 }
 
 impl EditHistory {
-    pub fn edit_selection(
-        &mut self,
-        document: &mut SemanticDocument,
+    pub(super) fn selection_targets(
+        &self,
+        document: &SemanticDocument,
         groups: &[SelectionGroup],
-        operation: &SelectionEdit,
-    ) -> Result<Vec<SelectionGroup>, EditError> {
+        limit: usize,
+    ) -> Result<Vec<(usize, Vec<usize>)>, EditError> {
         let count = groups
             .iter()
             .try_fold(0usize, |n, g| n.checked_add(g.object_ids.len()))
@@ -75,16 +75,31 @@ impl EditHistory {
         if groups.is_empty() || count == 0 {
             return Err(EditError::InvalidArgument);
         }
-        if count > MAX_MOVE_OBJECTS || groups.len() > MAX_MOVE_OBJECTS {
+        if count > limit || groups.len() > MAX_MOVE_OBJECTS {
             return Err(EditError::ResourceLimit);
         }
         let mut seen = HashSet::new();
+        if groups
+            .iter()
+            .any(|g| g.object_ids.is_empty() || !seen.insert(&g.layer_id))
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        if limit == MAX_MOVE_TARGETS
+            && document
+                .layers
+                .len()
+                .checked_add(document.apertures.len())
+                .and_then(|n| n.checked_mul(groups.len()))
+                .and_then(|n| n.checked_mul(4))
+                .is_none_or(|n| n > MAX_EDIT_REGION_EDGES)
+        {
+            return Err(EditError::ResourceLimit);
+        }
         let mut targets = Vec::with_capacity(groups.len());
         for group in groups {
-            if !seen.insert(&group.layer_id) {
-                return Err(EditError::InvalidArgument);
-            }
-            let (layer, indices) = self.targets(document, &group.layer_id, &group.object_ids)?;
+            let (layer, indices) =
+                self.targets_with_limit(document, &group.layer_id, &group.object_ids, limit)?;
             // Generated text is an indivisible logical object, even for headless callers.
             let text_groups: HashSet<_> = indices
                 .iter()
@@ -99,6 +114,22 @@ impl EditHistory {
             }
             targets.push((layer, indices));
         }
+        Ok(targets)
+    }
+
+    pub fn edit_selection(
+        &mut self,
+        document: &mut SemanticDocument,
+        groups: &[SelectionGroup],
+        operation: &SelectionEdit,
+    ) -> Result<Vec<SelectionGroup>, EditError> {
+        let limit = if matches!(operation, SelectionEdit::Move { .. }) {
+            MAX_MOVE_TARGETS
+        } else {
+            MAX_MOVE_OBJECTS
+        };
+        let targets = self.selection_targets(document, groups, limit)?;
+        let count = targets.iter().map(|(_, ii)| ii.len()).sum::<usize>();
         let transform = match operation {
             SelectionEdit::Move { dx_mm, dy_mm } | SelectionEdit::Duplicate { dx_mm, dy_mm } => {
                 if !MmPoint::new(*dx_mm, *dy_mm).is_valid_geometry()
@@ -146,35 +177,43 @@ impl EditHistory {
             }
         }
         // Charge all delta/order guards and structural merge peak before allocating geometry.
-        let bytes = targets
-            .iter()
-            .try_fold(size_of::<Transaction>() + 256, |bytes, (l, indices)| {
-                let layer = &document.layers[*l];
-                let order = if structural {
-                    layer
-                        .objects
+        let bytes = if matches!(operation, SelectionEdit::Move { .. }) {
+            let demand = self.move_demand_for_targets(document, &targets, true)?;
+            demand.admit()?;
+            demand.history_bytes
+        } else {
+            targets
+                .iter()
+                .try_fold(size_of::<Transaction>() + 256, |bytes, (l, indices)| {
+                    let layer = &document.layers[*l];
+                    let order = if structural {
+                        layer
+                            .objects
+                            .iter()
+                            .map(|o| 4 * (o.object_id.len() + 96) + size_of::<SemanticObject>())
+                            .sum()
+                    } else {
+                        0
+                    };
+                    let delta: usize = indices
                         .iter()
-                        .map(|o| 4 * (o.object_id.len() + 96) + size_of::<SemanticObject>())
-                        .sum()
-                } else {
-                    0
-                };
-                let delta: usize = indices
-                    .iter()
-                    .map(|&i| {
-                        let o = &layer.objects[i];
-                        3 * (size_of::<IndexedObject>()
-                            + size_of::<Change>()
-                            + geometry_heap_bytes(&o.geometry)
-                            + o.object_id.len()
-                            + origin_bytes(&o.origin)
-                            + document.id.len()
-                            + 256)
-                    })
-                    .sum();
-                bytes.checked_add(size_of::<Transaction>() + 1024 + layer.id.len() + order + delta)
-            })
-            .ok_or(EditError::ResourceLimit)?;
+                        .map(|&i| {
+                            let o = &layer.objects[i];
+                            3 * (size_of::<IndexedObject>()
+                                + size_of::<Change>()
+                                + geometry_heap_bytes(&o.geometry)
+                                + o.object_id.len()
+                                + origin_bytes(&o.origin)
+                                + document.id.len()
+                                + 256)
+                        })
+                        .sum();
+                    bytes.checked_add(
+                        size_of::<Transaction>() + 1024 + layer.id.len() + order + delta,
+                    )
+                })
+                .ok_or(EditError::ResourceLimit)?
+        };
         self.budget(bytes)?;
         let apertures = document.apertures.iter().map(|a| a.id.clone()).collect();
         let definitions = block_definition_ids(document);

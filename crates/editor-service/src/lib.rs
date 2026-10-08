@@ -36,6 +36,7 @@ pub use workspace::*;
 
 use editor_core::edit::{
     BatchEdit, EditError, EditHistory, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES, MAX_MOVE_OBJECTS,
+    MAX_MOVE_TARGETS,
 };
 use editor_core::{
     ApertureShape, CircleAperture, DocumentSnapshot, DrawObject, Exposure, Geometry, Layer,
@@ -1131,7 +1132,7 @@ impl ApplicationService {
                 max_source_bytes: gerber_io::S1_MAX_SOURCE_BYTES,
                 max_objects: gerber_io::S1_MAX_OBJECTS,
                 max_query_results: 1000,
-                max_move_objects: MAX_MOVE_OBJECTS,
+                max_move_objects: MAX_MOVE_TARGETS,
                 max_edit_objects: MAX_MOVE_OBJECTS,
                 max_history_entries: self.history_max_entries,
                 max_history_bytes: self.history_max_bytes,
@@ -1528,7 +1529,16 @@ impl ApplicationService {
         params: MoveParams,
     ) -> Result<EditResult, ServiceError> {
         let record = self.edit_record(document_id, expected_revision)?;
+        if params.object_ids.len() > MAX_MOVE_TARGETS {
+            return Err(map_edit_error(EditError::ResourceLimit));
+        }
         check_workspace_edit(record, &params.layer_id, &params.object_ids)?;
+        selection_edit::check_move_delta(params.dx_mm, params.dy_mm)?;
+        let demand = record
+            .history
+            .move_objects_demand(&record.document, &params.layer_id, &params.object_ids)
+            .map_err(map_edit_error)?;
+        selection_edit::check_move_demand(demand)?;
         let ids = record
             .history
             .move_objects(
@@ -3656,7 +3666,7 @@ fn map_edit_error(error: EditError) -> ServiceError {
         EditError::ResourceLimit => ServiceError {
             code: "RESOURCE_LIMIT".into(),
             message: "编辑对象数量或撤销历史超过预算。".into(),
-            details: serde_json::json!({"max_edit_objects": MAX_MOVE_OBJECTS, "max_move_objects": MAX_MOVE_OBJECTS, "max_document_objects": gerber_io::S1_MAX_OBJECTS, "max_region_edges": gerber_io::S1_MAX_REGION_EDGES, "max_history_entries": MAX_HISTORY_ENTRIES, "max_history_bytes": MAX_HISTORY_BYTES}),
+            details: serde_json::json!({"max_edit_objects": MAX_MOVE_OBJECTS, "max_move_objects": MAX_MOVE_TARGETS, "max_document_objects": gerber_io::S1_MAX_OBJECTS, "max_region_edges": gerber_io::S1_MAX_REGION_EDGES, "max_history_entries": MAX_HISTORY_ENTRIES, "max_history_bytes": MAX_HISTORY_BYTES}),
         },
         EditError::EmptyHistory => ServiceError::invalid_field("op", "没有可撤销或重做的事务。"),
         EditError::InvalidGeometry(error) => map_semantic_error(error),

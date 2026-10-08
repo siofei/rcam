@@ -211,6 +211,7 @@ fn preview_source_cost(
 }
 impl Model {
     pub fn point_preview(&mut self, request: Request) -> Result<(), ServiceError> {
+        self.view.point_preview = None;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         let token = self.active_cancel.clone();
         let mut check = || {
@@ -225,6 +226,19 @@ impl Model {
         check()?;
         if !request.context.valid(&self.view) || *request.groups != self.view.selected.groups() {
             return Err(fail("基点预览已过期"));
+        }
+        if let SelectionEdit::Move { dx_mm, dy_mm } = request.operation {
+            if !MmPoint::new(dx_mm, dy_mm).is_valid_geometry() {
+                return Err(fail("变换预览：InvalidArgument"));
+            }
+            let info = self.info()?;
+            self.service.selection_move_demand_with_cancel(
+                &info.document_id,
+                &info.revision,
+                &request.groups,
+                token.as_ref(),
+            )?;
+            check()?;
         }
         let cost = preview_source_cost(&self.view, &mut check)?;
         let simplified = cost > 5000;
@@ -305,20 +319,55 @@ impl Model {
             (*request.groups).clone(),
             request.operation,
         )?;
-        let mut selected = Vec::new();
-        for group in groups {
-            for object_id in group.object_ids {
-                selected.push(self.service.objects_get(
-                    &info.document_id,
-                    editor_service::ObjectParams {
-                        layer_id: group.layer_id.clone(),
-                        object_id,
-                    },
-                )?);
+        self.refresh(true)?;
+        let snapshot = self
+            .view
+            .snap_snapshot
+            .as_ref()
+            .ok_or_else(|| fail("提交后的制造快照不可用"))?;
+        let wanted: std::collections::HashSet<_> = groups
+            .iter()
+            .flat_map(|g| {
+                g.object_ids
+                    .iter()
+                    .map(|id| (g.layer_id.as_str(), id.as_str()))
+            })
+            .collect();
+        let mut found = std::collections::HashMap::with_capacity(wanted.len());
+        for layer in &snapshot.layers {
+            for object in &layer.objects {
+                if wanted.contains(&(layer.id.as_str(), object.object_id.as_str())) {
+                    found.insert((layer.id.as_str(), object.object_id.as_str()), object);
+                }
             }
         }
+        let mut selected = Vec::with_capacity(wanted.len());
+        for group in groups {
+            for object_id in group.object_ids {
+                selected.push(
+                    if let Some(object) = found.get(&(group.layer_id.as_str(), object_id.as_str()))
+                    {
+                        editor_service::ObjectInfo {
+                            layer_id: group.layer_id.clone(),
+                            object: (*object).clone(),
+                        }
+                    } else {
+                        // Preserve the service's exact missing-object error on an
+                        // inconsistent snapshot, without per-ID queries normally.
+                        self.service.objects_get(
+                            &info.document_id,
+                            editor_service::ObjectParams {
+                                layer_id: group.layer_id.clone(),
+                                object_id,
+                            },
+                        )?
+                    },
+                );
+            }
+        }
+        let classifier = crate::state::Classifier::new(&self.view.layers, &self.view.apertures);
+        selected.retain(|o| classifier.visible(o));
         self.view.selected.ordered = selected.into();
-        self.refresh(true)?;
         self.view.message = "已通过共同基点提交一次原子变换".into();
         Ok(())
     }

@@ -9,6 +9,9 @@ mod array;
 #[path = "selection_edit.rs"]
 mod selection_edit;
 pub use selection_edit::{SelectionEdit, SelectionGroup};
+#[path = "move_demand.rs"]
+mod move_demand;
+pub use move_demand::{MAX_MOVE_TARGETS, MAX_MOVE_WORK_BYTES, MoveDemand};
 
 pub use array::{ARRAY_CELL_WARNING_THRESHOLD, ArrayEstimate, RectangularArray};
 
@@ -462,6 +465,16 @@ impl EditHistory {
         layer_id: &str,
         object_ids: &[String],
     ) -> Result<(usize, Vec<usize>), EditError> {
+        self.targets_with_limit(document, layer_id, object_ids, MAX_MOVE_OBJECTS)
+    }
+
+    fn targets_with_limit(
+        &self,
+        document: &SemanticDocument,
+        layer_id: &str,
+        object_ids: &[String],
+        limit: usize,
+    ) -> Result<(usize, Vec<usize>), EditError> {
         if self
             .document_id
             .as_deref()
@@ -470,7 +483,7 @@ impl EditHistory {
         {
             return Err(EditError::InvalidArgument);
         }
-        if object_ids.len() > MAX_MOVE_OBJECTS {
+        if object_ids.len() > limit {
             return Err(EditError::ResourceLimit);
         }
         let targets: HashSet<_> = object_ids.iter().map(String::as_str).collect();
@@ -628,9 +641,19 @@ impl EditHistory {
         if !MmPoint::new(dx_mm, dy_mm).is_valid_geometry() || (dx_mm == 0.0 && dy_mm == 0.0) {
             return Err(EditError::InvalidArgument);
         }
-        self.modify_objects(document, layer_id, object_ids, |geometry| {
-            translate(geometry, dx_mm, dy_mm)
-        })
+        let (layer_index, selected) =
+            self.targets_with_limit(document, layer_id, object_ids, MAX_MOVE_TARGETS)?;
+        let demand =
+            self.move_demand_for_targets(document, &[(layer_index, selected.clone())], false)?;
+        demand.admit()?;
+        self.modify_resolved(
+            document,
+            layer_id,
+            layer_index,
+            selected,
+            demand.history_bytes,
+            |geometry| translate(geometry, dx_mm, dy_mm),
+        )
     }
 
     /// Align selected logical objects to the explicit anchor's analytic world
@@ -812,6 +835,19 @@ impl EditHistory {
                 })
                 .sum::<usize>();
         self.budget(bytes)?;
+        self.modify_resolved(document, layer_id, layer_index, selected, bytes, modify)
+    }
+
+    fn modify_resolved(
+        &mut self,
+        document: &mut SemanticDocument,
+        layer_id: &str,
+        layer_index: usize,
+        selected: Vec<usize>,
+        bytes: usize,
+        modify: impl Fn(&mut SemanticGeometry) -> Result<(), EditError>,
+    ) -> Result<Vec<String>, EditError> {
+        let layer = &document.layers[layer_index];
         let aperture_ids = document.apertures.iter().map(|a| a.id.clone()).collect();
         let block_definition_ids = block_definition_ids(document);
         let mut changes = Vec::with_capacity(selected.len());

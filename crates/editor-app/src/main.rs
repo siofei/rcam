@@ -1770,6 +1770,17 @@ impl eframe::App for EditorApp {
             self.last_structure_serial = self.view.structure_serial;
             self.accept_gerber_import_reply(id);
         }
+        if self.drag.is_none()
+            || self.view.scene.is_none()
+            || self.view.blocked.is_some()
+            || self
+                .view
+                .move_admission
+                .as_ref()
+                .is_some_and(|a| !a.matches(&self.view))
+        {
+            self.view.move_admission = None;
+        }
         self.selection_presentation.synchronize(&self.view);
         if self
             .view

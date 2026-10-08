@@ -1900,3 +1900,14 @@ R16/R17/R18/R19/R20/R21/R22、AT-063/066/069/077/082/083/086/090/097：追加有
 ### S5-I2-C local interaction/status verification (2026-10-04)
 
 R08/R09/R10/R11/R13/R16/R17/R18/R19 and applicable AT025–045/065–069/074–075/086–092 local coverage: four drag/Grip preference combinations and live cancellation, canvas-only cursor, composed material area/perimeter, stable narrow status and candidate-native menu ROI. Directed C01–12 and inherited B regression are in S5_I2_C_PLAN; initially NOT_EXECUTED. Existing 96 case identities/platforms and thresholds unchanged. Flicker report remains OPEN; no Windows/fullI2/fullV1 claim.
+
+
+### S5 Move capacity source follow-up (2026-10-08)
+
+AT-022/030/032/039/040/064/065/067/069/074/075/078 retain their platform and
+precision gates. Additional synthetic CPU regression scope is documented in
+S5_MOVE_CAPACITY_ADMISSION.md: resource-admitted complete 80000-item Move must
+commit once and Undo/Redo exactly; history/work refusal must precede movement
+preview and mutate nothing, including after cancellation/stale input. New count
+ceiling is distinct from actual admission; default 64MiB history is preserved.
+CPU checks and Mac target compilation do not replace native input/frame checks.

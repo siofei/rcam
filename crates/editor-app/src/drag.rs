@@ -7,6 +7,46 @@ use editor_core::MmPoint;
 use eframe::egui::{Pos2, Rect};
 use std::collections::HashSet;
 
+/// Resource-only reply owned by one confirmed probe; final service validation
+/// still decides whether the actual delta is legal and commits atomically.
+#[derive(Clone)]
+pub struct MoveAdmission {
+    version: editor_service::task::TaskVersion,
+    selection_epoch: u64,
+    project_id: Option<String>,
+    selected: crate::shared_snapshot::SnapshotVec<editor_service::ObjectInfo>,
+    pub result: Result<editor_service::MoveDemand, editor_service::ServiceError>,
+}
+impl MoveAdmission {
+    pub fn new(
+        view: &View,
+        result: Result<editor_service::MoveDemand, editor_service::ServiceError>,
+    ) -> Self {
+        Self {
+            version: editor_service::task::TaskVersion::capture(
+                view.info.as_ref(),
+                view.task_generation,
+                view.rule_revision,
+            ),
+            selection_epoch: view.selection_epoch,
+            project_id: view.info.as_ref().map(|d| d.project_id.clone()),
+            selected: view.selected.ordered.clone(),
+            result,
+        }
+    }
+    pub(crate) fn matches(&self, view: &View) -> bool {
+        self.version
+            == editor_service::task::TaskVersion::capture(
+                view.info.as_ref(),
+                view.task_generation,
+                view.rule_revision,
+            )
+            && self.project_id == view.info.as_ref().map(|d| d.project_id.clone())
+            && self.selection_epoch == view.selection_epoch
+            && self.selected.shares_storage(&view.selected.ordered)
+    }
+}
+
 pub const THRESHOLD_PX: f32 = 4.;
 #[derive(Clone)]
 pub struct Drag {
@@ -124,6 +164,7 @@ pub struct Gesture {
     mode: crate::selection::SelectionMode,
     navigation_epoch: u64,
     object_drag: Option<Drag>,
+    capacity_error: Option<String>,
 }
 impl Gesture {
     pub fn arm(
@@ -148,6 +189,7 @@ impl Gesture {
             ppp,
             mode,
             navigation_epoch: 0,
+            capacity_error: None,
             object_drag: if mode != crate::selection::SelectionMode::Replace {
                 None
             } else {
@@ -184,7 +226,9 @@ impl Gesture {
             .map(|drag| &drag.excluded_snap_objects)
     }
     pub fn error(&self) -> Option<&str> {
-        self.object_drag.as_ref().and_then(|d| d.error.as_deref())
+        self.capacity_error
+            .as_deref()
+            .or_else(|| self.object_drag.as_ref().and_then(|d| d.error.as_deref()))
     }
     pub fn set_snap_error(&mut self, error: Option<String>) {
         if let Some(drag) = &mut self.object_drag {
@@ -198,7 +242,15 @@ impl Gesture {
             self.object_drag = None;
         }
         if let Some(d) = &mut self.object_drag {
-            d.confirmed = true;
+            self.capacity_error = match view.move_admission.as_deref().filter(|a| a.matches(view)) {
+                Some(a) => a
+                    .result
+                    .as_ref()
+                    .err()
+                    .map(|e| format!("{} · {}", e.code, e.message)),
+                None => Some("移动资源检查未确认；请重新点击后移动".into()),
+            };
+            d.confirmed = self.capacity_error.is_none();
         }
         self.update(self.last);
     }
@@ -242,6 +294,7 @@ impl Gesture {
         }
         if let Some(d) = self.object_drag
             && d.dragging
+            && self.capacity_error.is_none()
         {
             return d.release();
         }
@@ -252,5 +305,62 @@ impl Gesture {
             crate::selection::ClickContext::new(self.start, self.camera, self.rect, self.ppp);
         context.navigation_epoch = self.navigation_epoch;
         Some(Action::CanvasSelect(context, self.mode))
+    }
+}
+
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+    #[test]
+    fn admission_fences_exact_view_and_shared_selection_identity() {
+        let mut model = crate::state::Model::default();
+        model.run(Action::Open(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/synthetic/s5i2b/layer_a.gbr"),
+        ));
+        assert!(model.view.error.is_none());
+        let original = model.view.clone();
+        let a = MoveAdmission::new(
+            &original,
+            Err(editor_service::ServiceError {
+                code: "RESOURCE_LIMIT".into(),
+                message: "test".into(),
+                details: serde_json::json!({}),
+            }),
+        );
+        assert!(a.matches(&original));
+        for field in [
+            "document",
+            "revision",
+            "workspace",
+            "project",
+            "generation",
+            "rules",
+            "epoch",
+            "selection",
+            "precision",
+        ] {
+            let mut changed = original.clone();
+            match field {
+                "document" => changed.info.as_mut().unwrap().document_id.push('x'),
+                "revision" => changed.info.as_mut().unwrap().revision.push('x'),
+                "workspace" => changed.info.as_mut().unwrap().workspace_revision.push('x'),
+                "project" => changed.info.as_mut().unwrap().project_id = "changed".into(),
+                "generation" => changed.task_generation += 1,
+                "rules" => changed.rule_revision += 1,
+                "epoch" => changed.selection_epoch += 1,
+                "selection" => changed.selected.ordered = Vec::new().into(),
+                "precision" => {
+                    changed
+                        .info
+                        .as_mut()
+                        .unwrap()
+                        .manufacturing_precision
+                        .resolution_mm *= 2.
+                }
+                _ => unreachable!(),
+            }
+            assert!(!a.matches(&changed), "{field}");
+        }
     }
 }

@@ -82,6 +82,7 @@ impl EditorApp {
                 self.ui_error = self.view.blocked.clone();
             }
             self.drag = None;
+            self.view.move_admission = None;
             self.selection_presentation.synchronize(&self.view);
             return true;
         }
@@ -96,6 +97,7 @@ impl EditorApp {
             {
                 self.view.press_hit = result.press_hit.clone();
                 self.view.drag_hit = result.drag_hit;
+                self.view.move_admission = result.move_admission.clone();
                 self.drag.as_mut().unwrap().confirm(&self.view);
             } else {
                 self.drag = None;
@@ -106,6 +108,7 @@ impl EditorApp {
         } else {
             // Completed (even after late Cancel), Failed and Cancelled receipts
             // all carry the worker's terminal selection or explicit rollback.
+            self.view.move_admission = None;
             self.view.selected = result.selected.clone();
             self.view.click_cycle = result.click_cycle.clone();
             self.view.selection_epoch = result.selection_epoch;
@@ -196,6 +199,9 @@ mod tests {
     }
     impl Run {
         fn new() -> Self {
+            Self::with_history_budget(None)
+        }
+        fn with_history_budget(budget: Option<usize>) -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let dir = std::env::temp_dir().join(format!(
                 "rcam-canvas-read-{}-{}",
@@ -210,7 +216,18 @@ mod tests {
             )
             .unwrap();
             let mut model = Model::default();
-            model.run(Action::ImportGerbers(vec![path]));
+            if let Some(bytes) = budget {
+                model.service =
+                    editor_service::ApplicationService::with_file_access_and_history_limits(
+                        editor_service::FileAccessPolicy::new(&dir, [dir.clone()], [dir.clone()]),
+                        100,
+                        bytes,
+                    )
+                    .unwrap();
+                model.run(Action::Open(path));
+            } else {
+                model.run(Action::ImportGerbers(vec![path]));
+            }
             assert!(model.view.error.is_none());
             let mut app = crate::modal::tests::app();
             let (tx, requests) = sync_channel(16);
@@ -853,5 +870,109 @@ mod tests {
             weak.upgrade().is_none(),
             "closed snapshot must not be retained behind usable/empty-selection guards"
         );
+    }
+    #[test]
+    fn capacity_refusal_survives_snap_and_release_but_keeps_click_selection() {
+        let mut r = Run::with_history_budget(Some(1));
+        r.selection(MmPoint::new(0., 0.));
+        let (id, _) = r.work();
+        r.reply(id);
+        r.drain_geometry();
+        let before = r.model.view.info.clone();
+        r.probe(MmPoint::new(0., 0.));
+        let (id, _) = r.work();
+        let error = r
+            .model
+            .view
+            .move_admission
+            .as_ref()
+            .unwrap()
+            .result
+            .as_ref()
+            .unwrap_err();
+        assert_eq!(error.code, "RESOURCE_LIMIT");
+        assert_eq!(error.details["demand"]["history_limit_bytes"], 1);
+        let start = r.app.camera.screen(MmPoint::new(0., 0.), r.app.canvas_rect);
+        r.update(vec![egui::Event::PointerMoved(
+            start + egui::vec2(20., 10.),
+        )]);
+        r.reply(id);
+        let gesture = r.app.drag.as_mut().unwrap();
+        assert!(gesture.error().unwrap().contains("RESOURCE_LIMIT"));
+        gesture.set_snap_error(None);
+        gesture.update(start + egui::vec2(40., 20.));
+        assert_eq!(gesture.delta, MmPoint::new(0., 0.));
+        assert!(gesture.error().is_some());
+        let gesture = r.app.drag.take().unwrap();
+        assert!(gesture.release().is_none());
+        assert_eq!(r.model.view.info, before);
+        assert!(r.requests.try_recv().is_err());
+        let session = crate::point_transform::Session::new(
+            &r.model.view,
+            crate::point_transform::Mode::Move,
+            Default::default(),
+        );
+        let request = session
+            .request(&r.model.view, Default::default(), 20.)
+            .unwrap();
+        let error = r.model.point_preview(request).unwrap_err();
+        assert_eq!(error.code, "RESOURCE_LIMIT");
+        assert!(r.model.view.point_preview.is_none());
+        assert_eq!(r.model.view.info, before);
+        // A click under the same capacity refusal remains a selection action.
+        let mut g = crate::drag::Gesture::arm(
+            &r.model.view,
+            start,
+            r.app.camera,
+            r.app.canvas_rect,
+            1.,
+            SelectionMode::Replace,
+        );
+        g.confirm(&r.model.view);
+        assert!(matches!(g.release(), Some(Action::CanvasSelect(..))));
+    }
+    #[test]
+    fn resource_probe_release_before_reply_commits_only_after_current_admission() {
+        let mut r = Run::new();
+        r.selection(MmPoint::new(0., 0.));
+        let (id, _) = r.work();
+        r.reply(id);
+        r.drain_geometry();
+        let before = r.model.view.info.clone().unwrap();
+        r.probe(MmPoint::new(0., 0.));
+        let (id, _) = r.work();
+        assert!(r.model.view.move_admission.as_ref().unwrap().result.is_ok());
+        let start = r.app.camera.screen(MmPoint::new(0., 0.), r.app.canvas_rect);
+        r.pointer(start + egui::vec2(20., 10.), false);
+        assert!(r.requests.try_recv().is_err());
+        assert!(!r.app.drag.as_ref().unwrap().confirmed);
+        assert_eq!(r.app.drag.as_ref().unwrap().delta, MmPoint::new(0., 0.));
+        r.reply(id);
+        let (move_id, _) = r.work();
+        assert_eq!(
+            r.model.view.info.as_ref().unwrap().undo_entries,
+            before.undo_entries + 1
+        );
+        r.reply(move_id);
+        assert!(r.app.drag.is_none());
+    }
+    #[test]
+    fn selection_terminal_releases_old_move_admission_owner() {
+        let mut r = Run::new();
+        r.selection(MmPoint::new(0., 0.));
+        let (id, _) = r.work();
+        r.reply(id);
+        r.drain_geometry();
+        r.probe(MmPoint::new(0., 0.));
+        let (id, _) = r.work();
+        r.reply(id);
+        let weak = std::sync::Arc::downgrade(r.app.view.move_admission.as_ref().unwrap());
+        r.app.drag = None;
+        r.selection(MmPoint::new(2., 0.));
+        let (id, _) = r.work();
+        r.reply(id);
+        assert!(r.app.view.move_admission.is_none());
+        assert!(r.model.view.move_admission.is_none());
+        assert!(weak.upgrade().is_none());
     }
 }

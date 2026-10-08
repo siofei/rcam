@@ -1096,3 +1096,88 @@ fn production_adapter_and_transform_buttons_keep_rect_for_invalid_and_preview_st
         }
     }
 }
+
+#[test]
+fn eighty_thousand_numeric_move_rebinds_complete_result_order_and_exact_history() {
+    use std::fmt::Write;
+    let dir = std::env::temp_dir().join(format!("rcam-point-bulk-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("synthetic.gbr");
+    let mut source = String::from("%FSLAX46Y46*%\n%MOMM*%\n%ADD10C,0.1*%\nD10*\n");
+    for i in 0..80_000 {
+        writeln!(source, "X{}Y0D02*X{}Y1000000D01*", i * 100, i * 100).unwrap();
+    }
+    source.push_str("M02*\n");
+    std::fs::write(&path, source).unwrap();
+    let mut m = Model::default();
+    m.run(Action::Open(path));
+    assert!(m.view.error.is_none());
+    let before = m.view.snap_snapshot.clone().unwrap();
+    m.run(Action::SelectRect(
+        BoundsMm {
+            min_x_mm: -1.,
+            min_y_mm: -1.,
+            max_x_mm: 10.,
+            max_y_mm: 2.,
+        },
+        editor_core::hit_test::SelectRectMode::Window,
+    ));
+    assert!(m.view.error.is_none());
+    assert_eq!(m.view.selected.ordered.len(), 80_000);
+    m.view.selected.ordered.reverse();
+    let request = crate::point_transform::Request {
+        context: crate::point_input::Context::capture(&m.view),
+        groups: std::sync::Arc::new(m.view.selected.groups()),
+        operation: editor_service::SelectionEdit::Move {
+            dx_mm: 1.,
+            dy_mm: 2.,
+        },
+        ppm: 20.,
+    };
+    m.point_preview(request.clone()).unwrap();
+    assert!(m.view.point_preview.as_ref().unwrap().simplified);
+    m.point_apply(request).unwrap();
+    assert_eq!(m.view.info.as_ref().unwrap().undo_entries, 1);
+    let expected_ids: Vec<_> = before.layers[0]
+        .objects
+        .iter()
+        .map(|o| o.object_id.as_str())
+        .collect();
+    assert_eq!(m.view.selected.ids(), expected_ids);
+    let after = m.view.snap_snapshot.clone().unwrap();
+    for (a, b) in before.layers[0]
+        .objects
+        .iter()
+        .zip(&after.layers[0].objects)
+    {
+        let editor_core::SemanticGeometry::Line {
+            start,
+            end,
+            width_mm,
+        } = a.geometry
+        else {
+            panic!()
+        };
+        assert_eq!(
+            b.geometry,
+            editor_core::SemanticGeometry::Line {
+                start: MmPoint::new(start.x_mm + 1., start.y_mm + 2.),
+                end: MmPoint::new(end.x_mm + 1., end.y_mm + 2.),
+                width_mm
+            }
+        );
+    }
+    m.run(Action::History(false));
+    assert!(m.view.error.is_none());
+    assert_eq!(
+        m.view.snap_snapshot.as_ref().unwrap().layers[0].objects,
+        before.layers[0].objects
+    );
+    m.run(Action::History(true));
+    assert!(m.view.error.is_none());
+    assert_eq!(
+        m.view.snap_snapshot.as_ref().unwrap().layers[0].objects,
+        after.layers[0].objects
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -325,6 +325,15 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
             error.as_deref(),
             invalid.then_some("VALIDATION_FAILED: selection flags length")
         );
+        let document = app.view.info.as_ref().unwrap();
+        let demand = model.service.selection_move_demand(
+            &document.document_id,
+            &document.revision,
+            &app.view.selected.groups(),
+        );
+        assert!(demand.is_ok());
+        app.view.move_admission =
+            Some(Arc::new(crate::drag::MoveAdmission::new(&app.view, demand)));
         app.view.drag_hit = true;
         app.view.press_hit = app.view.selected.primary().cloned();
         let press = app.canvas_rect.center();

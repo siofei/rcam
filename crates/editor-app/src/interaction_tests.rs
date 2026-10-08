@@ -59,6 +59,14 @@ fn centers(m: &mut Model) {
 }
 fn drag(m: &Model, enabled: bool) -> Gesture {
     let mut v = m.view.clone();
+    let info = v.info.as_ref().unwrap();
+    let demand =
+        m.service
+            .selection_move_demand(&info.document_id, &info.revision, &v.selected.groups());
+    assert!(demand.is_ok());
+    v.move_admission = Some(std::sync::Arc::new(crate::drag::MoveAdmission::new(
+        &v, demand,
+    )));
     v.drag_hit = true;
     v.press_hit = v.selected.primary().cloned();
     let c = Camera {

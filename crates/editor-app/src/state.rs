@@ -53,6 +53,7 @@ pub struct View {
     pub render_coverage_complete: bool,
     pub display_attempt: Option<(BoundsMm, f64)>,
     pub display_transient: Option<String>,
+    pub move_admission: Option<Arc<crate::drag::MoveAdmission>>,
     pub drag_hit: bool,
     pub press_hit: Option<ObjectInfo>,
     /// Answer to the last `Action::LayerSummary`; drives the Delete Layer dialog.
@@ -1665,6 +1666,7 @@ impl Model {
         }
         self.metrics_identity = identity;
         self.view.selection_epoch = self.view.selection_epoch.wrapping_add(1);
+        self.view.move_admission = None;
         self.view.selection_geometry = None;
         self.view.selection_geometry_identity.clear();
         self.view.selection_geometry_error = None;
@@ -2092,6 +2094,7 @@ impl Model {
                 self.refresh(false)
             }
             Action::ProbeDrag(p, tolerance_mm) => {
+                self.view.move_admission = None;
                 self.view.drag_hit = false;
                 self.view.press_hit = self.hit(p, tolerance_mm)?;
                 if crate::drag::editable_selection(&self.view) {
@@ -2118,6 +2121,26 @@ impl Model {
                             break;
                         }
                     }
+                }
+                if self.view.drag_hit {
+                    if let Some(cancel) = &self.active_cancel {
+                        cancel.checkpoint()?;
+                    }
+                    let d = self.info()?;
+                    let result = self.edit_groups().and_then(|groups| {
+                        self.service.selection_move_demand_with_cancel(
+                            &d.document_id,
+                            &d.revision,
+                            &groups,
+                            self.active_cancel.as_ref(),
+                        )
+                    });
+                    if let Some(cancel) = &self.active_cancel {
+                        cancel.checkpoint()?;
+                    }
+                    self.view.move_admission = Some(Arc::new(crate::drag::MoveAdmission::new(
+                        &self.view, result,
+                    )));
                 }
                 Ok(())
             }
