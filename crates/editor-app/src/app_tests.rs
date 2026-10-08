@@ -8,6 +8,141 @@ use std::{
 };
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(not(feature = "internal-evidence"))]
+#[test]
+fn default_config_paths_preserve_legacy_platform_locations() {
+    assert!(crate::startup_config::paths().is_none());
+    let preferences = crate::preferences::AppPreferences::path();
+    #[cfg(target_os = "macos")]
+    assert_eq!(
+        preferences,
+        std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home)
+                .join("Library/Application Support/RCam/preferences.json"))
+    );
+    #[cfg(target_os = "windows")]
+    assert_eq!(
+        preferences,
+        std::env::var_os("APPDATA")
+            .map(|appdata| PathBuf::from(appdata).join("RCam/preferences.json"))
+    );
+    assert_eq!(
+        crate::shortcut_store::path(),
+        preferences.and_then(|path| path.parent().map(|parent| parent.join("shortcuts.json")))
+    );
+    assert_eq!(
+        crate::recovery::directory(),
+        std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join("Library/Caches/RCam/recovery"))
+    );
+}
+
+#[test]
+#[ignore = "child process helper; synthetic app state only"]
+fn explicit_config_app_io_helper() {
+    use crate::{preferences::AppPreferences, recovery, shortcut_store, startup_config};
+    use std::fs;
+    let root = PathBuf::from(std::env::var_os("RCAM_CONFIG_APP_TEST_DIR").unwrap());
+    startup_config::install_for_test(&root);
+    let preferences = AppPreferences::path().unwrap();
+    let shortcuts = shortcut_store::path().unwrap();
+    let recovery_dir = recovery::directory().unwrap();
+    assert_eq!(preferences, root.join("preferences.json"));
+    assert_eq!(shortcuts, root.join("shortcuts.json"));
+    assert_eq!(recovery_dir, root.join("recovery"));
+    let prefs = AppPreferences {
+        panel_width: Some(300.0),
+        ..Default::default()
+    };
+    prefs.save(&preferences).unwrap();
+    assert_eq!(AppPreferences::load(&preferences).panel_width, Some(300.0));
+    assert!(!preferences.with_extension("json.tmp").exists());
+    let first = shortcut_store::load(Some(&shortcuts), editor_core::command::Platform::MacOs);
+    shortcut_store::save(
+        &shortcuts,
+        first.current.config,
+        &shortcut_store::Fingerprint::Missing,
+        editor_core::command::Platform::MacOs,
+    )
+    .unwrap();
+    assert!(root.join("shortcuts.json.lock").is_file());
+    assert!(!fs::read_dir(&root).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".rcam-shortcuts-")
+    }));
+    let mut service = editor_service::ApplicationService::default();
+    let doc = service.document_new().unwrap();
+    service
+        .create_empty_layer(
+            &doc.document_id,
+            &doc.revision,
+            editor_service::CreateEmptyLayerParams::default(),
+        )
+        .unwrap();
+    let info = service.document_get(&doc.document_id).unwrap();
+    let bytes = service.project_recovery_bytes(&doc.document_id).unwrap();
+    recovery::write(&recovery_dir, &info, &bytes).unwrap();
+    let discovered = recovery::discover(&recovery_dir);
+    assert_eq!(discovered.len(), 1);
+    assert_eq!(
+        recovery::load(&recovery_dir, &discovered[0]).unwrap(),
+        bytes
+    );
+    assert!(!fs::read_dir(&recovery_dir).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "tmp")
+    }));
+    recovery::remove(&recovery_dir, &info.project_id);
+    assert_eq!(fs::read_dir(&recovery_dir).unwrap().count(), 0);
+    let logs = startup_config::paths().unwrap().logs.clone();
+    // Sparse synthetic log at the real rotation limit exercises the existing rotate path.
+    let log = fs::File::create(logs.join("rcam.log")).unwrap();
+    log.set_len(20 * 1024 * 1024).unwrap();
+    drop(log);
+    let guard = rcam_diagnostics::Runtime::start(logs.clone(), "test", "test").unwrap();
+    drop(guard);
+    assert!(logs.join("rcam.1.log").is_file());
+    assert!(logs.join("operations.log").is_file());
+    assert!(logs.join("crashes").is_dir());
+}
+
+#[test]
+fn explicit_config_routes_real_app_state_io_in_a_separate_process() {
+    let root = std::env::temp_dir().join(format!(
+        "rcam-config-app-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let root = root.canonicalize().unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "app_tests::explicit_config_app_io_helper",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("RCAM_CONFIG_APP_TEST_DIR", &root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(root.join("preferences.json").is_file());
+    assert!(root.join("shortcuts.json").is_file());
+    assert!(root.join("logs/rcam.1.log").is_file());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn raw_single_project_drop_opens_encoded_empty_project_through_real_worker() {
     use eframe::{App, egui};

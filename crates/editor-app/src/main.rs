@@ -66,6 +66,7 @@ mod selection;
 mod shortcut_config;
 mod shortcut_settings;
 mod shortcut_store;
+mod startup_config;
 mod state;
 mod text_panel;
 mod text_tool;
@@ -3455,31 +3456,43 @@ fn geometry_properties(
     }
 }
 fn main() -> eframe::Result {
-    let diagnostics = std::env::var_os("HOME").and_then(|home| {
-        rcam_diagnostics::Runtime::start(
-            {
-                #[cfg(feature = "internal-evidence")]
-                if let Some(dir) = shortcut_store::native_directory()
-                    .or_else(native_s5m1::directory)
-                    .or_else(native_a2::directory)
-                    .or_else(native_batch_drag::directory)
-                    .or_else(native_i1::directory)
-                    .or_else(native_pmix::directory)
-                    .or_else(native_d2::directory)
-                    .or_else(native_d1::directory)
-                {
-                    dir.join("logs")
-                } else {
-                    std::path::PathBuf::from(home).join("Library/Logs/RCam")
-                }
-                #[cfg(not(feature = "internal-evidence"))]
-                std::path::PathBuf::from(home).join("Library/Logs/RCam")
-            },
-            env!("CARGO_PKG_VERSION"),
-            option_env!("RCAM_BUILD_COMMIT").unwrap_or("unknown"),
+    startup_config::initialize().map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
+    let diagnostics = if let Some(paths) = startup_config::paths() {
+        Some(
+            rcam_diagnostics::Runtime::start(
+                paths.logs.clone(),
+                env!("CARGO_PKG_VERSION"),
+                option_env!("RCAM_BUILD_COMMIT").unwrap_or("unknown"),
+            )
+            .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?,
         )
-        .ok()
-    });
+    } else {
+        std::env::var_os("HOME").and_then(|home| {
+            rcam_diagnostics::Runtime::start(
+                {
+                    #[cfg(feature = "internal-evidence")]
+                    if let Some(dir) = shortcut_store::native_directory()
+                        .or_else(native_s5m1::directory)
+                        .or_else(native_a2::directory)
+                        .or_else(native_batch_drag::directory)
+                        .or_else(native_i1::directory)
+                        .or_else(native_pmix::directory)
+                        .or_else(native_d2::directory)
+                        .or_else(native_d1::directory)
+                    {
+                        dir.join("logs")
+                    } else {
+                        std::path::PathBuf::from(home).join("Library/Logs/RCam")
+                    }
+                    #[cfg(not(feature = "internal-evidence"))]
+                    std::path::PathBuf::from(home).join("Library/Logs/RCam")
+                },
+                env!("CARGO_PKG_VERSION"),
+                option_env!("RCAM_BUILD_COMMIT").unwrap_or("unknown"),
+            )
+            .ok()
+        })
+    };
     if let Some(guard) = &diagnostics {
         guard.install();
         if let Some(path) = preferences::AppPreferences::path() {

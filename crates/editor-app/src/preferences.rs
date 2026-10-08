@@ -21,6 +21,9 @@ pub(crate) struct AppPreferences {
 
 impl AppPreferences {
     pub fn path() -> Option<PathBuf> {
+        if let Some(paths) = crate::startup_config::paths() {
+            return Some(paths.preferences.clone());
+        }
         #[cfg(feature = "internal-evidence")]
         if let Some(dir) = crate::shortcut_store::native_directory()
             .or_else(crate::native_s5m1::directory)

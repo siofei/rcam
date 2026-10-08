@@ -39,6 +39,9 @@ pub(crate) struct RecoveryMetadata {
 }
 
 pub(crate) fn directory() -> Option<PathBuf> {
+    if let Some(paths) = crate::startup_config::paths() {
+        return Some(paths.recovery.clone());
+    }
     #[cfg(feature = "internal-evidence")]
     if let Some(dir) = crate::shortcut_store::native_directory()
         .or_else(crate::native_s5m1::directory)
