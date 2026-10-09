@@ -424,8 +424,9 @@ pub(crate) mod tests {
     use super::*;
     pub(crate) fn app() -> EditorApp {
         let (tx, _requests) = std::sync::mpsc::sync_channel(1);
-        let (_reply, rx) = std::sync::mpsc::sync_channel(1);
+        let (reply, rx) = std::sync::mpsc::sync_channel(1);
         EditorApp {
+            routing: Default::default(),
             pending_task: None,
             canvas_read: None,
             canvas_selection_unconfirmed: false,
@@ -438,10 +439,14 @@ pub(crate) mod tests {
             operation_source: rcam_diagnostics::Source::System,
             tx,
             rx,
+            // An idle synthetic worker stays connected until the app drops.
+            // Disconnect tests explicitly replace rx with a closed channel.
+            _fixture_reply: Some(reply),
             view: crate::state::View::default(),
             busy: false,
             viewport_sequence: None,
             sequence: 0,
+            task_serial: 0,
             request_failure_serial: 0,
             camera: crate::camera::Camera::default(),
             click_navigation: Default::default(),
@@ -496,6 +501,7 @@ pub(crate) mod tests {
             last_recovery_at: std::time::Instant::now(),
             last_recovered_identity: String::new(),
             pending_recovery_identity: None,
+            pending_recovery_task: None,
             toast: None,
             last_structure_serial: 0,
             transition: None,

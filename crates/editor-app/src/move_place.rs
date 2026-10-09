@@ -229,6 +229,9 @@ impl EditorApp {
                         .is_some_and(|r| r.result_version == pending.task.input)));
         if !identity {
             let pending = self.move_place_task.take().unwrap();
+            if pending.after_stop.is_some() {
+                self.routing.clear_intent();
+            }
             pending.task.cancel_token.cancel();
             self.cancel_move_place_reason(MoveExitReason::TaskIdentityMismatch);
             self.release_move_place_task();
@@ -336,6 +339,9 @@ impl EditorApp {
     pub(crate) fn move_place_disconnected(&mut self) {
         if self.move_placing() || self.move_place_task.is_some() {
             let pending = self.move_place_task.take();
+            if pending.as_ref().is_some_and(|p| p.after_stop.is_some()) {
+                self.routing.clear_intent();
+            }
             if let Some(pending) = &pending {
                 pending.task.cancel_token.cancel();
             }

@@ -82,6 +82,9 @@ impl EditorApp {
         #[cfg(feature = "internal-evidence")]
         crate::native_a2::reply(id, identity);
         if !identity {
+            if pending.after_stop.is_some() {
+                self.routing.clear_intent();
+            }
             if !pending.probe {
                 // The worker may already have changed its selection. Never edit
                 // with the old UI set or automatically execute a deferred close.
@@ -167,6 +170,9 @@ impl EditorApp {
 
     pub(crate) fn canvas_read_disconnected(&mut self) {
         if let Some(read) = self.canvas_read.take() {
+            if read.after_stop.is_some() {
+                self.routing.clear_intent();
+            }
             read.task.cancel_token.cancel();
             self.drag = None;
             self.ui_error = Some("后台连接已关闭，点击任务未确认".into());
@@ -195,12 +201,12 @@ mod tests {
             mpsc::{Receiver, SyncSender, sync_channel},
         },
     };
-    type Request = (u64, rcam_diagnostics::Source, Action, TaskContext);
+    type Request = crate::session::Request;
     struct Run {
         app: EditorApp,
         model: Model,
         requests: Receiver<Request>,
-        replies: SyncSender<(u64, crate::state::View)>,
+        replies: SyncSender<crate::session::Reply>,
         ctx: egui::Context,
         frame: eframe::Frame,
         dir: PathBuf,
@@ -243,6 +249,7 @@ mod tests {
             app.tx = tx;
             app.rx = rx;
             app.view = model.view.clone();
+            app.routing.bind_fixture(&app.view);
             app.selected_flags = std::sync::Arc::new(crate::gpu::selection_flags(
                 app.view.scene.as_ref().unwrap(),
                 &app.view.selected.ids(),
@@ -296,12 +303,14 @@ mod tests {
             ]);
         }
         fn work(&mut self) -> (u64, TaskContext) {
-            let (id, _, action, task) = self.requests.try_recv().unwrap();
+            let (id, _, action, task, _) = self.requests.try_recv().unwrap();
             self.model.run_task(task.clone(), action);
             (id, task)
         }
         fn reply(&mut self, id: u64) {
-            self.replies.send((id, self.model.view.clone())).unwrap();
+            self.replies
+                .send(self.app.fixture_reply(id, self.model.view.clone()))
+                .unwrap();
             self.update(vec![]);
         }
         fn probe(&mut self, point: MmPoint) {
@@ -316,7 +325,7 @@ mod tests {
             ));
         }
         fn drain_geometry(&mut self) {
-            while let Ok((id, _, action, task)) = self.requests.try_recv() {
+            while let Ok((id, _, action, task, _)) = self.requests.try_recv() {
                 assert!(matches!(action, Action::SelectionCenters(..)));
                 self.model.run_task(task, action);
                 self.reply(id);
@@ -528,7 +537,10 @@ mod tests {
         // An old render reply cannot clear the independent quarantine latch.
         let before = run.app.view.info.clone();
         run.replies
-            .send((run.app.sequence, run.model.view.clone()))
+            .send(
+                run.app
+                    .fixture_reply(run.app.sequence, run.model.view.clone()),
+            )
             .unwrap();
         run.update(vec![]);
         assert!(run.app.canvas_selection_unconfirmed);
@@ -588,7 +600,7 @@ mod tests {
         fault.info = None;
         fault.scene = None;
         fault.selection_epoch += 55;
-        run.replies.send((id, fault)).unwrap();
+        run.replies.send(run.app.fixture_reply(id, fault)).unwrap();
         run.update(vec![]);
         assert_eq!(run.app.view.info, info);
         assert_eq!(run.app.view.selection_epoch, epoch);
@@ -659,7 +671,9 @@ mod tests {
         let (id, _) = run.work();
         let first = run.dir.join("first.rcam");
         run.app.begin_transition(Transition::Open(first.clone()));
-        run.replies.send((id, run.model.view.clone())).unwrap();
+        run.replies
+            .send(run.app.fixture_reply(id, run.model.view.clone()))
+            .unwrap();
         let mut raw = egui::RawInput {
             focused: true,
             screen_rect: Some(egui::Rect::from_min_size(

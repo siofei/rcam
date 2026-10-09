@@ -120,7 +120,7 @@ fn superseded_viewport_cancels_only_after_new_request_is_accepted() {
     assert_eq!(viewport.cancel_token.state(), TaskState::CancelRequested);
     let mut m = Model::default();
     for _ in 0..2 {
-        let (_, _, action, context) = rx.recv().unwrap();
+        let (_, _, action, context, _) = rx.recv().unwrap();
         m.run_task(context, action);
     }
     assert!(m.view.info.is_some());

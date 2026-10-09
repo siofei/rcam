@@ -583,6 +583,7 @@ mod tests {
         let mut model = model();
         let mut app = crate::modal::tests::app();
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.fit = false;
         assert!(app.dispatch(ids::OBJECT_ARRAY_RECTANGULAR));
         assert_eq!(app.modal, Some(ActiveModal::Array));
@@ -608,6 +609,7 @@ mod tests {
             assert_eq!(preview.estimate.created_object_count, 11);
             assert_eq!(model.block_display_cache.stats(), (1, 400));
             app.view = model.view.clone();
+            app.routing.bind_fixture(&app.view);
             let ctx = egui::Context::default();
             let out = ctx.run(egui::RawInput::default(), |ctx| {
                 egui::CentralPanel::default()
@@ -663,6 +665,7 @@ mod tests {
         let mut model = model();
         let mut app = crate::modal::tests::app();
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.modal = Some(ActiveModal::Array);
         app.array.rows = "10".into();
         app.array.columns = "10".into();
@@ -690,6 +693,7 @@ mod tests {
         assert_eq!(model.view.selected.ordered.len(), 100);
         let mut app = crate::modal::tests::app();
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.modal = Some(ActiveModal::Array);
         app.array.rows = "1".into();
         app.array.columns = "2".into();
@@ -708,6 +712,7 @@ mod tests {
         let mut model = model();
         let mut app = crate::modal::tests::app();
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.modal = Some(ActiveModal::Array);
         app.array.rows = "10".into();
         app.array.columns = "10".into();
@@ -715,6 +720,7 @@ mod tests {
         model.array_preview(request.clone()).unwrap();
         let build = model.view.array_preview.as_ref().unwrap().build_us;
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         let ctx = egui::Context::default();
         let mut times = vec![];
         for _ in 0..60 {
@@ -754,6 +760,7 @@ mod tests {
             let ctx = egui::Context::default();
             let mut app = crate::modal::tests::app();
             app.view = view.clone();
+            app.routing.bind_fixture(&app.view);
             app.fit = false;
             app.modal = Some(ActiveModal::Array);
             let mut baseline = None;
@@ -817,6 +824,7 @@ mod tests {
         let mut model = model();
         let mut app = crate::modal::tests::app();
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.fit = false;
         app.modal = Some(ActiveModal::Array);
         let small = app.array_request().unwrap();
@@ -861,6 +869,7 @@ mod tests {
         let m = model();
         let mut app = crate::modal::tests::app();
         app.view = m.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.modal = Some(ActiveModal::Array);
         let (tx, _requests) = std::sync::mpsc::sync_channel(8);
         app.tx = tx;

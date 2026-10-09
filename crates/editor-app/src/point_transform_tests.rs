@@ -64,6 +64,7 @@ fn frame_cancel_beats_enter_repeat_and_mouse_apply_in_all_selection_tools() {
             let (tx, rx) = std::sync::mpsc::sync_channel(8);
             app.tx = tx;
             app.view = m.view.clone();
+            app.routing.bind_fixture(&app.view);
             app.camera.scale = 32.;
             let mut s = Session::new(&m.view, mode, app.display_unit);
             s.target.set(p(8., -3.), app.display_unit);
@@ -142,7 +143,7 @@ fn frame_cancel_beats_enter_repeat_and_mouse_apply_in_all_selection_tools() {
                 // A later same-frame handler cannot resurrect a commit either.
                 app.send(Action::Move("1".into(), "1".into()));
             });
-            while let Ok((_, _, action, task)) = rx.try_recv() {
+            while let Ok((_, _, action, task, _)) = rx.try_recv() {
                 m.run_task(task, action);
             }
             assert_eq!(m.view.info, before, "{mode:?} conflict {conflict}");
@@ -314,6 +315,7 @@ fn numeric_grip_keeps_opposite_edge_and_commits_its_shown_preview_once() {
     )));
     let mut app = crate::modal::tests::app();
     app.view = m.view.clone();
+    app.routing.bind_fixture(&app.view);
     let before = app.view.info.clone();
     app.open_point_adapter(
         crate::point_adapter::Adapter::Grip(editor_core::grip::GripFeatureId::Right),
@@ -669,6 +671,7 @@ fn child_pick_back_keeps_base_and_selection_and_adapter_cancel_restores_parent()
     let m = model();
     let mut app = crate::modal::tests::app();
     app.view = m.view.clone();
+    app.routing.bind_fixture(&app.view);
     let original = app.view.selected.clone();
     let mut session = Session::new(&app.view, Mode::Rotate, app.display_unit);
     session.base.set(p(1.23456789, 2.), app.display_unit);
@@ -707,6 +710,7 @@ fn common_readonly_adapters_keep_text_layout_board_and_array_original_cell() {
     let m = model();
     let mut app = crate::modal::tests::app();
     app.view = m.view.clone();
+    app.routing.bind_fixture(&app.view);
     let before = app.view.info.clone();
     let selection = app.view.selected.clone();
     app.apply_adapter_point(
@@ -829,6 +833,7 @@ fn local_block_centers_pick_and_placement_reference_never_use_world_selection() 
     assert_eq!(value.kind, Some(editor_core::snap::SnapKind::Nearest));
     let mut app = crate::modal::tests::app();
     app.view = m.view.clone();
+    app.routing.bind_fixture(&app.view);
     app.apply_adapter_point(
         &crate::point_adapter::Adapter::BlockLocal(d.id.0.clone()),
         MmPoint::new(2., 0.),
@@ -919,6 +924,7 @@ fn adapter_cancel_and_ime_win_over_keyboard_and_mouse_confirmation() {
                 app.tool = crate::tools::ActiveTool::Block;
             }
             app.view = m.view.clone();
+            app.routing.bind_fixture(&app.view);
             let before = m.view.info.clone();
             let snapshot = m
                 .service
@@ -1009,7 +1015,7 @@ fn adapter_cancel_and_ime_win_over_keyboard_and_mouse_confirmation() {
                 });
             }
             let _ = ctx.run(cancel, |c| app.parameter_modal(c));
-            while let Ok((_, _, action, task)) = rx.try_recv() {
+            while let Ok((_, _, action, task, _)) = rx.try_recv() {
                 m.run_task(task, action);
             }
             assert_eq!(m.view.info, before, "block={block} conflict={conflict}");
@@ -1033,6 +1039,7 @@ fn production_adapter_and_transform_buttons_keep_rect_for_invalid_and_preview_st
             let ctx = egui::Context::default();
             let mut app = crate::modal::tests::app();
             app.view = m.view.clone();
+            app.routing.bind_fixture(&app.view);
             app.camera.scale = 32.;
             if adapter {
                 app.open_point_adapter(

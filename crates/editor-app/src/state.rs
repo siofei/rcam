@@ -240,6 +240,23 @@ pub struct Model {
     pub ppm: f64,
     pub(crate) block_display_cache: crate::block_display::BlockDisplayCache,
 }
+
+/// Document-owned worker state. The service, executing token and scene serial
+/// stay in the host when a state is moved or a replacement is rolled back.
+pub(crate) struct ModelSessionState {
+    view: View,
+    snapshot: Option<Arc<RenderSnapshot>>,
+    metrics_identity: String,
+    world_index: Arc<crate::world_index::WorldIndex>,
+    viewport: Option<(MmPoint, BoundsMm)>,
+    ppm: f64,
+    block_display_cache: crate::block_display::BlockDisplayCache,
+}
+impl ModelSessionState {
+    pub(crate) fn view(&self) -> &View {
+        &self.view
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(dead_code)] // Legacy worker actions retained for native/regression callers.
 pub enum PivotInput {
@@ -397,6 +414,28 @@ pub fn selected_center(view: &View) -> Result<MmPoint, ServiceError> {
 }
 
 impl Model {
+    pub(crate) fn take_session_state(&mut self) -> ModelSessionState {
+        ModelSessionState {
+            view: std::mem::take(&mut self.view),
+            snapshot: self.snapshot.take(),
+            metrics_identity: std::mem::take(&mut self.metrics_identity),
+            world_index: std::mem::take(&mut self.world_index),
+            viewport: self.viewport.take(),
+            ppm: std::mem::replace(&mut self.ppm, 20.),
+            block_display_cache: std::mem::take(&mut self.block_display_cache),
+        }
+    }
+
+    pub(crate) fn install_session_state(&mut self, state: ModelSessionState) {
+        self.view = state.view;
+        self.snapshot = state.snapshot;
+        self.metrics_identity = state.metrics_identity;
+        self.world_index = state.world_index;
+        self.viewport = state.viewport;
+        self.ppm = state.ppm;
+        self.block_display_cache = state.block_display_cache;
+    }
+
     /// Dev-only synthetic Block fixture loader (S4-B2 Final Closeout native
     /// GUI smoke, task §17): no Block Editor GUI ships this phase, so this
     /// is the "internal/dev synthetic loading path" the closeout task
@@ -505,12 +544,7 @@ impl Model {
             path.to_str()
                 .ok_or_else(|| error("INVALID_ARGUMENT", "路径编码无效"))?,
         )?;
-        let old_view = self.view.clone();
-        let old_snapshot = self.snapshot.take();
-        let old_ppm = self.ppm;
-        let old_viewport = self.viewport.take();
-        let old_index = std::mem::take(&mut self.world_index);
-        self.ppm = 20.;
+        let old = self.take_session_state();
         self.view = View {
             info: Some(candidate),
             message: "文件已打开".into(),
@@ -520,20 +554,13 @@ impl Model {
             Some(reason) => Err(error("UNSUPPORTED_FEATURE", reason)),
             None => Ok(()),
         });
-        if let Err(e) = prepared {
-            if let Some(candidate) = &self.view.info {
-                self.service
-                    .close(&candidate.document_id, &candidate.revision, true)?;
-            }
-            self.view = old_view;
-            self.snapshot = old_snapshot;
-            self.ppm = old_ppm;
-            self.viewport = old_viewport;
-            self.world_index = old_index;
-            return Err(e);
+        if let Err(cause) = prepared {
+            return self.rollback_candidate(old, cause);
         }
-        if let Some(old) = old_view.info {
-            self.service.close(&old.document_id, &old.revision, false)?;
+        if let Some(info) = &old.view.info
+            && let Err(cause) = self.service.close(&info.document_id, &info.revision, false)
+        {
+            return self.rollback_candidate(old, cause);
         }
         let warnings = self
             .view
@@ -568,38 +595,52 @@ impl Model {
         candidate: DocumentInfo,
         discard: bool,
     ) -> Result<(), ServiceError> {
-        let old_view = self.view.clone();
-        let old_snapshot = self.snapshot.take();
-        let old_ppm = self.ppm;
-        let old_viewport = self.viewport.take();
-        let old_index = std::mem::take(&mut self.world_index);
-        self.ppm = 20.;
+        self.install_project_prepared(candidate, discard, |model| {
+            model
+                .refresh(true)
+                .and_then(|()| match &model.view.blocked {
+                    Some(reason) => Err(error("UNSUPPORTED_FEATURE", reason)),
+                    None => Ok(()),
+                })
+        })
+    }
+    fn install_project_prepared(
+        &mut self,
+        candidate: DocumentInfo,
+        discard: bool,
+        prepare: impl FnOnce(&mut Self) -> Result<(), ServiceError>,
+    ) -> Result<(), ServiceError> {
+        let old = self.take_session_state();
         self.view = View {
             info: Some(candidate),
             message: "工程已打开".into(),
             ..Default::default()
         };
-        let prepared = self.refresh(true).and_then(|()| match &self.view.blocked {
-            Some(reason) => Err(error("UNSUPPORTED_FEATURE", reason)),
-            None => Ok(()),
-        });
-        if let Err(e) = prepared {
-            if let Some(candidate) = &self.view.info {
-                self.service
-                    .close(&candidate.document_id, &candidate.revision, true)?;
-            }
-            self.view = old_view;
-            self.snapshot = old_snapshot;
-            self.ppm = old_ppm;
-            self.viewport = old_viewport;
-            self.world_index = old_index;
-            return Err(e);
+        let prepared = prepare(self);
+        if let Err(cause) = prepared {
+            return self.rollback_candidate(old, cause);
         }
-        if let Some(old) = old_view.info {
-            self.service
-                .close(&old.document_id, &old.revision, discard)?;
+        if let Some(info) = &old.view.info
+            && let Err(cause) = self
+                .service
+                .close(&info.document_id, &info.revision, discard)
+        {
+            return self.rollback_candidate(old, cause);
         }
         Ok(())
+    }
+    fn rollback_candidate(
+        &mut self,
+        old: ModelSessionState,
+        cause: ServiceError,
+    ) -> Result<(), ServiceError> {
+        let candidate = self.view.info.clone();
+        self.install_session_state(old);
+        if let Some(candidate) = candidate {
+            self.service
+                .close(&candidate.document_id, &candidate.revision, true)?;
+        }
+        Err(cause)
     }
     pub fn restore_project(&mut self, bytes: &[u8]) -> Result<(), ServiceError> {
         let candidate = self.service.project_restore(bytes)?;
@@ -645,13 +686,16 @@ impl Model {
             ));
         }
         let fresh = self.service.document_new()?;
-        if let Some(old) = self.view.info.take() {
-            self.service.close(&old.document_id, &old.revision, true)?;
+        if let Some(old) = &self.view.info
+            && let Err(cause) = self.service.close(&old.document_id, &old.revision, true)
+        {
+            self.service
+                .close(&fresh.document_id, &fresh.revision, true)?;
+            return Err(cause);
         }
-        self.snapshot = None;
-        self.viewport = None;
-        self.world_index = Default::default();
-        self.ppm = 20.;
+        // Retiring the old service record succeeded; no old derived state may
+        // survive the replacement, even if the new display refresh fails.
+        drop(self.take_session_state());
         self.view = View {
             info: Some(fresh),
             message: "已新建空工作区".into(),
@@ -951,7 +995,12 @@ impl Model {
         let Some(snapshot) = &self.snapshot else {
             return;
         };
-        self.serial += 1;
+        let Some(serial) = self.serial.checked_add(1) else {
+            self.view.scene = None;
+            self.view.blocked = Some("RESOURCE_LIMIT: display scene identity exhausted".into());
+            return;
+        };
+        self.serial = serial;
         #[cfg(feature = "internal-evidence")]
         crate::native_s5m1::count_rebuild(delta.is_some());
         self.view.render_ppm = self.ppm;
@@ -2494,4 +2543,171 @@ pub fn topmost_hit(
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+pub(crate) mod session_tests {
+    use super::*;
+    use editor_core::block::{BlockObjectGeometry, BlockTransform};
+
+    pub(crate) fn fixture() -> Model {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "rcam-session-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mixed.gbr");
+        std::fs::write(&path, b"%FSLAX26Y26*%%MOMM*%%ADD10C,0.2*%D10*X2000000Y2000000D03*X0Y0D02*G01X2000000Y0D01*G75*X1000000Y0D02*G03X0Y1000000I-1000000J0D01*M02*").unwrap();
+        let mut model = Model::default();
+        model.open(&path).unwrap();
+        model.run(Action::SelectAll);
+        let (layer, objects) = crate::block_ui::create_targets(&model.view).unwrap();
+        let context = crate::block_ui::Context::capture(&model.view).unwrap();
+        model.run(Action::BlockEdit(Box::new(crate::block_ui::Request {
+            context,
+            edit: crate::block_ui::Edit::Create(CreateBlockDefinitionParams {
+                layer_id: layer,
+                object_ids: objects,
+                local_origin_mm: PivotMm { x_mm: 0., y_mm: 0. },
+                name: "session fixture".into(),
+            }),
+        })));
+        assert!(model.view.error.is_none());
+        assert!(
+            model.view.block_definitions[0]
+                .objects
+                .iter()
+                .any(|o| matches!(o.geometry, BlockObjectGeometry::Flash { .. }))
+        );
+        assert!(
+            model.view.block_definitions[0]
+                .objects
+                .iter()
+                .any(|o| matches!(o.geometry, BlockObjectGeometry::Arc { .. }))
+        );
+        assert!(model.block_display_cache.stats().0 > 0);
+        std::fs::remove_dir_all(dir).unwrap();
+        model
+    }
+    pub(crate) fn variant_bytes(model: &Model) -> Vec<u8> {
+        let id = &model.view.info.as_ref().unwrap().document_id;
+        let mut project = model.service.project_snapshot(id).unwrap();
+        for object in &mut project.block_definitions[0].objects {
+            if let BlockObjectGeometry::Flash { center, .. } = &mut object.geometry {
+                center.x_mm += 40.;
+            }
+        }
+        rcam_project::encode_v1(&project).unwrap()
+    }
+    fn cache_truth(model: &mut Model) -> Vec<editor_core::block::ResolvedBlockObject> {
+        model
+            .block_display_cache
+            .resolve(&model.view.block_definitions[0], &BlockTransform::IDENTITY)
+            .unwrap()
+    }
+    #[test]
+    fn move_complete_state_retains_arcs_metrics_viewport_and_cache() {
+        let mut model = fixture();
+        let snapshot = model.snapshot.clone().unwrap();
+        let index = model.world_index.clone();
+        let scene = model.view.scene.clone().unwrap();
+        let selected = model.view.selected.ordered.clone();
+        let metrics = model.metrics_identity.clone();
+        let truth = cache_truth(&mut model);
+        let serial = model.serial;
+        model.viewport = Some((
+            MmPoint::new(8., 9.),
+            BoundsMm {
+                min_x_mm: -5.,
+                min_y_mm: -5.,
+                max_x_mm: 20.,
+                max_y_mm: 20.,
+            },
+        ));
+        model.ppm = 37.;
+        let state = model.take_session_state();
+        assert!(model.view.info.is_none() && model.snapshot.is_none());
+        assert_eq!(model.block_display_cache.stats(), (0, 0));
+        model.install_session_state(state);
+        assert!(Arc::ptr_eq(&snapshot, model.snapshot.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(&index, &model.world_index));
+        assert!(Arc::ptr_eq(&scene, model.view.scene.as_ref().unwrap()));
+        assert!(selected.shares_storage(&model.view.selected.ordered));
+        assert_eq!(model.metrics_identity, metrics);
+        assert_eq!(model.ppm.to_bits(), 37_f64.to_bits());
+        assert_eq!(model.viewport.unwrap().0, MmPoint::new(8., 9.));
+        assert_eq!(cache_truth(&mut model), truth);
+        assert_eq!(model.serial, serial);
+        assert_eq!(
+            model.task_version().unwrap().document_id,
+            model.view.info.as_ref().map(|d| d.document_id.clone())
+        );
+    }
+    #[test]
+    fn candidate_prepare_cleanup_and_old_close_failures_restore_whole_source() {
+        for fault in ["prepare", "cleanup", "old-close"] {
+            let mut model = fixture();
+            let before = model.view.info.clone();
+            let snapshot = model.snapshot.clone().unwrap();
+            let scene = model.view.scene.clone().unwrap();
+            let index = model.world_index.clone();
+            let metrics = model.metrics_identity.clone();
+            let truth = cache_truth(&mut model);
+            let serial = model.serial;
+            let bytes = variant_bytes(&model);
+            let candidate = model.service.project_restore(&bytes).unwrap();
+            let candidate_id = candidate.document_id.clone();
+            let result = model.install_project_prepared(candidate, false, |model| {
+                model.refresh(true)?;
+                assert_ne!(cache_truth(model), truth); // colliding ID/revision, distinct real geometry
+                if fault == "cleanup" {
+                    let info = model.view.info.as_ref().unwrap();
+                    model
+                        .service
+                        .close(&info.document_id, &info.revision, true)?;
+                }
+                if fault == "old-close" {
+                    Ok(())
+                } else {
+                    Err(error("DISPLAY_TEST", "injected after real prepare"))
+                }
+            });
+            assert!(result.is_err());
+            assert_eq!(model.view.info, before);
+            assert!(Arc::ptr_eq(&snapshot, model.snapshot.as_ref().unwrap()));
+            assert!(Arc::ptr_eq(&scene, model.view.scene.as_ref().unwrap()));
+            assert!(Arc::ptr_eq(&index, &model.world_index));
+            assert_eq!(model.metrics_identity, metrics);
+            assert_eq!(cache_truth(&mut model), truth);
+            assert!(model.service.document_get(&candidate_id).is_err());
+            assert!(model.serial > serial); // candidate serial is consumed, never rolled back
+            assert!(model.task_version().is_ok());
+        }
+    }
+    #[test]
+    fn new_close_failure_keeps_source_and_scene_serial_exhaustion_refuses() {
+        let mut model = fixture();
+        model.view.info.as_mut().unwrap().revision = "999999".into();
+        let before = model.view.info.clone();
+        let scene = model.view.scene.clone().unwrap();
+        assert!(model.new_workspace(true).is_err());
+        assert_eq!(model.view.info, before);
+        assert!(Arc::ptr_eq(&scene, model.view.scene.as_ref().unwrap()));
+        let id = &model.view.info.as_ref().unwrap().document_id;
+        model.view.info = Some(model.service.document_get(id).unwrap());
+        model.serial = u64::MAX;
+        model.rebuild();
+        assert!(model.view.scene.is_none());
+        assert!(
+            model
+                .view
+                .blocked
+                .as_deref()
+                .unwrap()
+                .starts_with("RESOURCE_LIMIT")
+        );
+        assert_eq!(model.serial, u64::MAX);
+    }
 }

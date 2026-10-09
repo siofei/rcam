@@ -464,6 +464,7 @@ fn focused_text_ime_modal_and_pending_selection_do_not_dispatch_standard_all() {
     for blocked in ["text", "ime", "ime-event", "modal"] {
         let mut app = crate::modal::tests::app();
         app.view = f.model.view.clone();
+        app.routing.bind_fixture(&app.view);
         let (tx, rx) = std::sync::mpsc::sync_channel(4);
         app.tx = tx;
         let primary = if Platform::current() == Platform::MacOs {
@@ -505,6 +506,7 @@ fn focused_text_ime_modal_and_pending_selection_do_not_dispatch_standard_all() {
     }
     let mut app = crate::modal::tests::app();
     app.view = f.model.view.clone();
+    app.routing.bind_fixture(&app.view);
     let (tx, rx) = std::sync::mpsc::sync_channel(4);
     app.tx = tx;
     assert!(app.dispatch(ids::EDIT_SELECT_ALL));
@@ -666,6 +668,7 @@ fn standard_all_shortcut_is_owned_by_text_ime_recording_modal_and_window_focus()
         let mut fixture = Fixture::new(1, 1);
         let mut app = crate::modal::tests::app();
         app.view = fixture.model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.shortcuts.current = crate::shortcut_config::validate(
             crate::shortcut_config::Config::defaults(Platform::current()),
             Platform::current(),
@@ -692,7 +695,7 @@ fn standard_all_shortcut_is_owned_by_text_ime_recording_modal_and_window_focus()
         app.shortcuts.raw_input(&mut raw, ime);
         let _ = ctx.run(raw, |ctx| app.route_shortcuts(ctx, text, modal));
         if focused && !text && !modal && !ime && !recording {
-            let (_, _, action, task) = requests.try_recv().unwrap();
+            let (_, _, action, task, _) = requests.try_recv().unwrap();
             assert!(matches!(action, Action::SelectAll));
             fixture.model.run_task(task, action);
             assert_eq!(fixture.model.view.selected.ordered.len(), 2);

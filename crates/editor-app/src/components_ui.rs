@@ -1087,6 +1087,7 @@ mod tests {
         );
         let mut app = crate::modal::tests::app();
         app.view = m.view.clone();
+        app.routing.bind_fixture(&app.view);
         // Focus now submits a candidate request; retain the UI test's receiver.
         let (tx, requests) = std::sync::mpsc::sync_channel(2);
         app.tx = tx;
@@ -1184,6 +1185,7 @@ mod tests {
             let ctx = egui::Context::default();
             let mut app = crate::modal::tests::app();
             app.view = m.view.clone();
+            app.routing.bind_fixture(&app.view);
             app.components.path = Some(request.path.clone());
             app.components.mapping = request.mapping.clone();
             app.modal = Some(ActiveModal::Pnp);

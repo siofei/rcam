@@ -6,6 +6,8 @@ use eframe::egui;
 use std::{collections::VecDeque, path::PathBuf};
 
 pub(crate) struct ImportQueue {
+    owner: crate::session::Owner,
+    settled_task: Option<u64>,
     pending: VecDeque<PathBuf>,
     current: Option<Current>,
     expected: TaskVersion,
@@ -21,6 +23,7 @@ pub(crate) struct ImportQueue {
 }
 
 struct Current {
+    owner: crate::session::Owner,
     path: PathBuf,
     task_id: u64,
     input: TaskVersion,
@@ -51,6 +54,40 @@ impl ImportQueue {
 }
 
 impl EditorApp {
+    pub(crate) fn settle_import_intent(&mut self, id: u64) {
+        if self.gerber_import.as_ref().is_some_and(|q| {
+            q.finished
+                && q.settled_task == Some(id)
+                && q.after_stop.is_none()
+                && q.owner == self.routing.owner()
+        }) && self.transition.is_none()
+            && !self.waiting_save
+        {
+            self.routing.clear_intent();
+        }
+    }
+    pub(crate) fn migrate_import_publication(
+        &mut self,
+        id: u64,
+        before: &crate::session::Owner,
+        permit: &crate::session::Permit,
+    ) {
+        let Some(queue) = self.gerber_import.as_mut() else {
+            return;
+        };
+        if &queue.owner != before
+            || queue
+                .current
+                .as_ref()
+                .is_none_or(|c| c.task_id != id || &c.owner != before)
+            || !permit.empty_import(id, before)
+        {
+            return;
+        }
+        queue.owner = self.routing.owner();
+        queue.current.as_mut().unwrap().owner = queue.owner.clone();
+        self.routing.migrate_import_intent(id, before, permit);
+    }
     pub(crate) fn start_gerber_import(&mut self, paths: Vec<PathBuf>) {
         if paths.is_empty() {
             return;
@@ -81,6 +118,8 @@ impl EditorApp {
             return;
         }
         self.gerber_import = Some(ImportQueue {
+            owner: self.routing.owner(),
+            settled_task: None,
             total: paths.len(),
             pending: paths.into(),
             current: None,
@@ -105,6 +144,7 @@ impl EditorApp {
         if let Some(queue) = self.gerber_import.as_mut().filter(|q| q.active()) {
             queue.after_stop = None;
             queue.finish(Some(reason.into()));
+            self.routing.clear_intent();
         }
     }
 
@@ -112,6 +152,11 @@ impl EditorApp {
         let Some(mut queue) = self.gerber_import.take() else {
             return;
         };
+        if queue.owner != self.routing.owner() {
+            queue.after_stop = None;
+            queue.finish(Some("导入工程归属已过期，已停止".into()));
+            self.routing.clear_intent();
+        }
         if queue.active() && queue.current.is_none() && !self.busy {
             if self.transition.is_some()
                 || self.close_prompt
@@ -136,6 +181,7 @@ impl EditorApp {
                 self.send(Action::ImportGerbers(vec![path.clone()]));
                 if let Some(task) = self.pending_task.as_ref().filter(|_| self.busy) {
                     queue.current = Some(Current {
+                        owner: self.routing.owner(),
                         path,
                         task_id: task.task_id,
                         input: task.input.clone(),
@@ -194,10 +240,16 @@ impl EditorApp {
         let Some(queue) = self.gerber_import.as_mut().filter(|q| q.active()) else {
             return;
         };
-        if queue.current.as_ref().is_none_or(|c| c.task_id != id) {
+        if queue.owner != self.routing.owner()
+            || queue
+                .current
+                .as_ref()
+                .is_none_or(|c| c.task_id != id || c.owner != queue.owner)
+        {
             return;
         }
         let current = queue.current.take().unwrap();
+        queue.settled_task = Some(id);
         let Some(receipt) = self.view.task_receipt.as_ref().filter(|r| {
             r.task_id == id
                 && r.input == current.input
@@ -349,12 +401,12 @@ mod tests {
         mpsc::{Receiver, SyncSender, sync_channel},
     };
 
-    type Request = (u64, rcam_diagnostics::Source, Action, TaskContext);
+    type Request = crate::session::Request;
     struct Run {
         app: EditorApp,
         model: Model,
         requests: Receiver<Request>,
-        replies: SyncSender<(u64, crate::state::View)>,
+        replies: SyncSender<crate::session::Reply>,
         ctx: egui::Context,
         frame: eframe::Frame,
         dir: PathBuf,
@@ -423,13 +475,28 @@ mod tests {
                 .run(raw, |ctx| self.app.update(ctx, &mut self.frame));
         }
         fn work(&mut self) -> (u64, TaskContext) {
-            let (id, _, action, task) = self.requests.try_recv().unwrap();
+            let (id, _, action, task, _) = self.requests.try_recv().unwrap();
             assert!(matches!(&action, Action::ImportGerbers(paths) if paths.len() == 1));
             self.model.run_task(task.clone(), action);
             (id, task)
         }
+        fn install_import_gap(&mut self, id: u64) {
+            let view = self.model.view.clone();
+            let route = self.app.routing.reply_fixture(id, &view);
+            let crate::session::Gate::Result(permit) =
+                self.app.routing.validate(id, &view, &route, &self.app.view)
+            else {
+                panic!("owned import publication");
+            };
+            let before = self.app.routing.owner();
+            self.app.routing.installed(id, &view, &permit);
+            self.app.view = view;
+            self.app.migrate_import_publication(id, &before, &permit);
+        }
         fn reply(&mut self, id: u64) {
-            self.replies.send((id, self.model.view.clone())).unwrap();
+            self.replies
+                .send(self.app.fixture_reply(id, self.model.view.clone()))
+                .unwrap();
             self.update(self.raw());
         }
         fn step(&mut self) {
@@ -624,6 +691,7 @@ mod tests {
                     .run(Action::ImportGerbers(vec![run.dir.join("first.custom")]));
                 assert!(run.model.view.error.is_none());
                 run.app.view = run.model.view.clone();
+                run.app.routing.bind_fixture(&run.app.view);
             }
             let before = run.model.view.info.clone();
             run.start(&["bad.gbr", "last.gbx"]);
@@ -746,7 +814,7 @@ mod tests {
             &run.app.view,
             &run.model.view
         ));
-        run.app.view = run.model.view.clone();
+        run.install_import_gap(id);
         run.app.busy = false;
         run.app.pending_task = None;
         run.app.accept_gerber_import_reply(id);
@@ -770,7 +838,7 @@ mod tests {
             &run.app.view,
             &run.model.view
         ));
-        run.app.view = run.model.view.clone();
+        run.install_import_gap(id);
         run.app.busy = false;
         run.app.pending_task = None;
         run.app.accept_gerber_import_reply(id);
@@ -788,7 +856,7 @@ mod tests {
         // The same active predicate hides the progress panel's Close button.
         run.app.advance_gerber_import();
         assert!(!run.app.gerber_import.as_ref().unwrap().active());
-        let (_, _, action, _) = run.requests.try_recv().unwrap();
+        let (_, _, action, _, _) = run.requests.try_recv().unwrap();
         assert!(matches!(action, Action::OpenProject(path, _) if path == first));
         assert!(run.requests.try_recv().is_err());
     }

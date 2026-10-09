@@ -54,6 +54,7 @@ impl EditorApp {
     fn cancel_transition(&mut self) {
         self.close_prompt = false;
         self.transition = None;
+        self.routing.clear_intent();
     }
 
     pub(crate) fn dispatch_file_command(&mut self, id: CommandId) {
@@ -82,6 +83,10 @@ impl EditorApp {
         {
             return;
         }
+        if let Err(cause) = self.routing.claim_intent() {
+            self.ui_error = Some(cause.message);
+            return;
+        }
         if self.defer_canvas_transition(transition.clone()) {
             return;
         }
@@ -107,10 +112,14 @@ impl EditorApp {
     }
 
     fn perform_transition(&mut self, discard: bool) {
+        if !self.routing.intent_matches() {
+            return;
+        }
         self.close_prompt = false;
         let Some(transition) = self.transition.take() else {
             return;
         };
+        self.routing.clear_intent();
         match transition {
             Transition::New => self.send(if discard {
                 Action::DiscardNewWorkspace
@@ -142,6 +151,10 @@ impl EditorApp {
         if self.busy || self.view.info.is_none() {
             return false;
         }
+        if let Err(cause) = self.routing.claim_intent() {
+            self.ui_error = Some(cause.message);
+            return false;
+        }
         let camera = Some(rcam_project::CameraState {
             center_mm: self.camera.center,
             scale: self.camera.scale,
@@ -157,8 +170,16 @@ impl EditorApp {
         }
         let mut path = match crate::platform::choose_project(true) {
             Ok(Some(path)) => path,
-            Ok(None) => return false,
+            Ok(None) => {
+                if self.transition.is_none() {
+                    self.routing.clear_intent();
+                }
+                return false;
+            }
             Err(error) => {
+                if self.transition.is_none() {
+                    self.routing.clear_intent();
+                }
                 self.ui_error = Some(error);
                 return false;
             }
@@ -170,6 +191,9 @@ impl EditorApp {
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("rcam"))
         {
+            if self.transition.is_none() {
+                self.routing.clear_intent();
+            }
             self.ui_error = Some("工程文件必须使用 .rcam 扩展名".into());
             return false;
         }
@@ -253,6 +277,9 @@ impl EditorApp {
                     ui.horizontal(|ui| {
                         if crate::ui::buttons::secondary(ui, "取消").clicked() {
                             self.replace_project_path = None;
+                            if !self.waiting_save {
+                                self.routing.clear_intent();
+                            }
                             if self.waiting_save {
                                 self.close_prompt = true;
                                 self.waiting_save = false;
@@ -279,8 +306,14 @@ impl EditorApp {
         if !self.waiting_save {
             return;
         }
+        let Some(succeeded) = self.routing.saved_for_intent() else {
+            return;
+        };
         self.waiting_save = false;
-        if self.view.error.is_none() && self.view.info.as_ref().is_some_and(|d| !d.project_dirty) {
+        if succeeded
+            && self.view.error.is_none()
+            && self.view.info.as_ref().is_some_and(|d| !d.project_dirty)
+        {
             self.perform_transition(false);
         } else if self.project_error.is_none() {
             self.close_prompt = true;
@@ -341,10 +374,10 @@ impl EditorApp {
 #[cfg(test)]
 mod drop_tests {
     use super::*;
-    use editor_service::task::{TaskContext, TaskVersion};
+    use editor_service::task::TaskVersion;
     use std::sync::mpsc::{Receiver, sync_channel};
 
-    type Request = (u64, rcam_diagnostics::Source, Action, TaskContext);
+    type Request = crate::session::Request;
 
     fn app(dirty: bool) -> (EditorApp, Receiver<Request>) {
         let mut app = crate::modal::tests::app();
@@ -360,6 +393,7 @@ mod drop_tests {
         app.view.info = Some(service.document_get(&info.document_id).unwrap());
         app.view.task_generation = 7;
         app.view.rule_revision = 3;
+        app.routing.bind_fixture(&app.view);
         (app, requests)
     }
 
@@ -376,6 +410,7 @@ mod drop_tests {
                 let (mut app, requests) = app(false);
                 if !current_document {
                     app.view.info = None;
+                    app.routing.bind_fixture(&app.view);
                 }
                 let expected = TaskVersion::capture(
                     app.view.info.as_ref(),
@@ -384,7 +419,7 @@ mod drop_tests {
                 );
                 let path = PathBuf::from(format!("中文 # empty.{suffix}"));
                 app.drop_files(vec![path.clone()]);
-                let (sequence, _, action, task) = requests.try_recv().unwrap();
+                let (sequence, _, action, task, _) = requests.try_recv().unwrap();
                 assert!(matches!(action, Action::OpenProject(actual, false) if actual == path));
                 assert_eq!(sequence, 1);
                 assert_eq!(task.input, expected);
@@ -441,6 +476,7 @@ mod drop_tests {
             if !success {
                 app.project_error = Some(("无法保存工程".into(), "write failed".into()));
             }
+            app.routing.saved_fixture();
             app.saved_for_transition();
             assert!(!app.waiting_save);
             if success {

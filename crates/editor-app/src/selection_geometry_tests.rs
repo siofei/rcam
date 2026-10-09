@@ -131,6 +131,7 @@ fn metric_request_is_background_and_user_command_cancels_it_without_disabling_co
     let mut app = crate::modal::tests::app();
     let m = model();
     app.view = m.view.clone();
+    app.routing.bind_fixture(&app.view);
     let (tx, requests) = std::sync::mpsc::sync_channel(2);
     app.tx = tx;
     app.send(action(&m));
@@ -176,6 +177,7 @@ fn result_payload_and_background_scheduling_cannot_supersede_viewport() {
     }
     let mut app = crate::modal::tests::app();
     app.view = current;
+    app.routing.bind_fixture(&app.view);
     let (tx, requests) = std::sync::mpsc::sync_channel(2);
     app.tx = tx;
     app.viewport_sequence = Some(31);
@@ -198,6 +200,7 @@ fn viewport_request_preempts_background_geometry_without_foreground_busy() {
     let mut app = crate::modal::tests::app();
     let m = model();
     app.view = m.view.clone();
+    app.routing.bind_fixture(&app.view);
     let (tx, requests) = std::sync::mpsc::sync_channel(2);
     app.tx = tx;
     app.send(action(&m));

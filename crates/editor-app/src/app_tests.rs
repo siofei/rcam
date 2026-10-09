@@ -173,6 +173,7 @@ fn raw_single_project_drop_opens_encoded_empty_project_through_real_worker() {
     let (tx, requests) = std::sync::mpsc::sync_channel(8);
     app.tx = tx;
     app.view = model.view.clone();
+    app.routing.bind_fixture(&app.view);
     let ctx = egui::Context::default();
     ctx.options_mut(|options| options.max_passes = std::num::NonZeroUsize::new(1).unwrap());
     let mut frame = eframe::Frame::_new_kittest();
@@ -189,7 +190,7 @@ fn raw_single_project_drop_opens_encoded_empty_project_through_real_worker() {
         ..Default::default()
     };
     let _ = ctx.run(raw, |ctx| app.update(ctx, &mut frame));
-    let (_, _, action, task) = requests.try_recv().unwrap();
+    let (_, _, action, task, _) = requests.try_recv().unwrap();
     assert!(matches!(&action, Action::OpenProject(path, false) if path == &project));
     assert_eq!(
         task.input.document_id.as_deref(),
@@ -223,9 +224,10 @@ fn project_drop_task_rejects_stale_or_cancelled_request_without_replacing_docume
         let (tx, requests) = std::sync::mpsc::sync_channel(8);
         app.tx = tx;
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         // A nonexistent target also proves the fence rejects before file I/O.
         app.drop_files(vec![dir.join("next.rcam")]);
-        let (_, _, action, task) = requests.try_recv().unwrap();
+        let (_, _, action, task, _) = requests.try_recv().unwrap();
         if cancelled {
             task.cancel_token.cancel();
         } else {
@@ -287,6 +289,7 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
         let (tx, requests) = std::sync::mpsc::sync_channel(32);
         app.tx = tx;
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.camera = crate::camera::Camera {
             center: MmPoint::new(15., 20.),
             scale: 32.,
@@ -398,7 +401,7 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
         assert_eq!(app.display_error, error);
         assert_eq!(app.view.info, before);
         let mut moves = 0;
-        while let Ok((_, _, action, _)) = requests.try_recv() {
+        while let Ok((_, _, action, _, _)) = requests.try_recv() {
             if matches!(action, Action::DragMove(_)) {
                 moves += 1;
             }
@@ -444,7 +447,7 @@ fn cached_validation_preserves_early_drag_and_stale_point_cancellation() {
         );
         assert!(app.modal.is_none() && app.display_error.is_none());
         assert_eq!(app.view.info, before);
-        while let Ok((_, _, action, _)) = requests.try_recv() {
+        while let Ok((_, _, action, _, _)) = requests.try_recv() {
             assert!(!matches!(
                 action,
                 Action::DragMove(_) | Action::Move(_, _) | Action::PointApply(_)
@@ -468,6 +471,7 @@ fn canvas_work_cache_releases_inputs_before_scene_and_view_guard_short_circuits(
         let (tx, _requests) = std::sync::mpsc::sync_channel(32);
         app.tx = tx;
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         // These allocations are unique to this app/cache, independently of the
         // model's scene and its immutable index.
         let scene = Arc::new((**app.view.scene.as_ref().unwrap()).clone());

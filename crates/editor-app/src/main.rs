@@ -73,6 +73,7 @@ mod s5m1_tests;
 mod s5m2_tests;
 mod selection;
 mod selection_presentation;
+mod session;
 mod shared_snapshot;
 mod shortcut_config;
 mod shortcut_settings;
@@ -188,12 +189,8 @@ struct EditorApp {
     block: block_ui::UiState,
     operation_source: rcam_diagnostics::Source,
     diagnostic_export: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
-    tx: SyncSender<(
-        u64,
-        rcam_diagnostics::Source,
-        Action,
-        editor_service::task::TaskContext,
-    )>,
+    tx: SyncSender<session::Request>,
+    routing: session::SessionRouting,
     pending_task: Option<editor_service::task::TaskContext>,
     canvas_read: Option<canvas_read::Pending>,
     canvas_selection_unconfirmed: bool,
@@ -201,11 +198,14 @@ struct EditorApp {
     viewport_task: Option<editor_service::task::TaskContext>,
     geometry_task: Option<editor_service::task::TaskContext>,
     geometry_context: Option<String>,
-    rx: Receiver<(u64, View)>,
+    rx: Receiver<session::Reply>,
+    #[cfg(test)]
+    _fixture_reply: Option<SyncSender<session::Reply>>,
     view: View,
     busy: bool,
     viewport_sequence: Option<u64>,
     sequence: u64,
+    task_serial: u64,
     request_failure_serial: u64,
     camera: Camera,
     click_navigation: selection::ClickNavigation,
@@ -258,6 +258,7 @@ struct EditorApp {
     last_recovery_at: Instant,
     last_recovered_identity: String,
     pending_recovery_identity: Option<String>,
+    pending_recovery_task: Option<(session::Owner, u64)>,
     /// Message plus its birth time; drives the "deleted … [Undo]" notice.
     toast: Option<(String, Instant)>,
     last_structure_serial: u64,
@@ -398,33 +399,48 @@ impl EditorApp {
         }
         // At most one display request plus one user operation. A read-only
         // viewport build never disables or consumes the user's next command.
-        let (tx, request) = mpsc::sync_channel::<(
-            u64,
-            rcam_diagnostics::Source,
-            Action,
-            editor_service::task::TaskContext,
-        )>(2);
+        let mut routing = session::SessionRouting::default();
+        #[cfg(feature = "internal-evidence")]
+        let autoload = std::env::var_os("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE").is_some();
+        #[cfg(not(feature = "internal-evidence"))]
+        let autoload = false;
+        routing.await_startup(autoload);
+        let owner = routing.owner();
+        let (tx, request) = mpsc::sync_channel::<session::Request>(2);
         let (reply, rx) = mpsc::sync_channel(1);
         let ctx = cc.egui_ctx.clone();
         std::thread::spawn(move || {
-            let mut model = Model::default();
-            // Dev-only native GUI smoke path (S4-B2 Final Closeout, task
-            // §17): no Block Editor GUI ships this phase, so a synthetic
-            // Block fixture is loaded this way instead of through the UI.
+            let mut host = session::WorkerHost::new(owner, Model::default());
             #[cfg(feature = "internal-evidence")]
-            if std::env::var_os("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE").is_some() {
-                match model.autoload_block_fixture() {
-                    Ok(()) => {
-                        // The GUI thread's `sequence` starts at 0 and has not
-                        // sent a request yet; push the autoloaded view directly
-                        // so the very first frame already shows it.
-                        let _ = reply.send((0, model.view.clone()));
-                        ctx.request_repaint();
-                    }
-                    Err(e) => eprintln!("RCAM_NATIVE_PROBE_AUTOLOAD_BLOCK_FIXTURE failed: {e:?}"),
+            if autoload {
+                if let Err(cause) = host.model.autoload_block_fixture() {
+                    // Publish a definite startup outcome; never race an automatic
+                    // New against this receiptless internal fixture publication.
+                    host.model.view.error = Some(cause);
+                    host.model.view.blocked = Some("启动工程未完成，请重新打开工程".into());
                 }
+                let route = host.startup();
+                if reply.send((0, host.model.view.clone(), route)).is_err() {
+                    return;
+                }
+                ctx.request_repaint();
             }
-            while let Ok((id, source, action, task)) = request.recv() {
+            while let Ok((id, source, action, task, route)) = request.recv() {
+                if let Err(cause) = host.route(&route) {
+                    if reply
+                        .send((
+                            id,
+                            View::default(),
+                            session::WorkerHost::rejection(&route, cause),
+                        ))
+                        .is_err()
+                    {
+                        break;
+                    }
+                    ctx.request_repaint();
+                    continue;
+                }
+                let model = &mut host.model;
                 let start = Instant::now();
                 #[cfg(feature = "internal-evidence")]
                 let measured_action = native_s5m1::action_label(&action);
@@ -447,7 +463,16 @@ impl EditorApp {
                 }
                 #[cfg(feature = "internal-evidence")]
                 native_a2::returning(id);
-                if reply.send((id, model.view.clone())).is_err() {
+                let result = model.view.clone();
+                let envelope = match host.finish(&route) {
+                    Ok(route) => (id, result, route),
+                    Err(cause) => (
+                        id,
+                        View::default(),
+                        session::WorkerHost::rejection(&route, cause),
+                    ),
+                };
+                if reply.send(envelope).is_err() {
                     break;
                 }
                 ctx.request_repaint();
@@ -487,6 +512,7 @@ impl EditorApp {
             operation_source: rcam_diagnostics::Source::System,
             diagnostic_export: None,
             tx,
+            routing,
             pending_task: None,
             canvas_read: None,
             canvas_selection_unconfirmed: false,
@@ -495,10 +521,13 @@ impl EditorApp {
             geometry_task: None,
             geometry_context: None,
             rx,
+            #[cfg(test)]
+            _fixture_reply: None,
             view: View::default(),
             busy: false,
             viewport_sequence: None,
             sequence: 0,
+            task_serial: 0,
             request_failure_serial: 0,
             camera: Camera::default(),
             click_navigation: Default::default(),
@@ -550,6 +579,7 @@ impl EditorApp {
             last_recovery_at: Instant::now() - std::time::Duration::from_secs(60),
             last_recovered_identity: String::new(),
             pending_recovery_identity: None,
+            pending_recovery_task: None,
             toast: None,
             last_structure_serial: 0,
             transition: None,
@@ -595,7 +625,9 @@ impl EditorApp {
             reported_ppp: 0.,
         };
         // The Workspace always exists; layers are imported into it or created empty.
-        app.send(Action::NewWorkspace);
+        if !autoload {
+            app.send(Action::NewWorkspace);
+        }
         app
     }
     fn trace_snapshot(&self, ctx: &egui::Context) -> frame_trace::Snapshot {
@@ -769,7 +801,19 @@ impl EditorApp {
                 _ => None,
             })
             .flatten();
-        self.sequence += 1;
+        let Some(next_sequence) = self.task_serial.max(self.sequence).checked_add(1) else {
+            self.ui_error = Some("后台任务身份已耗尽，请重启后再操作".into());
+            return;
+        };
+        let route = match self.routing.prepare(&a, &self.view) {
+            Ok(route) => route,
+            Err(cause) => {
+                self.ui_error = Some(cause.message);
+                return;
+            }
+        };
+        self.task_serial = next_sequence;
+        self.sequence = next_sequence;
         if (self.modal.is_some() || placement_request.as_ref().is_some_and(|(_, apply)| *apply))
             && matches!(
                 a,
@@ -807,8 +851,12 @@ impl EditorApp {
         );
         #[cfg(feature = "internal-evidence")]
         let pmix_input = native_pmix::request_input(&task, &self.view, &a);
-        match self.tx.try_send((self.sequence, source, a, task.clone())) {
+        match self
+            .tx
+            .try_send((self.sequence, source, a, task.clone(), route.clone()))
+        {
             Ok(()) => {
+                self.routing.accepted(route, task.clone());
                 if let Some(trace) = &mut self.frame_trace {
                     trace.accepted(
                         &task,
@@ -864,11 +912,53 @@ impl EditorApp {
                     attempt.outcome = "queue_rejected";
                 }
                 self.request_failure_serial = self.request_failure_serial.wrapping_add(1);
+                // Task IDs are never reused, including failed queue admission.
                 self.sequence = previous_sequence;
                 self.modal_pending = None;
                 self.ui_error = Some(format!("后台任务不可用：{e}"));
             }
         }
+    }
+    #[cfg(test)]
+    fn fixture_reply(&self, id: u64, view: View) -> session::Reply {
+        let route = self.routing.reply_fixture(id, &view);
+        (id, view, route)
+    }
+    fn reject_owned_reply(&mut self, id: u64, cause: editor_service::ServiceError) {
+        let ordinary = self.pending_task.as_ref().is_some_and(|t| t.task_id == id);
+        let empty = View::default();
+        self.filter_move_place_reply(id, &empty);
+        self.consume_canvas_reply(id, &empty);
+        if self.geometry_task.as_ref().is_some_and(|t| t.task_id == id) {
+            self.geometry_task = None;
+            self.geometry_context = None;
+        }
+        if self.viewport_task.as_ref().is_some_and(|t| t.task_id == id) {
+            self.viewport_task = None;
+            self.viewport_sequence = None;
+        }
+        if ordinary {
+            self.reject_gerber_import_reply(id, &empty);
+            self.pending_task = None;
+            self.busy = false;
+            self.modal_pending = None;
+            self.view.blocked = Some("后台工程归属未确认，请重新打开工程".into());
+        }
+        if self
+            .pending_recovery_task
+            .as_ref()
+            .is_some_and(|(owner, task)| owner == &self.routing.owner() && *task == id)
+        {
+            self.pending_recovery_task = None;
+            self.pending_recovery_identity = None;
+        }
+        if ordinary {
+            self.routing.clear_intent();
+            self.waiting_save = false;
+            self.transition = None;
+            self.quit_after_close = false;
+        }
+        self.ui_error = Some(cause.message);
     }
     fn route_shortcuts(&mut self, ctx: &egui::Context, text_focus: bool, modal_open: bool) {
         let presses = std::mem::take(&mut self.shortcuts.presses);
@@ -1719,6 +1809,23 @@ impl EditorApp {
             Ok(reply) => Some(reply),
             Err(std::sync::mpsc::TryRecvError::Empty) => None,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                if let Some(id) = self.pending_task.as_ref().map(|t| t.task_id) {
+                    self.reject_owned_reply(
+                        id,
+                        editor_service::ServiceError {
+                            code: "WORKER_DISCONNECTED".into(),
+                            message: "后台连接已关闭，任务终态未确认".into(),
+                            details: serde_json::json!({}),
+                        },
+                    );
+                }
+                self.routing.disconnect();
+                self.viewport_task = None;
+                self.viewport_sequence = None;
+                self.geometry_task = None;
+                self.geometry_context = None;
+                self.pending_recovery_identity = None;
+                self.pending_recovery_task = None;
                 self.move_place_disconnected();
                 self.canvas_read_disconnected();
                 if self.gerber_import.as_ref().is_some_and(|q| q.active()) {
@@ -1731,22 +1838,32 @@ impl EditorApp {
                 None
             }
         };
-        if let Some((id, view)) = &reply
+        let mut reply = reply.take().and_then(|(id, view, route)| {
+            match self.routing.validate(id, &view, &route, &self.view) {
+                session::Gate::Ignore => None,
+                session::Gate::Result(permit) => Some((id, view, permit)),
+                session::Gate::Rejected(cause) => {
+                    self.reject_owned_reply(id, cause);
+                    None
+                }
+            }
+        });
+        if let Some((id, view, _)) = &reply
             && let Some(trace) = &self.frame_trace
         {
             trace.received(*id, view);
         }
-        if let Some((id, view)) = &reply
+        if let Some((id, view, _)) = &reply
             && self.filter_move_place_reply(*id, view)
         {
             reply = None;
         }
-        if let Some((id, view)) = &reply
+        if let Some((id, view, _)) = &reply
             && self.consume_canvas_reply(*id, view)
         {
             reply = None;
         }
-        if let Some((id, view)) = &reply
+        if let Some((id, view, _)) = &reply
             && self
                 .geometry_task
                 .as_ref()
@@ -1769,14 +1886,15 @@ impl EditorApp {
         }
         // Only an accepted ordinary/viewport request may install a full View.
         // Retired canvas probes can still be the latest global sequence ID.
-        if reply.as_ref().is_some_and(|(id, _)| {
-            self.pending_task.as_ref().is_none_or(|t| t.task_id != *id)
+        if reply.as_ref().is_some_and(|(id, _, permit)| {
+            !permit.startup()
+                && self.pending_task.as_ref().is_none_or(|t| t.task_id != *id)
                 && self.viewport_task.as_ref().is_none_or(|t| t.task_id != *id)
         }) {
             reply = None;
         }
         #[cfg(feature = "internal-evidence")]
-        if let Some((id, view)) = &reply {
+        if let Some((id, view, _)) = &reply {
             native_a2::reply(
                 *id,
                 *id == self.sequence
@@ -1787,34 +1905,50 @@ impl EditorApp {
                         .is_none_or(|task| task_reply_matches(task, &self.view, view)),
             );
         }
-        if let Some((id, view)) = &reply
+        if let Some((id, view, _)) = &reply
             && *id == self.sequence
             && let Some(task) = self.pending_task.as_ref().or(self.viewport_task.as_ref())
             && !task_reply_matches(task, &self.view, view)
         {
             // Release only this request's busy state; never install a stale snapshot.
-            self.ui_error = Some("后台结果身份已失效，结果未安装".into());
             self.reject_gerber_import_reply(*id, view);
-            self.busy = false;
-            self.pending_task = None;
-            self.viewport_sequence = None;
-            self.viewport_task = None;
-            self.modal_pending = None;
+            self.reject_owned_reply(
+                *id,
+                editor_service::ServiceError {
+                    code: "STALE_TASK".into(),
+                    message: "后台结果身份已失效，结果未安装".into(),
+                    details: serde_json::json!({}),
+                },
+            );
             reply = None;
         }
         if reply
             .as_ref()
-            .is_some_and(|(id, _)| self.viewport_sequence == Some(*id))
+            .is_some_and(|(id, _, _)| self.viewport_sequence == Some(*id))
         {
             self.viewport_sequence = None;
             self.viewport_task = None;
         }
-        if let Some((id, view)) = reply
-            && id == self.sequence
+        if let Some((id, view, permit)) = reply
+            && (id == self.sequence || permit.startup())
         {
-            let changed = self.view.info.as_ref().map(|d| &d.document_id)
-                != view.info.as_ref().map(|d| &d.document_id);
+            let before_owner = self.routing.owner();
+            let changed = self.routing.installed(id, &view, &permit);
             self.view = view;
+            if changed {
+                self.migrate_import_publication(id, &before_owner, &permit);
+                if !self.routing.intent_matches() {
+                    self.routing.clear_intent();
+                    self.transition = None;
+                    self.close_prompt = false;
+                    self.waiting_save = false;
+                    self.replace_project_path = None;
+                }
+                self.pending_recovery_identity = None;
+                self.pending_recovery_task = None;
+                self.last_dirty_identity.clear();
+                self.last_recovered_identity.clear();
+            }
             if let Some(trace) = &mut self.frame_trace {
                 trace.installed(id, &self.view);
             }
@@ -1824,12 +1958,20 @@ impl EditorApp {
             }
             self.accept_array_reply();
             self.accept_component_reply(changed);
-            recovery::complete_write(
-                &mut self.pending_recovery_identity,
-                &mut self.last_recovered_identity,
-                self.view.error.is_none(),
-                self.view.info.as_ref(),
-            );
+            if permit.recovery()
+                && self
+                    .pending_recovery_task
+                    .as_ref()
+                    .is_some_and(|(owner, task)| owner == &self.routing.owner() && *task == id)
+            {
+                self.pending_recovery_task = None;
+                recovery::complete_write(
+                    &mut self.pending_recovery_identity,
+                    &mut self.last_recovered_identity,
+                    self.view.error.is_none(),
+                    self.view.info.as_ref(),
+                );
+            }
             if let (Some(title), Some(error)) = (
                 self.pending_project_error_title.take(),
                 self.view.error.as_ref(),
@@ -1851,7 +1993,8 @@ impl EditorApp {
                         let _ = self.prefs.save(&store);
                     }
                 }
-                if self.view.message == "工程已保存"
+                if permit.save()
+                    && self.view.message == "工程已保存"
                     && let (Some(dir), Some(info)) =
                         (recovery::directory(), self.view.info.as_ref())
                 {
@@ -1925,6 +2068,9 @@ impl EditorApp {
                 self.restore_project_view();
             }
             self.saved_for_transition();
+            if permit.save() && !self.waiting_save && self.transition.is_none() {
+                self.routing.clear_intent();
+            }
             if self.quit_after_close && self.view.info.is_none() {
                 self.allow_quit = true;
             }
@@ -1938,6 +2084,7 @@ impl EditorApp {
             }
             self.last_structure_serial = self.view.structure_serial;
             self.accept_gerber_import_reply(id);
+            self.settle_import_intent(id);
             self.complete_move_place_reply(id);
         }
         if self.drag.is_none()
@@ -3911,6 +4058,7 @@ mod shortcut_rc1_regressions {
         assert!(model.view.error.is_none());
         let mut app = modal::tests::app();
         app.view = model.view;
+        app.routing.bind_fixture(&app.view);
         app.block.definition = Some(app.view.block_definitions[0].id.0.clone());
         app.shortcuts.current = app
             .shortcuts
@@ -3953,6 +4101,9 @@ mod shortcut_rc1_regressions {
                     rcam_diagnostics::Source::System,
                     Action::NewWorkspace,
                     editor_service::task::TaskContext::new(99, Default::default()),
+                    app.routing
+                        .prepare(&Action::NewWorkspace, &app.view)
+                        .unwrap(),
                 ))
                 .unwrap();
             }

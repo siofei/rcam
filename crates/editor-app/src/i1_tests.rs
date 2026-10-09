@@ -662,6 +662,7 @@ fn i1_due_recovery_defers_to_pending_and_held_canvas_gesture() {
     let mut app = crate::modal::tests::app();
     let mut worker = model();
     app.view = worker.view.clone();
+    app.routing.bind_fixture(&app.view);
     let (tx, requests) = std::sync::mpsc::sync_channel(4);
     app.tx = tx;
     let now = std::time::Instant::now();
@@ -690,7 +691,7 @@ fn i1_due_recovery_defers_to_pending_and_held_canvas_gesture() {
     app.send(Action::ProbeDrag(MmPoint::new(0., 0.), 0.1));
     assert!(!app.busy);
     assert!(app.pending_task.is_none());
-    let (id, _, action, task) = requests.try_recv().unwrap();
+    let (id, _, action, task, _) = requests.try_recv().unwrap();
     assert!(matches!(action, Action::ProbeDrag(..)));
     assert_eq!(app.canvas_read.as_ref().unwrap().task.task_id, id);
     app.drag = None;
@@ -711,7 +712,7 @@ fn i1_due_recovery_defers_to_pending_and_held_canvas_gesture() {
     assert!(app.selection_read_pending());
     assert!(!app.busy);
     assert!(app.pending_task.is_none());
-    let (id, _, action, task) = requests.try_recv().unwrap();
+    let (id, _, action, task, _) = requests.try_recv().unwrap();
     assert!(matches!(action, Action::CanvasSelect(..)));
     app.tick_recovery(now);
     assert!(requests.try_recv().is_err());
@@ -739,7 +740,7 @@ fn i1_due_recovery_defers_to_pending_and_held_canvas_gesture() {
     app.drag = None;
     app.tick_recovery(now);
     assert!(app.busy);
-    let (id, _, action, _) = requests.try_recv().unwrap();
+    let (id, _, action, _, _) = requests.try_recv().unwrap();
     assert!(matches!(action, Action::RecoveryWrite(..)));
     assert_eq!(app.pending_task.as_ref().unwrap().task_id, id);
     assert!(app.pending_recovery_identity.is_some());

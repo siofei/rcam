@@ -88,7 +88,7 @@ mod hud_layout {
         // Increasing native DPI legitimately requests a higher-LOD viewport.
         // Complete its real read-only worker task before admitting Move.
         for _ in 0..16 {
-            let Ok((id, _, action, task)) = run.requests.try_recv() else {
+            let Ok((id, _, action, task, _)) = run.requests.try_recv() else {
                 assert!(run.app.command_enabled(ids::OBJECT_MOVE_PLACE));
                 return;
             };
@@ -97,7 +97,9 @@ mod hud_layout {
                 Action::Viewport(..) | Action::SelectionCenters(..)
             ));
             run.model.run_task(task, action);
-            run.replies.send((id, run.model.view.clone())).unwrap();
+            run.replies
+                .send(run.app.fixture_reply(id, run.model.view.clone()))
+                .unwrap();
             let _ = capture(run, size, ppp);
         }
         panic!("viewport did not settle");
@@ -122,7 +124,7 @@ mod hud_layout {
                         assert!(preparing[0].0.contains("正在检查制造边界与容量 · Esc 取消"));
                         let fixed_canvas = run.app.canvas_rect;
                         let (id, view, _) = run.work(false);
-                        run.replies.send((id, view)).unwrap();
+                        run.replies.send(run.app.fixture_reply(id, view)).unwrap();
                         let following = capture(&mut run, size, ppp);
                         assert_eq!(following.len(), 1, "{following:?}");
                         assert!(
@@ -229,12 +231,12 @@ mod hud_layout {
         }
     }
 }
-type Work = (u64, rcam_diagnostics::Source, Action, TaskContext);
+type Work = crate::session::Request;
 struct Run {
     app: EditorApp,
     model: Model,
     requests: Receiver<Work>,
-    replies: SyncSender<(u64, View)>,
+    replies: SyncSender<crate::session::Reply>,
     ctx: egui::Context,
     frame: eframe::Frame,
     dir: PathBuf,
@@ -274,6 +276,7 @@ impl Run {
         app.tx = tx;
         app.rx = rx;
         app.view = model.view.clone();
+        app.routing.bind_fixture(&app.view);
         app.selected_flags = Arc::new(crate::gpu::selection_flags(
             app.view.scene.as_ref().unwrap(),
             &app.view.selected.ids(),
@@ -346,7 +349,7 @@ impl Run {
         );
     }
     fn work(&mut self, apply: bool) -> (u64, View, TaskContext) {
-        let (id, _, action, task) = self.requests.try_recv().unwrap();
+        let (id, _, action, task, _) = self.requests.try_recv().unwrap();
         assert!(if apply {
             matches!(action, Action::PointApply(..))
         } else {
@@ -356,11 +359,11 @@ impl Run {
         (id, self.model.view.clone(), task)
     }
     fn reply(&mut self, id: u64, view: View) {
-        self.replies.send((id, view)).unwrap();
+        self.replies.send(self.app.fixture_reply(id, view)).unwrap();
         self.update(vec![], egui::Modifiers::NONE, true);
     }
     fn no_edit_requests(&self) {
-        while let Ok((_, _, action, _)) = self.requests.try_recv() {
+        while let Ok((_, _, action, _, _)) = self.requests.try_recv() {
             assert!(
                 matches!(action, Action::SelectionCenters(..) | Action::Viewport(..)),
                 "unexpected request: {}",
@@ -1228,7 +1231,7 @@ fn paused_clean_and_dirty_project_transitions_retire_session_and_wait_for_task()
             }
             assert_eq!(run.app.close_prompt, dirty);
             if !dirty {
-                let (id, _, action, task) = run.requests.try_recv().unwrap();
+                let (id, _, action, task, _) = run.requests.try_recv().unwrap();
                 assert!(matches!(action, Action::Close(false)));
                 run.model.run_task(task, action);
                 run.reply(id, run.model.view.clone());
@@ -1469,7 +1472,7 @@ fn first_open_transition_waits_for_terminal_preview_and_never_uses_retired_selec
     assert!(!run.app.move_placing() && run.app.busy);
     let (id, view, _) = run.work(false);
     run.reply(id, view);
-    let (id, _, action, task) = run.requests.try_recv().unwrap_or_else(|e|panic!("request {e:?}; busy={} transition={} close={} projecterr={:?} ui={:?} error={:?} pointtask={} unconfirmed={}",run.app.busy,run.app.transition.is_some(),run.app.close_prompt,run.app.project_error,run.app.ui_error,run.app.view.error,run.app.move_place_task.is_some(),run.app.canvas_selection_unconfirmed));
+    let (id, _, action, task, _) = run.requests.try_recv().unwrap_or_else(|e|panic!("request {e:?}; busy={} transition={} close={} projecterr={:?} ui={:?} error={:?} pointtask={} unconfirmed={}",run.app.busy,run.app.transition.is_some(),run.app.close_prompt,run.app.project_error,run.app.ui_error,run.app.view.error,run.app.move_place_task.is_some(),run.app.canvas_selection_unconfirmed));
     assert!(matches!(&action,Action::OpenProject(p,false)if p==&project));
     run.model.run_task(task, action);
     run.reply(id, run.model.view.clone());
@@ -1628,7 +1631,7 @@ fn deferred_close_waits_and_does_not_discard_unknown_apply_or_late_success() {
         run.reply(id, view);
         match outcome {
             0 => {
-                let (_, _, action, _) = run.requests.try_recv().unwrap_or_else(|e|panic!("request {e:?}; busy={} transition={} close={} projecterr={:?} ui={:?} error={:?} pointtask={} unconfirmed={}",run.app.busy,run.app.transition.is_some(),run.app.close_prompt,run.app.project_error,run.app.ui_error,run.app.view.error,run.app.move_place_task.is_some(),run.app.canvas_selection_unconfirmed));
+                let (_, _, action, _, _) = run.requests.try_recv().unwrap_or_else(|e|panic!("request {e:?}; busy={} transition={} close={} projecterr={:?} ui={:?} error={:?} pointtask={} unconfirmed={}",run.app.busy,run.app.transition.is_some(),run.app.close_prompt,run.app.project_error,run.app.ui_error,run.app.view.error,run.app.move_place_task.is_some(),run.app.canvas_selection_unconfirmed));
                 assert!(matches!(action, Action::Close(false)));
                 assert!(!run.app.canvas_selection_unconfirmed);
             }

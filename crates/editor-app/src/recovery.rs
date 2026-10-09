@@ -284,6 +284,10 @@ impl EditorApp {
             if self.busy {
                 self.last_recovery_at = now;
                 self.pending_recovery_identity = Some(identity);
+                self.pending_recovery_task = self
+                    .pending_task
+                    .as_ref()
+                    .map(|t| (self.routing.owner(), t.task_id));
             }
         }
     }
