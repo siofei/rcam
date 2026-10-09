@@ -458,7 +458,7 @@ fn cancellation_during_set_copy_never_installs_partial_selection() {
     }
 }
 #[test]
-fn focused_text_ime_modal_and_pending_selection_do_not_dispatch_control_all() {
+fn focused_text_ime_modal_and_pending_selection_do_not_dispatch_standard_all() {
     use editor_core::command::CommandDispatcher;
     let f = Fixture::new(3, 1);
     for blocked in ["text", "ime", "ime-event", "modal"] {
@@ -466,12 +466,20 @@ fn focused_text_ime_modal_and_pending_selection_do_not_dispatch_control_all() {
         app.view = f.model.view.clone();
         let (tx, rx) = std::sync::mpsc::sync_channel(4);
         app.tx = tx;
-        let control = egui::Modifiers {
-            ctrl: true,
-            command: Platform::current() == Platform::Windows,
-            ..Default::default()
+        let primary = if Platform::current() == Platform::MacOs {
+            egui::Modifiers {
+                mac_cmd: true,
+                command: true,
+                ..Default::default()
+            }
+        } else {
+            egui::Modifiers {
+                ctrl: true,
+                command: true,
+                ..Default::default()
+            }
         };
-        app.shortcuts.presses = vec![(egui::Key::A, control)];
+        app.shortcuts.presses = vec![(egui::Key::A, primary)];
         app.ime_active = blocked == "ime";
         app.ime_event = blocked == "ime-event";
         let ctx = egui::Context::default();

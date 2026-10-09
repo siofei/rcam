@@ -1084,8 +1084,7 @@ mod tests {
         assert!(!run.app.canvas_selection_unconfirmed);
         assert!(run.app.close_prompt && matches!(run.app.transition, Some(Transition::Quit)));
     }
-    #[test]
-    fn actual_raw_control_a_queues_all_and_modifier_pointer_retains_press_mode() {
+    fn raw_standard_all_and_modifier_pointer_retain_press_mode(all: egui::Modifiers) {
         let mut run = Run::new();
         let ctrl = egui::Modifiers {
             ctrl: true,
@@ -1098,7 +1097,7 @@ mod tests {
             physical_key: Some(egui::Key::A),
             pressed: true,
             repeat: false,
-            modifiers: ctrl,
+            modifiers: all,
         }]);
         assert!(run.app.selection_read_pending());
         assert!(!run.app.busy);
@@ -1143,5 +1142,78 @@ mod tests {
             run.app.view.selected.primary().unwrap().object.object_id,
             "src-1::object-2"
         );
+        // The reciprocal Ctrl press adds back object-1 even when Shift owns
+        // the release event; selection intent is captured at pointer press.
+        run.update(vec![
+            egui::Event::PointerMoved(p),
+            egui::Event::PointerButton {
+                pos: p,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: ctrl,
+            },
+        ]);
+        let (id, _) = run.work();
+        run.update(vec![egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::SHIFT,
+        }]);
+        run.reply(id);
+        let (id, _) = run.work();
+        run.reply(id);
+        run.drain_geometry();
+        assert_eq!(run.app.view.selected.ordered.len(), 2);
+        assert_eq!(
+            run.app.view.selected.primary().unwrap().object.object_id,
+            "src-1::object-1"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn actual_raw_mac_command_a_queues_all_and_modifier_pointer_retains_press_mode() {
+        raw_standard_all_and_modifier_pointer_retain_press_mode(egui::Modifiers {
+            mac_cmd: true,
+            command: true,
+            ..Default::default()
+        });
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn actual_raw_windows_control_a_queues_all_and_modifier_pointer_retains_press_mode() {
+        raw_standard_all_and_modifier_pointer_retain_press_mode(egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        });
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn actual_raw_mac_physical_control_a_does_not_queue_standard_all() {
+        let mut run = Run::new();
+        let original = run.app.view.selected.clone();
+        run.update(vec![egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: Some(egui::Key::A),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::CTRL,
+        }]);
+        assert!(!run.app.selection_read_pending());
+        assert!(!run.app.busy);
+        assert!(run.requests.try_recv().is_err());
+        assert_eq!(run.app.view.selected, original);
+        run.update(vec![egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: Some(egui::Key::A),
+            pressed: false,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        assert!(run.requests.try_recv().is_err());
     }
 }
