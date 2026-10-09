@@ -82,13 +82,13 @@ User-confirmed additions: standard-parameter Aperture creation and selected-cont
 
 ## Match and replace with a newly created Aperture or Block
 
-User-confirmed behavior: create a template definition, then replace existing geometry matching that complete template. The two-circle Block example requires actual size/shape and pairwise offsets; arbitrary neighboring circles are not sufficient. Full arbitrary-angle rigid rotation and translation are admitted without implicitly allowing scaling/mirroring. Preview/highlights/counts, source-layer default with explicitly selected additional target layers, skip-ineligible results and conflict UX are proposed design details, not individually user-confirmed defaults. This explicit scope applies only to match/replace and cannot broaden seed-layer-only same-definition selection.
+User-confirmed behavior: create a template definition, then replace existing geometry matching that complete template. In full-composition mode the two-circle Block example requires actual size/shape and pairwise offsets; arbitrary neighboring circles are not sufficient. Final-contour mode instead compares the complete effective Dark/Clear region and topology and permits different internal composition. Full arbitrary-angle rigid rotation and translation are admitted without implicitly allowing scaling/mirroring. Preview/highlights/counts, source-layer default with explicitly selected additional target layers, skip-ineligible results and conflict UX are proposed design details, not individually user-confirmed defaults. This explicit scope applies only to match/replace and cannot broaden seed-layer-only same-definition selection.
 
-Coarse invariants only reject candidates. Exact f64 member/contour/arc/hole/topology correspondence, complete coverage and ordered Dark/Clear effect with intervening untouched geometry must establish safe substitution. A Block's single instance/exposure position cannot represent every noncontiguous source group: refuse/preserve candidates when flattening fails equivalence, retaining unmatched relative order. Replace is one atomic Undo; whether creation and replacement share that transaction is a later design choice.
+Coarse invariants only reject candidates. Exact f64 contour/arc/hole/topology equivalence and ordered Dark/Clear effect with intervening untouched geometry must establish safe substitution. Full-composition mode additionally verifies all template members/relative transforms/overlap/exposure relationships; both modes completely account for every consumed source object. A Block's single instance/exposure position cannot represent every noncontiguous source group: refuse/preserve candidates when flattening fails equivalence, retaining unmatched relative order. Replace is one atomic Undo; whether creation and replacement share that transaction is a later design choice.
 
 | Case | Planned check |
 |---|---|
-| REPLACE01 | 100 circles with a two-circle Block template: only complete size/shape/relative-distance matches replace; unmatched single circles remain |
+| REPLACE01 | 100 circles with a two-circle Block template: full-composition mode only replaces complete size/shape/relative-distance matches; unmatched single circles remain |
 | REPLACE02 | Translation and 30°,17.5°,negative/arbitrary rigid rotation retain location/direction and full shape; near-pair or wrong-distance combinations fail |
 | REPLACE03 | AP exact real contour/arc/hole/exposure matches; same summaries with different contour/topology fail; no unrequested scale/mirror substitution |
 | REPLACE04 | Source-layer default and explicit other-layer proposal is frozen later; same-definition fast selection still strictly excludes third layers |
@@ -101,6 +101,24 @@ Coarse invariants only reject candidates. Exact f64 member/contour/arc/hole/topo
 | REPLACE11 | Cross-layer groups, Macro/Block references, cycles/nesting and unsupported %AB are safely refused until separately admitted; permissions never bypassed |
 | REPLACE12 | Atomic failure/precision/resource budget/cancellation preserve all sources; unproven equivalence explains refusal without partial consumption |
 | REPLACE13 | Source vs replaced export/flatten/reimport independently agrees in f64 manufacturing contours/exposure; no raster/tessellation acceptance |
-| REPLACE14 | Macro serializes template ID/kind/version, target layers, tolerance, rigid rotation, conflict/failed-candidate policy; no mouse/screen recording or private upload |
+| REPLACE14 | Macro serializes template ID/kind/version, explicit final-contour/full-composition mode, target layers, tolerance, rigid rotation, conflict/failed-candidate policy; no mouse/screen recording or private upload |
 
 Both workflows remain PLANNED / NOT IMPLEMENTED / NOT TESTED. Public command names and capability boundaries require their later implementation contract; this supplement changes no product code or acceptance threshold.
+
+
+## User-confirmed final-contour versus full-composition modes
+
+Mode A evaluates the effective solid region, holes and topology produced by original ordered Dark/Clear composition. Member count and segmentation need not agree. Mode B additionally requires equal member count, each real member shape/size and relative transforms, overlap and exposure relationships. Both admit translation/arbitrary-angle rotation, without comparing absolute position. A changes internal composition and must make this explicit in preview. No default mode has been chosen. In both modes isolated region equality is insufficient: prove substitution preserves surrounding ordered exposure effects, otherwise retain sources and report refusal. Keep identity selection, shape query and these template replacement modes distinct; serialize the exact mode in macro parameters.
+
+| Case | Planned check |
+|---|---|
+| MODE01 | One large rectangle vs two overlapping template rectangles: A matches effective region, B rejects different composition |
+| MODE02 | Multiple alternative segmentations with same contour/holes/topology match A; B verifies member count and individual size/shape/relative transforms |
+| MODE03 | Same contour but different member overlap/exposure relationships: B rejects; A still requires full effective region and contextual manufacturing equivalence |
+| MODE04 | Holes, positive/negative Dark/Clear, intervening exposures and external geometry: isolated equality never bypasses surrounding-effect verification |
+| MODE05 | Both modes support 30°,17.5°,negative/arbitrary-angle rotation plus translation with frozen tolerance; absolute positions do not define shape identity |
+| MODE06 | Multi-candidate shared members trigger explicit conflicts, deterministic handling and no duplicate consumption in either mode |
+| MODE07 | A preview states internal-composition change; B preview states complete-composition matching; explicit mode survives typed macro serialization/replay |
+| MODE08 | Nested/reference identity equivalence is separately frozen; scoped definition identity/DCode distinctions, unsupported nesting rejection and exact atomic Undo remain |
+
+This user correction supersedes any universal member-count/structure requirement above: that requirement belongs to B only. Both modes remain PLANNED / NOT IMPLEMENTED / NOT TESTED.
