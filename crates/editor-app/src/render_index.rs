@@ -167,6 +167,14 @@ impl RenderIndex {
     }
     /// Conservative query in scene-local world mm; never scans the scene.
     pub fn viewport(&self, bounds: [f64; 4]) -> ViewportRenderSet {
+        self.viewport_query::<true>(bounds)
+    }
+    /// Work-only query for the selection halo. Keep the full query's cell
+    /// traversal and slice checks, without materializing unused candidate IDs.
+    pub(crate) fn sample_candidate_work_in_bounds(&self, bounds: [f64; 4], ppm: f64) -> f64 {
+        self.sample_candidate_work(&self.viewport_query::<false>(bounds), ppm)
+    }
+    fn viewport_query<const COLLECT_IDS: bool>(&self, bounds: [f64; 4]) -> ViewportRenderSet {
         let mut result = ViewportRenderSet {
             world_bounds: bounds,
             ..Default::default()
@@ -201,11 +209,15 @@ impl RenderIndex {
                 let ids = &self.data[self.data[c] as usize..self.data[c + 1] as usize];
                 result.max_candidates_in_view = result.max_candidates_in_view.max(ids.len());
                 result.cell_references_visited += ids.len();
-                result.ordered_candidate_ids.extend_from_slice(ids);
+                if COLLECT_IDS {
+                    result.ordered_candidate_ids.extend_from_slice(ids);
+                }
             }
         }
-        result.ordered_candidate_ids.sort_unstable();
-        result.ordered_candidate_ids.dedup();
+        if COLLECT_IDS {
+            result.ordered_candidate_ids.sort_unstable();
+            result.ordered_candidate_ids.dedup();
+        }
         result
     }
     /// Bound actual per-cell candidate visits, not the densest cell multiplied
@@ -287,6 +299,254 @@ mod tests {
             })
             .collect()
     }
+
+    // Literal query/work algorithms from the parent before the work-only path.
+    // Keep this oracle independent of viewport_query and sample_candidate_work.
+    fn legacy_viewport(index: &RenderIndex, bounds: [f64; 4]) -> ViewportRenderSet {
+        let mut result = ViewportRenderSet {
+            world_bounds: bounds,
+            ..Default::default()
+        };
+        if (0..2).any(|k| {
+            bounds[k + 2] < bounds[k]
+                || bounds[k + 2] < f64::from(index.world[k])
+                || bounds[k] > f64::from(index.world[k + 2])
+        }) {
+            return result;
+        }
+        let cell = |v: f64, k: usize| {
+            (((v - f64::from(index.grid[k])) * f64::from(index.grid[k + 2]))
+                .floor()
+                .max(0.) as usize)
+                .min(if k == 0 {
+                    index.cols as usize - 1
+                } else {
+                    index.rows as usize - 1
+                })
+        };
+        let range = [
+            cell(bounds[0], 0).saturating_sub(1),
+            cell(bounds[1], 1).saturating_sub(1),
+            (cell(bounds[2], 0) + 1).min(index.cols as usize - 1),
+            (cell(bounds[3], 1) + 1).min(index.rows as usize - 1),
+        ];
+        result.cell_range = Some(range);
+        for y in range[1]..=range[3] {
+            for x in range[0]..=range[2] {
+                let c = y * index.cols as usize + x;
+                let ids = &index.data[index.data[c] as usize..index.data[c + 1] as usize];
+                result.max_candidates_in_view = result.max_candidates_in_view.max(ids.len());
+                result.cell_references_visited += ids.len();
+                result.ordered_candidate_ids.extend_from_slice(ids);
+            }
+        }
+        result.ordered_candidate_ids.sort_unstable();
+        result.ordered_candidate_ids.dedup();
+        result
+    }
+    fn legacy_sample_candidate_work(
+        index: &RenderIndex,
+        view: &ViewportRenderSet,
+        ppm: f64,
+    ) -> f64 {
+        let Some([x0, y0, x1, y1]) = view.cell_range else {
+            return 0.;
+        };
+        let mut work = 0.;
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let cell = y * index.cols as usize + x;
+                let count = index.data[cell + 1] - index.data[cell];
+                let mut dimensions = [0.; 2];
+                for (axis, coordinate) in [x, y].into_iter().enumerate() {
+                    let origin = f64::from(index.grid[axis]);
+                    let inverse = f64::from(index.grid[axis + 2]);
+                    let lo = origin + coordinate as f64 / inverse;
+                    let hi = origin + (coordinate + 1) as f64 / inverse;
+                    let visible =
+                        hi.min(view.world_bounds[axis + 2]) - lo.max(view.world_bounds[axis]);
+                    // A cell can contain ceil(span) + 1 pixel columns/rows
+                    // at any AA/halo sample phase, including subpixel cells.
+                    dimensions[axis] = if visible >= 0. {
+                        (visible * ppm).ceil() + 1.
+                    } else {
+                        0.
+                    };
+                }
+                // Four coverage queries; GPU prepare separately charges the
+                // selected-edge merge only inside its selected envelope.
+                work += dimensions[0] * dimensions[1] * f64::from(count) * 4.;
+            }
+        }
+        work
+    }
+
+    fn equivalent_work(index: &RenderIndex, bounds: [f64; 4], ppm: f64) {
+        let original = legacy_viewport(index, bounds);
+        let ordinary = index.viewport(bounds);
+        let work_only = index.viewport_query::<false>(bounds);
+        for current in [&ordinary, &work_only] {
+            assert_eq!(
+                current.world_bounds.map(f64::to_bits),
+                original.world_bounds.map(f64::to_bits)
+            );
+            assert_eq!(current.cell_range, original.cell_range);
+            assert_eq!(
+                current.max_candidates_in_view,
+                original.max_candidates_in_view
+            );
+            assert_eq!(
+                current.cell_references_visited,
+                original.cell_references_visited
+            );
+            assert_eq!(
+                index.sample_candidate_work(current, ppm).to_bits(),
+                legacy_sample_candidate_work(index, &original, ppm).to_bits()
+            );
+        }
+        assert_eq!(
+            ordinary.ordered_candidate_ids,
+            original.ordered_candidate_ids
+        );
+        assert!(work_only.ordered_candidate_ids.is_empty());
+        assert_eq!(work_only.ordered_candidate_ids.capacity(), 0);
+        assert_eq!(
+            index.sample_candidate_work_in_bounds(bounds, ppm).to_bits(),
+            legacy_sample_candidate_work(index, &original, ppm).to_bits()
+        );
+    }
+
+    #[test]
+    fn work_only_query_matches_original_bounds_counts_order_and_work_bits() {
+        let mut scene = objects(1000);
+        scene[0].bounds = [-1., -1., 120., 75.];
+        scene[1].meta[3] = 0;
+        let mut flags = vec![0; scene.len()];
+        flags[2] = 1;
+        for delta in [[0., 0.], [0.125, -0.25], [-100., 100.]] {
+            let index = RenderIndex::build(&scene, &flags, delta).unwrap();
+            let w = index.world.map(f64::from);
+            for bounds in [
+                w,
+                [-10., -10., 200., 200.],
+                [0., 0., 6., 6.],
+                [0., 0., 0., 0.],
+                [w[2], w[3], w[2], w[3]],
+                [w[0] - 1., w[1] - 1., w[0] - 0.1, w[1] - 0.1],
+                [w[2] + 0.1, w[3], w[2] + 1., w[3] + 1.],
+                [6., 6., 0., 0.],
+                [-f64::INFINITY, -f64::INFINITY, f64::INFINITY, f64::INFINITY],
+                [f64::NAN, 0., 6., 6.],
+            ] {
+                for ppm in [0., -1., 0.125, 20., 80., f64::MAX, f64::INFINITY, f64::NAN] {
+                    equivalent_work(&index, bounds, ppm);
+                }
+            }
+        }
+        equivalent_work(
+            &RenderIndex::build(&[], &[], [0.; 2]).unwrap(),
+            [0., 0., 1., 1.],
+            20.,
+        );
+        let coarsened = RenderIndex::bounded(&scene, &[], [0.; 2], 999).unwrap();
+        equivalent_work(&coarsened, [-10., -10., 200., 200.], 20.);
+        assert_eq!(
+            RenderIndex::bounded(&scene, &[], [0.; 2], 998).unwrap_err(),
+            "RESOURCE_LIMIT: resource=cell_references limit=998 actual=999"
+        );
+    }
+
+    fn panic_text(action: impl FnOnce() -> f64 + std::panic::UnwindSafe) -> String {
+        let failure =
+            std::panic::catch_unwind(action).expect_err("malformed query must still fail");
+        if let Some(message) = failure.downcast_ref::<String>() {
+            message.clone()
+        } else if let Some(message) = failure.downcast_ref::<&str>() {
+            message.to_string()
+        } else {
+            panic!("unexpected panic payload")
+        }
+    }
+
+    #[test]
+    fn work_only_query_preserves_malformed_index_failures_and_early_out_order() {
+        let valid = RenderIndex {
+            world: [0., 0., 2., 1.],
+            grid: [0., 0., 1., 1.],
+            cols: 2,
+            rows: 1,
+            data: vec![3, 4, 5, 0, 1],
+            max_candidates: 1,
+        };
+        let bounds = [0., 0., 2., 1.];
+        // Two bad cells ensure that the first cell still fails first, before
+        // sampling (which also has non-finite ppm), in the same row-major order.
+        for data in [
+            vec![],
+            vec![3],
+            vec![6, 7, 8],
+            vec![4, 3, 9, 0, 1],
+            vec![3, 9, 2, 0, 1],
+            vec![u32::MAX, 0, u32::MAX],
+        ] {
+            let index = RenderIndex {
+                data,
+                ..valid.clone()
+            };
+            let original = panic_text(|| {
+                legacy_sample_candidate_work(&index, &legacy_viewport(&index, bounds), f64::NAN)
+            });
+            assert_eq!(
+                panic_text(|| index.sample_candidate_work_in_bounds(bounds, f64::NAN)),
+                original
+            );
+            assert_eq!(
+                panic_text(|| index.sample_candidate_work(&index.viewport(bounds), f64::NAN)),
+                original
+            );
+            // Reversed/outside bounds must return before any offset access.
+            equivalent_work(&index, [3., 0., 4., 1.], f64::NAN);
+            equivalent_work(&index, [2., 1., 0., 0.], f64::INFINITY);
+        }
+        for (cols, rows) in [(0, 1), (1, 0), (u32::MAX, u32::MAX)] {
+            let index = RenderIndex {
+                cols,
+                rows,
+                ..valid.clone()
+            };
+            let original = panic_text(|| {
+                legacy_sample_candidate_work(&index, &legacy_viewport(&index, bounds), 20.)
+            });
+            assert_eq!(
+                panic_text(|| index.sample_candidate_work_in_bounds(bounds, 20.)),
+                original
+            );
+        }
+        // The original halo query checks slices, not ID validity; sorting an
+        // out-of-scene ID adds no validation or other required side effect.
+        let index = RenderIndex {
+            data: vec![3, 4, 5, u32::MAX, u32::MAX],
+            ..valid.clone()
+        };
+        equivalent_work(&index, bounds, 20.);
+        assert_eq!(index.viewport(bounds).ordered_candidate_ids, vec![u32::MAX]);
+        for grid in [[0., 0., 0., 0.], [f32::NAN; 4], [f32::INFINITY; 4]] {
+            equivalent_work(
+                &RenderIndex {
+                    grid,
+                    ..valid.clone()
+                },
+                bounds,
+                f64::INFINITY,
+            );
+        }
+        let index = RenderIndex {
+            world: [f32::NAN; 4],
+            ..valid
+        };
+        equivalent_work(&index, bounds, 20.);
+    }
+
     #[test]
     fn render_index_preserves_scene_order_and_exposure_layer_isolation() {
         let o = objects(1000);

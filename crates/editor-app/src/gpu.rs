@@ -419,15 +419,15 @@ fn prepare_measured_impl(
     if has_selection {
         // Halo evaluation is restricted to selected envelopes. Query probes
         // need an additional halo beyond the shader's pixel early-out box.
-        let selected_view = index.viewport(std::array::from_fn(|k| {
+        let selected_bounds = std::array::from_fn(|k| {
             let v = f64::from(selection_bounds[k]) + if k < 2 { -4. / ppm } else { 4. / ppm };
             (if k < 2 {
                 v.max(bounds[k])
             } else {
                 v.min(bounds[k])
             }) - f64::from(preview[k % 2])
-        }));
-        work += index.sample_candidate_work(&selected_view, ppm);
+        });
+        work += index.sample_candidate_work_in_bounds(selected_bounds, ppm);
         for (k, v) in selection_bounds.iter_mut().enumerate() {
             *v = if k < 2 {
                 (*v - (2. / ppm) as f32).next_down()
