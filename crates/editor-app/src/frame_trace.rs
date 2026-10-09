@@ -14,6 +14,7 @@ use std::{
 };
 
 const CAPACITY: usize = 4096;
+const WRITER_BATCH_CAPACITY: usize = 16;
 const META_LIMIT: u64 = 4 * 1024 * 1024;
 const OUTPUT_LIMIT: u64 = 128 * 1024 * 1024;
 const FOOTER_RESERVE: u64 = 8192;
@@ -220,6 +221,7 @@ pub(crate) struct Binding {
 }
 #[derive(Clone, Copy, Default, Serialize)]
 pub(crate) struct Snapshot {
+    pub input_focused: bool,
     pub selected_count: usize,
     pub move_phase: &'static str,
     pub drag_active: bool,
@@ -231,6 +233,43 @@ pub(crate) struct Snapshot {
     pub pending_task_id: Option<std::num::NonZeroU64>,
     pub viewport_task_id: Option<std::num::NonZeroU64>,
     pub geometry_task_id: Option<std::num::NonZeroU64>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum MoveExitReason {
+    FocusLost,
+    PointerGone,
+    WindowFocusLost,
+    Escape,
+    SecondaryClick,
+    PointPickCancelled,
+    ModalCancelled,
+    ModalReplaced,
+    ToolChanged,
+    ModalTaskCompleted,
+    ContextChanged,
+    Transition,
+    InitialAdmissionRejected,
+    TaskIdentityMismatch,
+    ApplyTerminal,
+    TaskCancelled,
+    TaskError,
+    PlacementMissing,
+    InvalidBase,
+    PreviewPhaseMismatch,
+    PreviewMissing,
+    WorkerDisconnected,
+    RequestInvalid,
+    AdmissionRejected,
+}
+#[derive(Default, Serialize)]
+struct InputDetail {
+    focused: bool,
+    pointer_moved: usize,
+    pointer_button: usize,
+    pointer_gone: usize,
+    window_focus_gained: usize,
+    window_focus_lost: usize,
 }
 #[derive(Clone, Copy, Serialize)]
 pub(crate) struct RenderSource {
@@ -365,6 +404,12 @@ enum Payload {
         input_batch_id: u64,
         viewport_id: u64,
         counts: [usize; 4],
+        detail: InputDetail,
+    },
+    MoveExit {
+        binding: Binding,
+        phase: &'static str,
+        reason: MoveExitReason,
     },
     Metadata {
         metadata: Box<Metadata>,
@@ -468,6 +513,7 @@ impl Shared {
             return;
         }
         let seq = self.sequence.fetch_add(1, Ordering::Relaxed) + 1;
+        let mut wake = false;
         if self.failed.load(Ordering::Acquire) {
             self.drop_record(&payload, at);
         } else if let Ok(mut queue) = self.queue.try_lock() {
@@ -477,6 +523,7 @@ impl Shared {
                 self.full.fetch_add(1, Ordering::Relaxed);
                 self.drop_record(&payload, at);
             } else {
+                wake = queue.is_empty();
                 queue.push_back(Record {
                     record_seq: seq,
                     source_ns: at,
@@ -485,13 +532,44 @@ impl Shared {
                 self.high_water
                     .fetch_max(queue.len() as u64, Ordering::Relaxed);
                 self.accepted.fetch_add(1, Ordering::Relaxed);
-                self.wake.notify_one();
             }
         } else {
             self.contention.fetch_add(1, Ordering::Relaxed);
             self.drop_record(&payload, at);
         }
         self.inflight.fetch_sub(1, Ordering::SeqCst);
+        // Notify after releasing the queue lock, only for a new nonempty queue.
+        // Close and admitted span completion have their own independent wakes.
+        if wake {
+            self.wake.notify_one();
+        }
+    }
+    fn writer_batch(&self) -> Result<([Option<Record>; WRITER_BATCH_CAPACITY], bool), String> {
+        let mut records = std::array::from_fn(|_| None);
+        let mut queue = self.queue.lock().map_err(|_| "trace queue poisoned")?;
+        if queue.is_empty()
+            && (!self.close_ready.load(Ordering::Acquire)
+                || self.inflight.load(Ordering::SeqCst) != 0)
+        {
+            queue = self
+                .wake
+                .wait_timeout(queue, Duration::from_millis(250))
+                .map_err(|_| "trace queue poisoned")?
+                .0;
+        }
+        for slot in &mut records {
+            let Some(record) = queue.pop_front() else {
+                break;
+            };
+            *slot = Some(record);
+        }
+        // An empty queue after draining this batch is not a finished writer:
+        // every record in the batch must first be written and counted.
+        let drained = records[0].is_none()
+            && self.close_ready.load(Ordering::Acquire)
+            && self.inflight.load(Ordering::SeqCst) == 0;
+        drop(queue);
+        Ok((records, drained))
     }
     fn metadata(&self, metadata: Metadata) {
         if !self.active() {
@@ -777,7 +855,9 @@ impl Recorder {
         if config.expected_commit != commit || config.expected_manifest_sha256 != manifest_sha {
             return Err("source identity mismatch".into());
         }
-        if std::mem::size_of::<Record>() > 256 {
+        if std::mem::size_of::<Record>() > 256
+            || std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>() > 4096
+        {
             return Err("numeric queue budget exceeded".into());
         }
         let output = OpenOptions::new()
@@ -873,7 +953,19 @@ impl Recorder {
         };
         let span = Span::new(self.shared.clone(), binding, Stage::InputBatch);
         let mut counts = [0; 4];
+        let mut detail = InputDetail {
+            focused: raw.focused,
+            ..Default::default()
+        };
         for event in &raw.events {
+            match event {
+                eframe::egui::Event::PointerMoved(..) => detail.pointer_moved += 1,
+                eframe::egui::Event::PointerButton { .. } => detail.pointer_button += 1,
+                eframe::egui::Event::PointerGone => detail.pointer_gone += 1,
+                eframe::egui::Event::WindowFocused(true) => detail.window_focus_gained += 1,
+                eframe::egui::Event::WindowFocused(false) => detail.window_focus_lost += 1,
+                _ => {}
+            }
             let index = match event {
                 eframe::egui::Event::PointerMoved(..)
                 | eframe::egui::Event::PointerButton { .. }
@@ -890,9 +982,32 @@ impl Recorder {
                 input_batch_id: self.input_id,
                 viewport_id: raw.viewport_id.0.value(),
                 counts,
+                detail,
             },
         );
         Some(span)
+    }
+    pub fn move_exit(
+        &mut self,
+        view: &crate::state::View,
+        phase: &'static str,
+        reason: MoveExitReason,
+    ) {
+        if !self.shared.active() {
+            return;
+        }
+        let version_id = self.version(view);
+        self.shared.emit(
+            self.shared.clock.now(),
+            Payload::MoveExit {
+                binding: Binding {
+                    version_id,
+                    ..self.current_binding.unwrap_or_default()
+                },
+                phase,
+                reason,
+            },
+        );
     }
     pub fn update(
         &mut self,
@@ -1190,7 +1305,9 @@ fn writer(
         "pid":std::process::id(), "observation":"passive, no screenshots, forced repaint, input injection or GPU waits", "queue":"bounded try_lock; drop new on contention/full",
         "supervision_required":"matching finalization_ack=ok requires footer/flush and completed writer thread join; late footer after timeout is insufficient",
         "writer_join_required":true,
-        "metadata_limit":META_LIMIT,"output_limit":OUTPUT_LIMIT});
+        "metadata_limit":META_LIMIT,"output_limit":OUTPUT_LIMIT,
+        "writer_batch_capacity":WRITER_BATCH_CAPACITY,
+        "writer_batch_size_bytes":std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>()});
     line(
         &mut output,
         &header,
@@ -1210,27 +1327,13 @@ fn writer(
     let mut max_record_write_wall = 0;
     let mut flush_count = 1u64;
     loop {
-        let (record, drained) = {
-            let mut queue = shared.queue.lock().map_err(|_| "trace queue poisoned")?;
-            if queue.is_empty()
-                && (!shared.close_ready.load(Ordering::Acquire)
-                    || shared.inflight.load(Ordering::SeqCst) != 0)
-            {
-                queue = shared
-                    .wake
-                    .wait_timeout(queue, Duration::from_millis(250))
-                    .map_err(|_| "trace queue poisoned")?
-                    .0;
-            }
-            let record = queue.pop_front();
-            let drained = record.is_none()
-                && shared.close_ready.load(Ordering::Acquire)
-                && shared.inflight.load(Ordering::SeqCst) == 0;
-            (record, drained)
-        };
-        if let Some(record) = record {
-            max_writer_lag =
-                max_writer_lag.max(shared.clock.now().0.saturating_sub(record.source_ns.0));
+        let (records, drained) = shared.writer_batch()?;
+        if drained {
+            break;
+        }
+        let dequeued_at = shared.clock.now();
+        for record in records.into_iter().flatten() {
+            max_writer_lag = max_writer_lag.max(dequeued_at.0.saturating_sub(record.source_ns.0));
             let write_start = Instant::now();
             if let Err(error) = line(
                 &mut output,
@@ -1252,8 +1355,13 @@ fn writer(
             max_record_write_wall = max_record_write_wall
                 .max(write_start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
             shared.consumed.fetch_add(1, Ordering::Relaxed);
-        } else if drained {
-            break;
+            if last_flush.elapsed() >= Duration::from_millis(250) || bytes - flushed_bytes >= 262144
+            {
+                output.flush().map_err(|_| "trace flush failed")?;
+                flush_count += 1;
+                last_flush = Instant::now();
+                flushed_bytes = bytes;
+            }
         }
         if last_flush.elapsed() >= Duration::from_millis(250) || bytes - flushed_bytes >= 262144 {
             output.flush().map_err(|_| "trace flush failed")?;
@@ -1281,6 +1389,48 @@ mod tests {
     use super::*;
     fn shared(capacity: usize) -> Arc<Shared> {
         Shared::new(Clock::new().unwrap(), capacity)
+    }
+    #[test]
+    fn raw_input_classification_excludes_event_contents_and_positions() {
+        let mut recorder = Recorder::for_test();
+        let raw = eframe::egui::RawInput {
+            focused: false,
+            events: vec![
+                eframe::egui::Event::PointerMoved(eframe::egui::pos2(12345., 67890.)),
+                eframe::egui::Event::PointerButton {
+                    pos: eframe::egui::pos2(12345., 67890.),
+                    button: eframe::egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+                eframe::egui::Event::PointerGone,
+                eframe::egui::Event::WindowFocused(true),
+                eframe::egui::Event::WindowFocused(false),
+                eframe::egui::Event::Text("private-content-marker".into()),
+            ],
+            ..Default::default()
+        };
+        drop(recorder.input(&raw));
+        let rows = recorder.take_test_records();
+        let counts = rows.iter().find(|r| r["kind"] == "input_counts").unwrap();
+        assert_eq!(counts["counts"], serde_json::json!([3, 0, 0, 3]));
+        assert_eq!(
+            counts["detail"],
+            serde_json::json!({
+                "focused":false,"pointer_moved":1,"pointer_button":1,"pointer_gone":1,
+                "window_focus_gained":1,"window_focus_lost":1
+            })
+        );
+        let encoded = serde_json::to_string(&rows).unwrap();
+        for forbidden in [
+            "private-content-marker",
+            "12345",
+            "67890",
+            "pressed",
+            "modifiers",
+        ] {
+            assert!(!encoded.contains(forbidden));
+        }
     }
     #[test]
     fn source_endpoints_survive_delayed_consumption_and_full_queue() {
@@ -1345,6 +1495,107 @@ mod tests {
         assert_eq!(shared.inflight.load(Ordering::SeqCst), 0);
     }
     #[test]
+    fn staged_batch_releases_queue_during_blocked_io_and_close_preserves_fifo() {
+        let shared = shared(64);
+        for id in 0..33 {
+            shared.emit(
+                Ns(id),
+                Payload::UpdateEnd {
+                    binding: Binding::default(),
+                    end_version_id: id,
+                    snapshot: Snapshot::default(),
+                },
+            );
+        }
+        let consumer = shared.clone();
+        let (started_tx, started) = mpsc::sync_channel(1);
+        let (release, released) = mpsc::sync_channel(1);
+        let thread = std::thread::spawn(move || {
+            struct BlockedSink {
+                started: Option<mpsc::SyncSender<()>>,
+                released: mpsc::Receiver<()>,
+                bytes: Vec<u8>,
+            }
+            impl Write for BlockedSink {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    if let Some(started) = self.started.take() {
+                        started.send(()).unwrap();
+                        self.released.recv().unwrap();
+                    }
+                    self.bytes.extend_from_slice(bytes);
+                    Ok(bytes.len())
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+            let mut sink = BlockedSink {
+                started: Some(started_tx),
+                released,
+                bytes: Vec::new(),
+            };
+            let mut bytes = 0;
+            loop {
+                let (batch, drained) = consumer.writer_batch().unwrap();
+                if drained {
+                    break;
+                }
+                for record in batch.into_iter().flatten() {
+                    line(&mut sink, &record, &mut bytes, OUTPUT_LIMIT).unwrap();
+                    consumer.consumed.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            sink.bytes
+        });
+        started.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(shared.queue.lock().unwrap().len(), 17);
+        // File I/O is blocked with a staged batch, but admission still succeeds.
+        shared.emit(
+            Ns(33),
+            Payload::UpdateEnd {
+                binding: Binding::default(),
+                end_version_id: 33,
+                snapshot: Snapshot::default(),
+            },
+        );
+        shared.close();
+        assert_eq!(shared.accepted.load(Ordering::Relaxed), 34);
+        assert_eq!(shared.consumed.load(Ordering::Relaxed), 0);
+        release.send(()).unwrap();
+        let raw = thread.join().unwrap();
+        let rows: Vec<serde_json::Value> = std::str::from_utf8(&raw)
+            .unwrap()
+            .lines()
+            .map(|row| serde_json::from_str(row).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 34);
+        for (id, row) in rows.iter().enumerate() {
+            assert_eq!(row["record_seq"], id as u64 + 1);
+            assert_eq!(row["end_version_id"], id as u64);
+        }
+        assert_eq!(shared.consumed.load(Ordering::Relaxed), 34);
+        assert_eq!(shared.contention.load(Ordering::Relaxed), 0);
+        assert_eq!(shared.full.load(Ordering::Relaxed), 0);
+    }
+    #[test]
+    fn empty_staging_waits_for_admitted_span_after_close() {
+        let shared = shared(64);
+        let span = Span::new(shared.clone(), Binding::default(), Stage::CallbackPaint);
+        shared.close();
+        let (batch, drained) = shared.writer_batch().unwrap();
+        assert!(batch.iter().all(Option::is_none));
+        assert!(!drained);
+        drop(span);
+        let (batch, drained) = shared.writer_batch().unwrap();
+        assert!(!drained);
+        assert!(matches!(
+            batch[0].as_ref().unwrap().payload,
+            Payload::Span { .. }
+        ));
+        drop(batch);
+        assert!(shared.writer_batch().unwrap().1);
+    }
+    #[test]
     fn admitted_span_crossing_close_is_retained_and_delays_finalization() {
         let shared = shared(8);
         let span = Span::new(shared.clone(), Binding::default(), Stage::CallbackPaint);
@@ -1385,6 +1636,7 @@ mod tests {
             9007199254740993
         );
         assert!(std::mem::size_of::<Record>() <= 256);
+        assert!(std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>() <= 4096);
         let mut output = Vec::new();
         let mut bytes = 0;
         assert!(line(&mut output, &"long value", &mut bytes, 2).is_err());

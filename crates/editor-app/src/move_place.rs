@@ -2,6 +2,7 @@
 //! A zero-delta preview is display data only; it never authorizes a moved result.
 use crate::{
     EditorApp,
+    frame_trace::MoveExitReason,
     modal::ActiveModal,
     point_input::{self, Point, Source},
     point_transform::{Mode, Pick, PickField, Preview, Request, Session},
@@ -53,6 +54,30 @@ impl EditorApp {
             .as_ref()
             .is_some_and(|s| s.placement.is_some())
     }
+    pub(crate) fn trace_move_exit(&mut self, reason: MoveExitReason) {
+        if self.frame_trace.is_none() {
+            return;
+        }
+        let Some(placement) = self
+            .point_transform
+            .as_ref()
+            .and_then(|s| s.placement.as_ref())
+        else {
+            return;
+        };
+        let phase = match placement.phase {
+            Phase::Preparing => "preparing",
+            Phase::Following => "following",
+            Phase::Frozen => "frozen",
+            Phase::FinalPreview(_) => "final_preview",
+            Phase::Ready(_) => "ready",
+            Phase::Applying => "applying",
+        };
+        self.frame_trace
+            .as_mut()
+            .unwrap()
+            .move_exit(&self.view, phase, reason);
+    }
     pub(crate) fn start_move_place(&mut self) {
         if !self.command_enabled(ids::OBJECT_MOVE_PLACE) || self.selection_read_pending() {
             return;
@@ -101,10 +126,14 @@ impl EditorApp {
         self.modal_pending = None;
         self.send(Action::PointPreview(Box::new(request)));
         if self.move_place_task.is_none() {
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::InitialAdmissionRejected);
         }
     }
     pub(crate) fn cancel_move_place(&mut self) {
+        self.cancel_move_place_reason(MoveExitReason::PointPickCancelled);
+    }
+    fn cancel_move_place_reason(&mut self, reason: MoveExitReason) {
+        self.trace_move_exit(reason);
         self.point_input_cancelled = true;
         self.point_commit_blocked = true;
         if let Some(pending) = &mut self.move_place_task {
@@ -120,11 +149,11 @@ impl EditorApp {
     pub(crate) fn defer_move_place_transition(&mut self, transition: Transition) -> bool {
         if let Some(pending) = &mut self.move_place_task {
             pending.after_stop.get_or_insert(transition);
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::Transition);
             true
         } else {
             if self.move_placing() {
-                self.cancel_move_place();
+                self.cancel_move_place_reason(MoveExitReason::Transition);
             }
             false
         }
@@ -159,7 +188,7 @@ impl EditorApp {
         if !identity {
             let pending = self.move_place_task.take().unwrap();
             pending.task.cancel_token.cancel();
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::TaskIdentityMismatch);
             self.release_move_place_task();
             self.ui_error = Some("点击放置结果身份未确认；结果未安装".into());
             self.view.error = Some(editor_service::ServiceError {
@@ -202,7 +231,16 @@ impl EditorApp {
             .as_ref()
             .map(|e| format!("{} · {}", e.code, e.message));
         if pending.apply || pending.cancelled || error.is_some() || !self.move_placing() {
-            self.cancel_move_place();
+            let reason = if error.is_some() {
+                MoveExitReason::TaskError
+            } else if pending.apply {
+                MoveExitReason::ApplyTerminal
+            } else if pending.cancelled {
+                MoveExitReason::TaskCancelled
+            } else {
+                MoveExitReason::PlacementMissing
+            };
+            self.cancel_move_place_reason(reason);
             if let Some(error) = error {
                 self.ui_error = Some(error);
             }
@@ -221,7 +259,7 @@ impl EditorApp {
                         source: Source::BoundingCenter,
                     };
                     if !base.world_mm.is_valid_geometry() {
-                        self.cancel_move_place();
+                        self.cancel_move_place_reason(MoveExitReason::InvalidBase);
                         self.ui_error = Some("点击放置制造基点无效".into());
                         return;
                     }
@@ -241,12 +279,12 @@ impl EditorApp {
                     placement.phase = Phase::Ready(pending.request);
                 }
                 _ => {
-                    self.cancel_move_place();
+                    self.cancel_move_place_reason(MoveExitReason::PreviewPhaseMismatch);
                     self.ui_error = Some("点击放置预览阶段不匹配；没有提交修改".into());
                 }
             }
         } else {
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::PreviewMissing);
             self.ui_error = Some("点击放置缺少匹配的完整预览；没有提交修改".into());
         }
         if let Some(transition) = pending.after_stop {
@@ -259,7 +297,7 @@ impl EditorApp {
             if let Some(pending) = &pending {
                 pending.task.cancel_token.cancel();
             }
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::WorkerDisconnected);
             self.release_move_place_task();
             self.ui_error = Some("后台连接关闭，点击放置终态未确认".into());
             self.view.error = Some(editor_service::ServiceError {
@@ -298,7 +336,7 @@ impl EditorApp {
         let (request, apply) = match action {
             Ok(value) => value,
             Err(error) => {
-                self.cancel_move_place();
+                self.cancel_move_place_reason(MoveExitReason::RequestInvalid);
                 self.ui_error = Some(error);
                 return;
             }
@@ -309,7 +347,7 @@ impl EditorApp {
             Action::PointPreview(Box::new(request.clone()))
         });
         if self.move_place_task.is_none() {
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::AdmissionRejected);
             return;
         }
         let session = self.point_transform.as_mut().unwrap();
@@ -327,7 +365,7 @@ impl EditorApp {
         rect: egui::Rect,
     ) {
         if response.secondary_clicked() {
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::SecondaryClick);
             return;
         }
         if self.text_input_at_event
@@ -380,7 +418,7 @@ impl EditorApp {
             return;
         };
         if !session.context.valid(&self.view) {
-            self.cancel_move_place();
+            self.cancel_move_place_reason(MoveExitReason::ContextChanged);
             self.ui_error = Some("工程/选择/权限/精度已改变，请重新开始点击放置".into());
             return;
         }

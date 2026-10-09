@@ -400,6 +400,236 @@ fn esc() -> egui::Event {
         modifiers: Default::default(),
     }
 }
+#[test]
+fn exit_classification_keeps_actual_input_and_cleanup_behavior_with_observer_on_or_off() {
+    let reasons = [
+        "escape",
+        "focus_lost",
+        "window_focus_lost",
+        "pointer_gone",
+        "secondary_click",
+        "context_changed",
+        "modal_replaced",
+        "modal_cancelled",
+        "point_pick_cancelled",
+        "transition",
+        "worker_disconnected",
+        "tool_changed",
+    ];
+    for (case, expected) in reasons.into_iter().enumerate() {
+        let mut outcomes = Vec::new();
+        for enabled in [false, true] {
+            let mut run = Run::new();
+            run.ready();
+            if enabled {
+                run.app.frame_trace = Some(crate::frame_trace::Recorder::for_test());
+            }
+            let before = run.app.view.info.clone();
+            match case {
+                0 => run.update(vec![esc()], egui::Modifiers::NONE, true),
+                1 => run.update(vec![], egui::Modifiers::NONE, false),
+                2 => run.update(
+                    vec![egui::Event::WindowFocused(false)],
+                    egui::Modifiers::NONE,
+                    true,
+                ),
+                3 => run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true),
+                4 => {
+                    let pos = run.app.canvas_rect.center();
+                    for pressed in [true, false] {
+                        run.update(
+                            vec![egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Secondary,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            }],
+                            egui::Modifiers::NONE,
+                            true,
+                        );
+                    }
+                }
+                5 => {
+                    run.app.view.selection_epoch += 1;
+                    run.update(vec![], egui::Modifiers::NONE, true);
+                }
+                6 => run.app.open_modal(crate::modal::ActiveModal::Grid),
+                7 => run.app.cancel_modal(),
+                8 => run.app.finish_point_pick(None),
+                9 => {
+                    run.app.defer_move_place_transition(Transition::Close);
+                }
+                10 => run.app.move_place_disconnected(),
+                _ => {
+                    // Exercise the existing command clear branch with its gate open;
+                    // ordinary Following retains a point_pick and blocks this command.
+                    run.app.point_pick = None;
+                    assert!(run.app.dispatch(ids::TOOL_SELECT));
+                }
+            }
+            assert!(!run.app.move_placing(), "case {case} observer {enabled}");
+            assert_eq!(run.app.view.info, before);
+            run.no_edit_requests();
+            outcomes.push((
+                run.app.view.info == before,
+                run.app.view.error.as_ref().map(|e| e.code.clone()),
+                run.app.point_input_cancelled,
+                run.app.point_commit_blocked,
+                run.app.busy,
+                run.app.modal,
+                run.app.view.point_preview.is_some(),
+            ));
+            if enabled {
+                let records = run.app.frame_trace.as_ref().unwrap().take_test_records();
+                let exit = records.iter().find(|r| r["kind"] == "move_exit").unwrap();
+                assert_eq!(exit["reason"], expected, "case {case}");
+                assert_eq!(exit["phase"], "following");
+                assert!(exit["source_ns"].as_str().unwrap().parse::<u64>().is_ok());
+                assert!(exit["binding"]["version_id"].as_u64().unwrap() > 0);
+                if case <= 5 {
+                    assert!(exit["binding"]["update_id"].as_u64().unwrap() > 0);
+                    assert!(exit["binding"]["input_batch_id"].as_u64().unwrap() > 0);
+                } else {
+                    assert_eq!(exit["binding"]["egui_identity_known"], false);
+                }
+                if case == 2 || case == 3 {
+                    let detail = &records
+                        .iter()
+                        .find(|r| r["kind"] == "input_counts")
+                        .unwrap()["detail"];
+                    assert_eq!(
+                        detail[if case == 2 {
+                            "window_focus_lost"
+                        } else {
+                            "pointer_gone"
+                        }],
+                        1
+                    );
+                }
+            }
+        }
+        assert_eq!(outcomes[0], outcomes[1], "case {case}");
+    }
+}
+#[test]
+fn task_and_request_exit_classification_keeps_terminal_behavior_with_observer_on_or_off() {
+    let reasons = [
+        "task_error",
+        "preview_missing",
+        "invalid_base",
+        "preview_phase_mismatch",
+        "task_identity_mismatch",
+        "modal_task_completed",
+        "request_invalid",
+        "admission_rejected",
+        "initial_admission_rejected",
+        "task_error",
+    ];
+    for (fault, expected) in reasons.into_iter().enumerate() {
+        let mut outcomes = Vec::new();
+        for enabled in [false, true] {
+            let mut run = Run::new();
+            if enabled {
+                run.app.frame_trace = Some(crate::frame_trace::Recorder::for_test());
+            }
+            if fault < 5 {
+                run.start();
+                let (id, mut view, _) = run.work(false);
+                match fault {
+                    0 => {
+                        view.error = Some(editor_service::ServiceError {
+                            code: "RESOURCE_LIMIT".into(),
+                            message: "synthetic refusal".into(),
+                            details: serde_json::json!({}),
+                        })
+                    }
+                    1 => view.point_preview = None,
+                    2 => {
+                        Arc::make_mut(view.point_preview.as_mut().unwrap())
+                            .bounds
+                            .min_x_mm = f64::NAN
+                    }
+                    3 => {
+                        run.app
+                            .point_transform
+                            .as_mut()
+                            .unwrap()
+                            .placement
+                            .as_mut()
+                            .unwrap()
+                            .phase = Phase::Following
+                    }
+                    _ => view.info.as_mut().unwrap().project_id.push('x'),
+                }
+                run.reply(id, view);
+            } else if fault == 5 || fault == 9 {
+                run.ready();
+                run.final_preview(MmPoint::new(3., 2.));
+                let (id, view, _) = run.work(false);
+                run.reply(id, view);
+                let (id, mut view, _) = run.work(true);
+                if fault == 9 {
+                    // A synthetic terminal error exercises classification only;
+                    // it does not make the reply proof of a successful commit.
+                    view.error = Some(editor_service::ServiceError {
+                        code: "RESOURCE_LIMIT".into(),
+                        message: "synthetic terminal failure".into(),
+                        details: serde_json::json!({}),
+                    });
+                }
+                run.reply(id, view);
+                assert_eq!(run.app.view.info.as_ref().unwrap().undo_entries, 1);
+            } else {
+                if fault != 8 {
+                    run.ready();
+                }
+                if fault == 6 {
+                    let session = run.app.point_transform.as_mut().unwrap();
+                    session.target.x = "invalid-number".into();
+                    session.placement.as_mut().unwrap().phase = Phase::Frozen;
+                    run.app.tick_move_place();
+                } else {
+                    // Retire the real worker receiver, so normal send admission fails.
+                    let (_, replacement) = sync_channel(1);
+                    drop(std::mem::replace(&mut run.requests, replacement));
+                    if fault == 8 {
+                        run.app.start_move_place();
+                    } else {
+                        run.app
+                            .point_transform
+                            .as_mut()
+                            .unwrap()
+                            .placement
+                            .as_mut()
+                            .unwrap()
+                            .phase = Phase::Frozen;
+                        run.app.tick_move_place();
+                    }
+                }
+            }
+            assert!(!run.app.move_placing(), "fault {fault} observer {enabled}");
+            run.no_edit_requests();
+            outcomes.push((
+                run.app.view.info.as_ref().unwrap().undo_entries,
+                run.app.view.error.as_ref().map(|e| e.code.clone()),
+                run.app.busy,
+                run.app.canvas_selection_unconfirmed,
+                run.app.point_input_cancelled,
+                run.app.point_commit_blocked,
+                run.app.view.point_preview.is_some(),
+            ));
+            if enabled {
+                let rows = run.app.frame_trace.as_ref().unwrap().take_test_records();
+                let exit = rows.iter().find(|r| r["kind"] == "move_exit").unwrap();
+                assert_eq!(exit["reason"], expected, "fault {fault}");
+                if fault == 9 {
+                    assert_eq!(exit["phase"], "applying");
+                }
+            }
+        }
+        assert_eq!(outcomes[0], outcomes[1], "fault {fault}");
+    }
+}
 
 #[test]
 fn hover_reuses_template_and_snapshot_without_worker_or_hold_then_one_exact_commit() {

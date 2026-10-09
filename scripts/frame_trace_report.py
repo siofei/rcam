@@ -6,6 +6,19 @@ import json
 import math
 from pathlib import Path
 
+MOVE_EXIT_REASONS = frozenset({
+    "focus_lost", "pointer_gone", "window_focus_lost", "escape", "secondary_click",
+    "point_pick_cancelled", "modal_cancelled", "modal_replaced", "tool_changed",
+    "modal_task_completed", "context_changed", "transition", "initial_admission_rejected",
+    "task_identity_mismatch", "apply_terminal", "task_cancelled", "task_error",
+    "placement_missing", "invalid_base", "preview_phase_mismatch", "preview_missing",
+    "worker_disconnected", "request_invalid", "admission_rejected",
+})
+MOVE_PHASES = frozenset({"preparing", "following", "frozen", "final_preview", "ready", "applying"})
+EXIT_BINDING_INTEGERS = ("viewport_id", "update_id", "egui_frame_nr", "egui_pass_nr", "pass_index",
+                         "input_batch_id", "version_id", "render_callback_id", "rendered_source_version_id",
+                         "rendered_source_update_id", "rendered_scene_serial")
+
 
 def ns(value):
     if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
@@ -14,6 +27,24 @@ def ns(value):
     if result >= 2**64:
         raise ValueError("source time exceeds u64")
     return result
+
+def valid_move_exit(row):
+    binding = row.get("binding")
+    if (type(row.get("record_seq")) is not int or not 0 < row["record_seq"] < 2**64
+            or type(row.get("phase")) is not str or row["phase"] not in MOVE_PHASES
+            or type(binding) is not dict or type(binding.get("egui_identity_known")) is not bool
+            or any(type(binding.get(key)) is not int or not 0 <= binding[key] < 2**64
+                   for key in EXIT_BINDING_INTEGERS)
+            or binding["version_id"] == 0
+            or (binding["egui_identity_known"] and binding["update_id"] == 0)
+            or (not binding["egui_identity_known"] and any(binding[key] != 0 for key in
+                ("viewport_id", "update_id", "egui_frame_nr", "egui_pass_nr", "pass_index", "input_batch_id")))):
+        return False
+    try:
+        ns(row.get("source_ns"))
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def boundary(start, end, first, last):
@@ -170,6 +201,21 @@ def summarize(rows, supervised_ack=False, actual_boundaries=None, clock_calibrat
         raise ValueError("expected exactly one supported header")
     header = headers[0]
     issues = []
+    move_exits = []
+    invalid_exits = set()
+    for row in rows:
+        if row.get("kind") != "move_exit":
+            continue
+        reason = row.get("reason")
+        known = type(reason) is str and reason in MOVE_EXIT_REASONS
+        valid = valid_move_exit(row)
+        if not known:
+            issues.append("move_exit_unknown_reason")
+        if not valid:
+            issues.append("move_exit_invalid_record")
+            invalid_exits.add(id(row))
+        move_exits.append({"raw": row, "reason_status":
+                           "INVALID_RECORD" if not valid else "KNOWN_SOURCE_BRANCH" if known else "UNKNOWN_REASON"})
     footers = [row for row in rows if row.get("kind") == "footer"]
     footer = footers[0] if len(footers) == 1 else None
     if footer is None or not footer.get("finalized"):
@@ -178,7 +224,9 @@ def summarize(rows, supervised_ack=False, actual_boundaries=None, clock_calibrat
         issues.append("observation_incomplete")
     if not supervised_ack:
         issues.append("matching_supervisor_flush_ack_not_verified")
-    sequenced = [row for row in rows if "record_seq" in row]
+    # Untrusted exit structure remains in raw projection, never in lineage/sequence qualification.
+    # Other record types retain the existing strict parsing behavior.
+    sequenced = [row for row in rows if "record_seq" in row and id(row) not in invalid_exits]
     sequences = [row["record_seq"] for row in sequenced]
     if any(type(value) is not int or value <= 0 for value in sequences):
         raise ValueError("invalid record sequence")
@@ -210,6 +258,11 @@ def summarize(rows, supervised_ack=False, actual_boundaries=None, clock_calibrat
     ends = {row["binding"]["update_id"]: row for row in sequenced if row.get("kind") == "update_end"}
     update_spans = {row["binding"]["update_id"]: row for row in sequenced
                     if row.get("kind") == "span" and row.get("stage") == "update"}
+    for exit_record in move_exits:
+        row = exit_record["raw"]
+        if id(row) not in invalid_exits and row["binding"]["egui_identity_known"]:
+            if row["binding"]["update_id"] not in starts:
+                issues.append("move_exit_unknown_update")
     for row in sequenced:
         if row.get("kind") in ("span", "request_attempt"):
             start, end = ns(row["start_ns"]), ns(row["end_ns"])
@@ -312,6 +365,10 @@ def summarize(rows, supervised_ack=False, actual_boundaries=None, clock_calibrat
             "updates": [{"start": row, "end": ends.get(update_id), "span": update_spans.get(update_id)}
                         for update_id, row in sorted(starts.items())],
             "input_batches": [row for row in sequenced if row.get("kind") == "input_counts"],
+            "move_exits": move_exits,
+            "move_exit_classification_status": ("NO_EXIT_RECORDS" if not move_exits else
+                                                "INCOMPLETE" if issues else "KNOWN_SOURCE_BRANCHES_WITHIN_COMPLETE_TRACE"),
+            "native_exit_attribution_status": "OPEN",
             "versions": [row["metadata"] for row in sequenced if row.get("metadata", {}).get("kind") == "version"],
             "render_sources": [row for row in sequenced if row.get("kind") == "render_source"],
             "callback_enqueued": [row for row in sequenced if row.get("kind") == "callback_enqueued"],

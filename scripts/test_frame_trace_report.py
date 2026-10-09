@@ -44,6 +44,99 @@ def calibration_fixture():
 
 
 class TraceReportTests(unittest.TestCase):
+    def exit_fixture(self, reason="escape"):
+        rows = fixture()
+        rows[0]["windows"] = []
+        rows[3]["previous"] = None
+        rows[3]["snapshot"] = {"input_focused": True, "future_snapshot_field": 42}
+        binding = dict(rows[3]["binding"])
+        binding.update(egui_identity_known=True, viewport_id=0, egui_frame_nr=1,
+                       egui_pass_nr=1, pass_index=0, render_callback_id=0,
+                       rendered_source_version_id=0, rendered_scene_serial=0)
+        rows[-1]["counters"]["attempted"] = 6
+        rows[-1:-1] = [
+            {"record_seq": 5, "kind": "input_counts", "input_batch_id": 1,
+             "counts": [2, 0, 0, 0], "detail": {"focused": True, "pointer_moved": 1,
+                "pointer_button": 0, "pointer_gone": 1, "window_focus_gained": 0,
+                "window_focus_lost": 0, "future_input_field": 99}},
+            {"record_seq": 6, "kind": "move_exit", "source_ns": "145", "binding": binding,
+             "phase": "following", "reason": reason, "future_exit_field": 123},
+        ]
+        return rows
+
+    def test_additive_input_focus_and_exit_rows_are_preserved_without_native_attribution(self):
+        rows = self.exit_fixture()
+        report = summarize(rows, True)
+        self.assertEqual(report["input_batches"], [rows[-3]])
+        self.assertEqual(report["updates"][0]["start"]["snapshot"], rows[3]["snapshot"])
+        self.assertEqual(report["move_exits"], [{"raw": rows[-2], "reason_status": "KNOWN_SOURCE_BRANCH"}])
+        self.assertEqual(report["move_exit_classification_status"], "KNOWN_SOURCE_BRANCHES_WITHIN_COMPLETE_TRACE")
+        self.assertEqual(report["native_exit_attribution_status"], "OPEN")
+        self.assertEqual(report["performance_status"], "OPEN")
+        rows[-1]["counters"]["dropped_other"] = 1
+        self.assertEqual(summarize(rows, True)["move_exit_classification_status"], "INCOMPLETE")
+
+    def test_unknown_or_malformed_exit_is_retained_and_cannot_qualify_classification(self):
+        for reason in ["future_unknown_reason", None, {"unexpected": True}]:
+            rows = self.exit_fixture(reason)
+            report = summarize(rows, True)
+            self.assertEqual(report["move_exits"][0]["raw"], rows[-2])
+            self.assertEqual(report["move_exits"][0]["reason_status"], "UNKNOWN_REASON")
+            self.assertIn("move_exit_unknown_reason", report["issues"])
+            self.assertEqual(report["observation_status"], "INCOMPLETE")
+            self.assertEqual(report["move_exit_classification_status"], "INCOMPLETE")
+            self.assertEqual(report["native_exit_attribution_status"], "OPEN")
+        rows = self.exit_fixture()
+        rows[-2]["source_ns"] = "not-a-time"
+        report = summarize(rows, True)
+        self.assertEqual(report["move_exits"][0]["reason_status"], "INVALID_RECORD")
+        self.assertIn("move_exit_invalid_record", report["issues"])
+        self.assertEqual(report["move_exits"][0]["raw"], rows[-2])
+        del rows[-2]["record_seq"]
+        report = summarize(rows, True)
+        self.assertEqual(report["move_exits"][0]["reason_status"], "INVALID_RECORD")
+        self.assertEqual(report["move_exits"][0]["raw"], rows[-2])
+
+    def test_legacy_schema2_without_classification_is_supported_but_schema1_is_rejected(self):
+        rows = fixture()
+        rows[0]["windows"] = []
+        rows[3]["previous"] = None
+        report = summarize(rows, True)
+        self.assertEqual(report["move_exits"], [])
+        self.assertEqual(report["move_exit_classification_status"], "NO_EXIT_RECORDS")
+        self.assertEqual(report["observation_status"], "COMPLETE_WITHIN_DECLARED_SCOPE")
+        self.assertEqual(report["native_exit_attribution_status"], "OPEN")
+        rows[0]["schema_version"] = 1
+        with self.assertRaisesRegex(ValueError, "supported header"):
+            summarize(rows, True)
+
+    def test_invalid_exit_binding_or_sequence_is_preserved_without_weakening_other_records(self):
+        for binding in [None, {}, {"update_id": 1}, "invalid", dict(self.exit_fixture()[-2]["binding"], version_id=True)]:
+            rows = self.exit_fixture()
+            if binding is None:
+                del rows[-2]["binding"]
+            else:
+                rows[-2]["binding"] = binding
+            report = summarize(rows, True)
+            self.assertEqual(report["move_exits"][0], {"raw": rows[-2], "reason_status": "INVALID_RECORD"})
+            self.assertEqual(report["move_exit_classification_status"], "INCOMPLETE")
+        for seq in ["6", True, 0, -1, None, 2**64]:
+            rows = self.exit_fixture()
+            rows[-2]["record_seq"] = seq
+            report = summarize(rows, True)
+            self.assertEqual(report["move_exits"][0]["raw"], rows[-2])
+            self.assertEqual(report["move_exits"][0]["reason_status"], "INVALID_RECORD")
+            self.assertEqual(report["observation_status"], "INCOMPLETE")
+        rows = self.exit_fixture()
+        rows[-2]["binding"]["update_id"] = 999
+        self.assertIn("move_exit_unknown_update", summarize(rows, True)["issues"])
+        rows[-2]["binding"].update(egui_identity_known=False, update_id=0, input_batch_id=0,
+                                 egui_frame_nr=0, egui_pass_nr=0)
+        self.assertEqual(summarize(rows, True)["move_exit_classification_status"], "KNOWN_SOURCE_BRANCHES_WITHIN_COMPLETE_TRACE")
+        rows[3]["record_seq"] = "2"
+        with self.assertRaisesRegex(ValueError, "record sequence"):
+            summarize(rows, True)
+
     def test_exact_endpoint_categories_retain_large_boundary_interval(self):
         self.assertEqual(boundary(0, 140, 100, 200), "cross_start")
         self.assertEqual(boundary(100, 199, 100, 200), "inside")

@@ -95,6 +95,35 @@ forced repaint, third-party modification or additional system permission is intr
 
 ## Bounded output and shutdown
 
+Input classification retains the original four category counts and adds separate PointerMoved,
+PointerButton and PointerGone counts, RawInput.focused, and WindowFocused(true/false) counts.
+Update snapshots also expose egui's focused state. No button contents, key contents, text,
+pointer positions or world coordinates are captured. Focus events can coexist; the counts retain
+each event even when the exit reason uses the branch's priority (unfocused, explicit window focus
+loss, then PointerGone).
+
+`move_exit` records are emitted immediately before existing placement clear/replacement paths.
+They carry a fixed reason enum, prior phase, source-clock time and version binding. The reasons
+distinguish input cancellation, context invalidation, modal/tool/transition replacement, task
+identity/error/preview failures, request admission failures and terminal cleanup. `apply_terminal`
+means an apply reply reached cleanup, not proof that manufacturing committed; task metadata and
+the installed View must establish that result. A terminal View error takes reason priority as
+`task_error`, including apply replies; the recorded prior phase retains the apply association.
+`modal_task_completed` identifies the existing
+successful modal-reply clear branch. Nested cleanup may emit another reason before the same clear;
+the first source-ordered branch is the trigger, later records must not overwrite it. Calls outside
+an active App update have `egui_identity_known=false`, never a borrowed previous update ID.
+These are branch observations, not new cancellation rules or an exact native event mapping.
+Any dropped record still makes the observation incomplete and prevents definitive attribution.
+The offline report preserves complete input rows (including additive detail fields) in
+`input_batches`, and every `move_exit` row under `move_exits[].raw` with a reason status.
+Unknown reasons and malformed exit records remain visible and make classification and observation
+incomplete. Supported schema2 traces without exit classifications return `NO_EXIT_RECORDS`, which
+does not imply no cancellation; schema1 remains unsupported and is rejected explicitly.
+Known labels identify source branches only. `native_exit_attribution_status` remains OPEN, as does
+performance. Inspect original JSONL by update/input/version binding and source time; report output
+does not grant native event identity, repair drops or overwrite an earlier trigger.
+
 Producer uses a preallocated 4096-record queue, at most 256 bytes per numeric record (<=1 MiB).
 `Mutex::try_lock` never waits for queue capacity or a mutex; contention/full drops the new record.
 No producer JSON formatting, terminal or disk write, sleep or GPU synchronization is added.
@@ -102,16 +131,22 @@ Metadata generation happens only on changes/requests, with identifiers <=256 byt
 4 MiB cumulative admission threshold covering clones/cache/scratch. The last bounded candidate's
 attempted charge may cross that threshold; it immediately fails measurement and stops further capture.
 The cumulative charge is distinct from live allocations and process RSS. Writer has a 64 KiB buffer,
-64 KiB executable hash block and 512 KiB stack.
+64 KiB executable hash block and 512 KiB stack. Within that stack, a fixed 16-slot
+`Option<Record>` staging batch is bounded to 4 KiB separately from the 4096-record queue;
+the header reports its capacity and exact size. Metadata is moved into staging without cloning.
 Output including header/metadata/numeric/footer is limited to 128 MiB, reserving 8 KiB for failure/footer.
 Budgets describe this observer, not the existing renderer's memory.
 
-Writer pops under a short lock and formats/writes outside it; flush every <=250 ms of available
+Producer queue notifications occur after unlocking, only when enqueue changes an empty queue
+to nonempty. Close and admitted span completion retain their independent notifications.
+Writer moves at most 16 records per lock acquisition and formats/writes outside it; flush every <=250 ms of available
 execution or 256 KiB. OS I/O can still block the writer and affect process scheduling. Counters expose
 attempted/accepted/consumed, per-stage and metadata drops, full/contention, exact locked high-water,
 inflight admitted scopes, first/last drop source time, bytes and flush count. Dequeue age and serialized
 record write wall time are distinct fields. Record sequence is independent of physical row order.
 Missing metadata or any missing record invalidates completeness; samples are not silently repaired.
+Batching reduces lock acquisitions when records accumulate, but lengthens one drain section;
+it does not guarantee zero contention drops. Native paired measurements are still required.
 
 Closing stops new admissions. Spans admitted before closing remain counted until their retained end
 has been attempted, including spans crossing the cutoff. Writer drains after admitted producers/scopes
@@ -186,6 +221,40 @@ Mac must verify new source/binary/config identities, ordinary checks, phase and 
 source-clock mapping, callback behavior, observer off/on overhead/drop/CPU/RSS, shutdown/flush and
 sampler/logging conditions with all original samples retained. True GPU presentation needs a separate
 supported platform observation and cannot be inferred from update or capture callback intervals.
+
+## Mac candidate handoff
+
+Fetch the independently published candidate branch, check out its exact verified commit in a clean
+worktree, and verify its direct parent is the frozen `c41a6388e90c51926fccefd2db81b84e7dc4a04e`.
+Do not treat the remote default branch as this candidate. Verify all701 manifest entries before building:
+
+```text
+git rev-parse HEAD
+git rev-parse HEAD^
+git status --porcelain
+python3 scripts/source_manifest.py --check
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --release --locked -p editor-app
+```
+
+Use the repository's locked toolchain and record its actual version. A blocked or failed command is
+retained as such; the auxiliary Linux harness is not a native substitute. Build/config/trace/run IDs,
+manifest/executable hashes and structured shared-Mach calibration must belong to this new candidate.
+The header's expected identities and matching finalization acknowledgement follow the contract above.
+Keep all planned/external windows, screenshot intervals, dropped records and inactive Move windows.
+Any residual loss remains INCOMPLETE; neither full12 nor observer-off/on overhead is already passed.
+
+For a new Following→inactive transition, retain the last Following and first inactive update IDs and
+source times, associated input detail, all source-ordered move_exit rows (record_seq breaks time ties),
+version and task metadata, footer and matching acknowledgement. Preserve simultaneous focus/Gone counts,
+all nested cleanup records and unknown reasons. Existing source reasons can identify the App branch;
+they do not establish exact external CGEvent→RawInput identity or identify an unrecorded external cause.
+Do not retrospectively split the old aggregate pointer count or label the old unexplained exit as
+input interference. The prior queue-contention result is still INCOMPLETE, and this repair has not
+yet been shown to eliminate drops on Mac. Actual submit/GPU completion/present/scanout remain unavailable.
 
 Clock conversion source: [Apple QA1398](https://developer.apple.com/library/archive/qa/qa1398/_index.html).
 Framework boundaries were checked in the locked eframe/egui-wgpu 0.33.3 and wgpu 27.0.1 source.

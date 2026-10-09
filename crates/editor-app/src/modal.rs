@@ -82,6 +82,26 @@ impl EditorApp {
             || self.point_transform.is_some()
             || self.point_adapter.is_some();
         if active && (lost || (escape && !self.point_commit_blocked)) {
+            if self.frame_trace.is_some() {
+                let reason = if lost {
+                    ctx.input(|i| {
+                        if !i.focused {
+                            crate::frame_trace::MoveExitReason::FocusLost
+                        } else if i
+                            .events
+                            .iter()
+                            .any(|e| matches!(e, egui::Event::WindowFocused(false)))
+                        {
+                            crate::frame_trace::MoveExitReason::WindowFocusLost
+                        } else {
+                            crate::frame_trace::MoveExitReason::PointerGone
+                        }
+                    })
+                } else {
+                    crate::frame_trace::MoveExitReason::Escape
+                };
+                self.trace_move_exit(reason);
+            }
             self.point_input_cancelled = true;
             self.point_commit_blocked = true;
             if let Some(task) = &self.pending_task {
@@ -120,6 +140,7 @@ impl EditorApp {
         if self.busy || self.selection_read_pending() || self.close_prompt || self.modal.is_some() {
             return;
         }
+        self.trace_move_exit(crate::frame_trace::MoveExitReason::ModalReplaced);
         self.cancel_block();
         self.text.cancel();
         self.drag = None;
@@ -184,6 +205,7 @@ impl EditorApp {
         }
         let keep_measure =
             self.modal == Some(ActiveModal::Units) && self.tool == tools::ActiveTool::Measure;
+        self.trace_move_exit(crate::frame_trace::MoveExitReason::ModalCancelled);
         self.view.pnp_preview = None;
         self.array.requested = None;
         self.array.confirmed = None;

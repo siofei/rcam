@@ -612,6 +612,7 @@ impl EditorApp {
                 move_place::Phase::Applying => "applying",
             });
         frame_trace::Snapshot {
+            input_focused: ctx.input(|i| i.focused),
             selected_count: self.view.selected.ordered.len(),
             move_phase,
             drag_active: self.drag.is_some(),
@@ -1486,6 +1487,7 @@ impl CommandDispatcher for EditorApp {
                 true
             }
             command_ids::TOOL_SELECT | command_ids::TOOL_MEASURE => {
+                self.trace_move_exit(frame_trace::MoveExitReason::ToolChanged);
                 self.point_pick = None;
                 self.point_transform = None;
                 self.point_adapter = None;
@@ -1866,6 +1868,7 @@ impl EditorApp {
                 self.modal_pending = None;
                 if self.view.error.is_none() {
                     self.modal = None;
+                    self.trace_move_exit(frame_trace::MoveExitReason::ModalTaskCompleted);
                     self.point_transform = None;
                     self.view.point_preview = None;
                 }
@@ -2066,6 +2069,16 @@ impl EditorApp {
                         .any(|e| matches!(e, egui::Event::PointerGone))
             })
         {
+            if self.frame_trace.is_some() {
+                let reason = ctx.input(|i| {
+                    if !i.focused {
+                        frame_trace::MoveExitReason::FocusLost
+                    } else {
+                        frame_trace::MoveExitReason::PointerGone
+                    }
+                });
+                self.trace_move_exit(reason);
+            }
             self.point_transform = None;
             self.point_pick = None;
             self.point_adapter = None;
@@ -2107,6 +2120,7 @@ impl EditorApp {
             .as_ref()
             .is_some_and(|s| !s.context.valid(&self.view))
         {
+            self.trace_move_exit(frame_trace::MoveExitReason::ContextChanged);
             self.point_transform = None;
             self.point_pick = None;
             self.view.point_preview = None;
