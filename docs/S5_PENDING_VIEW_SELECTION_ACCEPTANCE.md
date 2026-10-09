@@ -139,3 +139,21 @@ User-confirmed: final-contour and full-composition matching also belong to Find,
 | FIND07 | Typed macro serializes source/template identity, explicit target layers, A/B, tolerance/rotation and highlight/locate/select action; no implicit screen or mouse state |
 
 Independent Find is PLANNED / NOT IMPLEMENTED / NOT TESTED. No current command/API/default scope is introduced by this documentation.
+
+
+## Gerber contour optimization: awaiting attachment audit
+
+The user requests a fixed-width modal for an uploaded contour algorithm, scoped to selection or explicitly specified layers. Its actual capabilities, parameters, units, license and limitations are not yet verified. These are planned acceptance obligations; no integration, current API or algorithm correctness is claimed. Publish no unreviewed attachment code or private samples.
+
+| Case | Planned check |
+|---|---|
+| OPT01 | Audit establishes licensed algorithm provenance, admitted geometry/exposure semantics, actual parameters/units, error bounds, degenerate inputs and export limits before implementation |
+| OPT02 | Selection versus explicit layer scope is serialized; complete members and layer/type/definition/object permissions preserve all out-of-scope geometry |
+| OPT03 | Fixed-width viewport-constrained modal supports arithmetic/unit input, invalid/long/empty values and reserved statistics without changing window/control rectangles |
+| OPT04 | Original/optimized comparison uses f64 manufacturing contours/arcs/holes/topology and ordered Dark/Clear truth; preview leaves document/dirty/Undo unchanged |
+| OPT05 | Confirmed apply is one atomic Undo transaction; exact Undo/Redo and any failure preserve geometry, order, references and dirty baseline |
+| OPT06 | Bounded cancellable background work, owner/document/revision/workspace/selection/parameter fences; stale or foreign results cannot preview or apply to another project |
+| OPT07 | Typed macro records explicit scope/IDs/units/parameters/algorithm capability version/failure policy and reuses the shared service, without screen coordinates |
+| OPT08 | Audited unsupported input safely refuses; independent manufacturing export/reimport and numeric truth prove optimization within the later frozen limits |
+
+PLANNED / AWAITING ALGORITHM AUDIT / NOT IMPLEMENTED / NOT TESTED. This entry does not expand the multiproject first slice or change existing acceptance thresholds.
