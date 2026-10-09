@@ -1345,3 +1345,8 @@ S5-I2-C display-only follow-up, R08/R18 and existing AT-025 local coverage (C-04
 ## S5/P3 accumulating editor session integration
 
 Bounded cb9 has independent acceptance; UE-A integration is authorized on frozen 8a. [ADR0063](adr/0063-unified-editor-publication-preparation.md) requires prospective host artifact preparation before the draft publication barrier. Candidate implementation and fresh native acceptance remain pending; no full-stage or platform PASS.
+
+Actual accumulating editor worker/UI integration is authorized on cb9→8a→5b.
+[ADR0064](adr/0064-unified-editor-worker-ui.md) specifies the full first slice,
+prospective resource preparation and strong session ownership. Native/UI
+acceptance remains pending; no full-stage PASS is implied.

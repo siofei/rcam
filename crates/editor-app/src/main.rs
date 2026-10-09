@@ -86,6 +86,11 @@ mod text_panel;
 mod text_tool;
 mod tools;
 mod ui;
+mod unified_editor_resources;
+#[cfg(test)]
+mod unified_editor_tests;
+mod unified_editor_ui;
+mod unified_editor_worker;
 mod units;
 #[cfg(test)]
 mod viewport_tests;
@@ -227,6 +232,7 @@ struct EditorApp {
     array_point_base: Option<editor_core::MmPoint>,
     block_point_reference: editor_core::MmPoint,
     point_transform: Option<point_transform::Session>,
+    unified_editor: Option<unified_editor_ui::Draft>,
     point_pick: Option<point_transform::Pick>,
     move_place_task: Option<move_place::Pending>,
     point_input_frame: Option<u64>,
@@ -502,6 +508,7 @@ impl EditorApp {
             array_point_base: None,
             block_point_reference: editor_core::MmPoint::new(0., 0.),
             point_transform: None,
+            unified_editor: None,
             point_pick: None,
             move_place_task: None,
             point_input_frame: None,
@@ -630,6 +637,12 @@ impl EditorApp {
         }
     }
     fn send(&mut self, a: Action) {
+        if self.unified_editor.is_some()
+            && !matches!(&a, Action::UnifiedEditor(..) | Action::RecoveryWrite(..))
+        {
+            self.ui_error = Some("请先结束当前编辑会话".into());
+            return;
+        }
         if self.tabs.change_pending() {
             return;
         }
@@ -898,6 +911,12 @@ impl EditorApp {
         (id, view, route)
     }
     fn reject_owned_reply(&mut self, id: u64, cause: editor_service::ServiceError) {
+        if let Some(d) = &mut self.unified_editor
+            && d.pending.as_ref().is_some_and(|p| p.task == id)
+        {
+            d.unknown = true;
+            d.pending = None;
+        }
         let ordinary = self.pending_task.as_ref().is_some_and(|t| t.task_id == id);
         let empty = View::default();
         self.filter_move_place_reply(id, &empty);
@@ -946,6 +965,7 @@ impl EditorApp {
                 || self.text.floating.is_some()
                 || self.block.session.is_some()
                 || self.point_pick.is_some()
+                || self.unified_editor.is_some()
                 || self.shortcuts.popup_at_event
                 || egui::Popup::is_any_open(ctx),
         ) && ctx.input(|i| i.focused)
@@ -988,7 +1008,8 @@ impl EditorApp {
         }
     }
     fn command_context_blocked(&self) -> bool {
-        self.busy
+        self.unified_editor.is_some()
+            || self.busy
             || self
                 .gerber_import
                 .as_ref()
@@ -1068,6 +1089,7 @@ impl EditorApp {
             command_ids::EDIT_REDO => doc.is_some_and(|d| d.redo_entries > 0),
             command_ids::EDIT_DUPLICATE
             | command_ids::EDIT_DELETE
+            | command_ids::OBJECT_UNIFIED_EDITOR
             | command_ids::OBJECT_MOVE
             | command_ids::OBJECT_MOVE_PLACE
             | command_ids::OBJECT_ROTATE
@@ -1182,6 +1204,10 @@ impl EditorApp {
         self.request_new_session(Action::NewWorkspace);
     }
     fn close(&mut self, quit: bool) {
+        if self.unified_editor.is_some() {
+            self.ui_error = Some("请先应用或取消编辑会话，再关闭工程".into());
+            return;
+        }
         if quit {
             self.tabs.begin_quit(self.routing.owner());
         }
@@ -1266,6 +1292,7 @@ impl EditorApp {
         self.command_entries(
             ui,
             &[
+                ("选区编辑会话…", command_ids::OBJECT_UNIFIED_EDITOR),
                 ("移动…", command_ids::OBJECT_MOVE),
                 ("移动（点击放置）", command_ids::OBJECT_MOVE_PLACE),
                 ("旋转…", command_ids::OBJECT_ROTATE),
@@ -1499,6 +1526,10 @@ impl CommandDispatcher for EditorApp {
             }
             command_ids::EDIT_DELETE => {
                 self.send(Action::Delete);
+                true
+            }
+            command_ids::OBJECT_UNIFIED_EDITOR => {
+                self.open_unified_editor();
                 true
             }
             command_ids::OBJECT_MOVE => {
@@ -1940,6 +1971,7 @@ impl EditorApp {
                     self.view.point_preview = None;
                 }
             }
+            self.accept_unified_editor_reply(id);
             self.accept_text_reply();
             if let Some(generation) = self.text.pending_apply.take()
                 && generation == self.text.generation
@@ -2170,7 +2202,7 @@ impl EditorApp {
             self.last_title = title.clone();
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
-        if !self.busy && self.modal.is_none() {
+        if !self.busy && self.modal.is_none() && self.unified_editor.is_none() {
             let dropped = ctx.input(|i| i.raw.dropped_files.clone());
             let paths: Vec<_> = dropped.iter().filter_map(|f| f.path.clone()).collect();
             if !paths.is_empty()
@@ -2260,7 +2292,8 @@ impl EditorApp {
                 task.cancel_token.cancel();
             }
         }
-        let modal_open = self.tabs.block_document_input
+        let modal_open = self.unified_editor.is_some()
+            || self.tabs.block_document_input
             || self.shortcuts.open
             || self.modal.is_some()
             || self.layer_dialog.is_some()
@@ -2414,6 +2447,7 @@ impl EditorApp {
         );
         self.component_window(ctx);
         if !self.busy
+            && self.unified_editor.is_none()
             && self.geometry_task.is_none()
             && self.viewport_sequence.is_none()
             && !self.view.selected.ordered.is_empty()
@@ -3096,7 +3130,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                 if let Some(trace) = trace_update { trace.current_canvas(rect, ctx.pixels_per_point()); }
                 // Keep ownership through the confirmation/back release frame.
                 // point_canvas may resume a modal and clear point_pick below.
-                let point_child_owns_frame = self.point_pick.is_some() || self.point_input_cancelled;
+                let point_child_owns_frame = self.point_pick.is_some() || self.point_input_cancelled || self.unified_editor.is_some();
                 if self.canvas_rect != rect || self.fit {
                     self.drag = None;
                     self.grip = None;
@@ -3107,7 +3141,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                     self.camera.fit(self.view.bounds, rect);
                     self.fit = false;
                 }
-                if !modal_open
+                if !modal_open && self.unified_editor.is_none()
                     && self.drag.is_none() && self.grip.is_none()
                     && (r.dragged_by(egui::PointerButton::Middle)
                         || r.drag_stopped_by(egui::PointerButton::Middle))
@@ -3124,7 +3158,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                             .any(|event| matches!(event, egui::Event::Zoom(_))),
                     )
                 });
-                if !modal_open && !text_focus && self.drag.is_none() && self.grip.is_none() {
+                if !modal_open && !text_focus && self.unified_editor.is_none() && self.drag.is_none() && self.grip.is_none() {
                     if r.hovered() {
                         self.camera.pan(scroll);
                     }
@@ -3271,6 +3305,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                 }
                 self.click_navigation.observe(self.camera,rect,ctx.pixels_per_point());
                 if self.point_pick.is_some() {self.point_canvas(ctx,&r,rect);}
+                self.unified_editor_canvas(ctx,&r,rect);
                 if !point_child_owns_frame && self.modal.is_none() && self.block.session.is_some() && !modal_open && !text_focus { self.block_canvas(ctx, &r, rect); }
                 if !point_child_owns_frame && self.tool == tools::ActiveTool::Select && !modal_open {
                     r.context_menu(|ui| {
@@ -3397,7 +3432,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         || hi.y_mm > b.max_y_mm
                 });
                 let rebase = self.view.scene.as_ref().is_some_and(|scene| viewport_requires_rebase(scene, self.camera));
-                let needs_lod = self.view.info.is_some()
+                let needs_lod = self.unified_editor.is_none() && self.view.info.is_some()
                     && (outside
                         || rebase
                         || ppm > self.view.render_ppm
@@ -3511,6 +3546,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                     self.paint_move_place(&painter, rect, ctx.pixels_per_point())
                 } else {
                     self.paint_point_transform(&painter, rect, ctx.pixels_per_point());
+                    self.paint_unified_reference(&painter, rect);
                     false
                 };
                 self.paint_adapter_point(&painter,rect,ctx.pixels_per_point());

@@ -114,6 +114,16 @@ fn rectangle(c: MmPoint, w: f64, h: f64) -> Vec<MmPoint> {
     ]
 }
 impl Scene {
+    pub(crate) fn owned_bytes(&self) -> usize {
+        size_of::<Self>()
+            + self.objects.capacity() * size_of::<Object>()
+            + self.primitives.capacity() * size_of::<Primitive>()
+            + self.points.capacity() * size_of::<[f32; 2]>()
+            + self.ids.capacity() * size_of::<String>()
+            + self.ids.iter().map(String::capacity).sum::<usize>()
+            + self.index.data.capacity() * size_of::<u32>()
+            + 256
+    }
     #[cfg(test)]
     pub fn build(
         snapshot: &RenderSnapshot,
@@ -849,27 +859,35 @@ impl Scene {
             .clamp(2, POLYGON_BIN_MAX_COUNT);
         loop {
             let inverse_height = count as f32 / height;
-            let mut bins = vec![Vec::new(); count];
+            let mut counts = vec![0isize; count + 1];
+            let range = |a: [f32; 2], b: [f32; 2]| {
+                let bin = |y: f32| {
+                    (((y - y_min) * inverse_height).floor().max(0.) as usize).min(count - 1)
+                };
+                (bin(a[1].min(b[1])), bin(a[1].max(b[1])))
+            };
+            let mut references = 0usize;
             for index in 0..points.len() {
                 let a = points[index];
                 let b = points[(index + 1) % points.len()];
                 if a[1] == b[1] {
                     continue;
                 }
-                let bin = |y: f32| {
-                    (((y - y_min) * inverse_height).floor().max(0.) as usize).min(count - 1)
-                };
-                let first = bin(a[1].min(b[1]));
-                let last = bin(a[1].max(b[1]));
-                for edges in &mut bins[first..=last] {
-                    edges.push((a, b));
-                }
+                let (first, last) = range(a, b);
+                references = references.checked_add(last - first + 1)?;
+                counts[first] += 1;
+                counts[last + 1] -= 1;
             }
-            let references = bins.iter().map(Vec::len).sum::<usize>();
+            counts.pop();
+            let mut running = 0isize;
+            for n in &mut counts {
+                running += *n;
+                *n = running;
+            }
             let storage = count
-                .saturating_mul(2)
-                .saturating_add(references.saturating_mul(4));
-            let max_edges = bins.iter().map(Vec::len).max().unwrap_or(0);
+                .checked_mul(2)?
+                .checked_add(references.checked_mul(4)?)?;
+            let max_edges = counts.iter().copied().max().unwrap_or(0) as usize;
             if storage
                 <= points
                     .len()
@@ -877,6 +895,24 @@ impl Scene {
                 && storage <= available
                 && max_edges < points.len()
             {
+                let mut bins = Vec::new();
+                bins.try_reserve_exact(count).ok()?;
+                for n in counts {
+                    let mut bin = Vec::new();
+                    bin.try_reserve_exact(n as usize).ok()?;
+                    bins.push(bin);
+                }
+                for index in 0..points.len() {
+                    let a = points[index];
+                    let b = points[(index + 1) % points.len()];
+                    if a[1] == b[1] {
+                        continue;
+                    }
+                    let (first, last) = range(a, b);
+                    for edges in &mut bins[first..=last] {
+                        edges.push((a, b));
+                    }
+                }
                 return Some((bins, y_min, inverse_height, max_edges));
             }
             if count <= 2 {

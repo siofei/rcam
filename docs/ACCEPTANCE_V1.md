@@ -1947,3 +1947,8 @@ The user corrected the earlier physical-Control request: new defaults are macOS 
 ### UE-A host publication preparation additions
 
 See [ADR0063](adr/0063-unified-editor-publication-preparation.md) for synthetic preparation failure, authoritative target ordering and exact checkpoint tests. Existing AT numbering/meaning and native thresholds stay unchanged. CPU hooks do not constitute UI/Snap/IME/native acceptance.
+
+UE-A worker/UI additions are frozen in [ADR0064](adr/0064-unified-editor-worker-ui.md).
+They require actual worker, full-exposure working display/Snap, same-frame cancel,
+resource refusal and real widget rectangle regressions before a fresh native
+candidate. Existing AT meanings/platform requirements/thresholds stay unchanged.

@@ -163,6 +163,7 @@ impl EditorApp {
             || self.move_place_task.is_some()
             || self.text.floating.is_some()
             || self.block.session.is_some()
+            || self.unified_editor.is_some()
             || self.canvas_selection_unconfirmed
             || self.view.blocked.is_some()
             || self.gerber_import.as_ref().is_some_and(|q| q.active())
@@ -624,6 +625,7 @@ pub(crate) struct UiSessionState {
     array_point_base: Option<editor_core::MmPoint>,
     block_point_reference: editor_core::MmPoint,
     point_transform: Option<point_transform::Session>,
+    unified_editor: Option<crate::unified_editor_ui::Draft>,
     point_pick: Option<point_transform::Pick>,
     move_place_task: Option<move_place::Pending>,
     point_input_frame: Option<u64>,
@@ -713,6 +715,7 @@ impl UiSessionState {
             array_point_base: None,
             block_point_reference: editor_core::MmPoint::new(0., 0.),
             point_transform: None,
+            unified_editor: None,
             point_pick: None,
             move_place_task: None,
             point_input_frame: None,
@@ -807,6 +810,7 @@ impl UiSessionState {
             array_point_base: _,
             block_point_reference: _,
             point_transform: _,
+            unified_editor: _,
             point_pick: _,
             move_place_task: _,
             point_input_frame: _,
@@ -924,6 +928,7 @@ impl UiSessionState {
             &mut app.block_point_reference,
         );
         std::mem::swap(&mut self.point_transform, &mut app.point_transform);
+        std::mem::swap(&mut self.unified_editor, &mut app.unified_editor);
         std::mem::swap(&mut self.point_pick, &mut app.point_pick);
         std::mem::swap(&mut self.move_place_task, &mut app.move_place_task);
         std::mem::swap(&mut self.point_input_frame, &mut app.point_input_frame);

@@ -839,7 +839,12 @@ mod tests {
         let bytes = cfg.bytes().unwrap();
         let mut legacy = cfg.clone();
         legacy.bindings.retain(|e| {
-            ![ids::EDIT_SELECT_ALL.0, ids::OBJECT_MOVE_PLACE.0].contains(&e.command_id.as_str())
+            ![
+                ids::EDIT_SELECT_ALL.0,
+                ids::OBJECT_UNIFIED_EDITOR.0,
+                ids::OBJECT_MOVE_PLACE.0,
+            ]
+            .contains(&e.command_id.as_str())
         });
         assert_eq!(
             legacy.bytes().unwrap(),
@@ -848,11 +853,26 @@ mod tests {
         let migrated = decode(&legacy.bytes().unwrap(), Platform::MacOs).unwrap();
         assert_eq!(
             migrated.missing,
-            [ids::EDIT_SELECT_ALL.0, ids::OBJECT_MOVE_PLACE.0]
+            [
+                ids::EDIT_SELECT_ALL.0,
+                ids::OBJECT_UNIFIED_EDITOR.0,
+                ids::OBJECT_MOVE_PLACE.0,
+            ]
         );
         assert_eq!(
             migrated.config.entry(ids::EDIT_SELECT_ALL),
             cfg.entry(ids::EDIT_SELECT_ALL)
+        );
+        assert_eq!(
+            migrated.config.entry(ids::OBJECT_UNIFIED_EDITOR),
+            cfg.entry(ids::OBJECT_UNIFIED_EDITOR)
+        );
+        assert!(
+            migrated
+                .config
+                .entry(ids::OBJECT_UNIFIED_EDITOR)
+                .shortcuts
+                .is_empty()
         );
         let read = decode(&bytes, Platform::MacOs).unwrap();
         assert_eq!(read.config.bytes().unwrap(), bytes);

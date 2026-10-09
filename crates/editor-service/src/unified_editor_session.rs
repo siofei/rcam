@@ -23,6 +23,8 @@ pub struct UnifiedEditorApplyTicket {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnifiedEditorApplyResult {
+    /// Exact infallible postcommit record view; host refresh cannot turn success into retry.
+    pub info: DocumentInfo,
     pub changed: bool,
     pub edit: EditResult,
 }
@@ -453,6 +455,7 @@ impl ApplicationService {
                 record.revision += 1;
             }
             Ok(UnifiedEditorApplyResult {
+                info: document_info(&session.document_id, record),
                 changed,
                 edit: edit_result(&session.document_id, record, ids, usize::from(changed)),
             })

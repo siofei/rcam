@@ -15,6 +15,10 @@ pub(crate) enum Transition {
 
 impl EditorApp {
     pub(crate) fn drop_files(&mut self, paths: Vec<PathBuf>) {
+        if self.unified_editor.is_some() {
+            self.ui_error = Some("请先结束当前编辑会话".into());
+            return;
+        }
         if paths.is_empty() {
             return;
         }
@@ -81,6 +85,10 @@ impl EditorApp {
     }
 
     pub(crate) fn begin_transition(&mut self, transition: Transition) {
+        if self.unified_editor.is_some() {
+            self.ui_error = Some("请先结束当前编辑会话".into());
+            return;
+        }
         if self.transition.is_some()
             || self.close_prompt
             || self.waiting_save

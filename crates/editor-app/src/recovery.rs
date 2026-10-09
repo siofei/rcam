@@ -453,6 +453,7 @@ impl EditorApp {
             self.dirty_since = now;
         }
         if self.busy
+            || self.unified_editor.is_some()
             || self.canvas_read.is_some()
             || self.drag.is_some()
             || self.grip.is_some()

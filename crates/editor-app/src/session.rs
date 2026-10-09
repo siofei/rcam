@@ -84,7 +84,8 @@ impl RequestRoute {
             | Action::DiscardNewWorkspace
             | Action::Close(..) => true,
             Action::ImportGerbers(..) => empty,
-            Action::DefinitionCenters(..)
+            Action::UnifiedEditor(..)
+            | Action::DefinitionCenters(..)
             | Action::PointPreview(..)
             | Action::PointApply(..)
             | Action::SelectionCenters(..)

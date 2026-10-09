@@ -665,6 +665,7 @@ pub fn action_text(a: &Action) -> String {
             .into_owned()
     };
     match a {
+        Action::UnifiedEditor(r) => format!("UnifiedEditor {:?}", r.command),
         Action::BlockEdit(request) => match &request.edit {
             crate::block_ui::Edit::Create(_) => "BlockCreate",
             crate::block_ui::Edit::Place(_) => "BlockPlace",

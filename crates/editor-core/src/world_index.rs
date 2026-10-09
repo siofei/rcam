@@ -20,6 +20,13 @@ fn intersects(a: BoundsMm, b: BoundsMm) -> bool {
         && a.max_y_mm >= b.min_y_mm
 }
 impl WorldIndex {
+    /// Owned index storage, excluding shared input manufacturing geometry.
+    pub fn owned_bytes(&self) -> usize {
+        size_of::<Self>()
+            + self.entries.capacity() * size_of::<EnvelopeEntry>()
+            + self.nodes.capacity() * size_of::<Node>()
+            + self.order.capacity() * size_of::<usize>()
+    }
     pub fn build(
         layers: &[SemanticLayer],
         apertures: &[ApertureDefinition],

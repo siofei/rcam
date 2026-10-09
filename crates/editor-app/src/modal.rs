@@ -3,6 +3,7 @@ use crate::{EditorApp, state::Action, tools};
 use eframe::egui;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ActiveModal {
+    UnifiedEditor,
     PointInput,
     Pnp,
     Array,
@@ -23,6 +24,7 @@ pub(crate) enum ActiveModal {
 impl ActiveModal {
     fn title(self) -> &'static str {
         match self {
+            Self::UnifiedEditor => "选区编辑会话",
             Self::PointInput => "共同点输入",
             Self::BlockCreate => "创建 Block",
             Self::BlockRename => "重命名 Block",
@@ -81,6 +83,29 @@ impl EditorApp {
         let active = self.point_pick.is_some()
             || self.point_transform.is_some()
             || self.point_adapter.is_some();
+        if self.unified_editor.is_some() && (lost || (escape && !self.point_commit_blocked)) {
+            self.point_input_cancelled = true;
+            self.point_commit_blocked = true;
+            if !lost
+                || self
+                    .unified_editor
+                    .as_ref()
+                    .is_some_and(|d| d.picking.is_some())
+            {
+                self.request_unified_cancel();
+            }
+            ctx.input_mut(|i| {
+                i.events.retain(|e| {
+                    !matches!(
+                        e,
+                        egui::Event::Key { .. }
+                            | egui::Event::PointerButton { .. }
+                            | egui::Event::Text(_)
+                    )
+                })
+            });
+            return false;
+        }
         if active && lost && self.pause_move_place_on_pointer_gone(ctx) {
             return false;
         }
@@ -192,6 +217,10 @@ impl EditorApp {
         self.sync_size_fields();
     }
     pub(crate) fn cancel_modal(&mut self) {
+        if self.unified_editor.is_some() {
+            self.request_unified_cancel();
+            return;
+        }
         if (self.point_transform.is_some() || self.point_adapter.is_some())
             && self.modal_pending.is_none()
             && let Some(task) = &self.pending_task
@@ -267,10 +296,12 @@ impl EditorApp {
                     .show(ui, |ui| {
                         ui.add_enabled_ui(
                             !self.busy
+                                || modal == ActiveModal::UnifiedEditor
                                 || (modal == ActiveModal::Text
                                     && self.modal_pending.is_none()
                                     && self.text.pending_apply.is_none()),
                             |ui| match modal {
+                                ActiveModal::UnifiedEditor => self.unified_editor_controls(ui),
                                 ActiveModal::PointInput => self.point_adapter_modal(ui),
                                 ActiveModal::BlockCreate
                                 | ActiveModal::BlockRename
@@ -466,6 +497,7 @@ pub(crate) mod tests {
             point_adapter: None,
             array_point_base: None,
             block_point_reference: editor_core::MmPoint::new(0., 0.),
+            unified_editor: None,
             point_transform: None,
             point_pick: None,
             move_place_task: None,

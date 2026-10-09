@@ -29,6 +29,7 @@ pub mod ids {
     pub const EDIT_SELECT_ALL: CommandId = CommandId("edit.select_all");
     pub const EDIT_DELETE: CommandId = CommandId("edit.delete");
     pub const EDIT_DUPLICATE: CommandId = CommandId("edit.duplicate");
+    pub const OBJECT_UNIFIED_EDITOR: CommandId = CommandId("object.unified_editor");
     pub const OBJECT_MOVE: CommandId = CommandId("object.move");
     pub const OBJECT_MOVE_PLACE: CommandId = CommandId("object.move_place");
     pub const OBJECT_ROTATE: CommandId = CommandId("object.rotate");
@@ -341,6 +342,13 @@ pub fn standard_commands() -> Vec<CommandDescriptor> {
         d(
             ids::BLOCK_TRANSFORM,
             "实例变换…",
+            C::Object,
+            None,
+            X::Canvas,
+        ),
+        d(
+            ids::OBJECT_UNIFIED_EDITOR,
+            "选区编辑会话…",
             C::Object,
             None,
             X::Canvas,

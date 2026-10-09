@@ -201,6 +201,123 @@ impl Runtime {
         self.reset();
     }
 
+    /// Draft-only admission wraps the unchanged production resolver. No nearby
+    /// object is omitted to make a query fit; Alt keeps its existing raw path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_draft(
+        &mut self,
+        raw: MmPoint,
+        settings: &Settings,
+        grid: tools::GridSettings,
+        camera: Camera,
+        ppp: f32,
+        snapshot: Option<&RenderSnapshot>,
+        index: &WorldIndex,
+        layers: &[LayerInfo],
+        alt: bool,
+        resident: usize,
+    ) -> Result<SnapResolution, String> {
+        self.cache = Default::default();
+        if !alt
+            && settings.enabled
+            && (settings.manufacturing_boundary || settings.original_path)
+            && let Some(s) = snapshot
+        {
+            let query = SnapQuery::from_screen(
+                raw,
+                SnapRadiiPx {
+                    acquire: settings.radius_px,
+                    candidate: settings.radius_px + SnapResolver::default().release_extra_px,
+                },
+                camera.scale,
+                f64::from(ppp),
+                settings.enabled_kinds.clone(),
+                settings.manufacturing_boundary,
+                settings.original_path,
+            )
+            .ok_or("Object Snap 半径或缩放无效")?;
+            let base = s
+                .apertures
+                .len()
+                .saturating_mul(128)
+                .saturating_add(index.entries().len().saturating_mul(32));
+            crate::unified_editor_resources::admit(resident.saturating_add(base))
+                .map_err(|e| e.message)?;
+            let shapes = aperture_shape_map(&s.apertures);
+            let mut max_identity = 0usize;
+            let mut edges = 0usize;
+            let mut pairs = 0usize;
+            let mut bytes = base;
+            for (l, o) in index.query_indices(query.bounds()) {
+                let layer = &s.layers[l];
+                let object = &layer.objects[o];
+                let Some(policy) = layers.iter().find(|p| {
+                    p.layer_id == layer.id && p.visible && p.effective_visible && p.selectable
+                }) else {
+                    continue;
+                };
+                let class = classify_object(object, &shapes);
+                if policy
+                    .classes
+                    .iter()
+                    .any(|c| c.class == class && (!c.visible || !c.selectable))
+                {
+                    continue;
+                }
+                let (p, v) = crate::unified_editor_resources::geometry_plan(
+                    &object.geometry,
+                    s,
+                    camera.scale * f64::from(ppp),
+                )
+                .map_err(|e| e.message)?;
+                // Boundary + path, arc quadrants, local holes and Macro outlines.
+                let count = p.saturating_add(v).saturating_add(1).saturating_mul(8);
+                pairs = pairs.saturating_add(edges.saturating_mul(count));
+                edges = edges.saturating_add(count);
+                let identity = layer
+                    .id
+                    .capacity()
+                    .saturating_add(object.object_id.capacity());
+                max_identity = max_identity.max(identity);
+                bytes = bytes.saturating_add(
+                    count.saturating_mul(2048usize.saturating_add(identity.saturating_mul(4))),
+                );
+                bytes = bytes.saturating_add(
+                    crate::unified_editor_resources::geometry_heap(&object.geometry)
+                        .saturating_mul(2),
+                );
+                if let editor_core::SemanticGeometry::BlockInstance { definition_id, .. } =
+                    &object.geometry
+                    && let Some(definition) =
+                        s.block_definitions.iter().find(|d| d.id == *definition_id)
+                {
+                    bytes = bytes.saturating_add(
+                        crate::unified_editor_resources::definition_cost(definition)
+                            .saturating_mul(2),
+                    );
+                }
+            }
+            if settings.enabled_kinds.contains(&SnapKind::Intersection) {
+                if pairs > editor_core::hit_test::MAX_HIT_TEST_WORK {
+                    self.reset();
+                    return Err("工作图形附近交点计算超限；请调整拾取位置或按 Alt".into());
+                }
+                bytes = bytes.saturating_add(pairs.saturating_mul(
+                    4usize.saturating_mul(512usize.saturating_add(max_identity.saturating_mul(4))),
+                ));
+            }
+            crate::unified_editor_resources::admit(resident.saturating_add(bytes)).map_err(
+                |e| {
+                    self.reset();
+                    e.message
+                },
+            )?;
+        }
+        self.resolve(
+            raw, settings, grid, camera, ppp, snapshot, index, layers, None, alt,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn resolve(
         &mut self,

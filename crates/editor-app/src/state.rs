@@ -9,6 +9,7 @@ use std::{
 
 #[derive(Clone, Default)]
 pub struct View {
+    pub unified_editor: Option<Arc<crate::unified_editor_worker::Reply>>,
     pub task_generation: u64,
     pub rule_revision: u64,
     pub task_receipt: Option<editor_service::task::TaskReceipt>,
@@ -235,13 +236,14 @@ pub struct Model {
     pub(crate) active_cancel: Option<editor_service::task::CancellationToken>,
     pub service: ApplicationService,
     pub view: View,
-    snapshot: Option<Arc<RenderSnapshot>>,
-    metrics_identity: String,
-    world_index: Arc<crate::world_index::WorldIndex>,
-    viewport: Option<(MmPoint, BoundsMm)>,
-    serial: u64,
+    pub(crate) snapshot: Option<Arc<RenderSnapshot>>,
+    pub(crate) metrics_identity: String,
+    pub(crate) world_index: Arc<crate::world_index::WorldIndex>,
+    pub(crate) viewport: Option<(MmPoint, BoundsMm)>,
+    pub(crate) serial: u64,
     pub ppm: f64,
     pub(crate) block_display_cache: crate::block_display::BlockDisplayCache,
+    pub(crate) unified_editor: Option<crate::unified_editor_worker::WorkerSession>,
 }
 
 /// Document-owned worker state. The service, executing token and scene serial
@@ -256,10 +258,12 @@ pub(crate) struct ModelSessionState {
     viewport: Option<(MmPoint, BoundsMm)>,
     ppm: f64,
     block_display_cache: crate::block_display::BlockDisplayCache,
+    unified_editor: Option<crate::unified_editor_worker::WorkerSession>,
 }
 impl ModelSessionState {
     pub(crate) fn empty() -> Self {
         Self {
+            unified_editor: None,
             recovery_key: None,
             recovery_reservation: None,
             view: View::default(),
@@ -289,6 +293,7 @@ pub enum MirrorDirection {
     Vertical,
 }
 pub enum Action {
+    UnifiedEditor(Box<crate::unified_editor_worker::Request>),
     DefinitionCenters(crate::point_input::Context, String),
     PointPreview(Box<crate::point_transform::Request>),
     PointApply(Box<crate::point_transform::Request>),
@@ -375,6 +380,7 @@ pub enum Action {
 impl Default for Model {
     fn default() -> Self {
         Self {
+            unified_editor: None,
             recovery_key: None,
             recovery_reservation: None,
             reserved_paths: Vec::new(),
@@ -440,6 +446,7 @@ pub fn selected_center(view: &View) -> Result<MmPoint, ServiceError> {
 impl Model {
     pub(crate) fn take_session_state(&mut self) -> ModelSessionState {
         ModelSessionState {
+            unified_editor: self.unified_editor.take(),
             recovery_key: self.recovery_key.take(),
             recovery_reservation: self.recovery_reservation.take(),
             view: std::mem::take(&mut self.view),
@@ -453,6 +460,7 @@ impl Model {
     }
 
     pub(crate) fn install_session_state(&mut self, state: ModelSessionState) {
+        self.unified_editor = state.unified_editor;
         self.recovery_key = state.recovery_key;
         self.recovery_reservation = state.recovery_reservation;
         self.view = state.view;
@@ -1990,10 +1998,11 @@ impl Model {
                 | Action::PnpPreview(..)
         );
         let cancellable_import = matches!(&action, Action::ImportGerbers(..));
+        let cancellable_draft = matches!(&action, Action::UnifiedEditor(..));
         let result = (|| {
             task.cancel_token.start()?;
             task.validate(&self.task_version()?)?;
-            if !readonly && !cancellable_import {
+            if !readonly && !cancellable_import && !cancellable_draft {
                 task.cancel_token.begin_commit()?;
                 #[cfg(feature = "internal-evidence")]
                 crate::native_a2::committing(&task);
@@ -2039,7 +2048,8 @@ impl Model {
         });
     }
     pub fn run(&mut self, action: Action) {
-        let probe_only = matches!(&action, Action::ProbeDrag(..));
+        let probe_only = self.unified_editor.is_some()
+            || matches!(&action, Action::ProbeDrag(..) | Action::UnifiedEditor(..));
         let reset_cycle = !matches!(
             &action,
             Action::SelectionCenters(..)
@@ -2070,7 +2080,17 @@ impl Model {
         self.view.import_committed_task = None;
         self.view.removed = None;
         self.view.focus_bounds = None;
+        if self.unified_editor.is_some()
+            && !matches!(
+                &action,
+                Action::UnifiedEditor(..) | Action::RecoveryWrite(..)
+            )
+        {
+            self.view.error = Some(error("INVALID_ARGUMENT", "请先结束当前编辑会话"));
+            return;
+        }
         let result = (|| match action {
+            Action::UnifiedEditor(request) => self.unified_editor_action(*request),
             Action::DefinitionCenters(context, definition) => {
                 self.definition_centers(context, definition)
             }
