@@ -1,4 +1,4 @@
-# Pending keyboard navigation and same-definition selection
+# Pending view, selection and definition workflows
 
 Status: PLANNED / NOT IMPLEMENTED / NOT TESTED. This documentation-only supplement records the user's 2026-10-09 requests. It adds no command, default factor, shortcut or capability to the current product. The platform-standard Select All correction is a separate source candidate; multi-project session isolation and tabs/batch-opening retain their phased order.
 
@@ -62,3 +62,45 @@ Candidate algorithm: conservative rotation-invariant summaries eliminate impossi
 | SHAPE08 | Explicit scope/mode/tolerance/options in macros; source definitions/manufacturing bytes/dirty/Undo unchanged |
 
 Shape matching remains PLANNED / NOT IMPLEMENTED / NOT TESTED. Algorithm selection and acceptance thresholds belong to its later implementation phase.
+
+
+## Aperture creation and shared definition editor
+
+User-confirmed additions: standard-parameter Aperture creation and selected-contour conversion to a custom Aperture, sharing the independent definition editor. Current imports/standard Flash size COW do not constitute either creation entrance. Existing definition editing defaults to changing the original definition/all references, with an explicit create-copy/selected-only alternative; creation retains a separately explicit source-retention/replacement choice whose default is not frozen. Ordinary Aperture, RCam reusable Block and unsupported Gerber %AB remain distinct.
+
+| Case | Planned check |
+|---|---|
+| AP01 | Standard C/R/O/P dimensions, polygon orientation/count and local holes validate finite geometry; invalid parameters preserve original state |
+| AP02 | Selected real contours/arcs/holes and Dark/Clear convert only when representable and geometrically proven equivalent; unsupported composition preserves sources with explanation |
+| AP03 | Created definition has scoped identity, instances share the intended definition; equal DCode text never merges separate source identities |
+| AP04 | Existing edit defaults to original definition/all references with impact count including hidden references; explicit copy/selected-only path remains distinct from creation |
+| AP05 | Type/definition/category/layer/object locks and hidden references preserve permissions; no implicit unlock or visible-only partial edit |
+| AP06 | Preview/cancel/apply/failure and exact Undo/Redo maintain source geometry, references, order, dirty baseline and cache invalidation |
+| AP07 | AP/Macro/Block references, cycles/nesting and unsupported Gerber %AB safely reject or follow a separately admitted capability; no automatic scope expansion |
+| AP08 | Export/reimport independent manufacturing contour/exposure truth, budgets, cancellation, owner/version fences and no private geometry upload |
+| AP09 | Shared typed create/edit service and serializable macro parameters; no simulated screen coordinates or claimed current API |
+
+## Match and replace with a newly created Aperture or Block
+
+User-confirmed behavior: create a template definition, then replace existing geometry matching that complete template. The two-circle Block example requires actual size/shape and pairwise offsets; arbitrary neighboring circles are not sufficient. Full arbitrary-angle rigid rotation and translation are admitted without implicitly allowing scaling/mirroring. Preview/highlights/counts, source-layer default with explicitly selected additional target layers, skip-ineligible results and conflict UX are proposed design details, not individually user-confirmed defaults. This explicit scope applies only to match/replace and cannot broaden seed-layer-only same-definition selection.
+
+Coarse invariants only reject candidates. Exact f64 member/contour/arc/hole/topology correspondence, complete coverage and ordered Dark/Clear effect with intervening untouched geometry must establish safe substitution. A Block's single instance/exposure position cannot represent every noncontiguous source group: refuse/preserve candidates when flattening fails equivalence, retaining unmatched relative order. Replace is one atomic Undo; whether creation and replacement share that transaction is a later design choice.
+
+| Case | Planned check |
+|---|---|
+| REPLACE01 | 100 circles with a two-circle Block template: only complete size/shape/relative-distance matches replace; unmatched single circles remain |
+| REPLACE02 | Translation and 30°,17.5°,negative/arbitrary rigid rotation retain location/direction and full shape; near-pair or wrong-distance combinations fail |
+| REPLACE03 | AP exact real contour/arc/hole/exposure matches; same summaries with different contour/topology fail; no unrequested scale/mirror substitution |
+| REPLACE04 | Source-layer default and explicit other-layer proposal is frozen later; same-definition fast selection still strictly excludes third layers |
+| REPLACE05 | Preview highlight/count/template/version and confirmation agree; no changes before confirmation; locked/unselectable/type-locked candidates are skipped and reported |
+| REPLACE06 | Overlapping candidate groups report conflict; explicit deterministic strategy consumes each original object at most once; duplicate/partial-member matches refuse |
+| REPLACE07 | Ordered Dark/Clear, local AP holes, Block member/outer exposure and intervening untouched objects preserve manufacturing effect; nonrepresentable noncontiguous groups remain unchanged |
+| REPLACE08 | Unmatched objects retain relative exposure order; complete text-group and other structural admission rules remain; no selective destructive truncation |
+| REPLACE09 | Replace is one Undo transaction with exact source objects/order/definition refs/dirty restored; creation transaction grouping is explicitly decided later |
+| REPLACE10 | Template/reference version, deleted definitions, cross-project owner, changed source revision/selection and late preview cannot commit |
+| REPLACE11 | Cross-layer groups, Macro/Block references, cycles/nesting and unsupported %AB are safely refused until separately admitted; permissions never bypassed |
+| REPLACE12 | Atomic failure/precision/resource budget/cancellation preserve all sources; unproven equivalence explains refusal without partial consumption |
+| REPLACE13 | Source vs replaced export/flatten/reimport independently agrees in f64 manufacturing contours/exposure; no raster/tessellation acceptance |
+| REPLACE14 | Macro serializes template ID/kind/version, target layers, tolerance, rigid rotation, conflict/failed-candidate policy; no mouse/screen recording or private upload |
+
+Both workflows remain PLANNED / NOT IMPLEMENTED / NOT TESTED. Public command names and capability boundaries require their later implementation contract; this supplement changes no product code or acceptance threshold.
