@@ -1,6 +1,6 @@
 # S5-M2-C: passive source-clock measurement
 
-This is a measurement-only candidate based on `81a1c81949e83e6e4857d6d909a2e3285427a753`.
+This is a measurement-only candidate with this structural queue repair based on `df5e61ade5222061bbf19a912223d84b9ed30604`.
 Scope: R08/R16/R17/R18/R19 and bounded evidence supporting AT-001/023/024/025/032/063/074.
 No manufacturing, save, input, geometry, shader, existing timing interval or acceptance threshold changes.
 Multi-project implementation remains paused. Performance and true presentation loss remain OPEN.
@@ -124,8 +124,17 @@ Known labels identify source branches only. `native_exit_attribution_status` rem
 performance. Inspect original JSONL by update/input/version binding and source time; report output
 does not grant native event identity, repair drops or overwrite an earlier trigger.
 
-Producer uses a preallocated 4096-record queue, at most 256 bytes per numeric record (<=1 MiB).
-`Mutex::try_lock` never waits for queue capacity or a mutex; contention/full drops the new record.
+Producer uses the standard bounded `sync_channel(4096)` with `try_send`; only the writer owns
+its Receiver and uses `try_recv`. There is no application data mutex or busy-lock rejection.
+The producer never calls blocking `send`, retries a failed admission, or waits for queue capacity.
+Full/disconnected returns retain ownership for exact drop accounting; disconnect also fails measurement.
+Rust 1.89's channel internally uses atomic CAS/backoff and is not wait-free or hard real-time.
+No blocking channel receiver is registered; the writer waits with its own thread park/unpark.
+At most 256 bytes per numeric record bounds payload storage to <=1 MiB, not the entire channel.
+The pinned std array also has one usize stamp per slot, padding and fixed channel/shared state.
+A conservative estimate includes both slot alignment gaps and 64 KiB fixed/allocation overhead,
+and is checked against 2 MiB separately from metadata and staging. The header reports this estimate;
+it is not exact allocator bytes/RSS or a guarantee of std private layout across toolchains.
 No producer JSON formatting, terminal or disk write, sleep or GPU synchronization is added.
 Metadata generation happens only on changes/requests, with identifiers <=256 bytes and a conservative
 4 MiB cumulative admission threshold covering clones/cache/scratch. The last bounded candidate's
@@ -137,20 +146,28 @@ the header reports its capacity and exact size. Metadata is moved into staging w
 Output including header/metadata/numeric/footer is limited to 128 MiB, reserving 8 KiB for failure/footer.
 Budgets describe this observer, not the existing renderer's memory.
 
-Producer queue notifications occur after unlocking, only when enqueue changes an empty queue
-to nonempty. Close and admitted span completion retain their independent notifications.
-Writer moves at most 16 records per lock acquisition and formats/writes outside it; flush every <=250 ms of available
-execution or 256 KiB. OS I/O can still block the writer and affect process scheduling. Counters expose
-attempted/accepted/consumed, per-stage and metadata drops, full/contention, exact locked high-water,
-inflight admitted scopes, first/last drop source time, bytes and flush count. Dequeue age and serialized
-record write wall time are distinct fields. Record sequence is independent of physical row order.
-Missing metadata or any missing record invalidates completeness; samples are not silently repaired.
-Batching reduces lock acquisitions when records accumulate, but lengthens one drain section;
-it does not guarantee zero contention drops. Native paired measurements are still required.
+Every completed enqueue attempt wakes the writer after producer accounting; close and admitted span
+completion also unpark it. Wakes before park are retained as a token; wakes may coalesce. Records
+queued before the writer registers its Thread are drained before any wait. The writer drains at most
+16 records per batch and formats/writes afterward; empty cycles park for up to 250 ms of available
+execution. Flush every <=250 ms of available execution or 256 KiB. OS I/O can still block the writer
+and affect scheduling. Counters expose attempted/accepted/consumed, per-stage and metadata drops,
+full/disconnected, inflight admitted scopes, first/last drop source time, bytes and flush count.
+`queue_contention=0` denotes absence of application try_lock rejection, not zero synchronization cost.
+Exact queue occupancy/high-water is unavailable through public std mpsc; `queue_high_water` is null.
+`send_reservations` and its high-water are an upper bound covering queued records and concurrent send
+attempts, including failed attempts transiently. It may exceed4096, excludes writer staging, and
+never decides admission or final drain. Reserve before publishing and release on receive/send failure;
+a nonzero value after proven final drain fails measurement. Dequeue age and serialized record write
+wall time are distinct fields. Global record sequence orders attempts; concurrent physical admission
+and row order may differ. Missing metadata or any missing record invalidates completeness; samples
+are not silently repaired. Native paired measurements are still required.
 
 Closing stops new admissions. Spans admitted before closing remain counted until their retained end
 has been attempted, including spans crossing the cutoff. Writer drains after admitted producers/scopes
-finish, writes footer and flushes, then sends completion. The owned exit supervisor retains the JoinHandle,
+finish. After an initial empty receive, it rechecks the terminal close gate and receives again;
+only an empty receive after close_ready and inflight=0 proves drain. This retains a last producer
+that publishes between the first empty result and the gate. It writes footer and flushes, then sends completion. The owned exit supervisor retains the JoinHandle,
 uses one 2 s deadline for completion reception and finished-thread polling, then explicitly joins
 only after is_finished. Deadline is checked again before/after join. Rust/OS join epilogue and process
 scheduling are not a hard real-time wall bound; no live-writer join waits for blocked file I/O. Only successful
@@ -210,7 +227,8 @@ leaves `performance_status=OPEN`, including complete short observations.
 
 ## Checks and remaining native work
 
-Meaningful regressions cover queue-full/lock-contention/drop/metadata gaps, integer conversion,
+Meaningful regressions cover exact queue capacity/full/drop/metadata gaps, multiple App/callback/span
+producers, pre-park wakes, the last-send close interleaving, disconnect, blocked I/O, integer conversion,
 close crossing a live span, source endpoints, I/O/budget failure, multi-pass and unfinished scopes,
 same-identity reopen, fallback lineage, six phases and a real App update, exact window endpoints,
 supervision, mismatched clocks and missing records. Initial failures are retained in private evidence.
@@ -224,8 +242,8 @@ supported platform observation and cannot be inferred from update or capture cal
 
 ## Mac candidate handoff
 
-Fetch the independently published candidate branch, check out its exact verified commit in a clean
-worktree, and verify its direct parent is the frozen `c41a6388e90c51926fccefd2db81b84e7dc4a04e`.
+Use the exact frozen candidate identity in the accompanying source handoff, check it out in a clean
+worktree, and verify its direct parent is the frozen `df5e61ade5222061bbf19a912223d84b9ed30604`.
 Do not treat the remote default branch as this candidate. Verify all701 manifest entries before building:
 
 ```text
@@ -258,3 +276,5 @@ yet been shown to eliminate drops on Mac. Actual submit/GPU completion/present/s
 
 Clock conversion source: [Apple QA1398](https://developer.apple.com/library/archive/qa/qa1398/_index.html).
 Framework boundaries were checked in the locked eframe/egui-wgpu 0.33.3 and wgpu 27.0.1 source.
+
+Queue implementation inspection: [Rust 1.89 array channel](https://github.com/rust-lang/rust/blob/1.89.0/library/std/src/sync/mpmc/array.rs) and [wake registration](https://github.com/rust-lang/rust/blob/1.89.0/library/std/src/sync/mpmc/waker.rs).

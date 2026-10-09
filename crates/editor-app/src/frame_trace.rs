@@ -1,12 +1,11 @@
 //! Opt-in local source-clock observation. This never submits or waits for GPU work.
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::VecDeque,
     fs::{File, OpenOptions},
     io::{BufWriter, Read, Write},
     path::PathBuf,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
@@ -18,6 +17,17 @@ const WRITER_BATCH_CAPACITY: usize = 16;
 const META_LIMIT: u64 = 4 * 1024 * 1024;
 const OUTPUT_LIMIT: u64 = 128 * 1024 * 1024;
 const FOOTER_RESERVE: u64 = 8192;
+
+// Audited Rust 1.89 array slots contain one usize stamp plus Record and padding.
+// This estimate includes 64 KiB for channel state/allocation overhead; it is not
+// an allocator/RSS measurement or a stable guarantee of the std private layout.
+const CHANNEL_FIXED_OVERHEAD_ESTIMATE: usize = 64 * 1024;
+const CHANNEL_ESTIMATE_LIMIT: usize = 2 * 1024 * 1024;
+fn channel_allocation_estimate() -> usize {
+    let alignment = std::mem::align_of::<Record>().max(std::mem::align_of::<usize>());
+    CAPACITY * (std::mem::size_of::<Record>() + std::mem::size_of::<usize>() + 2 * (alignment - 1))
+        + CHANNEL_FIXED_OVERHEAD_ESTIMATE
+}
 
 /// Decimal strings preserve integer nanoseconds in consumers using IEEE doubles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
@@ -431,8 +441,8 @@ struct Record {
 }
 
 struct Shared {
-    queue: Mutex<VecDeque<Record>>,
-    wake: Condvar,
+    sender: mpsc::SyncSender<Record>,
+    writer_thread: OnceLock<std::thread::Thread>,
     clock: Clock,
     closing: AtomicBool,
     close_ready: AtomicBool,
@@ -446,9 +456,10 @@ struct Shared {
     dropped_metadata: AtomicU64,
     dropped_other: AtomicU64,
     full: AtomicU64,
-    contention: AtomicU64,
+    disconnected: AtomicU64,
     late: AtomicU64,
-    high_water: AtomicU64,
+    send_reservations: AtomicU64,
+    send_reservations_high_water: AtomicU64,
     first_drop: AtomicU64,
     last_drop: AtomicU64,
     metadata_bytes: AtomicU64,
@@ -456,32 +467,37 @@ struct Shared {
     supervisor_timeout: AtomicBool,
 }
 impl Shared {
-    fn new(clock: Clock, capacity: usize) -> Arc<Self> {
-        Arc::new(Self {
-            queue: Mutex::new(VecDeque::with_capacity(capacity)),
-            wake: Condvar::new(),
-            clock,
-            closing: AtomicBool::new(false),
-            close_ready: AtomicBool::new(false),
-            failed: AtomicBool::new(false),
-            inflight: AtomicU64::new(0),
-            sequence: AtomicU64::new(0),
-            callback_sequence: AtomicU64::new(0),
-            accepted: AtomicU64::new(0),
-            consumed: AtomicU64::new(0),
-            dropped: std::array::from_fn(|_| AtomicU64::new(0)),
-            dropped_metadata: AtomicU64::new(0),
-            dropped_other: AtomicU64::new(0),
-            full: AtomicU64::new(0),
-            contention: AtomicU64::new(0),
-            late: AtomicU64::new(0),
-            high_water: AtomicU64::new(0),
-            first_drop: AtomicU64::new(u64::MAX),
-            last_drop: AtomicU64::new(0),
-            metadata_bytes: AtomicU64::new(0),
-            cutoff: AtomicU64::new(0),
-            supervisor_timeout: AtomicBool::new(false),
-        })
+    fn new(clock: Clock, capacity: usize) -> (Arc<Self>, mpsc::Receiver<Record>) {
+        let (sender, receiver) = mpsc::sync_channel(capacity);
+        (
+            Arc::new(Self {
+                sender,
+                writer_thread: OnceLock::new(),
+                clock,
+                closing: AtomicBool::new(false),
+                close_ready: AtomicBool::new(false),
+                failed: AtomicBool::new(false),
+                inflight: AtomicU64::new(0),
+                sequence: AtomicU64::new(0),
+                callback_sequence: AtomicU64::new(0),
+                accepted: AtomicU64::new(0),
+                consumed: AtomicU64::new(0),
+                dropped: std::array::from_fn(|_| AtomicU64::new(0)),
+                dropped_metadata: AtomicU64::new(0),
+                dropped_other: AtomicU64::new(0),
+                full: AtomicU64::new(0),
+                disconnected: AtomicU64::new(0),
+                late: AtomicU64::new(0),
+                send_reservations: AtomicU64::new(0),
+                send_reservations_high_water: AtomicU64::new(0),
+                first_drop: AtomicU64::new(u64::MAX),
+                last_drop: AtomicU64::new(0),
+                metadata_bytes: AtomicU64::new(0),
+                cutoff: AtomicU64::new(0),
+                supervisor_timeout: AtomicBool::new(false),
+            }),
+            receiver,
+        )
     }
     fn active(&self) -> bool {
         !self.closing.load(Ordering::Acquire)
@@ -510,66 +526,103 @@ impl Shared {
         if self.closing.load(Ordering::SeqCst) && !admitted_span {
             self.late.fetch_add(1, Ordering::Relaxed);
             self.inflight.fetch_sub(1, Ordering::SeqCst);
+            self.wake_writer();
             return;
         }
         let seq = self.sequence.fetch_add(1, Ordering::Relaxed) + 1;
-        let mut wake = false;
         if self.failed.load(Ordering::Acquire) {
             self.drop_record(&payload, at);
-        } else if let Ok(mut queue) = self.queue.try_lock() {
-            if self.closing.load(Ordering::SeqCst) && !admitted_span {
-                self.late.fetch_add(1, Ordering::Relaxed);
-            } else if queue.len() == queue.capacity() {
-                self.full.fetch_add(1, Ordering::Relaxed);
-                self.drop_record(&payload, at);
-            } else {
-                wake = queue.is_empty();
-                queue.push_back(Record {
-                    record_seq: seq,
-                    source_ns: at,
-                    payload,
-                });
-                self.high_water
-                    .fetch_max(queue.len() as u64, Ordering::Relaxed);
-                self.accepted.fetch_add(1, Ordering::Relaxed);
-            }
+        } else if self.closing.load(Ordering::SeqCst) && !admitted_span {
+            self.late.fetch_add(1, Ordering::Relaxed);
         } else {
-            self.contention.fetch_add(1, Ordering::Relaxed);
-            self.drop_record(&payload, at);
+            // Reserve before publishing: the writer may receive before try_send returns.
+            // This upper bound includes concurrent attempts, even attempts that fail.
+            let reservations = self.send_reservations.fetch_add(1, Ordering::Relaxed) + 1;
+            self.send_reservations_high_water
+                .fetch_max(reservations, Ordering::Relaxed);
+            match self.sender.try_send(Record {
+                record_seq: seq,
+                source_ns: at,
+                payload,
+            }) {
+                Ok(()) => {
+                    self.accepted.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(error) => {
+                    self.send_reservations.fetch_sub(1, Ordering::Relaxed);
+                    let record = match error {
+                        mpsc::TrySendError::Full(record) => {
+                            self.full.fetch_add(1, Ordering::Relaxed);
+                            record
+                        }
+                        mpsc::TrySendError::Disconnected(record) => {
+                            self.disconnected.fetch_add(1, Ordering::Relaxed);
+                            self.failed.store(true, Ordering::Release);
+                            record
+                        }
+                    };
+                    self.drop_record(&record.payload, at);
+                }
+            }
         }
         self.inflight.fetch_sub(1, Ordering::SeqCst);
-        // Notify after releasing the queue lock, only for a new nonempty queue.
-        // Close and admitted span completion have their own independent wakes.
-        if wake {
-            self.wake.notify_one();
+        // Also wake after rejection: the last producer may make close drainable.
+        self.wake_writer();
+    }
+    fn wake_writer(&self) {
+        if let Some(thread) = self.writer_thread.get() {
+            thread.unpark();
         }
     }
-    fn writer_batch(&self) -> Result<([Option<Record>; WRITER_BATCH_CAPACITY], bool), String> {
-        let mut records = std::array::from_fn(|_| None);
-        let mut queue = self.queue.lock().map_err(|_| "trace queue poisoned")?;
-        if queue.is_empty()
-            && (!self.close_ready.load(Ordering::Acquire)
-                || self.inflight.load(Ordering::SeqCst) != 0)
-        {
-            queue = self
-                .wake
-                .wait_timeout(queue, Duration::from_millis(250))
-                .map_err(|_| "trace queue poisoned")?
-                .0;
+    fn receive(&self, receiver: &mpsc::Receiver<Record>) -> Result<Option<Record>, String> {
+        match receiver.try_recv() {
+            Ok(record) => {
+                self.send_reservations.fetch_sub(1, Ordering::Relaxed);
+                Ok(Some(record))
+            }
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.failed.store(true, Ordering::Release);
+                Err("trace channel disconnected".into())
+            }
         }
+    }
+    fn writer_batch(
+        &self,
+        receiver: &mpsc::Receiver<Record>,
+    ) -> Result<([Option<Record>; WRITER_BATCH_CAPACITY], bool), String> {
+        let mut records = std::array::from_fn(|_| None);
         for slot in &mut records {
-            let Some(record) = queue.pop_front() else {
+            let Some(record) = self.receive(receiver)? else {
                 break;
             };
             *slot = Some(record);
         }
-        // An empty queue after draining this batch is not a finished writer:
-        // every record in the batch must first be written and counted.
-        let drained = records[0].is_none()
-            && self.close_ready.load(Ordering::Acquire)
-            && self.inflight.load(Ordering::SeqCst) == 0;
-        drop(queue);
+        let drained = self.finish_empty_batch(receiver, &mut records)?;
         Ok((records, drained))
+    }
+    fn finish_empty_batch(
+        &self,
+        receiver: &mpsc::Receiver<Record>,
+        records: &mut [Option<Record>; WRITER_BATCH_CAPACITY],
+    ) -> Result<bool, String> {
+        if records[0].is_some()
+            || !self.close_ready.load(Ordering::Acquire)
+            || self.inflight.load(Ordering::SeqCst) != 0
+        {
+            return Ok(false);
+        }
+        // A final admitted producer can publish between the first Empty and this
+        // gate. Only a second Empty after the terminal gate proves final drain.
+        records[0] = self.receive(receiver)?;
+        if records[0].is_some() {
+            return Ok(false);
+        }
+        if self.send_reservations.load(Ordering::Relaxed) != 0 {
+            self.failed.store(true, Ordering::Release);
+            return Err("trace send reservations remain after drain".into());
+        }
+        Ok(true)
     }
     fn metadata(&self, metadata: Metadata) {
         if !self.active() {
@@ -627,8 +680,9 @@ impl Shared {
         serde_json::json!({"attempted":self.sequence.load(Ordering::Relaxed),"accepted":self.accepted.load(Ordering::Relaxed),
             "consumed":self.consumed.load(Ordering::Relaxed),"drop_by_stage":dropped,"stage_order":["input_batch","update","validation","real_prepare","canvas_panel","callback_prepare","callback_paint","request_attempt"],
             "dropped_metadata":self.dropped_metadata.load(Ordering::Relaxed),"dropped_other":self.dropped_other.load(Ordering::Relaxed),
-            "queue_full":self.full.load(Ordering::Relaxed),"queue_contention":self.contention.load(Ordering::Relaxed),
-            "queue_high_water":self.high_water.load(Ordering::Relaxed),"queue_capacity":CAPACITY,
+            "queue_full":self.full.load(Ordering::Relaxed),"queue_contention":0,"queue_disconnected":self.disconnected.load(Ordering::Relaxed),
+            "queue_high_water":null,"send_reservations":self.send_reservations.load(Ordering::Relaxed),
+            "send_reservations_high_water":self.send_reservations_high_water.load(Ordering::Relaxed),"queue_capacity":CAPACITY,
             "first_drop_source_ns":(self.first_drop.load(Ordering::Relaxed)!=u64::MAX).then(||Ns(self.first_drop.load(Ordering::Relaxed))),"last_drop_source_ns":Ns(self.last_drop.load(Ordering::Relaxed)),
             "metadata_bytes_charged":self.metadata_bytes.load(Ordering::Relaxed),"record_size_bytes":std::mem::size_of::<Record>(),
             "producer_inflight":self.inflight.load(Ordering::SeqCst),"late_attempts_at_footer":self.late.load(Ordering::Relaxed),
@@ -638,7 +692,7 @@ impl Shared {
         self.closing.store(true, Ordering::SeqCst);
         self.cutoff.store(self.clock.now().0, Ordering::Relaxed);
         self.close_ready.store(true, Ordering::Release);
-        self.wake.notify_one();
+        self.wake_writer();
     }
 }
 
@@ -674,6 +728,7 @@ impl Span {
             !shared.closing.load(Ordering::SeqCst) && !shared.failed.load(Ordering::Acquire);
         if !admitted {
             shared.inflight.fetch_sub(1, Ordering::SeqCst);
+            shared.wake_writer();
         }
         Self {
             shared,
@@ -709,7 +764,7 @@ impl Drop for Span {
                 true,
             );
             self.shared.inflight.fetch_sub(1, Ordering::SeqCst);
-            self.shared.wake.notify_one();
+            self.shared.wake_writer();
             return;
         }
         self.shared.emit_inner(
@@ -725,7 +780,7 @@ impl Drop for Span {
             true,
         );
         self.shared.inflight.fetch_sub(1, Ordering::SeqCst);
-        self.shared.wake.notify_one();
+        self.shared.wake_writer();
     }
 }
 pub(crate) struct Update {
@@ -813,6 +868,8 @@ pub(crate) struct Recorder {
     open_task: Option<u64>,
     attempt_id: u64,
     current_binding: Option<Binding>,
+    #[cfg(test)]
+    test_receiver: Option<mpsc::Receiver<Record>>,
 }
 impl Recorder {
     pub fn from_env() -> Option<Self> {
@@ -857,6 +914,7 @@ impl Recorder {
         }
         if std::mem::size_of::<Record>() > 256
             || std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>() > 4096
+            || channel_allocation_estimate() > CHANNEL_ESTIMATE_LIMIT
         {
             return Err("numeric queue budget exceeded".into());
         }
@@ -865,7 +923,7 @@ impl Recorder {
             .create_new(true)
             .open(&config.output)
             .map_err(|_| "trace output must be a new writable file")?;
-        let shared = Shared::new(clock, CAPACITY);
+        let (shared, receiver) = Shared::new(clock, CAPACITY);
         let (done_tx, done) = mpsc::sync_channel(1);
         let sink = shared.clone();
         let run_id = config.run_id.clone();
@@ -876,10 +934,10 @@ impl Recorder {
                 let result = writer(
                     output,
                     &sink,
+                    receiver,
                     config,
                     editor_core::hash::sha256_hex(&bytes),
-                    commit,
-                    source,
+                    (commit, source),
                     manifest_sha,
                 );
                 if result.is_err() {
@@ -904,6 +962,8 @@ impl Recorder {
             open_task: None,
             attempt_id: 0,
             current_binding: None,
+            #[cfg(test)]
+            test_receiver: None,
         })
     }
     pub fn version(&mut self, view: &crate::state::View) -> u64 {
@@ -1174,8 +1234,9 @@ impl Recorder {
     }
     #[cfg(test)]
     pub(crate) fn for_test() -> Self {
+        let (shared, receiver) = Shared::new(Clock::new().unwrap(), CAPACITY);
         Self {
-            shared: Shared::new(Clock::new().unwrap(), CAPACITY),
+            shared,
             run_id: "test".into(),
             done: None,
             writer_thread: None,
@@ -1189,17 +1250,17 @@ impl Recorder {
             open_task: None,
             attempt_id: 0,
             current_binding: None,
+            test_receiver: Some(receiver),
         }
     }
     #[cfg(test)]
     pub(crate) fn take_test_records(&self) -> Vec<serde_json::Value> {
-        self.shared
-            .queue
-            .lock()
-            .unwrap()
-            .drain(..)
-            .map(|record| serde_json::to_value(record).unwrap())
-            .collect()
+        let receiver = self.test_receiver.as_ref().unwrap();
+        let mut records = Vec::new();
+        while let Some(record) = self.shared.receive(receiver).unwrap() {
+            records.push(serde_json::to_value(record).unwrap());
+        }
+        records
     }
 }
 fn supervise_writer(
@@ -1281,12 +1342,14 @@ fn executable_sha256() -> Result<String, String> {
 fn writer(
     output: File,
     shared: &Shared,
+    receiver: mpsc::Receiver<Record>,
     config: Config,
     config_sha: String,
-    commit: &str,
-    source: &str,
+    build_identity: (&str, &str),
     manifest_sha: String,
 ) -> Result<(), String> {
+    let (commit, source) = build_identity;
+    let _ = shared.writer_thread.set(std::thread::current());
     let binary_sha = executable_sha256()?;
     if binary_sha != config.expected_binary_sha256 {
         return Err("binary identity mismatch".into());
@@ -1302,7 +1365,11 @@ fn writer(
         "viewport_scope":"App::update ROOT only; raw non-ROOT batches are not mapped to ROOT updates",
         "legacy_render_timing_enabled":std::env::var_os("RCAM_RENDER_TIMING").is_some(),
         "internal_evidence_compiled":cfg!(feature="internal-evidence"),
-        "pid":std::process::id(), "observation":"passive, no screenshots, forced repaint, input injection or GPU waits", "queue":"bounded try_lock; drop new on contention/full",
+        "pid":std::process::id(), "observation":"passive, no screenshots, forced repaint, input injection or GPU waits", "queue":"std bounded sync_channel; try_send/try_recv; drop new on full/disconnected",
+        "queue_metric_scope":"send reservations include queued records and concurrent attempts; upper bound, may exceed capacity; exact queue high-water unavailable",
+        "channel_memory_scope":"Rust 1.89 conservative estimate includes slot stamps/padding and 64 KiB fixed overhead; not exact allocator bytes/RSS or stable std layout guarantee",
+        "channel_allocation_estimate_bytes":channel_allocation_estimate(),
+        "channel_allocation_estimate_limit_bytes":CHANNEL_ESTIMATE_LIMIT,
         "supervision_required":"matching finalization_ack=ok requires footer/flush and completed writer thread join; late footer after timeout is insufficient",
         "writer_join_required":true,
         "metadata_limit":META_LIMIT,"output_limit":OUTPUT_LIMIT,
@@ -1327,9 +1394,14 @@ fn writer(
     let mut max_record_write_wall = 0;
     let mut flush_count = 1u64;
     loop {
-        let (records, drained) = shared.writer_batch()?;
+        let (records, drained) = shared.writer_batch(&receiver)?;
         if drained {
             break;
+        }
+        if records[0].is_none() {
+            // No blocking channel receive: no std channel waiters are registered.
+            // unpark retains a token if a producer races this empty-to-park gap.
+            std::thread::park_timeout(Duration::from_millis(250));
         }
         let dequeued_at = shared.clock.now();
         for record in records.into_iter().flatten() {
@@ -1387,8 +1459,222 @@ fn writer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn shared(capacity: usize) -> Arc<Shared> {
+    fn shared(capacity: usize) -> (Arc<Shared>, mpsc::Receiver<Record>) {
         Shared::new(Clock::new().unwrap(), capacity)
+    }
+    fn test_payload(id: u64) -> Payload {
+        Payload::UpdateEnd {
+            binding: Binding::default(),
+            end_version_id: id,
+            snapshot: Snapshot::default(),
+        }
+    }
+    #[test]
+    fn exact_capacity_full_and_dequeue_readmission_keep_all_loss_counters() {
+        let (shared, receiver) = shared(CAPACITY);
+        for id in 0..CAPACITY as u64 {
+            shared.emit(Ns(id), test_payload(id));
+        }
+        shared.emit(Ns(5000), test_payload(5000));
+        assert_eq!(shared.accepted.load(Ordering::Relaxed), CAPACITY as u64);
+        assert_eq!(shared.full.load(Ordering::Relaxed), 1);
+        assert_eq!(shared.dropped_other.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            shared.send_reservations.load(Ordering::Relaxed),
+            CAPACITY as u64
+        );
+        assert_eq!(
+            shared.send_reservations_high_water.load(Ordering::Relaxed),
+            CAPACITY as u64 + 1
+        );
+        assert!(shared.counters()["queue_high_water"].is_null());
+        assert_eq!(shared.receive(&receiver).unwrap().unwrap().record_seq, 1);
+        shared.emit(Ns(5001), test_payload(5001));
+        shared.close();
+        let mut ids = Vec::new();
+        loop {
+            let (batch, drained) = shared.writer_batch(&receiver).unwrap();
+            if drained {
+                break;
+            }
+            ids.extend(batch.into_iter().flatten().map(|r| r.record_seq));
+        }
+        assert_eq!(ids.len(), CAPACITY);
+        assert_eq!(ids.last(), Some(&(CAPACITY as u64 + 2)));
+        assert!(!ids.contains(&(CAPACITY as u64 + 1)));
+        assert_eq!(shared.sequence.load(Ordering::Relaxed), CAPACITY as u64 + 2);
+        assert_eq!(shared.send_reservations.load(Ordering::Relaxed), 0);
+        assert_eq!(shared.first_drop.load(Ordering::Relaxed), 5000);
+    }
+    #[test]
+    fn disconnected_receiver_marks_measurement_failed_and_preserves_metadata_drop() {
+        let (shared, receiver) = shared(4);
+        drop(receiver);
+        shared.metadata(Metadata::Version {
+            version_id: 1,
+            version: Version::capture(&crate::state::View::default(), 0),
+        });
+        assert!(shared.failed.load(Ordering::Acquire));
+        assert_eq!(shared.disconnected.load(Ordering::Relaxed), 1);
+        assert_eq!(shared.dropped_metadata.load(Ordering::Relaxed), 1);
+        assert_eq!(shared.send_reservations.load(Ordering::Relaxed), 0);
+        assert_eq!(shared.inflight.load(Ordering::SeqCst), 0);
+        shared.emit(Ns(123), test_payload(1));
+        assert_eq!(shared.dropped_other.load(Ordering::Relaxed), 1);
+        assert_eq!(shared.sequence.load(Ordering::Relaxed), 2);
+    }
+    #[test]
+    fn multiple_app_callback_and_span_producers_drain_without_missing_or_duplicate_records() {
+        let (shared, receiver) = shared(CAPACITY);
+        let barrier = Arc::new(std::sync::Barrier::new(9));
+        let consumer = shared.clone();
+        let writer = std::thread::spawn(move || {
+            consumer.writer_thread.set(std::thread::current()).unwrap();
+            let mut records = Vec::new();
+            loop {
+                let (batch, drained) = consumer.writer_batch(&receiver).unwrap();
+                if drained {
+                    break;
+                }
+                if batch[0].is_none() {
+                    std::thread::park_timeout(Duration::from_millis(250));
+                }
+                records.extend(batch.into_iter().flatten());
+            }
+            records
+        });
+        let producers: Vec<_> = (0..8u64)
+            .map(|producer| {
+                let shared = shared.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for item in 0..256u64 {
+                        let id = producer * 256 + item;
+                        let binding = Binding {
+                            update_id: id + 1,
+                            ..Default::default()
+                        };
+                        match producer % 3 {
+                            0 => shared.emit(Ns(id), test_payload(id + 1)),
+                            1 => drop(
+                                CallbackBinding {
+                                    shared: shared.clone(),
+                                    binding,
+                                }
+                                .span(Stage::CallbackPaint),
+                            ),
+                            _ => drop(Span::new(shared.clone(), binding, Stage::RealPrepare)),
+                        }
+                    }
+                })
+            })
+            .collect();
+        barrier.wait();
+        for producer in producers {
+            producer.join().unwrap();
+        }
+        shared.close();
+        let records = writer.join().unwrap();
+        assert_eq!(records.len(), 2048);
+        let mut sequences: Vec<_> = records.iter().map(|r| r.record_seq).collect();
+        sequences.sort_unstable();
+        assert_eq!(sequences, (1..=2048).collect::<Vec<_>>());
+        let mut last = [0u64; 8];
+        let mut seen = std::collections::BTreeSet::new();
+        for record in records {
+            let id = match record.payload {
+                Payload::UpdateEnd { end_version_id, .. } => end_version_id,
+                Payload::Span { binding, .. } => binding.update_id,
+                _ => panic!("unexpected record"),
+            };
+            assert!(seen.insert(id));
+            let producer = ((id - 1) / 256) as usize;
+            assert!(id > last[producer]);
+            last[producer] = id;
+        }
+        assert_eq!(seen, (1..=2048).collect());
+        assert_eq!(shared.accepted.load(Ordering::Relaxed), 2048);
+        assert_eq!(shared.full.load(Ordering::Relaxed), 0);
+        assert_eq!(shared.disconnected.load(Ordering::Relaxed), 0);
+        assert_eq!(shared.send_reservations.load(Ordering::Relaxed), 0);
+        assert_eq!(shared.inflight.load(Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn final_admitted_send_between_first_empty_and_terminal_gate_is_drained() {
+        let (shared, receiver) = shared(4);
+        let span = Span::new(shared.clone(), Binding::default(), Stage::CallbackPaint);
+        let (release, released) = mpsc::sync_channel(1);
+        let (sent, sent_rx) = mpsc::sync_channel(1);
+        let producer = std::thread::spawn(move || {
+            released.recv().unwrap();
+            drop(span);
+            sent.send(()).unwrap();
+        });
+        // Reproduce the exact split in writer_batch: Empty, then a final send,
+        // then terminal gate. finish_empty_batch is the actual production path.
+        assert!(shared.receive(&receiver).unwrap().is_none());
+        shared.close();
+        release.send(()).unwrap();
+        sent_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(shared.inflight.load(Ordering::SeqCst), 0);
+        let mut batch = std::array::from_fn(|_| None);
+        assert!(!shared.finish_empty_batch(&receiver, &mut batch).unwrap());
+        assert!(matches!(
+            batch[0].as_ref().unwrap().payload,
+            Payload::Span { .. }
+        ));
+        assert!(shared.writer_batch(&receiver).unwrap().1);
+        producer.join().unwrap();
+    }
+    #[test]
+    fn send_close_and_last_span_unpark_before_writer_parks() {
+        for wake_kind in 0..3 {
+            let (shared, receiver) = shared(4);
+            let span = (wake_kind == 2)
+                .then(|| Span::new(shared.clone(), Binding::default(), Stage::CallbackPaint));
+            if wake_kind == 2 {
+                shared.close();
+            }
+            let consumer = shared.clone();
+            let (ready, ready_rx) = mpsc::sync_channel(1);
+            let may_park = Arc::new(AtomicBool::new(false));
+            let writer_may_park = may_park.clone();
+            let (woke, woke_rx) = mpsc::sync_channel(1);
+            let writer = std::thread::spawn(move || {
+                consumer.writer_thread.set(std::thread::current()).unwrap();
+                assert!(!consumer.writer_batch(&receiver).unwrap().1);
+                ready.send(()).unwrap();
+                // Avoid another blocking primitive consuming this thread's park token.
+                while !writer_may_park.load(Ordering::Acquire) {
+                    std::thread::yield_now();
+                }
+                std::thread::park_timeout(Duration::from_secs(5));
+                let batch = consumer.writer_batch(&receiver).unwrap();
+                woke.send(batch).unwrap();
+            });
+            ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            match wake_kind {
+                0 => shared.emit(Ns(10), test_payload(1)),
+                1 => shared.close(),
+                _ => drop(span),
+            }
+            may_park.store(true, Ordering::Release);
+            let (batch, drained) = woke_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert_eq!(drained, wake_kind == 1);
+            assert_eq!(batch[0].is_some(), wake_kind != 1);
+            writer.join().unwrap();
+        }
+    }
+    #[test]
+    fn data_queued_before_writer_registration_is_drained_without_a_wake() {
+        let (shared, receiver) = shared(4);
+        shared.emit(Ns(10), test_payload(1));
+        shared.close();
+        shared.writer_thread.set(std::thread::current()).unwrap();
+        let (batch, drained) = shared.writer_batch(&receiver).unwrap();
+        assert!(batch[0].is_some() && !drained);
+        assert!(shared.writer_batch(&receiver).unwrap().1);
     }
     #[test]
     fn raw_input_classification_excludes_event_contents_and_positions() {
@@ -1434,7 +1720,7 @@ mod tests {
     }
     #[test]
     fn source_endpoints_survive_delayed_consumption_and_full_queue() {
-        let shared = shared(1);
+        let (shared, receiver) = shared(1);
         shared.emit(
             Ns(10),
             Payload::Span {
@@ -1457,7 +1743,7 @@ mod tests {
                 outcome: "test",
             },
         );
-        let record = shared.queue.lock().unwrap().pop_front().unwrap();
+        let record = shared.receive(&receiver).unwrap().unwrap();
         assert_eq!(record.source_ns, Ns(10));
         assert_eq!(shared.full.load(Ordering::Relaxed), 1);
         assert_eq!(
@@ -1468,35 +1754,18 @@ mod tests {
         assert_eq!(shared.sequence.load(Ordering::Relaxed), 2);
     }
     #[test]
-    fn contention_and_close_do_not_wait_or_accept_after_cutoff() {
-        let shared = shared(4);
-        let lock = shared.queue.lock().unwrap();
-        shared.emit(
-            Ns(20),
-            Payload::UpdateEnd {
-                binding: Binding::default(),
-                end_version_id: 1,
-                snapshot: Snapshot::default(),
-            },
-        );
-        assert_eq!(shared.contention.load(Ordering::Relaxed), 1);
-        drop(lock);
+    fn close_does_not_accept_new_records_after_cutoff() {
+        let (shared, receiver) = shared(4);
         shared.close();
-        shared.emit(
-            Ns(30),
-            Payload::UpdateEnd {
-                binding: Binding::default(),
-                end_version_id: 1,
-                snapshot: Snapshot::default(),
-            },
-        );
+        shared.emit(Ns(30), test_payload(1));
         assert_eq!(shared.late.load(Ordering::Relaxed), 1);
-        assert!(shared.queue.lock().unwrap().is_empty());
+        assert!(shared.receive(&receiver).unwrap().is_none());
         assert_eq!(shared.inflight.load(Ordering::SeqCst), 0);
+        assert!(shared.writer_batch(&receiver).unwrap().1);
     }
     #[test]
     fn staged_batch_releases_queue_during_blocked_io_and_close_preserves_fifo() {
-        let shared = shared(64);
+        let (shared, receiver) = shared(64);
         for id in 0..33 {
             shared.emit(
                 Ns(id),
@@ -1536,7 +1805,7 @@ mod tests {
             };
             let mut bytes = 0;
             loop {
-                let (batch, drained) = consumer.writer_batch().unwrap();
+                let (batch, drained) = consumer.writer_batch(&receiver).unwrap();
                 if drained {
                     break;
                 }
@@ -1548,7 +1817,7 @@ mod tests {
             sink.bytes
         });
         started.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert_eq!(shared.queue.lock().unwrap().len(), 17);
+        assert_eq!(shared.send_reservations.load(Ordering::Relaxed), 17);
         // File I/O is blocked with a staged batch, but admission still succeeds.
         shared.emit(
             Ns(33),
@@ -1574,41 +1843,39 @@ mod tests {
             assert_eq!(row["end_version_id"], id as u64);
         }
         assert_eq!(shared.consumed.load(Ordering::Relaxed), 34);
-        assert_eq!(shared.contention.load(Ordering::Relaxed), 0);
+        assert_eq!(shared.disconnected.load(Ordering::Relaxed), 0);
         assert_eq!(shared.full.load(Ordering::Relaxed), 0);
     }
     #[test]
     fn empty_staging_waits_for_admitted_span_after_close() {
-        let shared = shared(64);
+        let (shared, receiver) = shared(64);
         let span = Span::new(shared.clone(), Binding::default(), Stage::CallbackPaint);
         shared.close();
-        let (batch, drained) = shared.writer_batch().unwrap();
+        let (batch, drained) = shared.writer_batch(&receiver).unwrap();
         assert!(batch.iter().all(Option::is_none));
         assert!(!drained);
         drop(span);
-        let (batch, drained) = shared.writer_batch().unwrap();
+        let (batch, drained) = shared.writer_batch(&receiver).unwrap();
         assert!(!drained);
         assert!(matches!(
             batch[0].as_ref().unwrap().payload,
             Payload::Span { .. }
         ));
         drop(batch);
-        assert!(shared.writer_batch().unwrap().1);
+        assert!(shared.writer_batch(&receiver).unwrap().1);
     }
     #[test]
     fn admitted_span_crossing_close_is_retained_and_delays_finalization() {
-        let shared = shared(8);
+        let (shared, receiver) = shared(8);
         let span = Span::new(shared.clone(), Binding::default(), Stage::CallbackPaint);
         let start = span.start;
         shared.close();
         assert!(shared.inflight.load(Ordering::SeqCst) > 0);
-        assert!(
-            !shared.queue.lock().unwrap().is_empty() || shared.inflight.load(Ordering::SeqCst) != 0
-        );
+        assert!(shared.inflight.load(Ordering::SeqCst) != 0);
         drop(span);
         assert_eq!(shared.inflight.load(Ordering::SeqCst), 0);
         assert_eq!(shared.accepted.load(Ordering::Relaxed), 1);
-        let record = shared.queue.lock().unwrap().pop_front().unwrap();
+        let record = shared.receive(&receiver).unwrap().unwrap();
         if let Payload::Span {
             start_ns, end_ns, ..
         } = record.payload
@@ -1636,6 +1903,7 @@ mod tests {
             9007199254740993
         );
         assert!(std::mem::size_of::<Record>() <= 256);
+        assert!(channel_allocation_estimate() <= CHANNEL_ESTIMATE_LIMIT);
         assert!(std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>() <= 4096);
         let mut output = Vec::new();
         let mut bytes = 0;
@@ -1775,7 +2043,7 @@ mod tests {
     }
     #[test]
     fn metadata_gap_and_oversize_fail_closed_for_evidence_only() {
-        let shared = shared(1);
+        let (shared, _receiver) = shared(1);
         let mut view = crate::state::View::default();
         shared.metadata(Metadata::Version {
             version_id: 1,
@@ -1798,7 +2066,7 @@ mod tests {
     }
     #[test]
     fn close_race_never_leaves_accepted_records_outside_drained_queue() {
-        let shared = shared(CAPACITY);
+        let (shared, receiver) = shared(CAPACITY);
         let producer = shared.clone();
         let thread = std::thread::spawn(move || {
             for _ in 0..5000 {
@@ -1814,7 +2082,10 @@ mod tests {
         });
         shared.close();
         thread.join().unwrap();
-        let queue = shared.queue.lock().unwrap();
+        let queue: Vec<_> = receiver.try_iter().collect();
+        shared
+            .send_reservations
+            .fetch_sub(queue.len() as u64, Ordering::Relaxed);
         assert_eq!(queue.len() as u64, shared.accepted.load(Ordering::Relaxed));
         assert_eq!(shared.inflight.load(Ordering::SeqCst), 0);
         assert!(
@@ -1847,7 +2118,7 @@ mod tests {
                 .open(&path)
                 .is_err()
         );
-        let shared = shared(CAPACITY);
+        let (shared, receiver) = shared(CAPACITY);
         shared.metadata(Metadata::Version {
             version_id: 1,
             version: Version::capture(&crate::state::View::default(), 0),
@@ -1875,10 +2146,10 @@ mod tests {
             let result = writer(
                 output,
                 &sink,
+                receiver,
                 config,
                 "b".repeat(64),
-                "test-commit",
-                "auxiliary-test",
+                ("test-commit", "auxiliary-test"),
                 "a".repeat(64),
             );
             let _ = done_tx.send(result);
@@ -1932,7 +2203,7 @@ mod tests {
     #[test]
     fn supervision_timeout_does_not_join_live_writer_or_accept_late_completion() {
         for notify_before_block in [false, true] {
-            let shared = shared(CAPACITY);
+            let (shared, _receiver) = shared(CAPACITY);
             let (done_tx, done) = mpsc::sync_channel(1);
             let (release_tx, release) = mpsc::sync_channel(1);
             let (ended_tx, ended) = mpsc::sync_channel(1);
@@ -1967,7 +2238,7 @@ mod tests {
     }
     #[test]
     fn completion_notification_is_not_success_without_finished_thread_join() {
-        let shared = shared(CAPACITY);
+        let (shared, _receiver) = shared(CAPACITY);
         let (done_tx, done) = mpsc::sync_channel(1);
         let thread = std::thread::spawn(move || {
             done_tx.send(Ok(())).unwrap();
