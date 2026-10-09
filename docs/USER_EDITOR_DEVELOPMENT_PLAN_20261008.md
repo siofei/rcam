@@ -467,3 +467,18 @@ CI 状态已通过 GitHub 只读接口核对。Windows为既有依赖／工具�
 选区与指定图层是两个显式范围，遵守完整成员、层／类型／定义／对象锁及可选权限，不悄扩其他图层。昂贵计算进入有预算且可取消的后台任务，绑定 owner／document／revision／workspace／选区与参数版本；切换工程、编辑、取消或迟到结果不得应用到别的工程。未来宏 API 记录可序列化的范围、真实对象／图层身份、单位／参数、算法能力版本及失败策略，复用同一原子服务路径，不录制鼠标坐标。
 
 此条 PLANNED／AWAITING ALGORITHM AUDIT／NOT IMPLEMENTED／NOT TESTED，不打断多工程隔离第一切片，不新增生产依赖／命令占位入口或放宽现有精度／性能验收门槛。
+
+
+### 26.1 候选 v11 算法静态审计及接入边界（2026-10-09）
+
+已静态读取候选 `gerber-optimize-v11-closed-circle-source(1).zip`，SHA256 `7380a7e0cb2478e276b61137ecf8ba7559d5f8a6de8c8ac38e54830dabe20113`，包含 Go 1.22 标准库实现及 CLI/Web 示例与测试；本次未运行。未发现顶层或内含 LICENSE，也没有可证授权的作者仓库，代码所有权／修改分发授权待用户确认。当前只有规划；不发布附件源码，不将其历史测试或 Web 预览当作 RCam 验收。
+
+算法只优化显式闭合 Region；非 Region 绘制和 Flash 只保留。附件解析器没有完整 AM／带孔 Aperture 建模，不支持真实 SR、AB及非恒等镜像／旋转／缩放等。接入不得替换 RCam parser，也不能宣称支持任意对象：RCam 原生对象、真实弧、曝光与局部孔洞语义始终为主。Go 入口返回 Gerber 文本和 Report，没有 RCam 稳定对象／Undo 映射；受控桥接或移植方案仍待评估和授权审查。
+
+候选核心为连续边界认证、输出量化后复验、DP 分段和拓扑冲突回退。v11 可在严格认证条件下将显式闭合、纯 G01 的近圆恢复为共同圆心的两段 180° 弧；此圆恢复必须整体接受或整体回退。真实直边保留；椭圆或不能认证的输入不得强制圆化。未选邻近几何只读参与冲突检查，不扩大用户选择／指定可编辑层的修改范围。
+
+推荐作为显式版本化候选配置记录：容差 0.002 mm、弓高 0.0005 mm、窗口 64、至少 3 源段、最小扫角 8°、adaptive、topology=true、mixed enabled/direct/merge_straight/preserve_curves、源弧上限 0.2 mm／90°。这些是附件推荐值，不是已测 RCam 门槛或产品默认。附件旧 DefaultOptions 的 0.003 mm／256／exhaustive／12° 不得混入同一版本配置。拓扑检查建议作为固定安全门槛，不能给用户误关的选项；最终支持类型、参数解释和安全限制在实施合同冻结。
+
+UI 固定宽度，复用统一算式／单位输入。预览从该次 f64 制造快照重算，原图／结果叠加，报告线／弧数量、误差上界、圆恢复、跳过与回退理由；应用前重新验证 owner／document／revision／workspace／selection／参数版本。取消或无改动不写事务；有改动批次一次原子 Undo/Redo。后台协作取消，迟到结果不能写回另一工程。GUI 与未来宏共用 dry-run／apply 的显式参数和报告契约；这仍是候选接口规划，未引入当前公共 API。
+
+后续测试覆盖圆、真实平边、椭圆、半格圆心、粗网格、孔洞、LPD/LPC、窄间隙、未选邻居、量化输出重读、线程确定性和真机性能；独立制造真值检查包括曝光顺序和完整错误回滚。状态为 PLANNED／STATIC AUDIT ONLY／LICENSE & INTEGRATION DESIGN PENDING／NOT IMPLEMENTED／NOT TESTED；多工程优先顺序保持。

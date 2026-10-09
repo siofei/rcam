@@ -157,3 +157,20 @@ The user requests a fixed-width modal for an uploaded contour algorithm, scoped 
 | OPT08 | Audited unsupported input safely refuses; independent manufacturing export/reimport and numeric truth prove optimization within the later frozen limits |
 
 PLANNED / AWAITING ALGORITHM AUDIT / NOT IMPLEMENTED / NOT TESTED. This entry does not expand the multiproject first slice or change existing acceptance thresholds.
+
+
+### v11 static audit: additional planned checks
+
+The attachment was inspected without execution. Go 1.22 standard-library code returns Gerber text plus Report; its parser is not a replacement for RCam and does not supply object/Undo mapping. License/ownership and modification/distribution permission remain unresolved. Optimize only admitted explicitly closed Regions; non-Region drawing/Flash are preserved. Unsupported AM/holed AP/SR/AB/nonidentity transforms require RCam-led admission or refusal. No source code is incorporated or distributed.
+
+| Case | Planned check |
+|---|---|
+| OPT09 | Versioned candidate preset .002 mm tolerance/.0005 mm sagitta/window64/min3 segments/min8°/adaptive/topology=true/mixed enabled-direct-merge_straight-preserve_curves/source-arc .2 mm and90° differs explicitly from old .003 mm/window256/exhaustive/12° defaults; attachment recommendations are not measured RCam thresholds |
+| OPT10 | Continuously certified pure G01 closed near-circle becomes exactly two common-center180° arcs only as a whole accepted transformation; otherwise whole rollback, preserving true flats and refusing false ellipse/circle equivalence |
+| OPT11 | Continuous error certification, DP segmentation, quantized output recheck and topology conflict fallback; half-grid centers, coarse grids and exact contour/arc/hole truth |
+| OPT12 | RCam original object/exposure/AP-hole semantics and LPD/LPC dominate; narrow gaps and unselected neighbors participate read-only in conflict checks without expanding write scope |
+| OPT13 | Preview is recomputed from that snapshot and reports original/result overlay, line/arc counts, error upper bounds, recovered circles and skip/fallback reasons; pre-apply version fences, unchanged/cancelled zero transactions and one Undo/Redo for a changed batch |
+| OPT14 | Shared planned dry-run/apply parameter/report contract for GUI/macro, cooperative background cancellation, owner isolation, thread determinism and real-machine performance; attachment Web/demo/history are not RCam acceptance |
+| OPT15 | Evaluate licensed bridge versus port using explicit stable object mapping and service atomicity; no parser replacement, unsupported-any-object claims or premature public API |
+
+PLANNED / STATIC AUDIT ONLY / LICENSE & INTEGRATION DESIGN PENDING / NOT IMPLEMENTED / NOT TESTED. No RCam tolerance/performance gate is changed.
