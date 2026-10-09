@@ -9,6 +9,9 @@ mod array;
 #[path = "selection_edit.rs"]
 mod selection_edit;
 pub use selection_edit::{SelectionEdit, SelectionGroup};
+#[path = "unified_editor_draft.rs"]
+mod unified_editor_draft;
+pub use unified_editor_draft::{DraftResources, DraftStep, ManufacturingDraft};
 #[path = "move_demand.rs"]
 mod move_demand;
 pub use move_demand::{MAX_MOVE_TARGETS, MAX_MOVE_WORK_BYTES, MoveDemand};

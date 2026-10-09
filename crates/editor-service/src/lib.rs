@@ -6,6 +6,8 @@
 mod definition_centers;
 mod selection_geometry;
 pub use selection_geometry::*;
+mod unified_editor_session;
+pub use unified_editor_session::*;
 mod selection_edit;
 pub use selection_edit::*;
 mod alignment;
@@ -919,6 +921,7 @@ impl std::fmt::Display for ServiceError {
 impl std::error::Error for ServiceError {}
 
 pub struct ApplicationService {
+    unified_editor_owner: std::sync::Arc<()>,
     selection_centers_cache: selection_geometry::SelectionCentersCache,
     scenes: HashMap<String, S0Scene>,
     documents: HashMap<String, S1DocumentRecord>,
@@ -937,6 +940,7 @@ impl Default for ApplicationService {
 impl ApplicationService {
     pub fn new() -> Self {
         Self {
+            unified_editor_owner: std::sync::Arc::new(()),
             selection_centers_cache: Default::default(),
             scenes: HashMap::new(),
             documents: HashMap::new(),

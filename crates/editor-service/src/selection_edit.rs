@@ -136,7 +136,7 @@ impl ApplicationService {
 fn check_targets(record: &S1DocumentRecord, group: &SelectionGroup) -> Result<(), ServiceError> {
     check_targets_with_cancel(record, group, None)
 }
-fn check_targets_with_cancel(
+pub(super) fn check_targets_with_cancel(
     record: &S1DocumentRecord,
     group: &SelectionGroup,
     cancel: Option<&task::CancellationToken>,
@@ -196,7 +196,7 @@ pub(super) fn check_move_demand(demand: MoveDemand) -> Result<(), ServiceError> 
     })
 }
 
-fn check_groups(groups: &[SelectionGroup], limit: usize) -> Result<(), ServiceError> {
+pub(super) fn check_groups(groups: &[SelectionGroup], limit: usize) -> Result<(), ServiceError> {
     let count = groups
         .iter()
         .try_fold(0usize, |n, g| n.checked_add(g.object_ids.len()))
