@@ -23,6 +23,180 @@ use std::{
         mpsc::{Receiver, SyncSender, sync_channel},
     },
 };
+
+#[cfg(test)]
+mod hud_layout {
+    use super::*;
+
+    const GENERAL: &str = "几何多选  ·  中键 / 双指平移  ·  捏合缩放";
+
+    fn captions(output: egui::FullOutput) -> Vec<(String, egui::Rect, egui::Rect, bool)> {
+        output
+            .shapes
+            .into_iter()
+            .filter_map(|shape| {
+                let egui::Shape::Text(text) = shape.shape else {
+                    return None;
+                };
+                let label = text.galley.text();
+                (label == GENERAL || label.starts_with("移动 · ")).then(|| {
+                    (
+                        label.into(),
+                        text.galley.rect.translate(text.pos.to_vec2()),
+                        shape.clip_rect,
+                        text.galley.elided,
+                    )
+                })
+            })
+            .collect()
+    }
+
+    fn capture(
+        run: &mut Run,
+        size: egui::Vec2,
+        ppp: f32,
+    ) -> Vec<(String, egui::Rect, egui::Rect, bool)> {
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            focused: true,
+            ..Default::default()
+        };
+        input
+            .viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .native_pixels_per_point = Some(ppp);
+        run.app.raw_input_hook(&run.ctx, &mut input);
+        captions(
+            run.ctx
+                .run(input, |ctx| run.app.update(ctx, &mut run.frame)),
+        )
+    }
+
+    fn settle_viewport(run: &mut Run, size: egui::Vec2, ppp: f32) {
+        let _ = capture(run, size, ppp);
+        // Increasing native DPI legitimately requests a higher-LOD viewport.
+        // Complete its real read-only worker task before admitting Move.
+        for _ in 0..16 {
+            let Ok((id, _, action, task)) = run.requests.try_recv() else {
+                assert!(run.app.command_enabled(ids::OBJECT_MOVE_PLACE));
+                return;
+            };
+            assert!(matches!(
+                action,
+                Action::Viewport(..) | Action::SelectionCenters(..)
+            ));
+            run.model.run_task(task, action);
+            run.replies.send((id, run.model.view.clone())).unwrap();
+            let _ = capture(run, size, ppp);
+        }
+        panic!("viewport did not settle");
+    }
+
+    #[test]
+    fn actual_app_move_owns_fixed_hud_and_cancel_restores_navigation() {
+        for size in [egui::vec2(980., 600.), egui::vec2(1280., 832.)] {
+            for ppp in [1., 2., 3.] {
+                for visuals in [egui::Visuals::light(), egui::Visuals::dark()] {
+                    for zoom in [1., 1.25] {
+                        let mut run = Run::new();
+                        run.ctx.set_visuals(visuals.clone());
+                        run.ctx.set_zoom_factor(zoom);
+                        // Native DPI is RawInput, not Context's UI zoom override.
+                        // Settle the viewport before measuring phase-only layout.
+                        settle_viewport(&mut run, size, ppp);
+                        run.start();
+                        let before = run.model.view.info.clone();
+                        let preparing = capture(&mut run, size, ppp);
+                        assert_eq!(preparing.len(), 1, "{preparing:?}");
+                        assert!(preparing[0].0.contains("正在检查制造边界与容量 · Esc 取消"));
+                        let fixed_canvas = run.app.canvas_rect;
+                        let (id, view, _) = run.work(false);
+                        run.replies.send((id, view)).unwrap();
+                        let following = capture(&mut run, size, ppp);
+                        assert_eq!(following.len(), 1, "{following:?}");
+                        assert!(
+                            following[0]
+                                .0
+                                .contains("点击目标提交 · Esc / 右键取消 · Alt 暂停吸附")
+                        );
+                        assert_eq!(run.app.canvas_rect, fixed_canvas);
+                        for caption in [&preparing[0], &following[0]] {
+                            assert_eq!(caption.1.min, crate::canvas_hud::slot(fixed_canvas).min);
+                            assert!(crate::canvas_hud::slot(fixed_canvas).contains_rect(caption.2));
+                            assert!(!caption.3, "actual phase instructions elided: {caption:?}");
+                        }
+                        assert_eq!(run.model.view.info, before);
+                        run.app.cancel_move_place();
+                        let idle = capture(&mut run, size, ppp);
+                        assert_eq!(idle.len(), 1);
+                        assert_eq!(idle[0].0, GENERAL);
+                        assert_eq!(run.app.canvas_rect, fixed_canvas);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn all_phase_paint_preserves_text_and_stale_context_does_not_own_hud() {
+        let mut run = Run::new();
+        run.ready();
+        let session = run.app.point_transform.as_ref().unwrap();
+        let request = session.requested.clone().unwrap();
+        let phases = [
+            Phase::Preparing,
+            Phase::Following,
+            Phase::Frozen,
+            Phase::FinalPreview(request.clone()),
+            Phase::Ready(request),
+            Phase::Applying,
+        ];
+        let labels = [
+            "移动 · 正在检查制造边界与容量 · Esc 取消",
+            "移动 · 基点 B 为制造边界中心 · 点击目标提交 · Esc / 右键取消 · Alt 暂停吸附",
+            "移动 · 目标已冻结，正在验证 · Esc 取消",
+            "移动 · 目标已冻结，正在验证 · Esc 取消",
+            "移动 · 正在提交一次事务 · 取消以服务终态为准",
+            "移动 · 正在提交一次事务 · 取消以服务终态为准",
+        ];
+        let canvas = egui::Rect::from_min_size(egui::pos2(30., 40.), egui::vec2(240., 180.));
+        let before = run.model.view.info.clone();
+        for (phase, label) in phases.into_iter().zip(labels) {
+            run.app
+                .point_transform
+                .as_mut()
+                .unwrap()
+                .placement
+                .as_mut()
+                .unwrap()
+                .phase = phase;
+            let output = run.ctx.run(egui::RawInput::default(), |ctx| {
+                let painter = ctx
+                    .layer_painter(egui::LayerId::background())
+                    .with_clip_rect(canvas);
+                assert!(run.app.paint_move_place(&painter, canvas, 1.));
+            });
+            let captions = captions(output);
+            assert_eq!(captions.len(), 1);
+            assert_eq!(captions[0].0, label);
+            assert!(!captions[0].3, "{captions:?}");
+            assert!(crate::canvas_hud::slot(canvas).contains_rect(captions[0].1));
+        }
+        assert_eq!(run.model.view.info, before);
+        run.app.view.selection_epoch += 1;
+        let output = run.ctx.run(egui::RawInput::default(), |ctx| {
+            let painter = ctx
+                .layer_painter(egui::LayerId::background())
+                .with_clip_rect(canvas);
+            assert!(!run.app.paint_move_place(&painter, canvas, 1.));
+        });
+        assert!(captions(output).is_empty());
+        let idle = capture(&mut run, egui::vec2(1280., 832.), 1.);
+        assert_eq!(idle.len(), 1);
+        assert_eq!(idle[0].0, GENERAL);
+    }
+}
 type Work = (u64, rcam_diagnostics::Source, Action, TaskContext);
 struct Run {
     app: EditorApp,

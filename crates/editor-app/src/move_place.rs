@@ -433,16 +433,21 @@ impl EditorApp {
         self.tick_move_place();
         ctx.request_repaint();
     }
-    pub(crate) fn paint_move_place(&self, painter: &egui::Painter, rect: egui::Rect, ppp: f32) {
+    pub(crate) fn paint_move_place(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        ppp: f32,
+    ) -> bool {
         let Some(session) = self
             .point_transform
             .as_ref()
             .filter(|s| s.context.valid(&self.view))
         else {
-            return;
+            return false;
         };
         let Some(placement) = &session.placement else {
-            return;
+            return false;
         };
         let label = match placement.phase {
             Phase::Preparing => "移动 · 正在检查制造边界与容量 · Esc 取消",
@@ -452,27 +457,27 @@ impl EditorApp {
             Phase::Frozen | Phase::FinalPreview(_) => "移动 · 目标已冻结，正在验证 · Esc 取消",
             Phase::Ready(_) | Phase::Applying => "移动 · 正在提交一次事务 · 取消以服务终态为准",
         };
-        painter.text(
-            rect.left_top() + egui::vec2(12., 12.),
-            egui::Align2::LEFT_TOP,
+        let hud_drawn = crate::canvas_hud::paint(
+            painter,
+            rect,
             label,
             egui::FontId::proportional(14.),
             egui::Color32::YELLOW,
         );
         let Some(preview) = &placement.baseline else {
-            return;
+            return hud_drawn;
         };
         let Ok(SelectionEdit::Move { dx_mm, dy_mm }) =
             session.operation(&self.view, self.display_unit)
         else {
-            return;
+            return hud_drawn;
         };
         let SelectionEdit::Move {
             dx_mm: original_x,
             dy_mm: original_y,
         } = preview.request.operation
         else {
-            return;
+            return hud_drawn;
         };
         let delta = (dx_mm - original_x, dy_mm - original_y);
         let translated = |p: MmPoint| {
@@ -517,5 +522,6 @@ impl EditorApp {
                 }
             }
         }
+        hud_drawn
     }
 }

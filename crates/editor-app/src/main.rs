@@ -5,6 +5,7 @@ mod block_display;
 mod block_ui;
 mod camera;
 mod candidates_ui;
+mod canvas_hud;
 mod canvas_read;
 mod components_ui;
 mod display;
@@ -3163,7 +3164,12 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         },
                     ));
                 }
-                self.paint_point_transform(&painter,rect,ctx.pixels_per_point());
+                let move_hud_drawn = if self.move_placing() {
+                    self.paint_move_place(&painter, rect, ctx.pixels_per_point())
+                } else {
+                    self.paint_point_transform(&painter, rect, ctx.pixels_per_point());
+                    false
+                };
                 self.paint_adapter_point(&painter,rect,ctx.pixels_per_point());
                 if self.prefs.interaction.grip_edit && self.point_pick.is_none() && self.tool == tools::ActiveTool::Select && !modal_open {
                     match self.grip.as_ref().map_or_else(|| grip::features(&self.view), grip::Session::features) {
@@ -3310,13 +3316,15 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         Color32::LIGHT_GRAY,
                     );
                 }
-                painter.text(
-                    rect.left_top() + Vec2::new(12., 12.),
-                    egui::Align2::LEFT_TOP,
-                    "几何多选  ·  中键 / 双指平移  ·  捏合缩放",
-                    egui::FontId::proportional(12.),
-                    Color32::LIGHT_GRAY,
-                );
+                if !move_hud_drawn {
+                    canvas_hud::paint(
+                        &painter,
+                        rect,
+                        "几何多选  ·  中键 / 双指平移  ·  捏合缩放",
+                        egui::FontId::proportional(12.),
+                        Color32::LIGHT_GRAY,
+                    );
+                }
             });
         if let Some(mut bench) = self.bench.take() {
             bench.ensure_record(self, ctx.pixels_per_point(), now);
