@@ -42,16 +42,22 @@
 | `draft.execute_step` | 接受当前版本的已验证参数/结果；稳定step身份避免重复执行 | 推进工作版本，加入一次内部历史；重复点击/回复不再累加；新步骤清内部Redo |
 | `draft.undo` / `draft.redo` | exact draft+内部历史游标 | 恢复保存的前后差量/检查点，不靠逆旋转；主revision/dirty/Undo保持 |
 | `draft.reset` | 用户“复原” | 精确恢复入口，清全部已执行步骤/内部Redo/未执行预览，窗口保持打开；旧请求失效 |
-| `draft.apply` | 显式有序已执行步骤或可验证差量+入口fence | service重新规划/验证，一次跨层制造事务、一次主Undo；仅收到确切成功终态才退出 |
+| `draft.apply` | 显式有序已执行步骤或可验证差量+入口fence | 最新未执行参数同路径计算，opaque工作差量经service验证；一次跨层事务/主Undo或NoChange；确切终态才退出 |
 | `draft.cancel` / 关闭 | 有未应用工作变化时确认丢弃；Esc优先于同帧Apply | 丢弃草稿零制造事务，完整保留主内容/dirty/主Redo；释放临时资源 |
 
-最终提交必须新增或扩展跨层“有序变换序列”规划，不循环调用会推进revision/history的`edit_batch`或`objects_edit_selection`。每一步权限、几何、定义引用、预算和取消检查在主文档发布前全部完成；形成入口before与最终after的逐层精确差量，复用一次`Operation::Selection`类事务。核心受检规划与预览共用变换逻辑；service在当前revision重新构造/验证，UI不能提交任意可信“after geometry”绕过service。一次成功事务推进一次主revision；主Undo/Redo恢复精确内容但revision仍单调前进。全序列若结果与入口等价，则不得生成空主Undo；明确no-change终态及退出行为在实施合同冻结。
+最终提交必须新增或扩展跨层“有序变换序列”规划，不循环调用会推进revision/history的`edit_batch`或`objects_edit_selection`。每一步权限、几何、定义引用、预算和取消检查在主文档发布前全部完成；形成入口before与最终after的逐层精确差量，复用一次`Operation::Selection`类事务。核心受检规划与预览共用变换逻辑；service在当前revision重新构造/验证，UI不能提交任意可信“after geometry”绕过service。一次成功事务推进一次主revision；主Undo/Redo恢复精确内容但revision仍单调前进。全序列按制造结构精确相等比较，不用EPS/屏幕等价抹去微小变化；若无变化，返回明确NoChange成功终态并安全退出，不推进主revision/content_generation，不新增主Undo，不清主Redo，不改变制造dirty。
 
-需要单独冻结草稿历史条数/字节、入口+预览+历史总临时内存、步骤/选择/展开定义工作预算和取消粒度。复用已有核心100条/64MiB制造历史、单步预览2s/128MiB的审计口径不等于自动获得同样草稿预算，也不能把Move独立大选区准入扩大为所有操作准入。先拒绝不安全准入并保留原状态；新默认/上限须在实施合同明确，不能假称用户确认。最小片不修改依赖、shader、生产Snap/Alt、轨迹或原门槛。
+### 已冻结的首片工程默认（用户授权继续，不是用户提供的常数）
 
-### 尚需冻结的首片交互
+资源默认继承当前服务已配置的制造历史合同：默认内部历史上限100条，草稿持有容量与计算/提交预留峰值合计不超过64MiB；服务采用更小的自定义历史限额时草稿同步收紧。入口/工作/预览/Undo/Redo按唯一Arc快照计费，字符串、容器真实capacity及控制结构开销计入；额外预留受检MoveDemand的lookup maps、Block展开scratch、before/after/commit副本，再加新候选快照。不能把单次MoveDemand称为整个多步会话峰值。主Undo仍受原独立64MiB合同约束；64MiB不是进程RSS上限，也不承诺原生worker或GPU总内存。单步选区取既有普通刚体变换10,000目标上限，校验/展开工作沿用受检既有合同，不把Move独立大选区准入扩大到全部操作。对超额明确拒绝，保留原文档、入口、已执行工作和全部已有内部历史，不丢弃历史换取准入。
 
-有未执行预览时最终应用不能静默丢弃或额外执行。建议提供明确选择“返回执行本步”或“只应用已执行步骤”，默认处置仍未获用户确认；不得写成已确认默认。复原保留窗口已确认；关闭丢弃提示已确认。暂不在UE-A开放参考Snap、复制/删除/新增对象、参数镜像或定义级编辑；这些涉及新身份/结构/权限合同，分别后续交付。Apply失败不退出，保留草稿和错误以供重试/取消；unknown write terminal保持受阻，不把busy释放或本地成功当service终态。
+真实合成制造快照测量用于核对这项工程边界：4,096边Region及跨层Flash/Arc，64步内部Undo，入口容量计费298,377字节；64步后19,246,857字节，带当前预览19,543,975字节，连计算/提交预留21,641,939字节。独立新进程运行同一真实ApplicationService线程闭环得到辅助环境进程RSS高水位29,896KiB；对照小闭环9,548KiB。容量计费与进程高水位是不同指标，对照差值不是线程专属/allocator峰值。另用3MiB限额验证字节拒绝保留原几何与已有检查点，用2条历史限额验证条数拒绝。实际原生worker高水位仍待Mac/Windows，不借此发布原生性能结论。最终证据绑定冻结的未发布后端源码及测试二进制，规划文档本身不代表产品已支持。
+
+最终Apply包括最新尚未执行的参数，即使没有生成预览，也必须通过Preview/Execute同一校验和计算路径重新算出候选后一次提交；不能悄悄丢弃本步，也不能提交旧预览。开始Apply即取得唯一opaque请求票据并锁住输入/重复Apply/Execute/UndoRedo，直到确切完成；跨会话/旧票据拒绝，不影响当前等待。失败保留原工作/历史和错误，修正后可重试；Cancel/Reset使旧请求失效。草稿Preview/Execute的结果发布也必须经过取消屏障，屏障后不能反称“已取消且零修改”。
+
+复原精确恢复入口、清全部步骤/Redo/预览/未执行参数，保持窗口打开；Cancel/关闭按已有有变化确认规则丢弃临时会话，零主制造事务。最终NoChange按上面的明确成功终态退出。暂不在UE-A开放参考Snap、复制/删除/新增对象、参数镜像或定义级编辑；分别后续交付。unknown write terminal保持受阻，不把busy释放或本地成功当service终态。最小片不修改依赖、shader、生产Snap/Alt、轨迹、50ms/1e-9或原测量区间。
+
+cb9原生回归始终优先。仅允许在独立cb9工作树准备host-only service/core事务、会话状态与CPU tests，不接入GUI、不登记新JSON能力、不发布下一产品候选；UI接入须等待cb9本机结论。所有上述测量是辅助CPU证据，不能替代Metal/DX12、真实鼠标/Alt/Snap或原生全矩阵。
 
 ## 3. 已确认全需求 → 后续独立命令/失败合同
 
@@ -108,4 +114,6 @@ UE-B能力准入必须明确“世界四边尺寸变化”与“光圈局部尺�
 - `editor-app/src/point_transform_tests.rs::full_context_stale_matrix_and_bad_numeric_never_mutate`、`display_units_never_round_a_resolved_center_and_zero_area_never_falls_back`、`frame_cancel_beats_enter_repeat_and_mouse_apply_in_all_selection_tools`、`preview_budget_rejects_large_source_before_cloning_and_changes_no_state`：身份、精度、取消和资源。
 - `editor-core/tests/selection_composite.rs::cross_layer_overlap_is_counted_independently`、`circle_annulus_and_polygon_holes`、`near_zero_sliver_fails_precision_without_bounding_center_fallback`：制造合成与不确定中心。
 
-下一实施片应先冻结UE-A预算、未执行预览最终处置和无改动Apply终态，更新服务API/接受用例/ADR后实现完整最小闭环，再独立审查、精确新commit/manifest/完整源码包并交唯一Mac线程。新UE测试建议在service中新增`unified_editor_session.rs`、core中新增`selection_sequence.rs`、app中新增`unified_editor_tests.rs`，这些文件现在均不存在；不因建议路径写成“已有实现”。普通fmt/Clippy/相关tests/portable与native分别记录，严格MSRV已有阻塞保持真实状态。当前没有实现新命令、新增依赖、重跑native或修改cb9验收身份。
+上述三项工程合同已冻结，服务API/CPU用例/ADR0062已先行更新。独立cb9工作树正在准备未发布的`editor-service/src/unified_editor_session.rs`与`editor-core/src/unified_editor_draft.rs`及两组真实CPU tests；这些文件只在后端准备分支存在，尚未进入cb9产品或本规划分支。核心以opaque有序检查点构造最终逐层before/after差量，再提交一次`Operation::Selection`，不循环单层事务。辅助CPU已覆盖部分UE01/02/04/05/06/07/09/11契约，不声称完整UE或UI验收通过。下一步先冻结后端精确commit/新manifest/完整源码包及独审、实际gates，再等待cb9本机结论决定UI闭环。GUI固定窗口、actual queue/owner/同帧输入与Snap/Alt仍需后续接入及原生回归；不创建空按钮。普通fmt/Clippy/相关tests/portable与native分别记录，严格全工作区MSRV已有阻塞保持真实状态。未新增产品JSON能力或依赖、未重跑native、未发布新产品或修改cb9验收身份。
+
+未发布后端本地冻结身份：`8a98ca9d704ae71d076fb98e9373e2936024c654`，直接基于cb9；713源文件，MF SHA-256 `90dc363d6d9c9ba12e0eaba02ee646d2c72f17dc26abbce332a3b2633af06a4d`。核心219P/0F/5ignored，相关service54P/0F；fmt/后端Check/严格Clippy为0。严格全workspace Check/Clippy/Test/Release仍为101（既有ordered-float要求Rust1.90），锁定1.89与Cargo.lock未变。完整portable正在独立终态核验，不能写PASS；以上辅助CPU结果只绑定新后端，不转绑cb9的原生证据。该身份不推送产品分支；本规划分支仅发布审计合同。
