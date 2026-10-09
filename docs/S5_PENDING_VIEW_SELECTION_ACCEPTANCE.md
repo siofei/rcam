@@ -156,12 +156,12 @@ The user requests a fixed-width modal for an uploaded contour algorithm, scoped 
 | OPT07 | Typed macro records explicit scope/IDs/units/parameters/algorithm capability version/failure policy and reuses the shared service, without screen coordinates |
 | OPT08 | Audited unsupported input safely refuses; independent manufacturing export/reimport and numeric truth prove optimization within the later frozen limits |
 
-PLANNED / AWAITING ALGORITHM AUDIT / NOT IMPLEMENTED / NOT TESTED. This entry does not expand the multiproject first slice or change existing acceptance thresholds.
+PLANNED / STATIC AUDIT ONLY / NOT IMPLEMENTED / NOT TESTED. This entry does not expand the multiproject first slice or change existing acceptance thresholds.
 
 
 ### v11 static audit: additional planned checks
 
-The attachment was inspected without execution. Go 1.22 standard-library code returns Gerber text plus Report; its parser is not a replacement for RCam and does not supply object/Undo mapping. License/ownership and modification/distribution permission remain unresolved. Optimize only admitted explicitly closed Regions; non-Region drawing/Flash are preserved. Unsupported AM/holed AP/SR/AB/nonidentity transforms require RCam-led admission or refusal. No source code is incorporated or distributed.
+The attachment was inspected without execution. Go 1.22 standard-library code returns Gerber text plus Report; its parser is not a replacement for RCam and does not supply object/Undo mapping. The user confirmed this precise attachment is their own code and authorized modification, reuse and distribution within RCam; this does not authorize uploading its private samples or original test geometry. Optimize only admitted explicitly closed Regions; non-Region drawing/Flash are preserved. Unsupported AM/holed AP/SR/AB/nonidentity transforms require RCam-led admission or refusal. No source code is incorporated or distributed.
 
 | Case | Planned check |
 |---|---|
@@ -171,6 +171,7 @@ The attachment was inspected without execution. Go 1.22 standard-library code re
 | OPT12 | RCam original object/exposure/AP-hole semantics and LPD/LPC dominate; narrow gaps and unselected neighbors participate read-only in conflict checks without expanding write scope |
 | OPT13 | Preview is recomputed from that snapshot and reports original/result overlay, line/arc counts, error upper bounds, recovered circles and skip/fallback reasons; pre-apply version fences, unchanged/cancelled zero transactions and one Undo/Redo for a changed batch |
 | OPT14 | Shared planned dry-run/apply parameter/report contract for GUI/macro, cooperative background cancellation, owner isolation, thread determinism and real-machine performance; attachment Web/demo/history are not RCam acceptance |
-| OPT15 | Evaluate licensed bridge versus port using explicit stable object mapping and service atomicity; no parser replacement, unsupported-any-object claims or premature public API |
+| OPT15 | Evaluate bridge versus port with authorized project reuse, explicit stable object mapping and service atomicity; no parser replacement, unsupported-any-object claims or premature public API |
+| OPT16 | User-owned code authorized for RCam modification/reuse/distribution; retain static capability limits and integration acceptance, exclude uploads of private samples/original test geometry, and finish multiproject candidate before integration |
 
-PLANNED / STATIC AUDIT ONLY / LICENSE & INTEGRATION DESIGN PENDING / NOT IMPLEMENTED / NOT TESTED. No RCam tolerance/performance gate is changed.
+PLANNED / STATIC AUDIT ONLY / OWNED CODE REUSE AUTHORIZED / INTEGRATION DESIGN PENDING / NOT IMPLEMENTED / NOT TESTED. No RCam tolerance/performance gate is changed.
