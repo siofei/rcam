@@ -168,7 +168,7 @@ fn select_all_uses_whole_snapshot_stable_order_and_every_selection_filter() {
     );
     f.run(Action::SelectAll);
     assert_eq!(f.model.view.selected.ordered.len(), 5);
-    // Ctrl+A introduces only editable objects; Replace still supports inspection.
+    // All introduces only editable objects; Replace still supports inspection.
     let revision = f
         .model
         .view
@@ -296,7 +296,7 @@ fn modifier_box_from_selected_hit_never_arms_move_and_keeps_press_mode() {
     }
 }
 #[test]
-fn physical_control_defaults_and_shift_priority_are_exact_on_mac_and_windows() {
+fn platform_standard_all_keeps_physical_control_add_and_shift_remove() {
     use editor_core::command::Modifiers;
     for platform in [Platform::MacOs, Platform::Windows] {
         let map = crate::shortcut_config::validate(
@@ -328,7 +328,11 @@ fn physical_control_defaults_and_shift_priority_are_exact_on_mac_and_windows() {
                 &[ShortcutContext::Canvas],
                 Shortcut::new(logical, editor_core::command::Key::Char('a'))
             ),
-            Resolution::Command(ids::EDIT_SELECT_ALL)
+            if platform == Platform::MacOs {
+                Resolution::Unbound
+            } else {
+                Resolution::Command(ids::EDIT_SELECT_ALL)
+            }
         );
         assert_eq!(SelectionMode::from_modifiers(control), Add);
         assert_eq!(
@@ -360,7 +364,7 @@ fn physical_control_defaults_and_shift_priority_are_exact_on_mac_and_windows() {
                 editor_core::command::Key::Char('a')
             )
         ),
-        Resolution::Unbound
+        Resolution::Command(ids::EDIT_SELECT_ALL)
     );
 }
 #[test]
@@ -556,6 +560,12 @@ fn shortcut_migration_preserves_custom_conflicts_and_physical_default_roundtrip(
             .find(|e| e.command_id == ids::EDIT_SELECT_ALL.0)
             .unwrap()
             .shortcuts = vec![Shortcut::new(Modifiers::NONE, Key::F(8))];
+        custom
+            .bindings
+            .iter_mut()
+            .find(|e| e.command_id == ids::EDIT_SELECT_ALL.0)
+            .unwrap()
+            .select_all_origin = Some(crate::shortcut_config::SelectAllOrigin::Custom);
         let transferred = crate::shortcut_config::validate(custom, other).unwrap();
         assert_eq!(
             transferred.config.entry(ids::EDIT_SELECT_ALL).shortcuts,
@@ -587,7 +597,12 @@ fn custom_mac_command_all_preserves_raw_identity_through_windows_roundtrip() {
         .find(|e| e.command_id == ids::EDIT_SELECT_ALL.0)
         .unwrap()
         .shortcuts = vec![Shortcut::new(Modifiers::PRIMARY, Key::Char('a'))];
-    let mac = crate::shortcut_config::validate(mac, Platform::MacOs)
+    let mac = mac
+        .replace(
+            ids::EDIT_SELECT_ALL,
+            vec![Shortcut::new(Modifiers::PRIMARY, Key::Char('a'))],
+            Platform::MacOs,
+        )
         .unwrap()
         .config;
     let win = crate::shortcut_config::validate(mac.clone(), Platform::Windows).unwrap();
@@ -613,4 +628,137 @@ fn custom_mac_command_all_preserves_raw_identity_through_windows_roundtrip() {
             .code,
         "Conflict"
     );
+}
+
+#[test]
+fn standard_all_shortcut_is_owned_by_text_ime_recording_modal_and_window_focus() {
+    use editor_core::command::{Key, Modifiers};
+    use std::sync::mpsc::sync_channel;
+    let primary = if Platform::current() == Platform::MacOs {
+        egui::Modifiers {
+            mac_cmd: true,
+            command: true,
+            ..Default::default()
+        }
+    } else {
+        egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        }
+    };
+    for (focused, text, modal, ime, recording) in [
+        (false, false, false, false, false),
+        (true, true, false, false, false),
+        (true, false, true, false, false),
+        (true, false, false, true, false),
+        (true, false, false, false, true),
+        (true, false, false, false, false),
+    ] {
+        let mut fixture = Fixture::new(1, 1);
+        let mut app = crate::modal::tests::app();
+        app.view = fixture.model.view.clone();
+        app.shortcuts.current = crate::shortcut_config::validate(
+            crate::shortcut_config::Config::defaults(Platform::current()),
+            Platform::current(),
+        )
+        .unwrap();
+        app.ime_active = ime;
+        app.shortcuts.open = recording;
+        app.shortcuts.recording = recording;
+        let (tx, requests) = sync_channel(2);
+        app.tx = tx;
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput {
+            focused,
+            modifiers: primary,
+            events: vec![egui::Event::Key {
+                key: egui::Key::A,
+                physical_key: Some(egui::Key::A),
+                pressed: true,
+                repeat: false,
+                modifiers: primary,
+            }],
+            ..Default::default()
+        };
+        app.shortcuts.raw_input(&mut raw, ime);
+        let _ = ctx.run(raw, |ctx| app.route_shortcuts(ctx, text, modal));
+        if focused && !text && !modal && !ime && !recording {
+            let (_, _, action, task) = requests.try_recv().unwrap();
+            assert!(matches!(action, Action::SelectAll));
+            fixture.model.run_task(task, action);
+            assert_eq!(fixture.model.view.selected.ordered.len(), 2);
+            assert!(requests.try_recv().is_err());
+        } else {
+            assert!(requests.try_recv().is_err());
+            assert!(app.view.selected.ordered.is_empty());
+        }
+        if recording {
+            assert_eq!(
+                app.shortcuts.candidate,
+                Some(Shortcut::new(Modifiers::PRIMARY, Key::Char('a')))
+            );
+        }
+    }
+}
+
+#[test]
+fn standard_all_in_a_focused_text_edit_selects_text_without_canvas_selection() {
+    use std::sync::mpsc::sync_channel;
+    for modifiers in [
+        egui::Modifiers {
+            mac_cmd: true,
+            command: true,
+            ..Default::default()
+        },
+        egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        },
+    ] {
+        let mut app = crate::modal::tests::app();
+        let (tx, requests) = sync_channel(2);
+        app.tx = tx;
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("standard-all-text");
+        let mut value = String::from("中文 abc 123");
+        let raw = egui::RawInput {
+            focused: true,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut value).id(id))
+                    .request_focus();
+            });
+        });
+        let mut raw = egui::RawInput {
+            focused: true,
+            modifiers,
+            events: vec![egui::Event::Key {
+                key: egui::Key::A,
+                physical_key: Some(egui::Key::A),
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }],
+            ..Default::default()
+        };
+        app.shortcuts.raw_input(&mut raw, false);
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut value).id(id));
+            });
+            app.route_shortcuts(ctx, ctx.wants_keyboard_input(), false);
+        });
+        let state = egui::text_edit::TextEditState::load(&ctx, id).unwrap();
+        let cursors = state.cursor.char_range().unwrap().sorted_cursors();
+        assert_eq!(
+            [cursors[0].index, cursors[1].index],
+            [0, value.chars().count()]
+        );
+        assert!(requests.try_recv().is_err());
+        assert_eq!(value, "中文 abc 123");
+    }
 }

@@ -1316,7 +1316,7 @@ samples and platform acceptance gates stay unchanged.
 
 ### S5 selection input follow-up
 
-The independently scoped `docs/S5_SELECTION_INPUT.md` and ADR0059 specify complete manufacturing-snapshot All, physical Ctrl+A on both platforms, and press-time Ctrl-add/Shift-remove for click and Window/Crossing box. Actual Mac app keymap uses Secondary+A, preserving Command and text/IME ownership. Selection stays workspace-only, follows existing filters/inspection locks, and uses cancellable immutable set construction plus serial terminal synchronization. Native input validation remains external; subsequent click-place Move is a separate batch.
+The independently scoped `docs/S5_SELECTION_INPUT.md` and ADR0059 specify complete manufacturing-snapshot All, platform-standard Primary+A (macOS Cmd+A / Windows Ctrl+A), and press-time Ctrl-add/Shift-remove for click and Window/Crossing box. The user corrected the earlier physical-Control request on 2026-10-09. New Mac defaults use Primary+A without a Ctrl+A alias; existing ambiguous/custom configurations are protected. Text/IME/recording/modal ownership takes precedence. See S5_STANDARD_SELECT_ALL.md for provenance and legacy migration. Selection stays workspace-only, follows existing filters/inspection locks, and uses cancellable immutable set construction plus serial terminal synchronization. Native input validation remains external; subsequent click-place Move is a separate batch.
 
 ### S5 click-placement Move follow-up
 

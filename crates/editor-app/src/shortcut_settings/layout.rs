@@ -286,6 +286,120 @@ mod tests {
     }
 
     #[test]
+    fn opening_legacy_cross_platform_all_edits_effective_keys_without_rewriting_config() {
+        use crate::shortcut_config::{self, Config, SelectAllOrigin};
+        let target = Platform::current();
+        let source = if target == Platform::MacOs {
+            Platform::Windows
+        } else {
+            Platform::MacOs
+        };
+        let mut config = Config::defaults(source);
+        let entry = config
+            .bindings
+            .iter_mut()
+            .find(|e| e.command_id == ids::EDIT_SELECT_ALL.0)
+            .unwrap();
+        entry.shortcuts = vec![Shortcut::new(
+            if source == Platform::MacOs {
+                Modifiers {
+                    secondary: true,
+                    ..Modifiers::NONE
+                }
+            } else {
+                Modifiers::PRIMARY
+            },
+            Key::Char('a'),
+        )];
+        entry.select_all_origin = None;
+        let mut s = settings();
+        s.current = shortcut_config::validate(config, target).unwrap();
+        s.editing = None;
+        s.keys.clear();
+        s.search = ids::EDIT_SELECT_ALL.0.into();
+        let before = s.current.config.bytes().unwrap();
+        let expected = s
+            .current
+            .config
+            .effective_shortcuts(s.current.config.entry(ids::EDIT_SELECT_ALL), target);
+        let ctx = egui::Context::default();
+        let viewport = egui::vec2(980., 760.);
+        settle(&ctx, &mut s, viewport);
+        click(
+            &ctx,
+            &mut s,
+            viewport,
+            rect(&ctx, (ids::EDIT_SELECT_ALL.0, "name")).center(),
+        );
+        assert_eq!(s.editing, Some(ids::EDIT_SELECT_ALL));
+        assert_eq!(s.keys, expected);
+        assert_eq!(s.current.config.bytes().unwrap(), before);
+        let draft = shortcut_config::Entry {
+            command_id: ids::EDIT_SELECT_ALL.0.into(),
+            shortcuts: s.keys.clone(),
+            select_all_origin: Some(SelectAllOrigin::Custom),
+        };
+        assert_eq!(
+            s.current.config.effective_shortcuts(&draft, target),
+            expected
+        );
+        let confirmed = s
+            .current
+            .config
+            .replace(ids::EDIT_SELECT_ALL, s.keys.clone(), target)
+            .unwrap()
+            .config;
+        assert_eq!(
+            confirmed.effective_shortcuts(confirmed.entry(ids::EDIT_SELECT_ALL), target),
+            expected
+        );
+        assert_eq!(
+            shortcut_config::decode(&confirmed.bytes().unwrap(), target)
+                .unwrap()
+                .config,
+            confirmed
+        );
+        s.close();
+        assert_eq!(s.current.config.bytes().unwrap(), before);
+        // Explicit confirmation uses the actual button, asynchronous store and
+        // reload, while opening/closing above never publishes the candidate.
+        let dir = std::env::temp_dir().join(format!("rcam-all-editor-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("shortcuts.json");
+        s.path = Some(path.clone());
+        s.fingerprint = Some(crate::shortcut_store::Fingerprint::Missing);
+        s.open = true;
+        settle(&ctx, &mut s, viewport);
+        click(
+            &ctx,
+            &mut s,
+            viewport,
+            rect(&ctx, (ids::EDIT_SELECT_ALL.0, "name")).center(),
+        );
+        assert_eq!(s.editing, Some(ids::EDIT_SELECT_ALL));
+        assert_eq!(s.keys, expected);
+        click(&ctx, &mut s, viewport, rect(&ctx, "save").center());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while s.pending.is_some() && std::time::Instant::now() < deadline {
+            s.poll();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(s.pending.is_none(), "configuration save did not complete");
+        assert_eq!(s.current.config, confirmed);
+        let restarted = crate::shortcut_store::load(Some(&path), target);
+        assert!(!restarted.protected);
+        assert_eq!(restarted.current.config, confirmed);
+        assert_eq!(
+            restarted
+                .current
+                .config
+                .effective_shortcuts(restarted.current.config.entry(ids::EDIT_SELECT_ALL), target),
+            expected
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn actual_select_record_cancel_and_alias_remove_only_edit_the_candidate() {
         let ctx = egui::Context::default();
         let viewport = egui::vec2(980., 760.);

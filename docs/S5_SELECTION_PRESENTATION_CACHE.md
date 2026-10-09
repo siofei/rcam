@@ -47,6 +47,6 @@ This phase does not resolve moving more than 10000 objects: old Move count and
 64MiB history guards remain. The next independent change must share read-only
 Move demand with the actual single/multi-layer commit routes, keep cancellation,
 complete selection/one Undo and real resource protection, and keep persistent
-capacity refusal separate from transient Snap errors. Ctrl+A/modifier box selection
+capacity refusal separate from transient Snap errors. All/modifier box selection
 and command-follow-pointer/click-placement are subsequent independent commits.
 Restricted native crash/capture diagnostics are not resumed.

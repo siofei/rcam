@@ -1939,3 +1939,7 @@ R08/R12/R18, applicable AT-025/043/078: `S5_SHORTCUT_COMPACT.md` adds actual CPU
 ### S5-I1 near-contour source amendment (2026-10-08)
 
 `S5_NEAR_CONTOUR_SELECTION.md` freezes the authorized near-only analytic distance ranking while direct hits keep zero-tolerance layer/exposure priority, one-pass score/error equivalence and anchor-stable logical cycling. Default six physical pixels, geometry/Clear/Block meanings, ProbeDrag and PointMove ownership remain. Incoming Ctrl Add/box Add/All now excludes locks; Replace/Remove supports inspection and mixed edits still reject atomically. This supersedes the earlier All/Add inspection-lock behavior. Ordinary source/CPU checks are distinct from pending native mouse/build validation; existing acceptance IDs and thresholds are unchanged.
+
+### S5 standard Select All user correction (2026-10-09)
+
+The user corrected the earlier physical-Control request: new defaults are macOS Cmd+A / Windows Ctrl+A through Primary+A, with no additional Mac Ctrl+A default alias. Existing configuration entries are preserved; missing defaults yield to custom conflicts and per-command restore is explicit. Supplemental cases in `S5_STANDARD_SELECT_ALL.md` cover provenance, cross-platform legacy/default/custom behavior, text/IME/recording/modal/window focus and existing complete unlocked selection policy. Native Mac event delivery is not established by cloud CPU tests; no geometry, selection filter or threshold change.

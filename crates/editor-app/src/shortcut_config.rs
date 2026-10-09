@@ -24,10 +24,21 @@ impl SourcePlatform {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SelectAllOrigin {
+    Default,
+    Custom,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Entry {
     pub command_id: String,
     pub shortcuts: Vec<Shortcut>,
+    /// Legacy snapshots have no provenance, so their physical-default
+    /// interpretation cannot safely be reclassified as a new default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select_all_origin: Option<SelectAllOrigin>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -80,7 +91,7 @@ pub(crate) fn commands() -> Vec<command::CommandDescriptor> {
         .filter(|c| c.id != ids::GRIP_CANCEL)
         .collect()
 }
-fn control_all(platform: Platform) -> Shortcut {
+fn legacy_control_all(platform: Platform) -> Shortcut {
     Shortcut::new(
         if platform == Platform::MacOs {
             Modifiers {
@@ -103,16 +114,6 @@ impl Config {
                 } else {
                     c.default_shortcut.into_iter().collect()
                 };
-                // Physical Control was explicitly requested on both platforms.
-                if c.id == ids::EDIT_SELECT_ALL && platform == Platform::MacOs {
-                    shortcuts = vec![Shortcut::new(
-                        Modifiers {
-                            secondary: true,
-                            ..Modifiers::NONE
-                        },
-                        Key::Char('a'),
-                    )];
-                }
                 if c.id == ids::EDIT_DELETE {
                     shortcuts.push(Shortcut::new(Modifiers::NONE, Key::Backspace));
                 }
@@ -122,6 +123,8 @@ impl Config {
                 Entry {
                     command_id: c.id.0.into(),
                     shortcuts,
+                    select_all_origin: (c.id == ids::EDIT_SELECT_ALL)
+                        .then_some(SelectAllOrigin::Default),
                 }
             })
             .collect();
@@ -145,23 +148,21 @@ impl Config {
             SourcePlatform::Windows => Platform::Windows,
         }
     }
-    /// Config identity stays unchanged; only this exact physical-Control
-    /// default transfers to the actual target keymap and its displayed hints.
+    /// Preserve the historical cross-platform behavior of a legacy entry.
+    /// Old schema v1 has no default/custom provenance: never
+    /// reinterpret or rewrite a present entry as the new default.
     pub fn effective_shortcuts(&self, entry: &Entry, platform: Platform) -> Vec<Shortcut> {
         if entry.command_id == ids::EDIT_SELECT_ALL.0
-            && entry.shortcuts == [control_all(self.source())]
+            && entry.select_all_origin.is_none()
+            && entry.shortcuts == [legacy_control_all(self.source())]
         {
-            vec![control_all(platform)]
+            vec![legacy_control_all(platform)]
         } else {
             entry.shortcuts.clone()
         }
     }
     pub fn default_shortcuts(&self, id: CommandId, platform: Platform) -> Vec<Shortcut> {
-        if id == ids::EDIT_SELECT_ALL {
-            vec![control_all(self.source())]
-        } else {
-            Config::defaults(platform).entry(id).shortcuts.clone()
-        }
+        Config::defaults(platform).entry(id).shortcuts.clone()
     }
     pub fn replace(
         &self,
@@ -176,6 +177,17 @@ impl Config {
             .find(|e| e.command_id == id.0)
             .ok_or_else(|| Error::new("UnknownCommand", id.0))?;
         entry.shortcuts = shortcuts;
+        entry.select_all_origin = (id == ids::EDIT_SELECT_ALL).then_some(SelectAllOrigin::Custom);
+        validate(next, platform)
+    }
+    pub fn restore_default(&self, id: CommandId, platform: Platform) -> Result<Validated, Error> {
+        let mut next = self.clone();
+        let entry = next
+            .bindings
+            .iter_mut()
+            .find(|e| e.command_id == id.0)
+            .ok_or_else(|| Error::new("UnknownCommand", id.0))?;
+        *entry = Config::defaults(platform).entry(id).clone();
         validate(next, platform)
     }
     pub fn bytes(&self) -> Result<Vec<u8>, Error> {
@@ -314,9 +326,18 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
                 format!("{}最多4个快捷键", e.command_id),
             ));
         }
+        if e.select_all_origin.is_some() && e.command_id != ids::EDIT_SELECT_ALL.0 {
+            return Err(Error::new("InvalidFormat", "全选来源标记只能用于全选命令"));
+        }
+        if e.select_all_origin == Some(SelectAllOrigin::Default)
+            && e.shortcuts != [Shortcut::new(Modifiers::PRIMARY, Key::Char('a'))]
+        {
+            return Err(Error::new("InvalidFormat", "全选默认来源与标准键位不一致"));
+        }
         for (i, &s) in e.shortcuts.iter().enumerate() {
             let portable_default = e.command_id == ids::EDIT_SELECT_ALL.0
-                && e.shortcuts == [control_all(config.source())];
+                && e.select_all_origin.is_none()
+                && e.shortcuts == [legacy_control_all(config.source())];
             check_key(
                 s,
                 if portable_default {
@@ -367,9 +388,6 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
     let mut missing = vec![];
     let mut default_conflicts = vec![];
     for mut entry in defaults.bindings {
-        if entry.command_id == ids::EDIT_SELECT_ALL.0 {
-            entry.shortcuts = vec![control_all(config.source())];
-        }
         if seen.contains(&entry.command_id) {
             continue;
         }
@@ -380,16 +398,19 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
                     &Entry {
                         command_id: entry.command_id.clone(),
                         shortcuts: config.effective_shortcuts(&entry, platform),
+                        select_all_origin: None,
                     },
                     &Entry {
                         command_id: other.command_id.clone(),
                         shortcuts: config.effective_shortcuts(other, platform),
+                        select_all_origin: None,
                     },
                     &catalogue,
                 )
         }) {
             default_conflicts.push(entry.command_id.clone());
             entry.shortcuts.clear();
+            entry.select_all_origin = None;
         }
         config.bindings.push(entry);
     }
@@ -404,6 +425,7 @@ pub(crate) fn validate(mut config: Config, platform: Platform) -> Result<Validat
         .map(|e| Entry {
             command_id: e.command_id.clone(),
             shortcuts: config.effective_shortcuts(e, platform),
+            select_all_origin: None,
         })
         .collect();
     for (index, entry) in effective.iter().enumerate() {
@@ -625,6 +647,7 @@ mod tests {
         config.bindings.push(Entry {
             command_id: ids::VIEW_FIT.0.into(),
             shortcuts: vec![key('d')],
+            select_all_origin: None,
         });
         let v = validate(config.clone(), Platform::MacOs).unwrap();
         assert!(
@@ -635,6 +658,7 @@ mod tests {
         config.bindings.push(Entry {
             command_id: ids::EDIT_DUPLICATE.0.into(),
             shortcuts: vec![key('d')],
+            select_all_origin: None,
         });
         assert_eq!(
             validate(config, Platform::MacOs).unwrap_err().code,
@@ -871,5 +895,217 @@ mod tests {
         assert!(error.to_string().contains(ids::VIEW_FIT.0));
         assert_eq!(cfg.bytes().unwrap(), before);
         assert!(cfg.entry(ids::EDIT_DUPLICATE).shortcuts.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod standard_all_tests {
+    use super::*;
+    fn primary() -> Shortcut {
+        Shortcut::new(Modifiers::PRIMARY, Key::Char('a'))
+    }
+    fn legacy(platform: Platform, keys: Vec<Shortcut>) -> Config {
+        let mut config = Config::defaults(platform);
+        let entry = config
+            .bindings
+            .iter_mut()
+            .find(|e| e.command_id == ids::EDIT_SELECT_ALL.0)
+            .unwrap();
+        entry.shortcuts = keys;
+        entry.select_all_origin = None;
+        validate(config, platform).unwrap().config
+    }
+    #[test]
+    fn new_defaults_and_target_restore_use_standard_primary_without_aliases() {
+        for source in [Platform::MacOs, Platform::Windows] {
+            for target in [Platform::MacOs, Platform::Windows] {
+                let defaults = validate(Config::defaults(source), target).unwrap().config;
+                let entry = defaults.entry(ids::EDIT_SELECT_ALL);
+                assert_eq!(entry.shortcuts, [primary()]);
+                assert_eq!(entry.select_all_origin, Some(SelectAllOrigin::Default));
+                assert_eq!(defaults.effective_shortcuts(entry, target), [primary()]);
+                let old = validate(legacy(source, vec![legacy_control_all(source)]), target)
+                    .unwrap()
+                    .config;
+                let reset = old
+                    .restore_default(ids::EDIT_SELECT_ALL, target)
+                    .unwrap()
+                    .config;
+                assert_eq!(
+                    reset.entry(ids::EDIT_SELECT_ALL),
+                    Config::defaults(target).entry(ids::EDIT_SELECT_ALL)
+                );
+                assert_eq!(
+                    decode(&reset.bytes().unwrap(), target).unwrap().config,
+                    reset
+                );
+            }
+        }
+    }
+    #[test]
+    fn legacy_present_keys_empty_and_physical_control_keep_identity_and_effective_behavior() {
+        for source in [Platform::MacOs, Platform::Windows] {
+            for keys in [
+                vec![],
+                vec![Shortcut::new(Modifiers::NONE, Key::F(8))],
+                vec![legacy_control_all(source)],
+            ] {
+                for target in [Platform::MacOs, Platform::Windows] {
+                    let config = legacy(source, keys.clone());
+                    let entry = config.entry(ids::EDIT_SELECT_ALL).clone();
+                    let roundtrip = decode(&config.bytes().unwrap(), target).unwrap().config;
+                    assert_eq!(roundtrip.entry(ids::EDIT_SELECT_ALL), &entry);
+                    let effective = if keys == [legacy_control_all(source)] {
+                        vec![legacy_control_all(target)]
+                    } else {
+                        keys.clone()
+                    };
+                    assert_eq!(roundtrip.effective_shortcuts(&entry, target), effective);
+                    assert_eq!(
+                        decode(&roundtrip.bytes().unwrap(), source).unwrap().config,
+                        config
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn missing_standard_default_does_not_take_an_explicit_conflicting_key() {
+        for source in [Platform::MacOs, Platform::Windows] {
+            for target in [Platform::MacOs, Platform::Windows] {
+                let mut config = Config::defaults(source);
+                config
+                    .bindings
+                    .retain(|e| e.command_id != ids::EDIT_SELECT_ALL.0);
+                config
+                    .bindings
+                    .iter_mut()
+                    .find(|e| e.command_id == ids::VIEW_FIT.0)
+                    .unwrap()
+                    .shortcuts = vec![primary()];
+                let migrated = validate(config, target).unwrap();
+                assert_eq!(migrated.default_conflicts, [ids::EDIT_SELECT_ALL.0]);
+                let entry = migrated.config.entry(ids::EDIT_SELECT_ALL);
+                assert!(entry.shortcuts.is_empty());
+                assert!(entry.select_all_origin.is_none());
+                assert_eq!(migrated.config.entry(ids::VIEW_FIT).shortcuts, [primary()]);
+                assert_eq!(
+                    migrated
+                        .config
+                        .restore_default(ids::EDIT_SELECT_ALL, target)
+                        .unwrap_err()
+                        .code,
+                    "Conflict"
+                );
+            }
+        }
+    }
+    #[test]
+    fn explicit_confirmation_is_custom_even_when_it_equals_standard_default() {
+        let old = legacy(
+            Platform::Windows,
+            vec![legacy_control_all(Platform::Windows)],
+        );
+        let changed = old
+            .replace(ids::EDIT_SELECT_ALL, vec![primary()], Platform::MacOs)
+            .unwrap()
+            .config;
+        let entry = changed.entry(ids::EDIT_SELECT_ALL);
+        assert_eq!(entry.select_all_origin, Some(SelectAllOrigin::Custom));
+        assert_eq!(
+            changed.effective_shortcuts(entry, Platform::MacOs),
+            [primary()]
+        );
+        assert_eq!(
+            decode(&changed.bytes().unwrap(), Platform::Windows)
+                .unwrap()
+                .config,
+            changed
+        );
+        let cleared = changed
+            .replace(ids::EDIT_SELECT_ALL, vec![], Platform::MacOs)
+            .unwrap()
+            .config;
+        assert_eq!(
+            cleared.entry(ids::EDIT_SELECT_ALL).select_all_origin,
+            Some(SelectAllOrigin::Custom)
+        );
+        assert!(
+            decode(&cleared.bytes().unwrap(), Platform::MacOs)
+                .unwrap()
+                .config
+                .entry(ids::EDIT_SELECT_ALL)
+                .shortcuts
+                .is_empty()
+        );
+    }
+    #[test]
+    fn forged_default_origin_unknown_origin_and_cross_platform_custom_collision_reject() {
+        let mut config = legacy(Platform::MacOs, vec![legacy_control_all(Platform::MacOs)]);
+        config
+            .bindings
+            .iter_mut()
+            .find(|e| e.command_id == ids::EDIT_SELECT_ALL.0)
+            .unwrap()
+            .select_all_origin = Some(SelectAllOrigin::Default);
+        assert_eq!(
+            validate(config, Platform::MacOs).unwrap_err().code,
+            "InvalidFormat"
+        );
+        let mut config = Config::defaults(Platform::MacOs);
+        config
+            .bindings
+            .iter_mut()
+            .find(|e| e.command_id == ids::VIEW_FIT.0)
+            .unwrap()
+            .select_all_origin = Some(SelectAllOrigin::Custom);
+        assert_eq!(
+            validate(config, Platform::MacOs).unwrap_err().code,
+            "InvalidFormat"
+        );
+        let mut json: serde_json::Value =
+            serde_json::from_slice(&Config::defaults(Platform::MacOs).bytes().unwrap()).unwrap();
+        json["bindings"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["command_id"] == ids::EDIT_SELECT_ALL.0)
+            .unwrap()["select_all_origin"] = "future".into();
+        assert_eq!(
+            decode(&serde_json::to_vec(&json).unwrap(), Platform::MacOs)
+                .unwrap_err()
+                .code,
+            "InvalidFormat"
+        );
+        let mut config = legacy(Platform::MacOs, vec![legacy_control_all(Platform::MacOs)]);
+        config
+            .bindings
+            .iter_mut()
+            .find(|e| e.command_id == ids::VIEW_FIT.0)
+            .unwrap()
+            .shortcuts = vec![primary()];
+        assert!(validate(config.clone(), Platform::MacOs).is_ok());
+        assert_eq!(
+            validate(config, Platform::Windows).unwrap_err().code,
+            "Conflict"
+        );
+    }
+    #[test]
+    fn loading_legacy_custom_file_does_not_rewrite_it_or_its_fingerprint() {
+        let dir = std::env::temp_dir().join(format!("rcam-standard-all-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("shortcuts.json");
+        let config = legacy(Platform::MacOs, vec![legacy_control_all(Platform::MacOs)]);
+        let bytes = config.bytes().unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let loaded = crate::shortcut_store::load(Some(&path), Platform::MacOs);
+        assert!(!loaded.protected);
+        assert_eq!(loaded.current.config, config);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(matches!(
+            loaded.fingerprint,
+            Some(crate::shortcut_store::Fingerprint::Present { .. })
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

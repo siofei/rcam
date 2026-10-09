@@ -4,7 +4,7 @@
 
 选中命令后先录制组合，再“加入绑定列表”，最后“确认此命令并自动保存”。一项最多四个别名；“清除此命令绑定”禁用该命令的键盘入口，菜单功能仍按原权限工作。“此命令恢复默认”只恢复当前项；全量恢复有明确确认。关闭设置或切换命令丢弃尚未确认的候选。没有全局草稿 Apply；交换冲突键须先清除其中一项。冲突同时检查可交叠作用域，非法/保留组合不会保存。
 
-录制时 Cmd+S、Delete、F3 只成为候选，不执行业务命令；Esc/取消按钮取消录制，裸或 Shift+Tab 结束录制并导航。IME 组成期间不录制；结束后先释放按键再重新按下。全选默认使用物理 Ctrl+A，可自定义。Cmd 是 Primary，Ctrl 是 Secondary，Option 是 Alt；Windows Primary 映射 Ctrl、Secondary 映射 Win，但本版本拒绝 Windows Secondary 组合。不会修改 OS 设置或抢占已知保留组合。
+录制时 Cmd+S、Delete、F3 只成为候选，不执行业务命令；Esc/取消按钮取消录制，裸或 Shift+Tab 结束录制并导航。IME 组成期间不录制；结束后先释放按键再重新按下。全选默认使用 Mac Cmd+A／Windows Ctrl+A，可自定义。旧配置保留原键位；若仍为旧 Ctrl+A，可在全选命令行选择“此命令恢复默认”。冲突时不会覆盖其他命令。输入框只全选文字；IME、录制及模态占用优先。Cmd 是 Primary，Ctrl 是 Secondary，Option 是 Alt；Windows Primary 映射 Ctrl、Secondary 映射 Win，但本版本拒绝 Windows Secondary 组合。不会修改 OS 设置或抢占已知保留组合。
 
 配置自动保存在当前应用用户配置目录的独立 `shortcuts.json`，旁边为既有 `preferences.json`。常规保存无需选择路径。导出通过原生文件对话框写入完整 JSON，文件只包含版本、平台和命令绑定，不包含项目、最近文件、绝对用户路径。显式空列表表示禁用；快照保持来源平台字段，逻辑修饰键按接收端映射。
 

@@ -19,7 +19,7 @@ Scope: S5 interaction correction, R07/R09/R16/R17/R18/R21/R22; AT-022/024/025/02
 The 969 baseline explicitly allowed locked objects into Ctrl+A and modifier selection, then refused the complete mixed edit. This batch's user instruction requires editable incoming Add/All, so it amends that behavior without changing the service's general `selectable_only` meaning:
 
 - Replace preserves existing visible/selectable inspection, including locked layers/categories and standalone Clear.
-- Ctrl Add, rectangle Add and Ctrl+A add only objects that pass visibility/Solo, layer/category selectable and layer/category unlocked checks. Add eligibility is applied before choosing the first click candidate, so a locked upper/near object cannot conceal an eligible lower candidate.
+- Ctrl Add, rectangle Add and All adds only objects that pass visibility/Solo, layer/category selectable and layer/category unlocked checks. Add eligibility is applied before choosing the first click candidate, so a locked upper/near object cannot conceal an eligible lower candidate.
 - GeneratedText origin always classifies as GeneratedText; members of one operation share a layer and category policy. Eligibility therefore applies to the whole operation without per-glyph scans of the whole group.
 - Add preserves the earlier selection and its order, including objects previously selected for inspection. It never silently purges old locked members. Remove may remove those existing read-only members and never adds objects. Shift wins over Ctrl and uses the existing empty-result semantics.
 - Move/drag and other edits still reject an entire selection containing a locked, hidden or unselectable member. They must not filter a mixed selection and submit only its editable part.
@@ -38,7 +38,7 @@ Queries and collection check cancellation at task, object/resolved-primitive, lo
 | Geometry | Standard holes/transforms, Macro local Clear/numerical ambiguity, Gerber Region concavity/cut-ins, true arc sweep/endcaps/full circle/deviation, long diagonal/huge envelope, rotated/mirrored atomic Block gaps/holes/Clear |
 | Scale | Six DPI values and three zooms; below/at/above radius using actual screen-to-world input; no widening of six-pixel admission |
 | Cycle | Distance crossing under anchor jitter, glyph representative change, candidate membership change, radius/camera/rect/DPI/navigation/doc/revision/workspace reset; all candidates/wraparound |
-| Policy | Hidden/Solo/category filters; layer/category locks; eligible Add behind locked candidate; all-locked Ctrl+A; whole text; existing inspection preserved; Remove read-only; mixed Move atomically rejected |
+| Policy | Hidden/Solo/category filters; layer/category locks; eligible Add behind locked candidate; all-locked All; whole text; existing inspection preserved; Remove read-only; mixed Move atomically rejected |
 | Input/async | Ctrl/Shift priority, no Probe advance, covered lower selected drag, delayed probe/release, cancelling/stale selection; PointMove launch/held-press/target/Alt/final request ownership |
 | Resources | Legacy/scored ID/error equivalence; nonfinite/invalid parameters, uncertainty/unsupported and budget rejection; no partial state after cancellation; unchanged10k candidate cap (10k accepted,10k+1 atomically refused), shared candidate clones and80k selection View clones |
 

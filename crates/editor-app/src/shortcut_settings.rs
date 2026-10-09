@@ -370,7 +370,7 @@ impl Settings {
                 ui.set_min_width(layout::LEFT + layout::GAP + layout::RIGHT);
                 ui.spacing_mut().item_spacing.y = 4.;
                 ui.heading("设置 · 快捷键");
-                ui.label("独立配置自动保存 · 全选默认：物理 Ctrl+A（可自定义）")
+                ui.label("独立配置自动保存 · 全选默认：Mac Cmd+A / Windows Ctrl+A")
                     .on_hover_text(if platform == Platform::MacOs {
                         "不改变工程、制造内容或撤销历史。Primary = Cmd · Secondary = Ctrl · Alt = Option · Shift = Shift。功能键可能被系统占用；RCam不会更改系统键盘设置。"
                     } else {
@@ -483,7 +483,7 @@ impl Settings {
                         .count();
                     ui.label(format!("变更 {changed} 项 · 清空 {cleared} 项"));
                     if preview.candidate.cross_platform {
-                        ui.label("全选的源平台默认键在两平台均为物理Ctrl+A；其它逻辑键按当前平台映射：Primary在Mac为Cmd、Windows为Ctrl；Secondary在Mac为Ctrl、Windows为Win（本版本拒绝）。Alt在Mac为Option。物理组合可能不同，请确认。Windows原生未验收。");
+                        ui.label("全选默认使用Primary+A：Mac为Cmd+A、Windows为Ctrl+A。旧配置和自定义键保留；可选择全选命令恢复标准默认，冲突时不会覆盖其他绑定。旧配置未记录来源，其历史跨平台映射保留。Secondary在Mac为Ctrl、Windows为Win（本版本拒绝）；Alt在Mac为Option。Windows原生未验收。");
                     }
                     if !preview.candidate.default_conflicts.is_empty() {
                         ui.label(format!(
@@ -600,8 +600,7 @@ impl Settings {
                                             && !self.protected,
                                     ) {
                                         self.editing = Some(command.id);
-                                        self.keys =
-                                            self.current.config.entry(command.id).shortcuts.clone();
+                                        self.keys = keys;
                                         self.candidate = None;
                                         self.message = None;
                                     }
@@ -678,6 +677,8 @@ impl Settings {
             &shortcut_config::Entry {
                 command_id: id.0.into(),
                 shortcuts: self.keys.clone(),
+                select_all_origin: (id == editor_core::command::ids::EDIT_SELECT_ALL)
+                    .then_some(shortcut_config::SelectAllOrigin::Custom),
             },
             platform,
         );
@@ -780,11 +781,7 @@ impl Settings {
                 self.save(ctx, next.config, false);
             }
             if layout::button(ui, "reset", "此命令恢复默认", true).clicked() {
-                match self.current.config.replace(
-                    id,
-                    self.current.config.default_shortcuts(id, platform),
-                    platform,
-                ) {
+                match self.current.config.restore_default(id, platform) {
                     Ok(v) => self.save(ctx, v.config, false),
                     Err(e) => self.message = Some(e.to_string()),
                 }
