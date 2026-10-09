@@ -1721,6 +1721,7 @@ fn native_metal_lisong_light_text_zoom_timing() {
     for frame_index in 0..70 {
         let frame = std::time::Instant::now();
         let callback = crate::gpu::Callback {
+            trace: None,
             painted: None,
             scene: scene.clone(),
             index: prepared.index.clone(),
@@ -2186,6 +2187,7 @@ fn native_metal_p1k_offscreen_timing() {
             )
             .unwrap();
             let callback = crate::gpu::Callback {
+                trace: None,
                 painted: None,
                 scene: scene.clone(),
                 index,

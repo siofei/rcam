@@ -1065,3 +1065,74 @@ fn old_release_before_new_press_and_release_uses_only_owned_event_position_and_a
     assert_eq!(run.app.view.info.as_ref().unwrap().undo_entries, 1);
     run.no_edit_requests();
 }
+
+#[test]
+fn frame_trace_observes_all_six_phases_and_real_update_without_mutation() {
+    let mut run = Run::new();
+    run.ready();
+    let request = run
+        .app
+        .point_transform
+        .as_ref()
+        .unwrap()
+        .requested
+        .clone()
+        .unwrap();
+    let before = run.app.view.info.clone();
+    let phases = [
+        Phase::Preparing,
+        Phase::Following,
+        Phase::Frozen,
+        Phase::FinalPreview(request.clone()),
+        Phase::Ready(request),
+        Phase::Applying,
+    ];
+    let expected = [
+        "preparing",
+        "following",
+        "frozen",
+        "final_preview",
+        "ready",
+        "applying",
+    ];
+    run.ctx.set_zoom_factor(1.2);
+    let _ = run.ctx.run(egui::RawInput::default(), |_| {});
+    for (phase, label) in phases.into_iter().zip(expected) {
+        run.app
+            .point_transform
+            .as_mut()
+            .unwrap()
+            .placement
+            .as_mut()
+            .unwrap()
+            .phase = phase;
+        let snapshot = run.app.trace_snapshot(&run.ctx);
+        assert_eq!(snapshot.move_phase, label);
+        assert_eq!(snapshot.ui_zoom, 1.2);
+    }
+    assert_eq!(run.app.view.info, before);
+    run.app.point_transform = None;
+    assert_eq!(run.app.trace_snapshot(&run.ctx).move_phase, "inactive");
+    run.app.frame_trace = Some(crate::frame_trace::Recorder::for_test());
+    run.update(vec![], egui::Modifiers::NONE, true);
+    let records = run.app.frame_trace.as_ref().unwrap().take_test_records();
+    let start = records
+        .iter()
+        .find(|record| record["kind"] == "update_start")
+        .unwrap();
+    let end = records
+        .iter()
+        .find(|record| record["kind"] == "update_end")
+        .unwrap();
+    assert_eq!(start["binding"]["input_batch_id"], 1);
+    assert_eq!(start["binding"]["update_id"], end["binding"]["update_id"]);
+    assert!(end["snapshot"]["canvas_physical"].as_array().is_some());
+    assert_eq!(end["snapshot"]["move_phase"], "inactive");
+    assert!(records.iter().any(|record| record["stage"] == "validation"));
+    assert!(
+        records
+            .iter()
+            .any(|record| record["stage"] == "canvas_panel")
+    );
+    assert_eq!(run.app.view.info, before);
+}

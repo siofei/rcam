@@ -13,6 +13,7 @@ mod display;
 mod display_tests;
 mod drag;
 mod font_catalog;
+mod frame_trace;
 mod gerber_import;
 mod gpu;
 mod grip;
@@ -180,6 +181,7 @@ struct LastFrame {
     selected: std::sync::Arc<Vec<u32>>,
     index: std::sync::Arc<render_index::RenderIndex>,
     uniforms: gpu::Uniforms,
+    trace_source: Option<frame_trace::RenderSource>,
 }
 struct EditorApp {
     components: components_ui::UiState,
@@ -293,6 +295,7 @@ struct EditorApp {
     row_probes: std::cell::RefCell<Vec<serde_json::Value>>,
     layer_panel_rect: egui::Rect,
     timing: bool,
+    frame_trace: Option<frame_trace::Recorder>,
     selected_flags: std::sync::Arc<Vec<u32>>,
     uniform_validation: UniformValidationCache,
     selection_presentation: selection_presentation::Cache,
@@ -585,6 +588,7 @@ impl EditorApp {
             selection_presentation: Default::default(),
             prepare_work: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
+            frame_trace: frame_trace::Recorder::from_env(),
             last_frame: Instant::now(),
             text_input_at_event: false,
             ime_active: false,
@@ -594,7 +598,63 @@ impl EditorApp {
         app.send(Action::NewWorkspace);
         app
     }
+    fn trace_snapshot(&self, ctx: &egui::Context) -> frame_trace::Snapshot {
+        let move_phase = self
+            .point_transform
+            .as_ref()
+            .and_then(|s| s.placement.as_ref())
+            .map_or("inactive", |placement| match &placement.phase {
+                move_place::Phase::Preparing => "preparing",
+                move_place::Phase::Following => "following",
+                move_place::Phase::Frozen => "frozen",
+                move_place::Phase::FinalPreview(_) => "final_preview",
+                move_place::Phase::Ready(_) => "ready",
+                move_place::Phase::Applying => "applying",
+            });
+        frame_trace::Snapshot {
+            selected_count: self.view.selected.ordered.len(),
+            move_phase,
+            drag_active: self.drag.is_some(),
+            canvas_physical: self.canvas_rect.is_positive().then(|| {
+                [
+                    self.canvas_rect.width() * ctx.pixels_per_point(),
+                    self.canvas_rect.height() * ctx.pixels_per_point(),
+                ]
+            }),
+            effective_ppp: ctx.pixels_per_point(),
+            native_ppp: ctx.native_pixels_per_point(),
+            ui_zoom: ctx.zoom_factor(),
+            pending_task_id: self
+                .pending_task
+                .as_ref()
+                .and_then(|t| std::num::NonZeroU64::new(t.task_id)),
+            viewport_task_id: self
+                .viewport_task
+                .as_ref()
+                .and_then(|t| std::num::NonZeroU64::new(t.task_id)),
+            geometry_task_id: self
+                .geometry_task
+                .as_ref()
+                .and_then(|t| std::num::NonZeroU64::new(t.task_id)),
+            canvas_layout: "stored_before_layout",
+        }
+    }
     fn send(&mut self, a: Action) {
+        let mut trace_attempt = self
+            .frame_trace
+            .as_mut()
+            .and_then(|trace| trace.request_attempt(&self.view));
+        if let Some(attempt) = &mut trace_attempt {
+            attempt.outcome = "rejected_early";
+        }
+        let trace_opens = matches!(
+            &a,
+            Action::NewWorkspace
+                | Action::DiscardNewWorkspace
+                | Action::OpenProject(..)
+                | Action::RestoreProject(..)
+                | Action::Close(..)
+        );
         if self.canvas_selection_unconfirmed
             && !matches!(
                 a,
@@ -748,6 +808,19 @@ impl EditorApp {
         let pmix_input = native_pmix::request_input(&task, &self.view, &a);
         match self.tx.try_send((self.sequence, source, a, task.clone())) {
             Ok(()) => {
+                if let Some(trace) = &mut self.frame_trace {
+                    trace.accepted(
+                        &task,
+                        trace_opens,
+                        trace_attempt
+                            .as_ref()
+                            .and_then(|attempt| attempt.attempt_id),
+                    );
+                }
+                if let Some(attempt) = &mut trace_attempt {
+                    attempt.outcome = "accepted";
+                    attempt.task_id = Some(task.task_id);
+                }
                 if let Some((request, apply)) = placement_request {
                     self.move_place_task =
                         Some(move_place::Pending::new(task.clone(), request, apply));
@@ -786,6 +859,9 @@ impl EditorApp {
                 self.ui_error = None;
             }
             Err(e) => {
+                if let Some(attempt) = &mut trace_attempt {
+                    attempt.outcome = "queue_rejected";
+                }
                 self.request_failure_serial = self.request_failure_serial.wrapping_add(1);
                 self.sequence = previous_sequence;
                 self.modal_pending = None;
@@ -1481,6 +1557,9 @@ fn arrangement_action(command: CommandId) -> Option<Action> {
 
 impl eframe::App for EditorApp {
     fn on_exit(&mut self) {
+        if let Some(trace) = &mut self.frame_trace {
+            trace.finish();
+        }
         #[cfg(feature = "internal-evidence")]
         {
             let roi_finalization = native_ui::finish();
@@ -1501,6 +1580,7 @@ impl eframe::App for EditorApp {
         }
     }
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let _trace_input = self.frame_trace.as_mut().and_then(|trace| trace.input(raw));
         #[cfg(feature = "internal-evidence")]
         let _span = native_pmix::spans::enter(native_pmix::spans::Stage::RawInputHook);
         #[cfg(feature = "internal-evidence")]
@@ -1559,6 +1639,35 @@ impl eframe::App for EditorApp {
         }
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        let trace_start = self
+            .frame_trace
+            .as_ref()
+            .and_then(frame_trace::Recorder::source_now);
+        let trace_snapshot = trace_start.map(|_| self.trace_snapshot(ctx));
+        let trace_update = trace_start.and_then(|start| {
+            self.frame_trace.as_mut().unwrap().update(
+                start,
+                ctx,
+                &self.view,
+                trace_snapshot.unwrap(),
+            )
+        });
+        self.observed_update_body(ctx, &trace_update);
+        if let Some(trace_update) = trace_update {
+            let snapshot = self.trace_snapshot(ctx);
+            let trace = self.frame_trace.as_mut().unwrap();
+            let version = trace.version(&self.view);
+            trace_update.finish(version, snapshot);
+            trace.clear_update();
+        }
+    }
+}
+impl EditorApp {
+    fn observed_update_body(
+        &mut self,
+        ctx: &egui::Context,
+        trace_update: &Option<frame_trace::Update>,
+    ) {
         self.arbitrate_point_input_frame(ctx);
         self.shortcuts.poll();
         crate::ui::command_widgets::install_shortcuts(ctx, &self.shortcuts.current.config);
@@ -1620,6 +1729,11 @@ impl eframe::App for EditorApp {
                 None
             }
         };
+        if let Some((id, view)) = &reply
+            && let Some(trace) = &self.frame_trace
+        {
+            trace.received(*id, view);
+        }
         if let Some((id, view)) = &reply
             && self.filter_move_place_reply(*id, view)
         {
@@ -1699,6 +1813,9 @@ impl eframe::App for EditorApp {
             let changed = self.view.info.as_ref().map(|d| &d.document_id)
                 != view.info.as_ref().map(|d| &d.document_id);
             self.view = view;
+            if let Some(trace) = &mut self.frame_trace {
+                trace.installed(id, &self.view);
+            }
             self.selection_presentation.synchronize(&self.view);
             if changed && self.view.error.is_none() {
                 self.canvas_selection_unconfirmed = false;
@@ -1894,6 +2011,12 @@ impl eframe::App for EditorApp {
             }
         }
         // Validate the current view before enabling manufacturing actions.
+        let trace_validation = trace_update.as_ref().map(|trace| {
+            trace.stage(
+                frame_trace::Stage::Validation,
+                self.frame_trace.as_mut().unwrap().version(&self.view),
+            )
+        });
         let validation_start = Instant::now();
         self.uniform_validation
             .invalidate_if_scene_changed(self.view.scene.as_ref());
@@ -1921,6 +2044,7 @@ impl eframe::App for EditorApp {
                 .err()
         });
         let validation_ms = validation_start.elapsed().as_secs_f64() * 1000.;
+        drop(trace_validation);
         if self
             .point_adapter
             .as_ref()
@@ -2749,6 +2873,12 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
         native_ui::profile("grid-tools");
         let modal_open = modal_open || self.modal.is_some();
         self.operation_source = rcam_diagnostics::Source::Canvas;
+        let trace_canvas = trace_update.as_ref().map(|trace| {
+            trace.stage(
+                frame_trace::Stage::CanvasPanel,
+                self.frame_trace.as_mut().unwrap().version(&self.view),
+            )
+        });
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::from_rgb(14, 18, 22)))
             .show(ctx, |ui| {
@@ -2758,6 +2888,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                 let (r, painter) =
                     ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
                 let rect = r.rect;
+                if let Some(trace) = trace_update { trace.current_canvas(rect, ctx.pixels_per_point()); }
                 // Keep ownership through the confirmation/back release frame.
                 // point_canvas may resume a modal and clear point_pick below.
                 let point_child_owns_frame = self.point_pick.is_some() || self.point_input_cancelled;
@@ -3088,6 +3219,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                     && !needs_lod
                 {
                     let prepared_result = {
+                        let _trace_prepare = trace_update.as_ref().map(|trace| trace.stage(frame_trace::Stage::RealPrepare, self.frame_trace.as_mut().unwrap().version(&self.view)));
                         #[cfg(feature = "internal-evidence")]
                         let _span = native_pmix::spans::enter(native_pmix::spans::Stage::CpuCanvasPrepare);
                         self.prepare_work.prepare_measured(
@@ -3124,6 +3256,11 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                                 selected: self.selected_flags.clone(),
                                 index,
                                 uniforms,
+                                trace_source: trace_update.as_ref().map(|trace| trace.render_source(frame_trace::RenderSource {
+                                    update_id:0,input_batch_id:0,version_id:self.frame_trace.as_mut().unwrap().version(&self.view),scene_serial:scene.serial,
+                                    camera:[self.camera.center.x_mm,self.camera.center.y_mm,self.camera.scale],rect:[rect.min.x,rect.min.y,rect.max.x,rect.max.y],
+                                    effective_ppp:ctx.pixels_per_point(),delta:self.drag.as_ref().map_or([0.,0.],|d|[d.delta.x_mm,d.delta.y_mm]),selection_epoch:self.view.selection_epoch,
+                                })),
                             });
                             rendered = true;
                         }
@@ -3156,6 +3293,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                                 let s5 = None;
                                 s5.or_else(|| self.bench.as_ref().map(|b| (b.painted.clone(), b.frame_id)))
                             },
+                            trace: trace_update.as_ref().map(|trace| trace.callback(self.frame_trace.as_mut().unwrap().version(&self.view), last.trace_source)),
                             index: last.index.clone(),
                             scene: last.scene.clone(),
                             selected: last.selected.clone(),
@@ -3326,6 +3464,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                     );
                 }
             });
+        drop(trace_canvas);
         if let Some(mut bench) = self.bench.take() {
             bench.ensure_record(self, ctx.pixels_per_point(), now);
             self.bench = Some(bench);

@@ -509,6 +509,7 @@ pub(crate) mod tests {
             selection_presentation: Default::default(),
             prepare_work: Default::default(),
             timing: std::env::var_os("RCAM_RENDER_TIMING").is_some(),
+            frame_trace: None,
             last_frame: std::time::Instant::now(),
             text_input_at_event: false,
             ime_active: false,

@@ -779,6 +779,7 @@ impl Resources {
     }
 }
 pub struct Callback {
+    pub trace: Option<crate::frame_trace::CallbackBinding>,
     pub painted: Option<(Arc<std::sync::atomic::AtomicU64>, u64)>,
     pub scene: Arc<Scene>,
     pub index: Arc<crate::render_index::RenderIndex>,
@@ -795,6 +796,10 @@ impl egui_wgpu::CallbackTrait for Callback {
         _: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        let _trace = self
+            .trace
+            .as_ref()
+            .map(|trace| trace.span(crate::frame_trace::Stage::CallbackPrepare));
         #[cfg(feature = "internal-evidence")]
         let _span = crate::native_pmix::spans::enter_frame(
             crate::native_pmix::spans::Stage::GpuCallbackPrepare,
@@ -879,6 +884,13 @@ impl egui_wgpu::CallbackTrait for Callback {
         pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources,
     ) {
+        let mut trace_paint = self
+            .trace
+            .as_ref()
+            .map(|trace| trace.span(crate::frame_trace::Stage::CallbackPaint));
+        if let Some(span) = &mut trace_paint {
+            span.outcome = "clipped_or_no_resources";
+        }
         #[cfg(feature = "internal-evidence")]
         let _span = crate::native_pmix::spans::enter_frame(
             crate::native_pmix::spans::Stage::GpuCallbackPaint,
@@ -900,6 +912,9 @@ impl egui_wgpu::CallbackTrait for Callback {
             pass.set_pipeline(&r.pipeline);
             pass.set_bind_group(0, &r.bind, &[]);
             pass.draw(0..3, 0..1);
+            if let Some(span) = &mut trace_paint {
+                span.outcome = "draw_encoded";
+            }
             #[cfg(feature = "internal-evidence")]
             crate::native_s5m1::gpu_event("draw", 1);
             if let Some((stamp, id)) = &self.painted {
