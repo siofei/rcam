@@ -122,3 +122,20 @@ Mode A evaluates the effective solid region, holes and topology produced by orig
 | MODE08 | Nested/reference identity equivalence is separately frozen; scoped definition identity/DCode distinctions, unsupported nesting rejection and exact atomic Undo remain |
 
 This user correction supersedes any universal member-count/structure requirement above: that requirement belongs to B only. Both modes remain PLANNED / NOT IMPLEMENTED / NOT TESTED.
+
+
+## Independent find with the same two modes
+
+User-confirmed: final-contour and full-composition matching also belong to Find, without requiring creation/replacement. Results can highlight, navigate one by one or select in bulk. Find, result selection and template replacement share the same matching kernel and explicit A/B, arbitrary-angle rigid rotation, tolerance and true ordered exposure semantics. Independent Find scope/default layers are not specified by the user; freeze them explicitly without broadening seed-layer-only identity quick selection. A find hit is not approval for destructive replacement: contextual exposure equivalence and edit permission/atomicity checks still gate application.
+
+| Case | Planned check |
+|---|---|
+| FIND01 | Independent Find operates with an explicit source/template without creating a new definition; A matches different composition with equal effective region, B requires complete composition |
+| FIND02 | Same input/mode/scope/tolerance/version produces matching kernel parity across Find, selection and replacement preview; no alternate approximate acceptance |
+| FIND03 | Highlight, next/previous location and explicit Add/Replace bulk selection leave manufacturing bytes/definitions/dirty/Undo unchanged; stable result/member identity and ordering |
+| FIND04 | Explicit Find layer scope/default contract and all original selection/visibility/lock admission remain distinct from strictly seed-layer-only same-definition quick selection |
+| FIND05 | Both modes support translation/arbitrary-angle rotation and frozen tolerance/holes/topology/Dark-Clear semantics; found-but-unproven contextual substitution never permits destructive replacement |
+| FIND06 | Large grouped results, paging/no silent truncation, overlapping shared members/conflict information, budgets/cancellation and owner/revision/selection/template changes |
+| FIND07 | Typed macro serializes source/template identity, explicit target layers, A/B, tolerance/rotation and highlight/locate/select action; no implicit screen or mouse state |
+
+Independent Find is PLANNED / NOT IMPLEMENTED / NOT TESTED. No current command/API/default scope is introduced by this documentation.
