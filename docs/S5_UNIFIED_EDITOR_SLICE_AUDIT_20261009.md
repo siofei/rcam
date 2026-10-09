@@ -116,4 +116,6 @@ UE-B能力准入必须明确“世界四边尺寸变化”与“光圈局部尺�
 
 上述三项工程合同已冻结，服务API/CPU用例/ADR0062已先行更新。独立cb9工作树正在准备未发布的`editor-service/src/unified_editor_session.rs`与`editor-core/src/unified_editor_draft.rs`及两组真实CPU tests；这些文件只在后端准备分支存在，尚未进入cb9产品或本规划分支。核心以opaque有序检查点构造最终逐层before/after差量，再提交一次`Operation::Selection`，不循环单层事务。辅助CPU已覆盖部分UE01/02/04/05/06/07/09/11契约，不声称完整UE或UI验收通过。下一步先冻结后端精确commit/新manifest/完整源码包及独审、实际gates，再等待cb9本机结论决定UI闭环。GUI固定窗口、actual queue/owner/同帧输入与Snap/Alt仍需后续接入及原生回归；不创建空按钮。普通fmt/Clippy/相关tests/portable与native分别记录，严格全工作区MSRV已有阻塞保持真实状态。未新增产品JSON能力或依赖、未重跑native、未发布新产品或修改cb9验收身份。
 
-未发布后端本地冻结身份：`8a98ca9d704ae71d076fb98e9373e2936024c654`，直接基于cb9；713源文件，MF SHA-256 `90dc363d6d9c9ba12e0eaba02ee646d2c72f17dc26abbce332a3b2633af06a4d`。核心219P/0F/5ignored，相关service54P/0F；fmt/后端Check/严格Clippy为0。严格全workspace Check/Clippy/Test/Release仍为101（既有ordered-float要求Rust1.90），锁定1.89与Cargo.lock未变。完整portable正在独立终态核验，不能写PASS；以上辅助CPU结果只绑定新后端，不转绑cb9的原生证据。该身份不推送产品分支；本规划分支仅发布审计合同。
+未发布后端本地冻结身份：`8a98ca9d704ae71d076fb98e9373e2936024c654`，直接基于cb9；713源文件，MF SHA-256 `90dc363d6d9c9ba12e0eaba02ee646d2c72f17dc26abbce332a3b2633af06a4d`。核心219P/0F/5ignored，相关service54P/0F；fmt/后端Check/严格Clippy为0。严格全workspace Check/Clippy/Test/Release仍为101（既有ordered-float要求Rust1.90），锁定1.89与Cargo.lock未变。完整portable终态为456tests/2既有超时失败/13临时存储Errno28；受环境影响模块独立复跑122tests/1同基线超时失败/0errors，源码打包测试4P/0F。全suite不能写PASS；以上辅助CPU结果只绑定新后端，不转绑cb9的原生证据。该身份不推送产品分支；本规划分支仅发布审计合同。
+
+cb9最新Mac本机回报标准gates全0、workspace1176P/0F/65ignored及20项新CPU回归通过，原生多项目流程已回报完成，fresh708源文件/232证据载荷核对通过；尚待独立证据复核及阶段接受，驱动失误与配置预置拒绝保留。该回报只绑定cb9，不用于新后端身份，UI接入继续等待独审终态。
