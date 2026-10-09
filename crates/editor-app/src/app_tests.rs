@@ -190,24 +190,39 @@ fn raw_single_project_drop_opens_encoded_empty_project_through_real_worker() {
         ..Default::default()
     };
     let _ = ctx.run(raw, |ctx| app.update(ctx, &mut frame));
-    let (_, _, action, task, _) = requests.try_recv().unwrap();
+    assert!(app.tabs.change_pending());
+    let mut host = crate::session::WorkerHost::new(app.routing.owner(), model);
+    let _ = ctx.run(Default::default(), |ctx| {
+        app.advance_tab_change(ctx);
+    });
+    let (id, _, action, task, route) = requests.try_recv().unwrap();
     assert!(matches!(&action, Action::OpenProject(path, false) if path == &project));
-    assert_eq!(
-        task.input.document_id.as_deref(),
-        Some(current.document_id.as_str())
+    assert!(task.input.document_id.is_none());
+    host.route_action(&route, &action).unwrap();
+    host.model.run_task(task, action);
+    let envelope = host.finish(&route).unwrap();
+    app.receive_session_reply(
+        (id, host.model.view.clone(), envelope),
+        std::time::Instant::now(),
     );
-    model.run_task(task, action);
-    assert!(model.view.error.is_none(), "{:?}", model.view.error);
-    let opened = model.view.info.as_ref().unwrap();
+    assert!(app.view.error.is_none(), "{:?}", app.view.error);
+    let opened = app.view.info.as_ref().unwrap();
     assert_eq!(opened.project_id, empty.project_id);
     // The service stores a canonical path; macOS temp_dir can use /var
     // while canonicalize resolves the same file through /private/var.
     let canonical_project = project.canonicalize().unwrap();
     assert_eq!(opened.project_path.as_deref(), canonical_project.to_str());
     assert!(!opened.project_dirty);
-    assert!(model.view.layers.is_empty());
+    assert!(app.view.layers.is_empty());
     assert_eq!(std::fs::read(&project).unwrap(), bytes);
-    assert!(model.service.document_get(&current.document_id).is_err());
+    assert_eq!(
+        host.model
+            .service
+            .document_get(&current.document_id)
+            .unwrap(),
+        current
+    );
+    assert_eq!(app.tabs.parked.len(), 1);
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -227,22 +242,35 @@ fn project_drop_task_rejects_stale_or_cancelled_request_without_replacing_docume
         app.routing.bind_fixture(&app.view);
         // A nonexistent target also proves the fence rejects before file I/O.
         app.drop_files(vec![dir.join("next.rcam")]);
-        let (_, _, action, task, _) = requests.try_recv().unwrap();
+        let old = app.view.info.clone().unwrap();
+        let mut host = crate::session::WorkerHost::new(app.routing.owner(), model);
+        let ctx = eframe::egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.advance_tab_change(ctx);
+        });
+        let (_, _, action, mut task, route) = requests.try_recv().unwrap();
+        host.route_action(&route, &action).unwrap();
         if cancelled {
             task.cancel_token.cancel();
         } else {
-            select(&mut model);
-            model.numeric_move("1", "0").unwrap();
+            // The new empty record is the task's owner. A stale generation
+            // cannot install it, while the parked original stays untouched.
+            task.input.generation += 1;
         }
-        let before = model.view.info.clone();
-        let snapshot = model.view.snap_snapshot.clone();
-        model.run_task(task, action);
+        let before = host.model.view.info.clone();
+        let snapshot = host.model.view.snap_snapshot.clone();
+        host.model.run_task(task, action);
         assert_eq!(
-            model.view.error.as_ref().unwrap().code,
+            host.model.view.error.as_ref().unwrap().code,
             if cancelled { "CANCELLED" } else { "STALE_TASK" }
         );
-        assert_eq!(model.view.info, before);
-        assert_eq!(model.view.snap_snapshot, snapshot);
+        assert_eq!(host.model.view.info, before);
+        assert_eq!(host.model.view.snap_snapshot, snapshot);
+        assert_eq!(
+            host.model.service.document_get(&old.document_id).unwrap(),
+            old
+        );
+        assert_eq!(app.tabs.parked.len(), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

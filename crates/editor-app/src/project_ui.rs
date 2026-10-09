@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 #[derive(Clone)]
 pub(crate) enum Transition {
+    #[cfg(test)]
     New,
+    #[cfg(any(test, feature = "internal-evidence"))]
     Open(PathBuf),
     Close,
     Quit,
@@ -45,13 +47,17 @@ impl EditorApp {
                     Some("工程文件必须单独拖入；不能与其他工程或 Gerber 混合拖入".into());
                 return;
             }
-            self.begin_transition(Transition::Open(paths.into_iter().next().unwrap()));
+            self.request_new_session(Action::OpenProject(
+                paths.into_iter().next().unwrap(),
+                false,
+            ));
         } else {
             self.start_gerber_import(paths);
         }
     }
 
-    fn cancel_transition(&mut self) {
+    pub(crate) fn cancel_transition(&mut self) {
+        self.tabs.cancel_quit(&self.routing.owner());
         self.close_prompt = false;
         self.transition = None;
         self.routing.clear_intent();
@@ -121,18 +127,26 @@ impl EditorApp {
         };
         self.routing.clear_intent();
         match transition {
+            #[cfg(test)]
             Transition::New => self.send(if discard {
                 Action::DiscardNewWorkspace
             } else {
                 Action::NewWorkspace
             }),
+            #[cfg(any(test, feature = "internal-evidence"))]
             Transition::Open(path) => self.send(Action::OpenProject(path, discard)),
             Transition::Close | Transition::Quit => {
                 self.quit_after_close = matches!(transition, Transition::Quit);
-                if self.view.info.is_some() {
-                    self.send(Action::Close(discard));
-                } else if self.quit_after_close {
-                    self.allow_quit = true;
+                self.send(Action::Close(discard));
+                if self.quit_after_close
+                    && !self.pending_task.as_ref().is_some_and(|task| {
+                        self.tabs.quit_matches(&self.routing.owner(), task.task_id)
+                    })
+                {
+                    // No admitted Close: an early gate or full queue cannot
+                    // leave an ownerless window Quit blocking every tab.
+                    self.tabs.cancel_quit(&self.routing.owner());
+                    self.quit_after_close = false;
                 }
             }
         }
@@ -140,10 +154,32 @@ impl EditorApp {
 
     pub(crate) fn choose_open_project(&mut self) {
         match crate::platform::choose_project(false) {
-            Ok(Some(path)) => self.begin_transition(Transition::Open(path)),
+            Ok(Some(path)) => self.request_new_session(Action::OpenProject(path, false)),
             Ok(None) => {}
             Err(error) => self.ui_error = Some(error),
         }
+    }
+
+    fn save_admitted(&mut self) -> bool {
+        if self.busy {
+            return true;
+        }
+        if matches!(self.transition, Some(Transition::Quit)) {
+            self.tabs.cancel_quit(&self.routing.owner());
+            self.transition = None;
+            self.close_prompt = false;
+            self.waiting_save = false;
+            self.quit_after_close = false;
+            self.routing.clear_intent();
+        } else if self.waiting_save {
+            // A rejected replacement has no terminal save receipt. Restore the
+            // dirty-document choice instead of waiting forever for that receipt.
+            self.waiting_save = false;
+            self.close_prompt = self.transition.is_some();
+        } else if self.transition.is_none() {
+            self.routing.clear_intent();
+        }
+        false
     }
 
     /// Returns true once a save request or replacement confirmation is active.
@@ -166,7 +202,7 @@ impl EditorApp {
             .and_then(|d| d.project_path.as_ref());
         if !as_new && existing.is_some() {
             self.send(Action::SaveProject(None, false, camera));
-            return self.busy;
+            return self.save_admitted();
         }
         let mut path = match crate::platform::choose_project(true) {
             Ok(Some(path)) => path,
@@ -202,7 +238,7 @@ impl EditorApp {
             return true;
         }
         self.send(Action::SaveProject(Some(path), false, camera));
-        self.busy
+        self.save_admitted()
     }
 
     pub(crate) fn project_prompts(&mut self, ctx: &egui::Context) {
@@ -285,7 +321,14 @@ impl EditorApp {
                                 self.waiting_save = false;
                             }
                         }
-                        if crate::ui::buttons::destructive(ui, "替换", true).clicked() {
+                        let replace = crate::ui::buttons::destructive(ui, "替换", !self.busy);
+                        #[cfg(test)]
+                        crate::ui::modal_widgets::record_control(
+                            ui,
+                            "project-replace-confirm-rect",
+                            &replace,
+                        );
+                        if replace.clicked() {
                             self.replace_project_path = None;
                             self.send(Action::SaveProject(
                                 Some(path),
@@ -295,6 +338,7 @@ impl EditorApp {
                                     scale: self.camera.scale,
                                 }),
                             ));
+                            self.save_admitted();
                         }
                     });
                 },
@@ -403,8 +447,14 @@ mod drop_tests {
         );
     }
 
+    fn advance(app: &mut EditorApp) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.advance_tab_change(ctx);
+        });
+    }
     #[test]
-    fn single_project_drop_uses_open_task_and_captured_version() {
+    fn single_project_drop_opens_independent_record_with_empty_captured_version() {
         for suffix in ["rcam", "RCAM", "rCaM"] {
             for current_document in [false, true] {
                 let (mut app, requests) = app(false);
@@ -412,45 +462,46 @@ mod drop_tests {
                     app.view.info = None;
                     app.routing.bind_fixture(&app.view);
                 }
-                let expected = TaskVersion::capture(
-                    app.view.info.as_ref(),
-                    app.view.task_generation,
-                    app.view.rule_revision,
-                );
+                let before = app.view.info.clone();
+                let previous_owner = app.routing.owner();
                 let path = PathBuf::from(format!("中文 # empty.{suffix}"));
                 app.drop_files(vec![path.clone()]);
+                assert!(requests.try_recv().is_err());
+                advance(&mut app);
                 let (sequence, _, action, task, _) = requests.try_recv().unwrap();
                 assert!(matches!(action, Action::OpenProject(actual, false) if actual == path));
                 assert_eq!(sequence, 1);
-                assert_eq!(task.input, expected);
+                assert_eq!(task.input, TaskVersion::capture(None, 0, 0));
+                assert_ne!(app.routing.owner().slot(), previous_owner.slot());
                 assert!(app.busy);
+                assert_eq!(app.tabs.parked.len(), 1);
+                // The container itself remains private; restoring the old state
+                // proves its captured document is retained, not discarded.
                 assert_eq!(app.pending_project_error_title, Some("无法打开工程"));
                 assert!(app.transition.is_none() && !app.close_prompt);
+                assert_eq!(app.tabs.parked[0].view().info, before);
+                assert_eq!(before.is_some(), current_document);
             }
         }
     }
-
     #[test]
-    fn dirty_drop_waits_cancel_keeps_document_and_discard_uses_existing_transition() {
+    fn dirty_drop_queues_new_record_and_second_drop_cannot_replace_first_intent() {
         let (mut app, requests) = app(true);
         let before = app.view.info.clone();
         app.drop_files(vec!["first.rcam".into()]);
-        assert!(app.close_prompt && !app.busy);
-        pending_open(&app, "first.rcam");
+        assert!(!app.close_prompt && !app.busy);
+        assert!(app.tabs.change_pending());
         assert!(requests.try_recv().is_err());
         app.drop_files(vec!["second.rcam".into()]);
-        pending_open(&app, "first.rcam");
         assert!(app.ui_error.is_some());
-        app.cancel_transition();
-        assert!(app.transition.is_none() && !app.close_prompt);
         assert_eq!(app.view.info, before);
-        assert!(requests.try_recv().is_err());
-        app.drop_files(vec!["second.rcam".into()]);
-        app.perform_transition(true);
+        advance(&mut app);
         assert!(
-            matches!(requests.try_recv().unwrap().2, Action::OpenProject(path, true) if path == PathBuf::from("second.rcam"))
+            matches!(requests.try_recv().unwrap().2, Action::OpenProject(path, false) if path == PathBuf::from("first.rcam"))
         );
-        assert_eq!(app.view.info, before);
+        assert_eq!(app.tabs.parked.len(), 1);
+        assert!(app.view.info.is_none());
+        assert!(!app.close_prompt);
     }
 
     #[test]
@@ -458,7 +509,9 @@ mod drop_tests {
         for success in [false, true] {
             let (mut app, requests) = app(true);
             app.view.info.as_mut().unwrap().project_path = Some("current.rcam".into());
-            app.drop_files(vec!["next.rcam".into()]);
+            // Explicit legacy replacement still exercises original save/discard
+            // intent fencing; ordinary drops now create independent records.
+            app.begin_transition(Transition::Open("next.rcam".into()));
             assert!(app.save_project(false));
             assert!(matches!(
                 requests.try_recv().unwrap().2,

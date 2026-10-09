@@ -38,6 +38,7 @@ mod batch_drag_tests;
 mod move_place;
 #[cfg(test)]
 mod move_place_tests;
+mod multiproject;
 #[cfg(feature = "internal-evidence")]
 mod native_a2;
 #[cfg(feature = "internal-evidence")]
@@ -74,6 +75,7 @@ mod s5m2_tests;
 mod selection;
 mod selection_presentation;
 mod session;
+mod session_files;
 mod shared_snapshot;
 mod shortcut_config;
 mod shortcut_settings;
@@ -185,6 +187,8 @@ struct LastFrame {
     trace_source: Option<frame_trace::RenderSource>,
 }
 struct EditorApp {
+    tabs: multiproject::Tabs,
+    document_memory: egui::Memory,
     components: components_ui::UiState,
     block: block_ui::UiState,
     operation_source: rcam_diagnostics::Source,
@@ -250,6 +254,7 @@ struct EditorApp {
     prefs: preferences::AppPreferences,
     shortcuts: shortcut_settings::Settings,
     recovery_candidate: Option<recovery::RecoveryMetadata>,
+    recovery_source: Option<(std::path::PathBuf, recovery::RecoveryMetadata)>,
     recovery_prompt_reported: Option<String>,
     recovery_attempted_identity: Option<String>,
     recovery_ignore_confirm: bool,
@@ -410,7 +415,9 @@ impl EditorApp {
         let (reply, rx) = mpsc::sync_channel(1);
         let ctx = cc.egui_ctx.clone();
         std::thread::spawn(move || {
-            let mut host = session::WorkerHost::new(owner, Model::default());
+            let host = session::WorkerHost::new(owner, Model::default());
+            #[cfg(feature = "internal-evidence")]
+            let mut host = host;
             #[cfg(feature = "internal-evidence")]
             if autoload {
                 if let Err(cause) = host.model.autoload_block_fixture() {
@@ -425,60 +432,7 @@ impl EditorApp {
                 }
                 ctx.request_repaint();
             }
-            while let Ok((id, source, action, task, route)) = request.recv() {
-                if let Err(cause) = host.route(&route) {
-                    if reply
-                        .send((
-                            id,
-                            View::default(),
-                            session::WorkerHost::rejection(&route, cause),
-                        ))
-                        .is_err()
-                    {
-                        break;
-                    }
-                    ctx.request_repaint();
-                    continue;
-                }
-                let model = &mut host.model;
-                let start = Instant::now();
-                #[cfg(feature = "internal-evidence")]
-                let measured_action = native_s5m1::action_label(&action);
-                #[cfg(feature = "internal-evidence")]
-                let pmix_action = native_pmix::action_label(&action);
-                #[cfg(feature = "internal-evidence")]
-                native_a2::worker_begin(&task, &model.view);
-                rcam_diagnostics::with_source(source, || model.run_task(task, action));
-                #[cfg(feature = "internal-evidence")]
-                native_a2::worker_finished(id, &model.view);
-                #[cfg(feature = "internal-evidence")]
-                native_s5m1::worker_result(id, measured_action, start, &model.view);
-                #[cfg(feature = "internal-evidence")]
-                native_pmix::worker_result(id, pmix_action, start, &model.view);
-                if start.elapsed().as_millis() > 100 {
-                    rcam_diagnostics::runtime_event(
-                        rcam_diagnostics::Level::Warn,
-                        "gui.worker.slow",
-                    );
-                }
-                #[cfg(feature = "internal-evidence")]
-                native_a2::returning(id);
-                let result = model.view.clone();
-                let envelope = match host.finish(&route) {
-                    Ok(route) => (id, result, route),
-                    Err(cause) => (
-                        id,
-                        View::default(),
-                        session::WorkerHost::rejection(&route, cause),
-                    ),
-                };
-                if reply.send(envelope).is_err() {
-                    break;
-                }
-                ctx.request_repaint();
-                #[cfg(feature = "internal-evidence")]
-                native_s5m1::gpu_event("worker-request-repaint", 1);
-            }
+            session::run_worker(host, request, reply, ctx);
         });
         let gpu = cc
             .wgpu_render_state
@@ -508,6 +462,8 @@ impl EditorApp {
             !prefs.shortcut_overrides.is_empty(),
         );
         let mut app = Self {
+            tabs: Default::default(),
+            document_memory: Default::default(),
             block: Default::default(),
             operation_source: rcam_diagnostics::Source::System,
             diagnostic_export: None,
@@ -571,6 +527,7 @@ impl EditorApp {
             shortcuts,
             prefs,
             recovery_candidate,
+            recovery_source: None,
             recovery_prompt_reported: None,
             recovery_attempted_identity: None,
             recovery_ignore_confirm: false,
@@ -673,6 +630,9 @@ impl EditorApp {
         }
     }
     fn send(&mut self, a: Action) {
+        if self.tabs.change_pending() {
+            return;
+        }
         let mut trace_attempt = self
             .frame_trace
             .as_mut()
@@ -686,6 +646,7 @@ impl EditorApp {
                 | Action::DiscardNewWorkspace
                 | Action::OpenProject(..)
                 | Action::RestoreProject(..)
+                | Action::RestoreSnapshot(..)
                 | Action::Close(..)
         );
         if self.canvas_selection_unconfirmed
@@ -693,6 +654,7 @@ impl EditorApp {
                 a,
                 Action::OpenProject(..)
                     | Action::RestoreProject(..)
+                    | Action::RestoreSnapshot(..)
                     | Action::SaveProject(..)
                     | Action::Close(..)
                     | Action::NewWorkspace
@@ -743,7 +705,10 @@ impl EditorApp {
         {
             return;
         }
-        let source = if matches!(&a, Action::RestoreProject(..) | Action::RecoveryWrite(..)) {
+        let source = if matches!(
+            &a,
+            Action::RestoreProject(..) | Action::RestoreSnapshot(..) | Action::RecoveryWrite(..)
+        ) {
             rcam_diagnostics::Source::Recovery
         } else if matches!(&a, Action::ArrayApply(..)) {
             self.array.source
@@ -783,7 +748,9 @@ impl EditorApp {
             return;
         }
         self.pending_project_error_title = match &a {
-            Action::OpenProject(..) | Action::RestoreProject(..) => Some("无法打开工程"),
+            Action::OpenProject(..) | Action::RestoreProject(..) | Action::RestoreSnapshot(..) => {
+                Some("无法打开工程")
+            }
             Action::SaveProject(..) => Some("无法保存工程"),
             _ => None,
         };
@@ -841,6 +808,9 @@ impl EditorApp {
             None
         };
         let viewport = matches!(a, Action::Viewport(..));
+        let quit_terminal = (self.quit_after_close
+            || matches!(self.transition, Some(project_ui::Transition::Quit)))
+            && matches!(a, Action::SaveProject(..) | Action::Close(..));
         let task = editor_service::task::TaskContext::new(
             self.sequence,
             editor_service::task::TaskVersion::capture(
@@ -857,6 +827,9 @@ impl EditorApp {
         {
             Ok(()) => {
                 self.routing.accepted(route, task.clone());
+                if quit_terminal {
+                    self.tabs.accepted_quit(self.routing.owner(), task.task_id);
+                }
                 if let Some(trace) = &mut self.frame_trace {
                     trace.accepted(
                         &task,
@@ -957,7 +930,11 @@ impl EditorApp {
             self.waiting_save = false;
             self.transition = None;
             self.quit_after_close = false;
+            if self.tabs.quit_matches(&self.routing.owner(), id) {
+                self.tabs.cancel_quit(&self.routing.owner());
+            }
         }
+        self.finish_restore(&self.routing.owner(), id, false);
         self.ui_error = Some(cause.message);
     }
     fn route_shortcuts(&mut self, ctx: &egui::Context, text_focus: bool, modal_open: bool) {
@@ -1202,9 +1179,14 @@ impl EditorApp {
         }
     }
     fn new_workspace(&mut self) {
-        self.begin_transition(project_ui::Transition::New);
+        self.request_new_session(Action::NewWorkspace);
     }
     fn close(&mut self, quit: bool) {
+        if quit {
+            self.tabs.begin_quit(self.routing.owner());
+        }
+        self.routing
+            .retire_on_close(!self.tabs.parked.is_empty() || quit);
         self.begin_transition(if quit {
             project_ui::Transition::Quit
         } else {
@@ -1755,90 +1737,8 @@ impl eframe::App for EditorApp {
     }
 }
 impl EditorApp {
-    fn observed_update_body(
-        &mut self,
-        ctx: &egui::Context,
-        trace_update: &Option<frame_trace::Update>,
-    ) {
-        self.arbitrate_point_input_frame(ctx);
-        self.shortcuts.poll();
-        crate::ui::command_widgets::install_shortcuts(ctx, &self.shortcuts.current.config);
-        if let Some(rx) = &self.diagnostic_export {
-            match rx.try_recv() {
-                Ok(Ok(())) => {
-                    self.toast = Some(("诊断包已导出".into(), Instant::now()));
-                    self.diagnostic_export = None;
-                }
-                Ok(Err(error)) => {
-                    self.ui_error = Some(error);
-                    self.diagnostic_export = None;
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.ui_error = Some("诊断包导出线程已停止".into());
-                    self.diagnostic_export = None;
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    ctx.request_repaint_after(std::time::Duration::from_millis(100))
-                }
-            }
-        }
-
-        let now = Instant::now();
-        if self.reported_ppp != ctx.pixels_per_point() {
-            self.reported_ppp = ctx.pixels_per_point();
-            eprintln!("native_pixels_per_point={}", self.reported_ppp);
-        }
-        self.tick_text(ctx, now);
-        if self.timing {
-            eprintln!(
-                "render_frame interval_ms={:.6} canvas_physical={:.0}x{:.0} selected={} preview={} revision={}",
-                now.duration_since(self.last_frame).as_secs_f64() * 1000.,
-                self.canvas_rect.width() * ctx.pixels_per_point(),
-                self.canvas_rect.height() * ctx.pixels_per_point(),
-                self.view.selected.ordered.len(),
-                self.drag.is_some(),
-                self.view
-                    .info
-                    .as_ref()
-                    .map_or("none", |i| i.revision.as_str())
-            );
-        }
-        self.last_frame = now;
-
-        let mut reply = match self.rx.try_recv() {
-            Ok(reply) => Some(reply),
-            Err(std::sync::mpsc::TryRecvError::Empty) => None,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                if let Some(id) = self.pending_task.as_ref().map(|t| t.task_id) {
-                    self.reject_owned_reply(
-                        id,
-                        editor_service::ServiceError {
-                            code: "WORKER_DISCONNECTED".into(),
-                            message: "后台连接已关闭，任务终态未确认".into(),
-                            details: serde_json::json!({}),
-                        },
-                    );
-                }
-                self.routing.disconnect();
-                self.viewport_task = None;
-                self.viewport_sequence = None;
-                self.geometry_task = None;
-                self.geometry_context = None;
-                self.pending_recovery_identity = None;
-                self.pending_recovery_task = None;
-                self.move_place_disconnected();
-                self.canvas_read_disconnected();
-                if self.gerber_import.as_ref().is_some_and(|q| q.active()) {
-                    self.stop_gerber_import(
-                        "后台连接已关闭；当前文件结果未确认，请检查图层后再操作",
-                    );
-                    self.busy = false;
-                    self.pending_task = None;
-                }
-                None
-            }
-        };
-        let mut reply = reply.take().and_then(|(id, view, route)| {
+    fn receive_owned_reply(&mut self, envelope: session::Reply, now: Instant) {
+        let mut reply = Some(envelope).and_then(|(id, view, route)| {
             match self.routing.validate(id, &view, &route, &self.view) {
                 session::Gate::Ignore => None,
                 session::Gate::Result(permit) => Some((id, view, permit)),
@@ -1933,8 +1833,25 @@ impl EditorApp {
             && (id == self.sequence || permit.startup())
         {
             let before_owner = self.routing.owner();
+            let before_recovery_key = self.routing.recovery_key();
+            let before_project = self.view.info.as_ref().map(|info| info.project_id.clone());
             let changed = self.routing.installed(id, &view, &permit);
             self.view = view;
+            self.finish_restore(
+                &before_owner,
+                id,
+                self.view.error.is_none() && self.view.info.is_some(),
+            );
+            if self.tabs.quit_matches(&before_owner, id)
+                && self.view.error.is_some()
+                && !permit.retired()
+            {
+                self.tabs.cancel_quit(&before_owner);
+                self.quit_after_close = false;
+                self.waiting_save = false;
+                self.transition = None;
+                self.routing.clear_intent();
+            }
             if changed {
                 self.migrate_import_publication(id, &before_owner, &permit);
                 if !self.routing.intent_matches() {
@@ -1993,12 +1910,19 @@ impl EditorApp {
                         let _ = self.prefs.save(&store);
                     }
                 }
+                if permit.save() && self.view.message == "工程已保存" {
+                    self.clean_restored_source();
+                }
                 if permit.save()
                     && self.view.message == "工程已保存"
                     && let (Some(dir), Some(info)) =
                         (recovery::directory(), self.view.info.as_ref())
                 {
-                    recovery::remove(&dir, &info.project_id);
+                    recovery::remove_scoped(
+                        &dir,
+                        &info.project_id,
+                        Some(&self.routing.recovery_key()),
+                    );
                 }
             }
             self.selected_flags =
@@ -2071,7 +1995,14 @@ impl EditorApp {
             if permit.save() && !self.waiting_save && self.transition.is_none() {
                 self.routing.clear_intent();
             }
-            if self.quit_after_close && self.view.info.is_none() {
+            if permit.close() && self.view.info.is_none() {
+                self.clean_restored_source();
+                if let (Some(dir), Some(project)) = (recovery::directory(), before_project) {
+                    recovery::remove_scoped(&dir, &project, Some(&before_recovery_key));
+                }
+                self.tabs.closed = true;
+                self.tabs.retired_close = permit.retired();
+            } else if self.quit_after_close && self.view.info.is_none() {
                 self.allow_quit = true;
             }
             self.accept_layer_replies(now);
@@ -2087,6 +2018,98 @@ impl EditorApp {
             self.settle_import_intent(id);
             self.complete_move_place_reply(id);
         }
+    }
+    fn observed_update_body(
+        &mut self,
+        ctx: &egui::Context,
+        trace_update: &Option<frame_trace::Update>,
+    ) {
+        self.arbitrate_point_input_frame(ctx);
+        self.shortcuts.poll();
+        crate::ui::command_widgets::install_shortcuts(ctx, &self.shortcuts.current.config);
+        if let Some(rx) = &self.diagnostic_export {
+            match rx.try_recv() {
+                Ok(Ok(())) => {
+                    self.toast = Some(("诊断包已导出".into(), Instant::now()));
+                    self.diagnostic_export = None;
+                }
+                Ok(Err(error)) => {
+                    self.ui_error = Some(error);
+                    self.diagnostic_export = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.ui_error = Some("诊断包导出线程已停止".into());
+                    self.diagnostic_export = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100))
+                }
+            }
+        }
+
+        let now = Instant::now();
+        if self.reported_ppp != ctx.pixels_per_point() {
+            self.reported_ppp = ctx.pixels_per_point();
+            eprintln!("native_pixels_per_point={}", self.reported_ppp);
+        }
+        self.tick_text(ctx, now);
+        if self.timing {
+            eprintln!(
+                "render_frame interval_ms={:.6} canvas_physical={:.0}x{:.0} selected={} preview={} revision={}",
+                now.duration_since(self.last_frame).as_secs_f64() * 1000.,
+                self.canvas_rect.width() * ctx.pixels_per_point(),
+                self.canvas_rect.height() * ctx.pixels_per_point(),
+                self.view.selected.ordered.len(),
+                self.drag.is_some(),
+                self.view
+                    .info
+                    .as_ref()
+                    .map_or("none", |i| i.revision.as_str())
+            );
+        }
+        self.last_frame = now;
+
+        let mut reply = match self.rx.try_recv() {
+            Ok(reply) => Some(reply),
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                if let Some(id) = self.pending_task.as_ref().map(|t| t.task_id) {
+                    self.reject_owned_reply(
+                        id,
+                        editor_service::ServiceError {
+                            code: "WORKER_DISCONNECTED".into(),
+                            message: "后台连接已关闭，任务终态未确认".into(),
+                            details: serde_json::json!({}),
+                        },
+                    );
+                }
+                self.routing.disconnect();
+                self.disconnect_parked_sessions();
+                self.viewport_task = None;
+                self.viewport_sequence = None;
+                self.geometry_task = None;
+                self.geometry_context = None;
+                self.pending_recovery_identity = None;
+                self.pending_recovery_task = None;
+                self.move_place_disconnected();
+                self.canvas_read_disconnected();
+                if self.gerber_import.as_ref().is_some_and(|q| q.active()) {
+                    self.stop_gerber_import(
+                        "后台连接已关闭；当前文件结果未确认，请检查图层后再操作",
+                    );
+                    self.busy = false;
+                    self.pending_task = None;
+                }
+                None
+            }
+        };
+        if let Some(envelope) = reply.take() {
+            self.receive_session_reply(envelope, now);
+        }
+        self.tick_parked_recovery(now, ctx);
+        self.advance_tab_change(ctx);
+        self.show_session_tabs(ctx);
+        self.enforce_tab_input_barrier(ctx);
         if self.drag.is_none()
             || self.view.scene.is_none()
             || self.view.blocked.is_some()
@@ -2237,7 +2260,8 @@ impl EditorApp {
                 task.cancel_token.cancel();
             }
         }
-        let modal_open = self.shortcuts.open
+        let modal_open = self.tabs.block_document_input
+            || self.shortcuts.open
             || self.modal.is_some()
             || self.layer_dialog.is_some()
             || self.close_prompt
@@ -2406,6 +2430,7 @@ impl EditorApp {
         #[cfg(feature = "internal-evidence")]
         native_ui::profile("pre-toolbar");
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+                if self.tabs.block_document_input { ui.disable(); }
             if modal_open {
                 ui.disable();
             }
@@ -2427,7 +2452,7 @@ impl EditorApp {
                         for path in self.prefs.recent_projects.clone() {
                             let label = path.file_name().unwrap_or_default().to_string_lossy();
                             if ui.button(label).clicked() {
-                                if path.is_file() { self.begin_transition(project_ui::Transition::Open(path)); }
+                                if path.is_file() { self.request_new_session(Action::OpenProject(path, false)); }
                                 else { self.ui_error = Some("最近使用的工程文件不存在；可从列表移除".into()); }
                                 ui.close();
                             }
@@ -2784,6 +2809,9 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
             .frame(frame)
             .exact_height(status_height)
             .show(ctx, |ui| {
+                if self.tabs.block_document_input {
+                    ui.disable();
+                }
                 let coordinates = ctx
                     .input(|i| i.pointer.hover_pos())
                     .filter(|p| self.canvas_rect.contains(*p))
@@ -2852,6 +2880,9 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
             // truncated label would draw over them (found in the native §107 check).
             .width_range(240.0..=480.)
             .show(ctx, |ui| {
+                if self.tabs.block_document_input {
+                    ui.disable();
+                }
                 if modal_open {
                     ui.disable();
                 }
@@ -2889,6 +2920,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
             .default_width(260.)
             .width_range(230.0..=380.)
             .show(ctx, |ui| {
+                if self.tabs.block_document_input { ui.disable(); }
                 ui.add_space(crate::ui::tokens::SPACING_XL);
                 if modal_open {
                     ui.disable();
@@ -2981,6 +3013,9 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
         native_ui::profile("properties");
         self.operation_source = rcam_diagnostics::Source::Toolbar;
         egui::TopBottomPanel::top("grid-tools").show(ctx, |ui| {
+            if self.tabs.block_document_input {
+                ui.disable();
+            }
             if modal_open {
                 ui.disable();
             }
@@ -3051,6 +3086,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::from_rgb(14, 18, 22)))
             .show(ctx, |ui| {
+                if self.tabs.block_document_input { ui.disable(); }
                 let mut cursor_label = None;
                 let mut measure_hover = None;
                 self.object_snap_runtime.current = None;

@@ -302,6 +302,9 @@ pub struct ClickNavigation {
     epoch: u64,
 }
 impl ClickNavigation {
+    pub(crate) fn invalidate(&mut self) {
+        self.previous = None;
+    }
     #[cfg(feature = "internal-evidence")]
     pub(crate) fn evidence_epoch(&self) -> u64 {
         self.epoch

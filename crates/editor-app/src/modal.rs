@@ -426,6 +426,8 @@ pub(crate) mod tests {
         let (tx, _requests) = std::sync::mpsc::sync_channel(1);
         let (reply, rx) = std::sync::mpsc::sync_channel(1);
         EditorApp {
+            tabs: Default::default(),
+            document_memory: Default::default(),
             routing: Default::default(),
             pending_task: None,
             canvas_read: None,
@@ -493,6 +495,7 @@ pub(crate) mod tests {
                 editor_core::command::Platform::current(),
             ),
             recovery_candidate: None,
+            recovery_source: None,
             recovery_prompt_reported: None,
             recovery_attempted_identity: None,
             recovery_ignore_confirm: false,

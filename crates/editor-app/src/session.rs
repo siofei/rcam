@@ -1,7 +1,7 @@
-//! Internal worker ownership. Production exposes one UI session; additional
-//! records are exercised only by tests until UI/save/recovery isolation ships.
+//! Internal ownership for the single worker and independently held documents.
 use crate::state::{Action, Model, ModelSessionState, View};
 use editor_service::{ServiceError, task::TaskContext};
+use eframe::egui;
 use std::{collections::HashMap, sync::Arc};
 
 pub(crate) type Request = (
@@ -28,6 +28,9 @@ impl PartialEq for Owner {
 }
 impl Eq for Owner {}
 impl Owner {
+    pub(crate) fn slot(&self) -> u64 {
+        self.slot
+    }
     fn next(&self, generation: u64) -> Self {
         Self {
             namespace: self.namespace.clone(),
@@ -56,6 +59,10 @@ pub(crate) struct RequestRoute {
     recovery: bool,
     empty_import: bool,
     intent: Option<Intent>,
+    registration: bool,
+    retire: bool,
+    close: bool,
+    recovery_key: String,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct ReplyRoute {
@@ -63,6 +70,7 @@ pub(crate) struct ReplyRoute {
     result_owner: Owner,
     rejected: Option<ServiceError>,
     startup: bool,
+    retired: bool,
 }
 impl RequestRoute {
     /// Enumerate every Action: adding a new action requires an ownership choice.
@@ -71,6 +79,7 @@ impl RequestRoute {
             Action::Open(..)
             | Action::OpenProject(..)
             | Action::RestoreProject(..)
+            | Action::RestoreSnapshot(..)
             | Action::NewWorkspace
             | Action::DiscardNewWorkspace
             | Action::Close(..) => true,
@@ -148,6 +157,7 @@ impl RequestRoute {
             result_owner,
             rejected: None,
             startup: false,
+            retired: self.retire && view.info.is_none(),
         })
     }
 }
@@ -167,6 +177,12 @@ pub(crate) struct Permit {
     accepted: Option<Box<Accepted>>,
 }
 impl Permit {
+    pub(crate) fn close(&self) -> bool {
+        self.accepted.as_ref().is_some_and(|a| a.route.close)
+    }
+    pub(crate) fn retired(&self) -> bool {
+        self.route.retired
+    }
     pub(crate) fn startup(&self) -> bool {
         self.route.startup
     }
@@ -198,6 +214,9 @@ pub(crate) struct SessionRouting {
     intent: Option<Intent>,
     intent_serial: u64,
     installed_save: Option<(u64, Intent, bool)>,
+    recovery_namespace: Arc<str>,
+    registration: bool,
+    retire_on_close: bool,
 }
 impl Default for SessionRouting {
     fn default() -> Self {
@@ -216,10 +235,51 @@ impl Default for SessionRouting {
             intent: None,
             intent_serial: 0,
             installed_save: None,
+            recovery_namespace: format!(
+                "{}:{:?}:{:?}",
+                std::process::id(),
+                std::time::SystemTime::now(),
+                std::time::Instant::now()
+            )
+            .into(),
+            registration: false,
+            retire_on_close: false,
         }
     }
 }
+impl ReplyRoute {
+    pub(crate) fn slot(&self) -> u64 {
+        self.request_owner.slot
+    }
+}
 impl SessionRouting {
+    pub(crate) fn fork(&self, slot: u64) -> Self {
+        Self {
+            owner: Owner {
+                namespace: self.owner.namespace.clone(),
+                slot,
+                generation: 0,
+            },
+            recovery_namespace: self.recovery_namespace.clone(),
+            registration: true,
+            ..Default::default()
+        }
+    }
+    pub(crate) fn recovery_key(&self) -> String {
+        editor_core::hash::sha256_hex(
+            format!(
+                "{}:{}:{}",
+                self.recovery_namespace, self.owner.slot, self.owner.generation
+            )
+            .as_bytes(),
+        )
+    }
+    pub(crate) fn idle(&self) -> bool {
+        self.pending.is_empty() && !self.awaiting_startup && !self.disconnected
+    }
+    pub(crate) fn retire_on_close(&mut self, retire: bool) {
+        self.retire_on_close = retire;
+    }
     pub(crate) fn owner(&self) -> Owner {
         self.owner.clone()
     }
@@ -254,9 +314,15 @@ impl SessionRouting {
             recovery: matches!(action, Action::RecoveryWrite(..)),
             empty_import: self.binding.is_none() && matches!(action, Action::ImportGerbers(..)),
             intent: self.intent.clone(),
+            registration: self.registration,
+            retire: self.retire_on_close && matches!(action, Action::Close(..)),
+            close: matches!(action, Action::Close(..)),
+            recovery_key: self.recovery_key(),
         })
     }
     pub(crate) fn accepted(&mut self, route: RequestRoute, task: TaskContext) {
+        // Every request may carry registration until one owned publication.
+        // A full queue does not imply that the worker saw a registration.
         self.startup = false;
         self.installed_save = None;
         assert!(
@@ -318,7 +384,7 @@ impl SessionRouting {
             return Gate::Ignore;
         }
         if let Some(cause) = &reply.rejected {
-            if reply.result_owner != reply.request_owner {
+            if reply.result_owner != reply.request_owner || reply.retired {
                 return Gate::Ignore;
             }
             self.pending.remove(&id);
@@ -327,7 +393,7 @@ impl SessionRouting {
         let Ok(expected) = accepted.route.reply(view) else {
             return Gate::Ignore;
         };
-        if reply.result_owner != expected.result_owner {
+        if reply.result_owner != expected.result_owner || reply.retired != expected.retired {
             return Gate::Ignore;
         }
         let accepted = self.pending.remove(&id).unwrap();
@@ -338,6 +404,7 @@ impl SessionRouting {
     }
     /// Only called after the existing exact receipt/full-view install fence.
     pub(crate) fn installed(&mut self, id: u64, view: &View, permit: &Permit) -> bool {
+        self.registration = false;
         let changed = self.owner != permit.route.result_owner;
         if changed {
             self.owner = permit.route.result_owner.clone();
@@ -424,6 +491,7 @@ impl SessionRouting {
                 result_owner: self.owner.clone(),
                 rejected: None,
                 startup: false,
+                retired: false,
             },
             |a| {
                 a.route.reply(view).unwrap_or_else(|_| ReplyRoute {
@@ -431,6 +499,7 @@ impl SessionRouting {
                     result_owner: a.route.owner.clone(),
                     rejected: None,
                     startup: false,
+                    retired: false,
                 })
             },
         )
@@ -468,18 +537,73 @@ pub(crate) struct WorkerHost {
     pub(crate) model: Model,
     records: HashMap<u64, Record>,
     executing: u64,
+    namespace: Arc<()>,
+    last_slot: u64,
 }
 impl WorkerHost {
     pub(crate) fn new(owner: Owner, model: Model) -> Self {
         let executing = owner.slot;
+        let namespace = owner.namespace.clone();
         let records = HashMap::from([(executing, Record { owner, state: None })]);
         Self {
             model,
             records,
             executing,
+            namespace,
+            last_slot: executing,
         }
     }
-    /// UI registers exactly one slot. No production registration/switch API.
+    pub(crate) fn route_action(
+        &mut self,
+        request: &RequestRoute,
+        action: &Action,
+    ) -> Result<(), ServiceError> {
+        if !self.records.contains_key(&request.owner.slot) {
+            if !request.registration
+                || !Arc::ptr_eq(&request.owner.namespace, &self.namespace)
+                || request.owner.generation != 0
+                || request.binding.is_some()
+                || request.owner.slot <= self.last_slot
+                || self.records.len() >= crate::multiproject::MAX_SESSIONS
+                || !matches!(
+                    action,
+                    Action::NewWorkspace
+                        | Action::OpenProject(..)
+                        | Action::RestoreProject(..)
+                        | Action::RestoreSnapshot(..)
+                )
+            {
+                return Err(error("新工程登记无效或会话数量已达上限"));
+            }
+            self.last_slot = request.owner.slot;
+            self.records.insert(
+                request.owner.slot,
+                Record {
+                    owner: request.owner.clone(),
+                    state: Some(ModelSessionState::empty()),
+                },
+            );
+        }
+        self.route(request)?;
+        self.model.recovery_key = Some(request.recovery_key.clone());
+        self.model.reserved_paths = self
+            .records
+            .iter()
+            .filter(|(slot, _)| **slot != self.executing)
+            .filter_map(|(_, record)| {
+                record
+                    .state
+                    .as_ref()?
+                    .view()
+                    .info
+                    .as_ref()?
+                    .project_path
+                    .as_ref()
+                    .map(std::path::PathBuf::from)
+            })
+            .collect();
+        Ok(())
+    }
     pub(crate) fn route(&mut self, request: &RequestRoute) -> Result<(), ServiceError> {
         let Some(record) = self.records.get(&request.owner.slot) else {
             return Err(error("工程会话不存在"));
@@ -507,8 +631,10 @@ impl WorkerHost {
                 .state
                 .take()
                 .unwrap();
-            self.records.get_mut(&self.executing).unwrap().state =
-                Some(self.model.take_session_state());
+            let old = self.model.take_session_state();
+            if let Some(record) = self.records.get_mut(&self.executing) {
+                record.state = Some(old);
+            }
             self.model.install_session_state(state);
             self.executing = request.owner.slot;
         }
@@ -529,7 +655,11 @@ impl WorkerHost {
             return Err(error("后台工程版本未确认"));
         }
         let reply = request.reply(&self.model.view)?;
-        self.records.get_mut(&self.executing).unwrap().owner = reply.result_owner.clone();
+        if reply.retired {
+            self.records.remove(&self.executing);
+        } else {
+            self.records.get_mut(&self.executing).unwrap().owner = reply.result_owner.clone();
+        }
         Ok(reply)
     }
     pub(crate) fn rejection(request: &RequestRoute, cause: ServiceError) -> ReplyRoute {
@@ -538,6 +668,7 @@ impl WorkerHost {
             result_owner: request.owner.clone(),
             rejected: Some(cause),
             startup: false,
+            retired: false,
         }
     }
     #[cfg(any(test, feature = "internal-evidence"))]
@@ -550,7 +681,63 @@ impl WorkerHost {
             result_owner: record.owner.clone(),
             rejected: None,
             startup: true,
+            retired: false,
         }
+    }
+}
+
+/// The production bounded-channel worker, shared with real threaded regressions.
+pub(crate) fn run_worker(
+    mut host: WorkerHost,
+    request: std::sync::mpsc::Receiver<Request>,
+    reply: std::sync::mpsc::SyncSender<Reply>,
+    ctx: egui::Context,
+) {
+    #[cfg(feature = "internal-evidence")]
+    use crate::{native_a2, native_pmix, native_s5m1};
+    use std::time::Instant;
+    while let Ok((id, source, action, task, route)) = request.recv() {
+        if let Err(cause) = host.route_action(&route, &action) {
+            if reply
+                .send((id, View::default(), WorkerHost::rejection(&route, cause)))
+                .is_err()
+            {
+                break;
+            }
+            ctx.request_repaint();
+            continue;
+        }
+        let model = &mut host.model;
+        let start = Instant::now();
+        #[cfg(feature = "internal-evidence")]
+        let measured_action = native_s5m1::action_label(&action);
+        #[cfg(feature = "internal-evidence")]
+        let pmix_action = native_pmix::action_label(&action);
+        #[cfg(feature = "internal-evidence")]
+        native_a2::worker_begin(&task, &model.view);
+        rcam_diagnostics::with_source(source, || model.run_task(task, action));
+        #[cfg(feature = "internal-evidence")]
+        native_a2::worker_finished(id, &model.view);
+        #[cfg(feature = "internal-evidence")]
+        native_s5m1::worker_result(id, measured_action, start, &model.view);
+        #[cfg(feature = "internal-evidence")]
+        native_pmix::worker_result(id, pmix_action, start, &model.view);
+        if start.elapsed().as_millis() > 100 {
+            rcam_diagnostics::runtime_event(rcam_diagnostics::Level::Warn, "gui.worker.slow");
+        }
+        #[cfg(feature = "internal-evidence")]
+        native_a2::returning(id);
+        let result = model.view.clone();
+        let envelope = match host.finish(&route) {
+            Ok(route) => (id, result, route),
+            Err(cause) => (id, View::default(), WorkerHost::rejection(&route, cause)),
+        };
+        if reply.send(envelope).is_err() {
+            break;
+        }
+        ctx.request_repaint();
+        #[cfg(feature = "internal-evidence")]
+        native_s5m1::gpu_event("worker-request-repaint", 1);
     }
 }
 
@@ -747,6 +934,10 @@ mod worker_tests {
             recovery: false,
             empty_import: false,
             intent: None,
+            registration: false,
+            retire: false,
+            close: false,
+            recovery_key: editor_core::hash::sha256_hex(b"legacy fixture"),
         }
     }
     fn apply(host: &mut WorkerHost, route: &RequestRoute, id: u64, action: Action) {

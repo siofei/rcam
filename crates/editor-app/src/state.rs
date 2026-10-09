@@ -229,6 +229,9 @@ fn operation_id(origin: &editor_core::ObjectOrigin) -> Option<&str> {
     }
 }
 pub struct Model {
+    pub(crate) recovery_key: Option<String>,
+    recovery_reservation: Option<String>,
+    pub(crate) reserved_paths: Vec<PathBuf>,
     pub(crate) active_cancel: Option<editor_service::task::CancellationToken>,
     pub service: ApplicationService,
     pub view: View,
@@ -244,6 +247,8 @@ pub struct Model {
 /// Document-owned worker state. The service, executing token and scene serial
 /// stay in the host when a state is moved or a replacement is rolled back.
 pub(crate) struct ModelSessionState {
+    recovery_key: Option<String>,
+    recovery_reservation: Option<String>,
     view: View,
     snapshot: Option<Arc<RenderSnapshot>>,
     metrics_identity: String,
@@ -253,6 +258,19 @@ pub(crate) struct ModelSessionState {
     block_display_cache: crate::block_display::BlockDisplayCache,
 }
 impl ModelSessionState {
+    pub(crate) fn empty() -> Self {
+        Self {
+            recovery_key: None,
+            recovery_reservation: None,
+            view: View::default(),
+            snapshot: None,
+            metrics_identity: String::new(),
+            world_index: Default::default(),
+            viewport: None,
+            ppm: 20.,
+            block_display_cache: Default::default(),
+        }
+    }
     pub(crate) fn view(&self) -> &View {
         &self.view
     }
@@ -294,11 +312,14 @@ pub enum Action {
     OpenProject(PathBuf, bool),
     SaveProject(Option<PathBuf>, bool, Option<rcam_project::CameraState>),
     ProjectWorkspace(rcam_project::WorkspaceProjectState),
+    #[allow(dead_code)] // Original byte restore path retained for internal fixtures.
     RestoreProject(Vec<u8>),
+    RestoreSnapshot(PathBuf, crate::recovery::RecoveryMetadata),
     RecoveryWrite(PathBuf),
     /// Start an empty Workspace (refuses while there are unexported edits).
     NewWorkspace,
     /// Same, after the user explicitly agreed to lose unexported edits.
+    #[allow(dead_code)] // Explicit replacement retained for internal evidence.
     DiscardNewWorkspace,
     /// Batch import: all files or none; every file becomes its own layer.
     ImportGerbers(Vec<PathBuf>),
@@ -354,6 +375,9 @@ pub enum Action {
 impl Default for Model {
     fn default() -> Self {
         Self {
+            recovery_key: None,
+            recovery_reservation: None,
+            reserved_paths: Vec::new(),
             active_cancel: None,
             service: ApplicationService::new(),
             view: View::default(),
@@ -416,6 +440,8 @@ pub fn selected_center(view: &View) -> Result<MmPoint, ServiceError> {
 impl Model {
     pub(crate) fn take_session_state(&mut self) -> ModelSessionState {
         ModelSessionState {
+            recovery_key: self.recovery_key.take(),
+            recovery_reservation: self.recovery_reservation.take(),
             view: std::mem::take(&mut self.view),
             snapshot: self.snapshot.take(),
             metrics_identity: std::mem::take(&mut self.metrics_identity),
@@ -427,6 +453,8 @@ impl Model {
     }
 
     pub(crate) fn install_session_state(&mut self, state: ModelSessionState) {
+        self.recovery_key = state.recovery_key;
+        self.recovery_reservation = state.recovery_reservation;
         self.view = state.view;
         self.snapshot = state.snapshot;
         self.metrics_identity = state.metrics_identity;
@@ -580,6 +608,7 @@ impl Model {
         Ok(())
     }
     pub fn open_project(&mut self, path: &Path, discard: bool) -> Result<(), ServiceError> {
+        crate::session_files::check_reserved(path, &self.reserved_paths)?;
         if !discard && self.view.info.as_ref().is_some_and(|d| d.project_dirty) {
             return Err(error("CONFIRMATION_REQUIRED", "当前工程有未保存修改"));
         }
@@ -656,6 +685,9 @@ impl Model {
         let grant = path
             .map(Path::to_path_buf)
             .or_else(|| d.project_path.as_ref().map(PathBuf::from));
+        if let Some(path) = grant.as_deref() {
+            crate::session_files::check_reserved(path, &self.reserved_paths)?;
+        }
         if let Some(path) = grant.as_deref() {
             self.service.grant_file_access(
                 path.parent()
@@ -2098,6 +2130,17 @@ impl Model {
                 self.service.project_set_workspace(&id, settings)?;
                 self.refresh(false)
             }
+            Action::RestoreSnapshot(dir, metadata) => {
+                let bytes = crate::recovery::load(&dir, &metadata)
+                    .map_err(|_| error("IO_ERROR", "恢复快照损坏或无法读取；原记录已保留"))?;
+                let result = self.restore_project(&bytes);
+                crate::recovery::event(if result.is_ok() {
+                    "recovery.restore_success"
+                } else {
+                    "recovery.restore_failed"
+                });
+                result
+            }
             Action::RestoreProject(bytes) => {
                 let result = self.restore_project(&bytes);
                 crate::recovery::event(if result.is_ok() {
@@ -2110,8 +2153,16 @@ impl Model {
             Action::RecoveryWrite(dir) => {
                 let d = self.info()?;
                 if d.project_dirty {
+                    if let Some(key) = self.recovery_key.as_ref()
+                        && self.recovery_reservation.as_ref() != Some(key)
+                    {
+                        crate::recovery::reserve_record(&dir, &d.project_id, key).map_err(
+                            |_| error("IO_ERROR", "恢复记录身份无法独占；现有恢复记录已保留"),
+                        )?;
+                        self.recovery_reservation = Some(key.clone());
+                    }
                     let bytes = self.service.project_recovery_bytes(&d.document_id)?;
-                    crate::recovery::write(&dir, &d, &bytes)
+                    crate::recovery::write_scoped(&dir, &d, &bytes, self.recovery_key.as_deref())
                         .map_err(|e| error("IO_ERROR", &e.to_string()))?;
                 }
                 Ok(())
@@ -2472,8 +2523,9 @@ impl Model {
                 Ok(())
             }
             Action::Close(discard) => {
-                let d = self.info()?;
-                self.service.close(&d.document_id, &d.revision, discard)?;
+                if let Some(d) = &self.view.info {
+                    self.service.close(&d.document_id, &d.revision, discard)?;
+                }
                 self.view = View::default();
                 self.snapshot = None;
                 self.viewport = None;
@@ -2610,6 +2662,8 @@ pub(crate) mod session_tests {
     #[test]
     fn move_complete_state_retains_arcs_metrics_viewport_and_cache() {
         let mut model = fixture();
+        model.recovery_key = Some("retained key".into());
+        model.recovery_reservation = Some("retained reservation".into());
         let snapshot = model.snapshot.clone().unwrap();
         let index = model.world_index.clone();
         let scene = model.view.scene.clone().unwrap();
@@ -2631,6 +2685,11 @@ pub(crate) mod session_tests {
         assert!(model.view.info.is_none() && model.snapshot.is_none());
         assert_eq!(model.block_display_cache.stats(), (0, 0));
         model.install_session_state(state);
+        assert_eq!(model.recovery_key.as_deref(), Some("retained key"));
+        assert_eq!(
+            model.recovery_reservation.as_deref(),
+            Some("retained reservation")
+        );
         assert!(Arc::ptr_eq(&snapshot, model.snapshot.as_ref().unwrap()));
         assert!(Arc::ptr_eq(&index, &model.world_index));
         assert!(Arc::ptr_eq(&scene, model.view.scene.as_ref().unwrap()));
@@ -2649,6 +2708,8 @@ pub(crate) mod session_tests {
     fn candidate_prepare_cleanup_and_old_close_failures_restore_whole_source() {
         for fault in ["prepare", "cleanup", "old-close"] {
             let mut model = fixture();
+            model.recovery_key = Some("source key".into());
+            model.recovery_reservation = Some("source reservation".into());
             let before = model.view.info.clone();
             let snapshot = model.snapshot.clone().unwrap();
             let scene = model.view.scene.clone().unwrap();
@@ -2676,6 +2737,11 @@ pub(crate) mod session_tests {
             });
             assert!(result.is_err());
             assert_eq!(model.view.info, before);
+            assert_eq!(model.recovery_key.as_deref(), Some("source key"));
+            assert_eq!(
+                model.recovery_reservation.as_deref(),
+                Some("source reservation")
+            );
             assert!(Arc::ptr_eq(&snapshot, model.snapshot.as_ref().unwrap()));
             assert!(Arc::ptr_eq(&scene, model.view.scene.as_ref().unwrap()));
             assert!(Arc::ptr_eq(&index, &model.world_index));

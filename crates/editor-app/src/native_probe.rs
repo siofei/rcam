@@ -682,7 +682,7 @@ pub fn action_text(a: &Action) -> String {
             "SaveProject {} replace={replace}",
             path.as_deref().map_or("current".into(), basename)
         ),
-        Action::RestoreProject(_) => "RestoreProject".into(),
+        Action::RestoreProject(_) | Action::RestoreSnapshot(..) => "RestoreProject".into(),
         Action::RecoveryWrite(_) => "RecoveryWrite".into(),
         Action::NewWorkspace => "NewWorkspace".into(),
         Action::DiscardNewWorkspace => "DiscardNewWorkspace".into(),
