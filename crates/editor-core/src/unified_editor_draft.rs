@@ -27,6 +27,30 @@ struct Target {
     object_id: String,
 }
 
+/// Borrowed prospective manufacturing geometry in authoritative source-slot order.
+/// The host may prepare artifacts, but cannot change or replace candidate geometry.
+#[derive(Clone, Copy)]
+pub struct DraftCandidate<'a> {
+    targets: &'a [Target],
+    geometry: &'a [SemanticGeometry],
+}
+impl<'a> DraftCandidate<'a> {
+    pub fn objects(
+        self,
+    ) -> impl ExactSizeIterator<Item = (&'a str, &'a str, &'a SemanticGeometry)> {
+        self.targets
+            .iter()
+            .zip(self.geometry)
+            .map(|(target, geometry)| {
+                (
+                    target.layer_id.as_str(),
+                    target.object_id.as_str(),
+                    geometry,
+                )
+            })
+    }
+}
+
 /// Only typed transforms can change this object. Geometry views are borrowed/read-only.
 #[derive(Debug)]
 pub struct ManufacturingDraft {
@@ -179,6 +203,22 @@ impl EditHistory {
         checkpoint: &mut impl FnMut() -> Result<(), EditError>,
         begin_commit: &mut impl FnMut(bool) -> Result<(), EditError>,
     ) -> Result<Vec<String>, EditError> {
+        self.apply_manufacturing_draft_prepared(
+            document,
+            draft,
+            checkpoint,
+            &mut |_| Ok(()),
+            begin_commit,
+        )
+    }
+    pub fn apply_manufacturing_draft_prepared(
+        &mut self,
+        document: &mut SemanticDocument,
+        draft: &ManufacturingDraft,
+        checkpoint: &mut impl FnMut() -> Result<(), EditError>,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), EditError>,
+        begin_commit: &mut impl FnMut(bool) -> Result<(), EditError>,
+    ) -> Result<Vec<String>, EditError> {
         draft.check_fence(self, document)?;
         let candidate = draft.calculate(document, checkpoint)?;
         let final_work = candidate.as_ref().unwrap_or(&draft.work);
@@ -222,6 +262,8 @@ impl EditHistory {
         }
         checkpoint()?;
         if parts.is_empty() {
+            prepare(draft.candidate(final_work))?;
+            checkpoint()?;
             // NoChange is a successful terminal with no main content/history publication.
             begin_commit(false)?;
             return Ok(vec![]);
@@ -240,6 +282,7 @@ impl EditHistory {
             bytes: demand.history_bytes,
         };
         check_transaction(document, &tx, true)?;
+        prepare(draft.candidate(final_work))?;
         checkpoint()?;
         begin_commit(true)?;
         Ok(self.commit(document, tx))
@@ -247,6 +290,15 @@ impl EditHistory {
 }
 
 impl ManufacturingDraft {
+    fn candidate<'a>(&'a self, geometry: &'a [SemanticGeometry]) -> DraftCandidate<'a> {
+        DraftCandidate {
+            targets: &self.targets,
+            geometry,
+        }
+    }
+    pub fn work_candidate(&self) -> DraftCandidate<'_> {
+        self.candidate(&self.work)
+    }
     pub fn generation(&self) -> u64 {
         self.generation
     }
@@ -433,8 +485,25 @@ impl ManufacturingDraft {
         checkpoint: &mut impl FnMut() -> Result<(), EditError>,
         begin_publish: &mut impl FnMut() -> Result<(), EditError>,
     ) -> Result<(), EditError> {
+        self.preview_step_prepared(
+            history,
+            document,
+            checkpoint,
+            &mut |_| Ok(()),
+            begin_publish,
+        )
+    }
+    pub fn preview_step_prepared(
+        &mut self,
+        history: &EditHistory,
+        document: &SemanticDocument,
+        checkpoint: &mut impl FnMut() -> Result<(), EditError>,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), EditError>,
+        begin_publish: &mut impl FnMut() -> Result<(), EditError>,
+    ) -> Result<(), EditError> {
         self.check_fence(history, document)?;
         let preview = self.calculate(document, checkpoint)?;
+        prepare(self.candidate(preview.as_ref().unwrap_or(&self.work)))?;
         checkpoint()?;
         begin_publish()?;
         self.preview = preview;
@@ -445,6 +514,22 @@ impl ManufacturingDraft {
         history: &EditHistory,
         document: &SemanticDocument,
         checkpoint: &mut impl FnMut() -> Result<(), EditError>,
+        begin_publish: &mut impl FnMut() -> Result<(), EditError>,
+    ) -> Result<u64, EditError> {
+        self.execute_step_prepared(
+            history,
+            document,
+            checkpoint,
+            &mut |_| Ok(()),
+            begin_publish,
+        )
+    }
+    pub fn execute_step_prepared(
+        &mut self,
+        history: &EditHistory,
+        document: &SemanticDocument,
+        checkpoint: &mut impl FnMut() -> Result<(), EditError>,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), EditError>,
         begin_publish: &mut impl FnMut() -> Result<(), EditError>,
     ) -> Result<u64, EditError> {
         self.check_fence(history, document)?;
@@ -462,6 +547,7 @@ impl ManufacturingDraft {
         self.undo
             .try_reserve_exact(1)
             .map_err(|_| EditError::ResourceLimit)?;
+        prepare(self.candidate(&candidate))?;
         checkpoint()?;
         begin_publish()?;
         self.undo.push(Arc::clone(&self.work));
@@ -473,6 +559,13 @@ impl ManufacturingDraft {
         Ok(next)
     }
     pub fn undo(&mut self) -> Result<u64, EditError> {
+        self.undo_prepared(&mut |_| Ok(()), &mut || Ok(()))
+    }
+    pub fn undo_prepared(
+        &mut self,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), EditError>,
+        begin_publish: &mut impl FnMut() -> Result<(), EditError>,
+    ) -> Result<u64, EditError> {
         if self.undo.is_empty() {
             return Err(EditError::EmptyHistory);
         }
@@ -481,6 +574,8 @@ impl ManufacturingDraft {
         self.redo
             .try_reserve_exact(1)
             .map_err(|_| EditError::ResourceLimit)?;
+        prepare(self.candidate(self.undo.last().unwrap()))?;
+        begin_publish()?;
         self.redo.push(Arc::clone(&self.work));
         self.work = self.undo.pop().unwrap();
         self.preview = None;
@@ -489,6 +584,13 @@ impl ManufacturingDraft {
         Ok(next)
     }
     pub fn redo(&mut self) -> Result<u64, EditError> {
+        self.redo_prepared(&mut |_| Ok(()), &mut || Ok(()))
+    }
+    pub fn redo_prepared(
+        &mut self,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), EditError>,
+        begin_publish: &mut impl FnMut() -> Result<(), EditError>,
+    ) -> Result<u64, EditError> {
         if self.redo.is_empty() {
             return Err(EditError::EmptyHistory);
         }
@@ -497,6 +599,8 @@ impl ManufacturingDraft {
         self.undo
             .try_reserve_exact(1)
             .map_err(|_| EditError::ResourceLimit)?;
+        prepare(self.candidate(self.redo.last().unwrap()))?;
+        begin_publish()?;
         self.undo.push(Arc::clone(&self.work));
         self.work = self.redo.pop().unwrap();
         self.preview = None;
@@ -505,7 +609,16 @@ impl ManufacturingDraft {
         Ok(next)
     }
     pub fn reset(&mut self) -> Result<u64, EditError> {
+        self.reset_prepared(&mut |_| Ok(()), &mut || Ok(()))
+    }
+    pub fn reset_prepared(
+        &mut self,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), EditError>,
+        begin_publish: &mut impl FnMut() -> Result<(), EditError>,
+    ) -> Result<u64, EditError> {
         let next = self.next_generation()?;
+        prepare(self.candidate(&self.entry))?;
+        begin_publish()?;
         self.work = Arc::clone(&self.entry);
         self.undo.clear();
         self.redo.clear();

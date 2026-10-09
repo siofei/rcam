@@ -1341,3 +1341,7 @@ S5-I2-C display-only follow-up, R08/R18 and existing AT-025 local coverage (C-04
 ### S5-I1 near-contour source amendment (2026-10-08)
 
 `S5_NEAR_CONTOUR_SELECTION.md` freezes the authorized near-only analytic distance ranking while direct hits keep zero-tolerance layer/exposure priority, one-pass score/error equivalence and anchor-stable logical cycling. Default six physical pixels, geometry/Clear/Block meanings, ProbeDrag and PointMove ownership remain. Incoming Ctrl Add/box Add/All now excludes locks; Replace/Remove supports inspection and mixed edits still reject atomically. This supersedes the earlier All/Add inspection-lock behavior. Ordinary source/CPU checks are distinct from pending native mouse/build validation; existing acceptance IDs and thresholds are unchanged.
+
+## S5/P3 accumulating editor session integration
+
+Bounded cb9 has independent acceptance; UE-A integration is authorized on frozen 8a. [ADR0063](adr/0063-unified-editor-publication-preparation.md) requires prospective host artifact preparation before the draft publication barrier. Candidate implementation and fresh native acceptance remain pending; no full-stage or platform PASS.

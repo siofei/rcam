@@ -1943,3 +1943,7 @@ R08/R12/R18, applicable AT-025/043/078: `S5_SHORTCUT_COMPACT.md` adds actual CPU
 ### S5 standard Select All user correction (2026-10-09)
 
 The user corrected the earlier physical-Control request: new defaults are macOS Cmd+A / Windows Ctrl+A through Primary+A, with no additional Mac Ctrl+A default alias. Existing configuration entries are preserved; missing defaults yield to custom conflicts and per-command restore is explicit. Supplemental cases in `S5_STANDARD_SELECT_ALL.md` cover provenance, cross-platform legacy/default/custom behavior, text/IME/recording/modal/window focus and existing complete unlocked selection policy. Native Mac event delivery is not established by cloud CPU tests; no geometry, selection filter or threshold change.
+
+### UE-A host publication preparation additions
+
+See [ADR0063](adr/0063-unified-editor-publication-preparation.md) for synthetic preparation failure, authoritative target ordering and exact checkpoint tests. Existing AT numbering/meaning and native thresholds stay unchanged. CPU hooks do not constitute UI/Snap/IME/native acceptance.

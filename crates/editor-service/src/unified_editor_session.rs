@@ -1,7 +1,7 @@
-//! Typed host-only draft preparation. No JSON capability or UI integration.
+//! Typed host-only draft preparation. No JSON capability.
 use super::*;
 use editor_core::edit::ManufacturingDraft;
-pub use editor_core::edit::{DraftResources, DraftStep};
+pub use editor_core::edit::{DraftCandidate, DraftResources, DraftStep};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -38,6 +38,9 @@ impl UnifiedEditorSession {
     }
     pub fn entry_geometry(&self) -> Result<&[SemanticGeometry], ServiceError> {
         Ok(self.open()?.entry_geometry())
+    }
+    pub fn work_candidate(&self) -> Result<DraftCandidate<'_>, ServiceError> {
+        Ok(self.open()?.work_candidate())
     }
     pub fn work_geometry(&self) -> Result<&[SemanticGeometry], ServiceError> {
         Ok(self.open()?.work_geometry())
@@ -90,6 +93,22 @@ impl UnifiedEditorSession {
         self.draft = None;
         self.invalid_input = false;
     }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnifiedEditorHistory {
+    Undo,
+    Redo,
+    Reset,
+}
+fn prepare_core(
+    candidate: DraftCandidate<'_>,
+    prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), ServiceError>,
+    error: &mut Option<ServiceError>,
+) -> Result<(), EditError> {
+    prepare(candidate).map_err(|e| {
+        *error = Some(e);
+        EditError::ResourceLimit
+    })
 }
 fn core_checkpoint(cancel: Option<&task::CancellationToken>) -> Result<(), EditError> {
     if cancel.is_some_and(|c| c.checkpoint().is_err()) {
@@ -223,6 +242,15 @@ impl ApplicationService {
         generation: u64,
         cancel: Option<&task::CancellationToken>,
     ) -> Result<(), ServiceError> {
+        self.unified_editor_preview_prepared(session, generation, cancel, &mut |_| Ok(()))
+    }
+    pub fn unified_editor_preview_prepared(
+        &self,
+        session: &mut UnifiedEditorSession,
+        generation: u64,
+        cancel: Option<&task::CancellationToken>,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), ServiceError>,
+    ) -> Result<(), ServiceError> {
         session.idle()?;
         session.valid_input()?;
         if session.generation()? != generation {
@@ -230,19 +258,30 @@ impl ApplicationService {
         }
         let record = self.unified_editor_record(session, cancel)?;
         let mut publish_error = None;
-        let result = session.draft.as_mut().unwrap().preview_step(
+        let mut prepare_error = None;
+        let result = session.draft.as_mut().unwrap().preview_step_prepared(
             &record.history,
             &record.document,
             &mut || core_checkpoint(cancel),
+            &mut |candidate| prepare_core(candidate, prepare, &mut prepare_error),
             &mut || publish_barrier(cancel, &mut publish_error),
         );
-        published_core(result, cancel, publish_error)
+        published_core(result, cancel, prepare_error.or(publish_error))
     }
     pub fn unified_editor_execute(
         &self,
         session: &mut UnifiedEditorSession,
         generation: u64,
         cancel: Option<&task::CancellationToken>,
+    ) -> Result<u64, ServiceError> {
+        self.unified_editor_execute_prepared(session, generation, cancel, &mut |_| Ok(()))
+    }
+    pub fn unified_editor_execute_prepared(
+        &self,
+        session: &mut UnifiedEditorSession,
+        generation: u64,
+        cancel: Option<&task::CancellationToken>,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), ServiceError>,
     ) -> Result<u64, ServiceError> {
         session.idle()?;
         session.valid_input()?;
@@ -251,13 +290,15 @@ impl ApplicationService {
         }
         let record = self.unified_editor_record(session, cancel)?;
         let mut publish_error = None;
-        let result = session.draft.as_mut().unwrap().execute_step(
+        let mut prepare_error = None;
+        let result = session.draft.as_mut().unwrap().execute_step_prepared(
             &record.history,
             &record.document,
             &mut || core_checkpoint(cancel),
+            &mut |candidate| prepare_core(candidate, prepare, &mut prepare_error),
             &mut || publish_barrier(cancel, &mut publish_error),
         );
-        published_core(result, cancel, publish_error)
+        published_core(result, cancel, prepare_error.or(publish_error))
     }
     pub fn unified_editor_undo(
         &self,
@@ -293,6 +334,44 @@ impl ApplicationService {
         }
         result
     }
+    /// Prepare exact prospective stored checkpoint before any local-history publication.
+    pub fn unified_editor_history_prepared(
+        &self,
+        session: &mut UnifiedEditorSession,
+        action: UnifiedEditorHistory,
+        cancel: Option<&task::CancellationToken>,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), ServiceError>,
+    ) -> Result<u64, ServiceError> {
+        session.idle()?;
+        if !Arc::ptr_eq(&self.unified_editor_owner, &session.owner) {
+            return Err(ServiceError::invalid("编辑会话不属于此服务"));
+        }
+        if let Some(c) = cancel {
+            c.checkpoint()?;
+        }
+        if action != UnifiedEditorHistory::Reset {
+            self.unified_editor_record(session, cancel)?;
+        }
+        let mut prepare_error = None;
+        let mut publish_error = None;
+        let mut prepare =
+            |candidate: DraftCandidate<'_>| prepare_core(candidate, prepare, &mut prepare_error);
+        let mut publish = || {
+            core_checkpoint(cancel)?;
+            publish_barrier(cancel, &mut publish_error)
+        };
+        let draft = session.draft.as_mut().unwrap();
+        let result = match action {
+            UnifiedEditorHistory::Undo => draft.undo_prepared(&mut prepare, &mut publish),
+            UnifiedEditorHistory::Redo => draft.redo_prepared(&mut prepare, &mut publish),
+            UnifiedEditorHistory::Reset => draft.reset_prepared(&mut prepare, &mut publish),
+        };
+        let result = published_core(result, cancel, prepare_error.or(publish_error));
+        if result.is_ok() {
+            session.invalid_input = false;
+        }
+        result
+    }
     pub fn unified_editor_begin_apply(
         &self,
         session: &mut UnifiedEditorSession,
@@ -315,6 +394,15 @@ impl ApplicationService {
         ticket: UnifiedEditorApplyTicket,
         cancel: Option<&task::CancellationToken>,
     ) -> Result<UnifiedEditorApplyResult, ServiceError> {
+        self.unified_editor_complete_apply_prepared(session, ticket, cancel, &mut |_| Ok(()))
+    }
+    pub fn unified_editor_complete_apply_prepared(
+        &mut self,
+        session: &mut UnifiedEditorSession,
+        ticket: UnifiedEditorApplyTicket,
+        cancel: Option<&task::CancellationToken>,
+        prepare: &mut impl FnMut(DraftCandidate<'_>) -> Result<(), ServiceError>,
+    ) -> Result<UnifiedEditorApplyResult, ServiceError> {
         if !Arc::ptr_eq(&self.unified_editor_owner, &ticket.owner)
             || !Arc::ptr_eq(&session.owner, &ticket.owner)
             || !session
@@ -335,10 +423,12 @@ impl ApplicationService {
             let revision_exhausted = record.revision == u64::MAX;
             let draft = session.draft.as_ref().unwrap();
             let mut commit_error = None;
-            let ids = record.history.apply_manufacturing_draft(
+            let mut prepare_error = None;
+            let ids = record.history.apply_manufacturing_draft_prepared(
                 &mut record.document,
                 draft,
                 &mut || core_checkpoint(cancel),
+                &mut |candidate| prepare_core(candidate, prepare, &mut prepare_error),
                 &mut |changed| {
                     if changed && revision_exhausted {
                         commit_error =
@@ -354,7 +444,7 @@ impl ApplicationService {
                     Ok(())
                 },
             );
-            if let Some(error) = commit_error {
+            if let Some(error) = prepare_error.or(commit_error) {
                 return Err(error);
             }
             let ids = checked_core(ids, cancel)?;

@@ -785,3 +785,18 @@ S5-I2-B internal typed readonly adapter `geometry_block_definition_centers_cance
 ## Unified editor backend preparation (host-only; not a JSON operation)
 
 The unpublished next slice defines `unified_editor_begin` with document, manufacturing/workspace revision and explicit groups, returning an opaque session. Session generation fences typed Move/Rotate/Mirror input; preview and Execute share the same calculation, and internal exact Undo/Redo/Reset never edit the service record. An opaque Apply ticket locks input until completion; completion includes the latest unexecuted input and either commits one cross-layer transaction or closes with exact NoChange. Failure retains work and input. Cancel/Reset invalidate pending tickets. Namespace/document lifecycle fences reject foreign or stale sessions. No draft commands are added to capabilities or JSON routing in this preparation. See ADR0062 for resource admission, compatibility and CPU acceptance.
+
+The accumulating editor host additionally has prepared variants of Preview,
+Execute, internal Undo/Redo/Reset and final Apply. A borrowed `DraftCandidate`
+iterates authoritative `(layer_id, object_id, geometry)` values and exposes no
+constructor or mutable geometry. The callback stages host artifacts in local
+storage only; the host installs them after the prepared service call returns
+success. A successful callback can still be followed by cancellation or barrier
+failure. Every prepared publication calls one barrier after the callback and its
+final checkpoint. Host preparation errors retain their exact service error,
+work/checkpoints and current accepted input; authentic failed Apply consumes its
+pending ticket and permits a new ticket. Prepared Reset is local discard but
+still checks service ownership and cancellation. Begin returns a local session
+whose work candidate can be prepared before the host publishes that session.
+Legacy host APIs use no-op preparation; the JSON capabilities are unchanged.
+This interface is a CPU integration prerequisite, not a completed GUI feature.
