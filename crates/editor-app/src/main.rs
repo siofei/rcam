@@ -3542,12 +3542,11 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         },
                     ));
                 }
-                let move_hud_drawn = if self.move_placing() {
+                let tool_hud_drawn = if self.move_placing() {
                     self.paint_move_place(&painter, rect, ctx.pixels_per_point())
                 } else {
                     self.paint_point_transform(&painter, rect, ctx.pixels_per_point());
-                    self.paint_unified_reference(&painter, rect);
-                    false
+                    self.paint_unified_reference(&painter, rect)
                 };
                 self.paint_adapter_point(&painter,rect,ctx.pixels_per_point());
                 if self.prefs.interaction.grip_edit && self.point_pick.is_none() && self.tool == tools::ActiveTool::Select && !modal_open {
@@ -3695,7 +3694,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                         Color32::LIGHT_GRAY,
                     );
                 }
-                if !move_hud_drawn {
+                if !tool_hud_drawn {
                     canvas_hud::paint(
                         &painter,
                         rect,

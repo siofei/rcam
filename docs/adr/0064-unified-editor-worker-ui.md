@@ -19,3 +19,20 @@ The 2-second deadline is cooperative: inner existing geometry/index helpers have
 Entering point input restores the executed work Scene together with its bounds, display scale and full coverage metadata. It cannot inherit scale metadata from an unexecuted Preview. If DPI changes make the executed Scene insufficient for the current display scale, point input returns to the session until Reset or Execute prepares matching work; manufacturing coordinates and selection are unchanged. A two-scale regression covers refusal and subsequent preparation.
 
 Native acceptance must bind this full UI candidate's new commit/MF/source package and fresh Release binary. Recheck the unchanged full 12 matrix with all measured/screenshot samples, 50ms frame and 1e-9 trajectory contracts; GPU completion remains a mixed schedule/draw/fence measurement. Also run actual modal rectangles, multi-layer Move→Rotate→Mirror subsets, Text/Block/holes/exposure context, working point Snap/Alt, invalid newest Apply, Reset/history, one main Undo, no-op dirty/Redo preservation, early cancel/TooLate, resource refusal, tab/lifecycle/IME and memory stress. Portable/auxiliary CPU results and the old cb9 native acceptance do not establish Metal/IME, Windows, full A2 or full-stage PASS.
+
+## Point-picker HUD correction (2026-10-09)
+
+S5/P3 UE-A follow-up; R07/R08/R09/R10/R12/R18; compatibility AT-021/022/025/030/043/078.
+Scope is editor-app painter layout and synthetic regressions only. On the frozen
+2f candidate, the picker text and fallback navigation text occupied the same
+canvas corner. The picker now uses the existing fixed, wrapped, clipped HUD slot
+and reports its ownership to the navigation fallback. Move keeps its existing
+priority; reference geometry, input, Snap/Alt and manufacturing are unchanged.
+Real painter regressions cover Base/Target, return to the editor, fallback states,
+small canvases, native DPI/UI zoom and existing Move priority.
+
+The parent cancelled the old full12/60Hz task: the historical matrix requirement
+above is superseded for this handoff, without changing any numeric threshold.
+2f automatic Mac checks passed per the parent report, but native acceptance
+remains BLOCKED. This follow-up requires a fresh identity and native visual
+verification; it does not inherit 2f's test or native evidence as a new PASS.

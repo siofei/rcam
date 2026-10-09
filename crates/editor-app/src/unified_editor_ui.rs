@@ -644,12 +644,16 @@ impl EditorApp {
             Err(error) => self.ui_error = Some(error),
         }
     }
-    pub(crate) fn paint_unified_reference(&self, painter: &egui::Painter, rect: egui::Rect) {
+    pub(crate) fn paint_unified_reference(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+    ) -> bool {
         let Some(d) = &self.unified_editor else {
-            return;
+            return false;
         };
         let Some(reply) = &d.reply else {
-            return;
+            return false;
         };
         for path in reply.reference.iter() {
             for edge in path.windows(2) {
@@ -666,14 +670,15 @@ impl EditorApp {
             }
         }
         if d.picking.is_some() {
-            painter.text(
-                rect.left_top() + egui::vec2(12., 12.),
-                egui::Align2::LEFT_TOP,
+            return crate::canvas_hud::paint(
+                painter,
+                rect,
                 "拾取工作图形上的点；Alt 暂停吸附；Esc 返回",
                 egui::FontId::proportional(13.),
                 egui::Color32::WHITE,
             );
         }
+        false
     }
 }
 

@@ -21,6 +21,272 @@ use std::{
 fn rect() -> egui::Rect {
     egui::Rect::from_min_size(egui::Pos2::new(200., 40.), egui::vec2(800., 600.))
 }
+
+mod picker_hud {
+    use super::*;
+    use eframe::App;
+
+    const PICK: &str = "拾取工作图形上的点；Alt 暂停吸附；Esc 返回";
+    const NAV: &str = "几何多选  ·  中键 / 双指平移  ·  捏合缩放";
+
+    fn capture(
+        run: &mut Run,
+        ctx: &egui::Context,
+        size: egui::Vec2,
+        ppp: f32,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, egui::Rect, egui::Rect, bool)> {
+        let mut raw = egui::RawInput {
+            focused: true,
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events,
+            ..Default::default()
+        };
+        raw.viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .native_pixels_per_point = Some(ppp);
+        run.app.raw_input_hook(ctx, &mut raw);
+        let output = ctx.run(raw, |ctx| {
+            run.app.update(ctx, &mut eframe::Frame::_new_kittest());
+        });
+        output
+            .shapes
+            .into_iter()
+            .filter_map(|shape| {
+                let egui::Shape::Text(text) = shape.shape else {
+                    return None;
+                };
+                let label = text.galley.text();
+                (label == PICK || label == NAV || label.starts_with("移动 · ")).then(|| {
+                    (
+                        label.into(),
+                        text.galley.rect.translate(text.pos.to_vec2()),
+                        shape.clip_rect,
+                        text.galley.elided,
+                    )
+                })
+            })
+            .collect()
+    }
+
+    fn settled(size: egui::Vec2, ppp: f32, zoom: f32) -> (Run, egui::Context) {
+        let mut model = fixture();
+        let info = model.view.info.clone();
+        // fixture reverses the selection after SelectAll. A real read-only
+        // refresh establishes its metrics/selection epoch before App queries it.
+        model.run(Action::Viewport(
+            MmPoint::new(0., 0.),
+            model.view.bounds.unwrap(),
+            20.,
+        ));
+        assert!(model.view.error.is_none());
+        assert_eq!(model.view.info, info);
+        let mut run = Run::with_model(model);
+        run.app.selected_flags = Arc::new(crate::gpu::selection_flags(
+            run.app.view.scene.as_ref().unwrap(),
+            &run.app.view.selected.ids(),
+        ));
+        run.app.last_structure_serial = run.app.view.structure_serial;
+        run.app.camera.scale = 10.;
+        run.app.fit = false;
+        let ctx = egui::Context::default();
+        ctx.options_mut(|o| o.max_passes = std::num::NonZeroUsize::new(1).unwrap());
+        ctx.set_zoom_factor(zoom);
+        for _ in 0..16 {
+            capture(&mut run, &ctx, size, ppp, vec![]);
+            match run.requests.try_recv() {
+                Ok(request) => {
+                    assert!(matches!(
+                        request.2,
+                        Action::Viewport(..) | Action::SelectionCenters(..)
+                    ));
+                    if let Action::SelectionCenters(identity, params) = &request.2 {
+                        assert_eq!(
+                            identity,
+                            &crate::state::selection_geometry_identity(&run.host.model.view),
+                            "App/worker geometry identity"
+                        );
+                        assert_eq!(
+                            params.groups,
+                            run.host.model.view.selected.groups(),
+                            "App/worker selection groups"
+                        );
+                    }
+                    run.deliver_request(request);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => return (run, ctx),
+                Err(error) => panic!("worker disconnected: {error}"),
+            }
+        }
+        panic!("read-only viewport did not settle");
+    }
+
+    fn assert_caption(
+        run: &Run,
+        captions: &[(String, egui::Rect, egui::Rect, bool)],
+        expected: &str,
+    ) {
+        assert_eq!(captions.len(), 1, "{captions:?}");
+        assert_eq!(captions[0].0, expected);
+        let slot = crate::canvas_hud::slot(run.app.canvas_rect);
+        for rectangle in [run.app.canvas_rect, slot, captions[0].1, captions[0].2] {
+            assert!(rectangle.min.x.is_finite() && rectangle.min.y.is_finite());
+            assert!(rectangle.max.x.is_finite() && rectangle.max.y.is_finite());
+        }
+        assert_eq!(captions[0].1.min, slot.min);
+        assert!(slot.contains_rect(captions[0].2));
+        assert!(
+            run.app
+                .canvas_rect
+                .contains_rect(captions[0].1.intersect(captions[0].2))
+        );
+        if slot.width() >= 160. && slot.height() >= 100. {
+            assert!(!captions[0].3, "instructions elided: {captions:?}");
+        }
+    }
+
+    #[test]
+    fn actual_app_picker_owns_hud_across_native_dpi_zoom_snap_and_fallback_states() {
+        for size in [egui::vec2(640., 480.), egui::vec2(1280., 832.)] {
+            for ppp in [1., 1.5, 2., 3.] {
+                for zoom in [1., 1.25] {
+                    let (mut run, ctx) = settled(size, ppp, zoom);
+                    run.begin();
+                    let main = run.snapshot();
+                    let info = run.app.view.info.clone();
+                    let fixed_canvas = run.app.canvas_rect;
+                    let resources = run
+                        .app
+                        .unified_editor
+                        .as_ref()
+                        .unwrap()
+                        .reply
+                        .as_ref()
+                        .unwrap()
+                        .resources;
+                    for snap in [true, false] {
+                        run.app.object_snap.enabled = snap;
+                        for pick in [ui::Pick::Base, ui::Pick::Target] {
+                            run.app.unified_editor.as_mut().unwrap().picking = Some(pick);
+                            run.app.modal = None;
+                            assert!(run.app.show_unified_work_for_pick(ctx.pixels_per_point()));
+                            let captions = capture(&mut run, &ctx, size, ppp, vec![]);
+                            assert_caption(&run, &captions, PICK);
+                            assert_eq!(run.app.canvas_rect, fixed_canvas);
+                        }
+                    }
+                    run.app.unified_editor.as_mut().unwrap().picking = None;
+                    run.app.modal = Some(ActiveModal::UnifiedEditor);
+                    let captions = capture(&mut run, &ctx, size, ppp, vec![]);
+                    assert_caption(&run, &captions, NAV);
+                    let reply = run.app.unified_editor.as_mut().unwrap().reply.take();
+                    run.app.unified_editor.as_mut().unwrap().picking = Some(ui::Pick::Target);
+                    run.app.modal = None;
+                    let captions = capture(&mut run, &ctx, size, ppp, vec![]);
+                    assert_caption(&run, &captions, NAV);
+                    run.app.unified_editor.as_mut().unwrap().reply = reply;
+                    let draft = run.app.unified_editor.take();
+                    let captions = capture(&mut run, &ctx, size, ppp, vec![]);
+                    assert_caption(&run, &captions, NAV);
+                    run.app.unified_editor = draft;
+                    assert_eq!(run.snapshot(), main);
+                    assert_eq!(run.app.view.info, info);
+                    assert_eq!(
+                        run.app
+                            .unified_editor
+                            .as_ref()
+                            .unwrap()
+                            .reply
+                            .as_ref()
+                            .unwrap()
+                            .resources,
+                        resources
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn actual_app_escape_and_confirm_restore_navigation_without_committing() {
+        let size = egui::vec2(1280., 832.);
+        let (mut run, ctx) = settled(size, 2., 1.);
+        run.begin();
+        let main = run.snapshot();
+        let info = run.app.view.info.clone();
+        for escape in [true, false] {
+            run.app.unified_editor.as_mut().unwrap().dirty = false;
+            run.app.unified_editor.as_mut().unwrap().picking = Some(ui::Pick::Target);
+            run.app.modal = None;
+            let captions = capture(&mut run, &ctx, size, 2., vec![]);
+            assert_caption(&run, &captions, PICK);
+            let events = if escape {
+                vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: Some(egui::Key::Escape),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]
+            } else {
+                let position = run.app.canvas_rect.center();
+                capture(
+                    &mut run,
+                    &ctx,
+                    size,
+                    2.,
+                    vec![
+                        egui::Event::PointerMoved(position),
+                        egui::Event::PointerButton {
+                            pos: position,
+                            button: egui::PointerButton::Primary,
+                            pressed: true,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+                vec![egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]
+            };
+            let captions = capture(&mut run, &ctx, size, 2., events);
+            assert_caption(&run, &captions, NAV);
+            assert_eq!(run.app.modal, Some(ActiveModal::UnifiedEditor));
+            assert!(run.app.unified_editor.as_ref().unwrap().picking.is_none());
+            assert_eq!(run.app.unified_editor.as_ref().unwrap().dirty, !escape);
+            assert!(
+                run.requests.try_recv().is_err(),
+                "picker dispatched a worker edit"
+            );
+            assert_eq!(run.snapshot(), main);
+            assert_eq!(run.app.view.info, info);
+        }
+    }
+
+    #[test]
+    fn existing_move_hud_keeps_priority_in_a_synthetic_coexisting_session() {
+        let size = egui::vec2(1280., 832.);
+        let (mut run, ctx) = settled(size, 2., 1.);
+        run.begin();
+        let main = run.snapshot();
+        let mut draft = run.app.unified_editor.take().unwrap();
+        run.app.modal = None;
+        run.app.start_move_place();
+        assert!(run.app.move_placing());
+        draft.picking = Some(ui::Pick::Target);
+        run.app.unified_editor = Some(draft);
+        let captions = capture(&mut run, &ctx, size, 2., vec![]);
+        assert_eq!(captions.len(), 1, "{captions:?}");
+        assert!(captions[0].0.starts_with("移动 · "));
+        assert!(run.app.move_placing());
+        assert!(run.app.unified_editor.is_some());
+        assert_eq!(run.snapshot(), main);
+    }
+}
 fn fixture() -> Model {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -64,7 +330,10 @@ impl Run {
         }
     }
     fn deliver(&mut self) -> session::Reply {
-        let (id, source, action, task, route) = self.requests.try_recv().unwrap();
+        self.deliver_request(self.requests.try_recv().unwrap())
+    }
+    fn deliver_request(&mut self, request: session::Request) -> session::Reply {
+        let (id, source, action, task, route) = request;
         self.host.route_action(&route, &action).unwrap();
         rcam_diagnostics::with_source(source, || self.host.model.run_task(task, action));
         let reply = (
