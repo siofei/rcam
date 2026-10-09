@@ -78,6 +78,10 @@ impl Config {
         for (index, window) in self.windows.iter().enumerate() {
             if window.id.is_empty()
                 || window.id.len() > 64
+                || !window
+                    .id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
                 || window.start_ns >= window.end_ns
                 || self.windows[..index].iter().any(|w| w.id == window.id)
                 || index > 0 && self.windows[index - 1].end_ns > window.start_ns
@@ -234,10 +238,8 @@ pub(crate) struct RenderSource {
     pub version_id: u64,
     pub scene_serial: u64,
     pub input_batch_id: u64,
-    pub camera: [f64; 3],
-    pub rect: [f32; 4],
+    pub canvas_physical: [f32; 2],
     pub effective_ppp: f32,
-    pub delta: [f64; 2],
     pub selection_epoch: u64,
 }
 #[derive(Clone, Serialize, PartialEq, Eq)]
@@ -722,6 +724,7 @@ pub(crate) struct Recorder {
     shared: Arc<Shared>,
     run_id: String,
     done: Option<mpsc::Receiver<Result<(), String>>>,
+    writer_thread: Option<std::thread::JoinHandle<()>>,
     version: Option<Version>,
     version_id: u64,
     input_id: u64,
@@ -786,7 +789,7 @@ impl Recorder {
         let (done_tx, done) = mpsc::sync_channel(1);
         let sink = shared.clone();
         let run_id = config.run_id.clone();
-        std::thread::Builder::new()
+        let writer_thread = std::thread::Builder::new()
             .name("rcam-frame-trace".into())
             .stack_size(512 * 1024)
             .spawn(move || {
@@ -810,6 +813,7 @@ impl Recorder {
             shared,
             run_id,
             done: Some(done),
+            writer_thread: Some(writer_thread),
             version: None,
             version_id: 0,
             input_id: 0,
@@ -1028,17 +1032,17 @@ impl Recorder {
     pub fn finish(&mut self) {
         if let Some(done) = self.done.take() {
             self.shared.close();
-            match done.recv_timeout(Duration::from_secs(2)) {
-                Ok(Ok(())) => {
+            let joined = self.writer_thread.take().is_some_and(|thread| {
+                supervise_writer(&self.shared, done, thread, Duration::from_secs(2))
+            });
+            match joined {
+                true => {
                     eprintln!(
                         "RCAM_FRAME_TRACE finalization_ack=ok run_id={}",
                         self.run_id
                     );
                 }
                 _ => {
-                    self.shared
-                        .supervisor_timeout
-                        .store(true, Ordering::Release);
                     eprintln!(
                         "RCAM_FRAME_TRACE finalization_ack=unconfirmed run_id={}; evidence incomplete",
                         self.run_id
@@ -1059,6 +1063,7 @@ impl Recorder {
             shared: Shared::new(Clock::new().unwrap(), CAPACITY),
             run_id: "test".into(),
             done: None,
+            writer_thread: None,
             version: None,
             version_id: 0,
             input_id: 0,
@@ -1081,6 +1086,42 @@ impl Recorder {
             .map(|record| serde_json::to_value(record).unwrap())
             .collect()
     }
+}
+fn supervise_writer(
+    shared: &Shared,
+    done: mpsc::Receiver<Result<(), String>>,
+    thread: std::thread::JoinHandle<()>,
+    timeout: Duration,
+) -> bool {
+    let deadline = Instant::now() + timeout;
+    let result = done.recv_timeout(timeout);
+    if matches!(result, Err(mpsc::RecvTimeoutError::Timeout)) {
+        shared.supervisor_timeout.store(true, Ordering::Release);
+    }
+    let flushed = matches!(result, Ok(Ok(())));
+    // Never join a live thread: a blocked file write cannot be interrupted here.
+    while !thread.is_finished() && Instant::now() < deadline {
+        if let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+            std::thread::park_timeout(remaining.min(Duration::from_millis(1)));
+        }
+    }
+    if Instant::now() >= deadline || !thread.is_finished() {
+        shared.supervisor_timeout.store(true, Ordering::Release);
+        if thread.is_finished() {
+            let _ = thread.join();
+        }
+        return false; // Detach; a later footer cannot replace the failed supervision.
+    }
+    let joined = thread.join().is_ok();
+    if Instant::now() >= deadline {
+        shared.supervisor_timeout.store(true, Ordering::Release);
+        return false;
+    }
+    if !flushed || !joined {
+        shared.failed.store(true, Ordering::Release);
+        return false;
+    }
+    true
 }
 impl Drop for Recorder {
     fn drop(&mut self) {
@@ -1137,7 +1178,7 @@ fn writer(
     }
     let mut output = BufWriter::with_capacity(65536, output);
     let mut bytes = 0;
-    let header = serde_json::json!({"kind":"header","schema_version":1,"run_id":config.run_id,"commit":commit,"build_source":source,
+    let header = serde_json::json!({"kind":"header","schema_version":2,"run_id":config.run_id,"commit":commit,"build_source":source,
         "source_manifest_sha256":manifest_sha,"binary_sha256":binary_sha,"config_sha256":config_sha,"clock":shared.clock.metadata(),
         "windows":config.windows,"window_rule":"predefined [start,end); endpoints and boundary overlaps retained; gaps incomplete",
         "unavailable":{"actual_submission_index":null,"submit_source_ns":null,"gpu_completed_source_ns":null,"present_source_ns":null,"scanout_source_ns":null,
@@ -1147,7 +1188,8 @@ fn writer(
         "legacy_render_timing_enabled":std::env::var_os("RCAM_RENDER_TIMING").is_some(),
         "internal_evidence_compiled":cfg!(feature="internal-evidence"),
         "pid":std::process::id(), "observation":"passive, no screenshots, forced repaint, input injection or GPU waits", "queue":"bounded try_lock; drop new on contention/full",
-        "supervision_required":"owned process must observe matching finalization_ack=ok; late footer after timeout is insufficient",
+        "supervision_required":"matching finalization_ack=ok requires footer/flush and completed writer thread join; late footer after timeout is insufficient",
+        "writer_join_required":true,
         "metadata_limit":META_LIMIT,"output_limit":OUTPUT_LIMIT});
     line(
         &mut output,
@@ -1402,10 +1444,8 @@ mod tests {
                     version_id: old,
                     scene_serial: 91,
                     input_batch_id: 1,
-                    camera: [0., 0., 1.],
-                    rect: [0., 0., 10., 10.],
+                    canvas_physical: [10., 10.],
                     effective_ppp: 1.,
-                    delta: [0., 0.],
                     selection_epoch: 0,
                 }),
             );
@@ -1568,8 +1608,6 @@ mod tests {
             },
             Stage::CallbackPaint,
         );
-        shared.close();
-        drop(span);
         let config = Config {
             run_id: "writer-test".into(),
             output: path.clone(),
@@ -1579,16 +1617,45 @@ mod tests {
             clock_id: shared.clock.id().into(),
             windows: vec![],
         };
-        writer(
-            output,
-            &shared,
-            config,
-            "b".repeat(64),
-            "test-commit",
-            "auxiliary-test",
-            "a".repeat(64),
-        )
-        .unwrap();
+        let sink = shared.clone();
+        let (done_tx, done) = mpsc::sync_channel(1);
+        let thread = std::thread::spawn(move || {
+            let result = writer(
+                output,
+                &sink,
+                config,
+                "b".repeat(64),
+                "test-commit",
+                "auxiliary-test",
+                "a".repeat(64),
+            );
+            let _ = done_tx.send(result);
+        });
+        // Header is flushed only after executable identity has been verified.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while std::fs::metadata(&path).unwrap().len() == 0 && Instant::now() < deadline {
+            std::thread::park_timeout(Duration::from_millis(5));
+        }
+        assert!(std::fs::metadata(&path).unwrap().len() > 0);
+        assert!(!thread.is_finished());
+        assert_eq!(shared.inflight.load(Ordering::SeqCst), 1);
+        assert!(matches!(done.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        let closing = shared.clone();
+        let producer = std::thread::spawn(move || {
+            while !closing.closing.load(Ordering::Acquire) {
+                std::thread::yield_now();
+            }
+            drop(span);
+        });
+        let mut recorder = Recorder::for_test();
+        recorder.shared = shared.clone();
+        recorder.done = Some(done);
+        recorder.writer_thread = Some(thread);
+        recorder.finish();
+        producer.join().unwrap();
+        assert!(recorder.done.is_none() && recorder.writer_thread.is_none());
+        assert!(!shared.supervisor_timeout.load(Ordering::Acquire));
+        assert!(!shared.failed.load(Ordering::Acquire));
         let raw = std::fs::read_to_string(&path).unwrap();
         let rows: Vec<serde_json::Value> = raw
             .lines()
@@ -1609,6 +1676,121 @@ mod tests {
         );
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
+    }
+    #[test]
+    fn supervision_timeout_does_not_join_live_writer_or_accept_late_completion() {
+        for notify_before_block in [false, true] {
+            let shared = shared(CAPACITY);
+            let (done_tx, done) = mpsc::sync_channel(1);
+            let (release_tx, release) = mpsc::sync_channel(1);
+            let (ended_tx, ended) = mpsc::sync_channel(1);
+            let (ready_tx, ready) = mpsc::sync_channel(1);
+            let thread = std::thread::spawn(move || {
+                if notify_before_block {
+                    done_tx.send(Ok(())).unwrap();
+                    ready_tx.send(()).unwrap();
+                }
+                release.recv().unwrap(); // A deterministic stand-in for blocked I/O.
+                if !notify_before_block {
+                    let _ = done_tx.send(Ok(()));
+                }
+                let _ = ended_tx.send(());
+            });
+            if notify_before_block {
+                ready.recv_timeout(Duration::from_secs(1)).unwrap();
+            }
+            let start = Instant::now();
+            assert!(!supervise_writer(
+                &shared,
+                done,
+                thread,
+                Duration::from_millis(5)
+            ));
+            assert!(start.elapsed() < Duration::from_secs(1));
+            assert!(shared.supervisor_timeout.load(Ordering::Acquire));
+            release_tx.send(()).unwrap();
+            ended.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert!(shared.supervisor_timeout.load(Ordering::Acquire));
+        }
+    }
+    #[test]
+    fn completion_notification_is_not_success_without_finished_thread_join() {
+        let shared = shared(CAPACITY);
+        let (done_tx, done) = mpsc::sync_channel(1);
+        let thread = std::thread::spawn(move || {
+            done_tx.send(Ok(())).unwrap();
+            panic!("synthetic writer panic after notification");
+        });
+        assert!(!supervise_writer(
+            &shared,
+            done,
+            thread,
+            Duration::from_secs(1)
+        ));
+        assert!(shared.failed.load(Ordering::Acquire));
+    }
+    #[test]
+    fn default_disabled_runs_never_read_config_or_start_writer() {
+        for enabled in [None, Some("0")] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "frame_trace::tests::disabled_environment_child",
+                    "--ignored",
+                ])
+                .env_remove("RCAM_FRAME_TRACE")
+                .env(
+                    "RCAM_FRAME_TRACE_CONFIG",
+                    "/nonexistent/trace-disabled-probe.json",
+                );
+            if let Some(value) = enabled {
+                child.env("RCAM_FRAME_TRACE", value);
+            }
+            let output = child.output().unwrap();
+            assert!(output.status.success());
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+            assert!(!String::from_utf8_lossy(&output.stderr).contains("RCAM_FRAME_TRACE"));
+        }
+    }
+    #[test]
+    #[ignore = "owned subprocess only; parent verifies absent/0 environment"]
+    fn disabled_environment_child() {
+        assert!(std::env::var("RCAM_FRAME_TRACE").map_or(true, |value| value == "0"));
+        assert!(Recorder::from_env().is_none());
+    }
+    #[test]
+    fn render_source_serializes_only_measurement_sizes_and_opaque_identity() {
+        let value = serde_json::to_value(RenderSource {
+            update_id: 1,
+            version_id: 2,
+            scene_serial: 3,
+            input_batch_id: 4,
+            canvas_physical: [100., 200.],
+            effective_ppp: 2.,
+            selection_epoch: 5,
+        })
+        .unwrap();
+        let keys: std::collections::BTreeSet<_> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "update_id",
+                "version_id",
+                "scene_serial",
+                "input_batch_id",
+                "canvas_physical",
+                "effective_ppp",
+                "selection_epoch"
+            ]
+            .into_iter()
+            .collect()
+        );
     }
     #[test]
     fn failed_io_is_not_a_successful_or_partial_record() {

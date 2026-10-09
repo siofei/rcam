@@ -3258,8 +3258,8 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                                 uniforms,
                                 trace_source: trace_update.as_ref().map(|trace| trace.render_source(frame_trace::RenderSource {
                                     update_id:0,input_batch_id:0,version_id:self.frame_trace.as_mut().unwrap().version(&self.view),scene_serial:scene.serial,
-                                    camera:[self.camera.center.x_mm,self.camera.center.y_mm,self.camera.scale],rect:[rect.min.x,rect.min.y,rect.max.x,rect.max.y],
-                                    effective_ppp:ctx.pixels_per_point(),delta:self.drag.as_ref().map_or([0.,0.],|d|[d.delta.x_mm,d.delta.y_mm]),selection_epoch:self.view.selection_epoch,
+                                    canvas_physical:[rect.width()*ctx.pixels_per_point(),rect.height()*ctx.pixels_per_point()],
+                                    effective_ppp:ctx.pixels_per_point(),selection_epoch:self.view.selection_epoch,
                                 })),
                             });
                             rendered = true;

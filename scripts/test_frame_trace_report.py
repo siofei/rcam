@@ -6,7 +6,10 @@ from frame_trace_report import boundary, ns, summarize
 def fixture():
     binding = {"update_id": 1, "version_id": 1, "input_batch_id": 1, "rendered_source_update_id": 0}
     return [
-        {"kind": "header", "schema_version": 1, "run_id": "run", "clock": {"clock_id": "mach_absolute_time_ns"},
+        {"kind": "header", "schema_version": 2, "writer_join_required": True, "run_id": "run",
+         "commit": "c" * 40, "source_manifest_sha256": "a" * 64, "binary_sha256": "b" * 64, "config_sha256": "d" * 64,
+         "clock": {"clock_id": "mach_absolute_time_ns", "origin_raw_ticks": "100", "origin_source_ns": "100",
+                   "conversion": {"numer": 1, "denom": 1}},
          "windows": [{"id": "active", "start_ns": "100", "end_ns": "200"}]},
         {"kind": "identity_ready", "source_ns": "50"},
         {"record_seq": 1, "kind": "metadata", "metadata": {"kind": "version", "version_id": 1}},
@@ -18,6 +21,26 @@ def fixture():
         {"kind": "footer", "finalized": True, "observation_complete": True,
          "counters": {"attempted": 4, "drop_by_stage": [0] * 8}},
     ]
+
+
+def calibration_fixture():
+    header = fixture()[0]
+    actual = {"run_id": "run", "clock_id": "mach_absolute_time_ns", "windows": [
+        {"id": "active", "start_ns": "120", "end_ns": "180",
+         "first_dispatch_raw_ticks": "120", "last_dispatch_raw_ticks": "180"}]}
+    calibration = {"schema_version": 1, "method": "shared_mach_absolute_timebase", "run_id": "run",
+                   "trace_identity": {key: header[key] for key in
+                                      ("commit", "source_manifest_sha256", "binary_sha256", "config_sha256")},
+                   "source_clock": {"clock_id": "mach_absolute_time_ns", "origin_raw_ticks": "100",
+                                    "timebase": {"numer": 1, "denom": 1}},
+                   "external_clock": {"clock_id": "mach_absolute_time_ns", "origin_raw_ticks": "70",
+                                      "timebase": {"numer": 1, "denom": 1}},
+                   "provenance": {"source": "synthetic-parser-test-only", "producer_pid": 123,
+                                  "producer_sha256": "e" * 64, "evidence_sha256": "f" * 64},
+                   "sync_samples": [{"before_raw_ticks": str(t - 1), "external_raw_ticks": str(t),
+                                     "after_raw_ticks": str(t + 1), "external_ns": str(t)} for t in (80, 220)],
+                   "max_error_ns": "2"}
+    return actual, calibration
 
 
 class TraceReportTests(unittest.TestCase):
@@ -46,12 +69,12 @@ class TraceReportTests(unittest.TestCase):
     def test_complete_within_scope_is_not_performance_pass_and_no_first_interval_invented(self):
         rows = fixture()
         rows[3]["previous"] = None
+        rows[0]["windows"] = []
         report = summarize(rows, True)
         self.assertEqual(report["observation_status"], "COMPLETE_WITHIN_DECLARED_SCOPE")
         self.assertEqual(report["performance_status"], "OPEN")
-        interval = report["planned_windows"][0]["intervals"][0]
-        self.assertIsNone(interval["wall_duration_ns"])
-        self.assertEqual(interval["classification"], "no_previous")
+        self.assertEqual(report["planned_windows"], [])
+        self.assertIsNone(report["updates"][0]["start"]["previous"])
 
     def test_footer_without_supervisor_ack_or_timeout_is_incomplete(self):
         report = summarize(fixture())
@@ -68,15 +91,73 @@ class TraceReportTests(unittest.TestCase):
         self.assertIn("unfinished_update", summarize(rows, True)["issues"])
 
     def test_clock_and_actual_dispatch_are_distinct_from_planned_window(self):
-        actual = {"run_id": "run", "clock_id": "mach_absolute_time_ns", "clock_mapping_verified": True,
-                  "windows": [{"id": "active", "start_ns": "120", "end_ns": "180"}]}
-        report = summarize(fixture(), True, actual)
+        actual, calibration = calibration_fixture()
+        report = summarize(fixture(), True, actual, calibration)
         self.assertEqual(report["planned_windows"][0]["window"]["start_ns"], "100")
         self.assertEqual(report["actual_dispatch_windows"][0]["window"]["start_ns"], "120")
-        wrong = copy.deepcopy(actual)
-        wrong["clock_mapping_verified"] = False
-        with self.assertRaises(ValueError):
-            summarize(fixture(), True, wrong)
+        self.assertEqual(report["clock_calibration"]["max_error_ns"], "2")
+        self.assertEqual(report["activity_window_association_status"], "CALIBRATED_WITH_DECLARED_ERROR_BOUND")
+
+    def test_boolean_only_or_missing_calibration_never_associates_activity(self):
+        actual, _ = calibration_fixture()
+        actual["clock_mapping_verified"] = True
+        report = summarize(fixture(), True, actual)
+        self.assertEqual(report["observation_status"], "INCOMPLETE")
+        self.assertEqual(report["activity_window_association_status"], "INCOMPLETE")
+        self.assertIsNone(report["actual_dispatch_windows"])
+        self.assertEqual(report["internal_update_wall_diagnostics"]["count"], 1)
+        self.assertEqual(report["unassociated_external_windows"], actual["windows"])
+        self.assertIn("external_activity_clock_calibration_missing", report["issues"])
+
+    def test_invalid_calibration_identity_brackets_timebase_and_error_are_rejected(self):
+        actual, calibration = calibration_fixture()
+        mutations = [lambda c: c["trace_identity"].update(binary_sha256="wrong"),
+                     lambda c: c["source_clock"]["timebase"].update(denom=0),
+                     lambda c: c["external_clock"].update(clock_id="cg_event_timestamp_ns"),
+                     lambda c: c.update(max_error_ns="1"),
+                     lambda c: c["sync_samples"][0].update(external_ns="999"),
+                     lambda c: c["sync_samples"][0].update(before_raw_ticks="90"),
+                     lambda c: c["provenance"].update(producer_sha256="not-a-hash")]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                broken = copy.deepcopy(calibration)
+                mutate(broken)
+                report = summarize(fixture(), True, actual, broken)
+                self.assertEqual(report["activity_window_association_status"], "INCOMPLETE")
+                self.assertIsNone(report["actual_dispatch_windows"])
+        broken_actual = copy.deepcopy(actual)
+        broken_actual["windows"][0]["last_dispatch_raw_ticks"] = "181"
+        self.assertIsNone(summarize(fixture(), True, broken_actual, calibration)["actual_dispatch_windows"])
+
+    def test_external_payload_is_never_copied_on_valid_or_invalid_evidence(self):
+        actual, calibration = calibration_fixture()
+        actual["windows"][0]["payload"] = "secret-keyboard-geometry"
+        calibration["provenance"]["camera"] = "secret-keyboard-geometry"
+        for evidence in [None, calibration]:
+            report = summarize(fixture(), True, actual, evidence)
+            self.assertIsNone(report["actual_dispatch_windows"])
+            self.assertNotIn("secret-keyboard-geometry", repr(report))
+            self.assertEqual(set(report["unassociated_external_windows"][0]),
+                             {"id", "start_ns", "end_ns", "first_dispatch_raw_ticks", "last_dispatch_raw_ticks"})
+        actual, calibration = calibration_fixture()
+        calibration["provenance"]["source"] = "/private/secret-keyboard-geometry"
+        self.assertNotIn("secret-keyboard-geometry", repr(summarize(fixture(), True, actual, calibration)))
+
+    def test_raw_tick_coverage_cannot_be_faked_by_nanosecond_rounding_or_empty_plan(self):
+        rows = fixture()
+        actual, calibration = calibration_fixture()
+        rows[0]["clock"]["conversion"]["denom"] = 3
+        rows[0]["clock"]["origin_source_ns"] = "33"
+        calibration["source_clock"]["timebase"]["denom"] = 3
+        calibration["external_clock"]["timebase"]["denom"] = 3
+        for sample in calibration["sync_samples"]:
+            sample["external_ns"] = str(int(sample["external_raw_ticks"]) // 3)
+        actual["windows"][0].update(first_dispatch_raw_ticks="79", start_ns="26", end_ns="60")
+        self.assertIsNone(summarize(rows, True, actual, calibration)["actual_dispatch_windows"])
+        rows = fixture()
+        rows[0]["windows"] = []
+        actual, calibration = calibration_fixture()
+        self.assertIsNone(summarize(rows, True, actual, calibration)["actual_dispatch_windows"])
 
     def test_source_ns_exactness_and_gap_are_not_writer_arrival_time(self):
         self.assertEqual(ns("9007199254740993"), 9007199254740993)

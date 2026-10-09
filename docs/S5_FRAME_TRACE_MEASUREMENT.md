@@ -30,7 +30,7 @@ Template values below must be supplied by the owned Mac executor:
 }
 ```
 
-Header schema 1 binds run/commit/build source, source manifest SHA, actual executable SHA,
+Header schema 2 binds run/commit/build source, source manifest SHA, actual executable SHA,
 configuration SHA, clock identity, origin and conversion. The writer hashes the executable
 in 64 KiB blocks using the existing SHA-256 implementation. A mismatch fails measurement.
 Wait for the flushed `identity_ready` record before an active window; initialization overlapping
@@ -48,7 +48,9 @@ monotonic clock are not assumed equivalent. The non-Mac auxiliary clock is expli
 ## Source fields and their limits
 
 - Raw-input hook: batch ID, actual viewport ID, source entry/exit, pointer/key/wheel/other counts.
-  No text, key value, pointer coordinates, path, error payload or pixels are recorded.
+  No text, key value, pointer coordinates, camera values, preview delta, object/manufacturing geometry,
+  path, error payload or pixels are recorded. Local diagnostics include opaque project/document/task
+  identifiers, counts, phases and physical viewport dimensions/PPP/zoom; do not publish raw evidence.
   The hook runs before a new egui pass: frame/pass mapping is established in `update`.
   Only ROOT batches map to the root App update; other viewport mapping is unavailable.
 - Update: unique update ID, egui frame/pass numbers, pass index, viewport ID and input batch ID;
@@ -65,9 +67,10 @@ monotonic clock are not assumed equivalent. The non-Mac auxiliary clock is expli
   spans as full update. Existing combined `cpu_prepare_ms` and legacy logging remain unchanged.
 - Existing wgpu callback prepare/paint entry/exit and draw-encoded/clip-no-resource outcome.
   A logical callback-enqueued ID connects these to the generating update/pass. It is not submission.
-- Successful prepare preserves its source update/version/input batch, actual scene, camera, rect,
-  PPP, delta and selection epoch. Last-good fallback retains that source and separately records the
-  enqueue App version. Old uniforms/selection are not attributed to a new revision or camera.
+- Successful prepare preserves its source update/version/input batch, actual scene, physical canvas size,
+  PPP and selection epoch. Last-good fallback retains that source and separately records the enqueue
+  App version. Camera center/scale, canvas coordinates and preview delta are not serialized; source
+  update/version IDs identify the old prepared frame without exposing those values.
 - Request attempt IDs cover early rejection with `task_id=null`. Accepted requests retain the
   existing TaskVersion input and assigned task ID. Received receipts retain input/result versions
   and state, and are labelled received rather than universally installed. A recorder-only installed
@@ -112,8 +115,12 @@ Missing metadata or any missing record invalidates completeness; samples are not
 
 Closing stops new admissions. Spans admitted before closing remain counted until their retained end
 has been attempted, including spans crossing the cutoff. Writer drains after admitted producers/scopes
-finish, writes footer and flushes, then acknowledges. The owned exit supervisor waits at most 2 s;
-that timeout cannot interrupt a blocked file write. `finalization_ack=ok` proves flush completion only,
+finish, writes footer and flushes, then sends completion. The owned exit supervisor retains the JoinHandle,
+uses one 2 s deadline for completion reception and finished-thread polling, then explicitly joins
+only after is_finished. Deadline is checked again before/after join. Rust/OS join epilogue and process
+scheduling are not a hard real-time wall bound; no live-writer join waits for blocked file I/O. Only successful
+flush/completion/join yields an acknowledgement. A live thread is detached on timeout; that timeout
+cannot interrupt a blocked file write. The live-writer path never joins on the GUI thread; flush is not fsync. `finalization_ack=ok` proves successful flush and writer join,
 not zero loss. A late footer after timeout cannot establish successful supervision. A hard kill without
 footer remains incomplete; raw prefix is recoverable. Default-disabled creates no clock, queue, thread
 or file. Observer overhead target is p95 <=0.25 ms/update, p99 <=0.5 ms/update; these are unmeasured
@@ -135,12 +142,35 @@ full as a boundary interval, not assigned to pure activity. Endpoints never use 
 Drops, dangling identities, unfinished spans, missing footer/ack or startup overlap make observation
 INCOMPLETE. Nested stages and post-activity drain are retained. No application FPS is computed.
 
-Optional `--actual-boundaries` accepts a separately hashed executor JSON with matching run/clock,
-`clock_mapping_verified=true`, `windows` containing actual first/last dispatch ns (same schema as
-configuration windows), and optional non-payload dispatch `events`. Both planned and actual-boundary
-reports are kept; actual boundaries do not replace the predefined configuration or its identity.
-The mapping flag is an executor assertion requiring its own evidence, not verification by the App.
-This script always leaves `performance_status=OPEN`, including complete short observations.
+Optional `--actual-boundaries` and `--clock-calibration` read separately hashed executor JSON.
+A boolean assertion does not establish calibration. Without supported structured evidence, the report
+retains internal source-clock diagnostics and unassociated external window metadata; activity-window
+association is INCOMPLETE. Predefined windows are explicitly internal source-clock classifications.
+No external dispatch payload is copied into the report.
+
+Only `shared_mach_absolute_timebase` is currently supported: the owned executor directly captures
+public Mach ticks around dispatch, rather than assuming CGEvent.timestamp or SCK PTS equivalence.
+Calibration schema 1 binds `run_id`, `trace_identity` (commit, source_manifest_sha256, binary_sha256,
+config_sha256), `source_clock` and `external_clock` (clock_id, origin_raw_ticks, timebase numer/denom),
+`provenance` (source, producer_pid, producer_sha256, evidence_sha256), 2..32 ordered `sync_samples`
+(before_raw_ticks, external_raw_ticks, after_raw_ticks, external_ns) and `max_error_ns`. Clock ID is
+mach_absolute_time_ns; both timebases must equal the trace header. Every external sample must lie
+inside its raw tick bracket and convert exactly; declared error must cover the largest converted
+bracket width. Two samples must cover every external window. Each actual window adds
+first_dispatch_raw_ticks/last_dispatch_raw_ticks and its ns endpoints must match checked conversion;
+raw tick samples must also cover F/L before ns rounding. Window IDs match a nonempty predefined set.
+All ticks/ns are decimal strings. Unknown calibration/window fields are rejected. Unassociated windows
+are projected through a numeric/opaque-ID whitelist; provenance.source is an ASCII descriptor ID,
+never a path or payload. Provenance hashes identify
+external artifacts; their existence/truth needs the executor's separately preserved raw evidence.
+The analyzer checks consistency, not physical instrumentation authenticity or universal clock equality.
+A different clock domain is unsupported and remains INCOMPLETE; this cloud run fabricates no Mac
+calibration. Parser fixtures are synthetic tests only.
+
+The report records supported evidence with its declared error bound; it does not claim exact boundary
+precision or a per-CGEvent receipt link. Both planned and actual-boundary reports are retained.
+Use `--clock-calibration calibration.json` with the two existing evidence arguments. This script always
+leaves `performance_status=OPEN`, including complete short observations.
 480 events over 5.2–5.5 s and a 24-condition matrix are diagnostic, not the 60 s frozen acceptance.
 
 ## Checks and remaining native work

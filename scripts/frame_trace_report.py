@@ -42,9 +42,131 @@ def percentiles(values):
             "quantile": "nearest rank; wall/source intervals, no presentation or FPS claim"}
 
 
-def summarize(rows, supervised_ack=False, actual_boundaries=None):
+def exact_keys(value, keys):
+    if type(value) is not dict or set(value) != set(keys):
+        raise ValueError("unexpected/missing structured evidence fields")
+
+
+def safe_id(value, limit=64):
+    return isinstance(value, str) and 0 < len(value) <= limit and all(
+        c.isascii() and (c.isalnum() or c in "-_") for c in value)
+
+
+def safe_external_windows(actual):
+    """Never echo an external payload, even when evidence is missing or invalid."""
+    windows = actual.get("windows") if isinstance(actual, dict) else None
+    if not isinstance(windows, list):
+        return None
+    safe = []
+    for window in windows[:16]:
+        if not isinstance(window, dict):
+            continue
+        item = {"id": window["id"]} if safe_id(window.get("id")) else {}
+        for key in ("start_ns", "end_ns", "first_dispatch_raw_ticks", "last_dispatch_raw_ticks"):
+            try:
+                ns(window[key])
+                item[key] = window[key]
+            except (KeyError, ValueError):
+                pass
+        safe.append(item)
+    return safe
+
+
+def calibration_check(header, actual, evidence):
+    """Validate one supported, bounded evidence format, not an external clock assertion."""
+    if actual is None or evidence is None:
+        return None, ["external_activity_clock_calibration_missing"]
+    try:
+        exact_keys(actual, ("run_id", "clock_id", "windows"))
+        exact_keys(evidence, ("schema_version", "method", "run_id", "trace_identity", "source_clock",
+                              "external_clock", "provenance", "sync_samples", "max_error_ns"))
+        if type(evidence["schema_version"]) is not int or evidence["schema_version"] != 1 or evidence["method"] != "shared_mach_absolute_timebase":
+            raise ValueError("unsupported calibration method")
+        if evidence["run_id"] != header["run_id"] or actual["run_id"] != header["run_id"]:
+            raise ValueError("run mismatch")
+        identity_keys = ("commit", "source_manifest_sha256", "binary_sha256", "config_sha256")
+        exact_keys(evidence["trace_identity"], identity_keys)
+        for key in identity_keys:
+            if evidence["trace_identity"][key] != header[key]:
+                raise ValueError("trace identity mismatch")
+        source, external = evidence["source_clock"], evidence["external_clock"]
+        for clock in (source, external):
+            exact_keys(clock, ("clock_id", "origin_raw_ticks", "timebase"))
+            exact_keys(clock["timebase"], ("numer", "denom"))
+        if (source["clock_id"] != "mach_absolute_time_ns" or external["clock_id"] != source["clock_id"]
+                or header["clock"]["clock_id"] != source["clock_id"] or actual["clock_id"] != source["clock_id"]
+                or source["origin_raw_ticks"] != header["clock"]["origin_raw_ticks"]
+                or source["timebase"] != header["clock"]["conversion"]
+                or external["timebase"] != source["timebase"]):
+            raise ValueError("clock domain/timebase mismatch")
+        numer, denom = source["timebase"]["numer"], source["timebase"]["denom"]
+        if any(type(v) is not int or not 0 < v < 2**32 for v in (numer, denom)):
+            raise ValueError("invalid timebase")
+        def converted(raw):
+            result = ns(raw) * numer // denom
+            if result >= 2**64:
+                raise ValueError("converted time exceeds u64")
+            return result
+        if converted(source["origin_raw_ticks"]) != ns(header["clock"]["origin_source_ns"]):
+            raise ValueError("source origin mismatch")
+        converted(external["origin_raw_ticks"])
+        provenance = evidence["provenance"]
+        exact_keys(provenance, ("source", "producer_pid", "producer_sha256", "evidence_sha256"))
+        if (not safe_id(provenance["source"], 128)
+                or type(provenance["producer_pid"]) is not int or provenance["producer_pid"] <= 0):
+            raise ValueError("missing producer identity")
+        for key in ("producer_sha256", "evidence_sha256"):
+            value = provenance[key]
+            if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                raise ValueError("invalid provenance hash")
+        samples = evidence["sync_samples"]
+        if not isinstance(samples, list) or not 2 <= len(samples) <= 32:
+            raise ValueError("bounded synchronization samples required")
+        external_times, external_ticks, widths = [], [], []
+        previous_after = None
+        for sample in samples:
+            exact_keys(sample, ("before_raw_ticks", "external_raw_ticks", "after_raw_ticks", "external_ns"))
+            before, point, after = (ns(sample[key]) for key in
+                                    ("before_raw_ticks", "external_raw_ticks", "after_raw_ticks"))
+            if not before <= point <= after or (previous_after is not None and before < previous_after):
+                raise ValueError("invalid synchronization bracket")
+            if converted(sample["external_raw_ticks"]) != ns(sample["external_ns"]):
+                raise ValueError("external conversion mismatch")
+            external_times.append(ns(sample["external_ns"]))
+            external_ticks.append(point)
+            widths.append(converted(sample["after_raw_ticks"]) - converted(sample["before_raw_ticks"]))
+            previous_after = after
+        error = ns(evidence["max_error_ns"])
+        if error < max(widths):
+            raise ValueError("understated synchronization error bound")
+        windows = actual["windows"]
+        if not isinstance(windows, list) or not 1 <= len(windows) <= 16:
+            raise ValueError("actual dispatch windows required")
+        identifiers = [window["id"] for window in windows]
+        if (any(not safe_id(value) for value in identifiers) or len(set(identifiers)) != len(identifiers)
+                or not header["windows"] or set(identifiers) != {window["id"] for window in header["windows"]}):
+            raise ValueError("window identity mismatch")
+        previous_end = None
+        for window in windows:
+            exact_keys(window, ("id", "start_ns", "end_ns", "first_dispatch_raw_ticks", "last_dispatch_raw_ticks"))
+            first_ticks, last_ticks = ns(window["first_dispatch_raw_ticks"]), ns(window["last_dispatch_raw_ticks"])
+            first, last = converted(window["first_dispatch_raw_ticks"]), converted(window["last_dispatch_raw_ticks"])
+            if (first != ns(window["start_ns"]) or last != ns(window["end_ns"])
+                    or not external_times[0] <= first < last <= external_times[-1]
+                    or not external_ticks[0] <= first_ticks < last_ticks <= external_ticks[-1]
+                    or (previous_end is not None and first < previous_end)):
+                raise ValueError("dispatch bounds conversion/coverage mismatch")
+            previous_end = last
+        return {"status": "SUPPORTED_EVIDENCE_CONSISTENT", "method": evidence["method"],
+                "max_error_ns": str(error), "evidence": evidence,
+                "limit": "executor provenance and brackets, not per-CGEvent receipt or universal clock equivalence"}, []
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None, ["external_activity_clock_calibration_invalid_or_unsupported"]
+
+
+def summarize(rows, supervised_ack=False, actual_boundaries=None, clock_calibration=None):
     headers = [row for row in rows if row.get("kind") == "header"]
-    if len(headers) != 1 or headers[0].get("schema_version") != 1:
+    if len(headers) != 1 or headers[0].get("schema_version") != 2 or headers[0].get("writer_join_required") is not True:
         raise ValueError("expected exactly one supported header")
     header = headers[0]
     issues = []
@@ -168,29 +290,31 @@ def summarize(rows, supervised_ack=False, actual_boundaries=None):
                             "intervals": intervals, "spans": spans, "inside_interval_diagnostics": percentiles(values)})
         return reports
 
-    planned = windows_report(header["windows"], "predefined_config")
+    planned = windows_report(header["windows"], "internal_predefined_source_clock_only")
     actual = None
-    if actual_boundaries is not None:
-        if (header["clock"]["clock_id"] != "mach_absolute_time_ns"
-                or actual_boundaries.get("clock_id") != header["clock"]["clock_id"]
-                or actual_boundaries.get("run_id") != header["run_id"]
-                or actual_boundaries.get("clock_mapping_verified") is not True):
-            raise ValueError("external dispatch boundaries require verified same-run source clock mapping")
+    calibration, calibration_issues = calibration_check(header, actual_boundaries, clock_calibration)
+    if header["windows"] or actual_boundaries is not None:
+        issues.extend(calibration_issues)
+    if calibration is not None:
         actual = windows_report(actual_boundaries["windows"], "external_actual_first_last_dispatch")
     if any(report["issues"] for report in planned + (actual or [])):
         issues.append("window_measurement_incomplete")
-    return {"schema_version": 1, "run_id": header["run_id"], "identity": header,
+    return {"schema_version": 2, "run_id": header["run_id"], "identity": header,
             "observation_status": "INCOMPLETE" if issues else "COMPLETE_WITHIN_DECLARED_SCOPE",
             "performance_status": "OPEN", "issues": sorted(set(issues)), "sequence_gaps": missing,
             "physical_row_order_differs_from_sequence": sequences != sorted(sequences),
             "footer": footer, "planned_windows": planned, "actual_dispatch_windows": actual,
+            "activity_window_association_status": "CALIBRATED_WITH_DECLARED_ERROR_BOUND" if calibration else "INCOMPLETE",
+            "clock_calibration": calibration,
+            "unassociated_external_windows": safe_external_windows(actual_boundaries) if actual_boundaries and calibration is None else None,
+            "internal_update_wall_diagnostics": percentiles([ns(row["wall_duration_ns"]) for row in update_spans.values()
+                                                           if row["outcome"] == "normal_end"]),
             "updates": [{"start": row, "end": ends.get(update_id), "span": update_spans.get(update_id)}
                         for update_id, row in sorted(starts.items())],
             "input_batches": [row for row in sequenced if row.get("kind") == "input_counts"],
             "versions": [row["metadata"] for row in sequenced if row.get("metadata", {}).get("kind") == "version"],
             "render_sources": [row for row in sequenced if row.get("kind") == "render_source"],
             "callback_enqueued": [row for row in sequenced if row.get("kind") == "callback_enqueued"],
-            "external_dispatch_events": actual_boundaries.get("events") if actual_boundaries else None,
             "input_association": "App input batches map to update/pass; exact external event->batch unavailable",
             "render_association": "logical callback encoding only; actual submission/GPU completion/present unavailable"}
 
@@ -201,6 +325,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--supervisor-log", type=Path)
     parser.add_argument("--actual-boundaries", type=Path)
+    parser.add_argument("--clock-calibration", type=Path)
     args = parser.parse_args()
     raw = args.trace.read_bytes()
     rows, parse_errors = [], []
@@ -220,7 +345,8 @@ def main():
         ack = lines.count(expected) == 1 and not any(
             f"finalization_ack=unconfirmed run_id={header['run_id']}" in line for line in lines)
     actual = json.loads(args.actual_boundaries.read_bytes()) if args.actual_boundaries else None
-    report = summarize(rows, ack, actual)
+    calibration = json.loads(args.clock_calibration.read_bytes()) if args.clock_calibration else None
+    report = summarize(rows, ack, actual, calibration)
     if parse_errors:
         report["issues"].append("truncated_or_invalid_source_rows")
         report["observation_status"] = "INCOMPLETE"
@@ -228,6 +354,7 @@ def main():
     report["trace_sha256"] = hashlib.sha256(raw).hexdigest()
     report["supervisor_log_sha256"] = hashlib.sha256(args.supervisor_log.read_bytes()).hexdigest() if args.supervisor_log else None
     report["actual_boundaries_sha256"] = hashlib.sha256(args.actual_boundaries.read_bytes()).hexdigest() if args.actual_boundaries else None
+    report["clock_calibration_sha256"] = hashlib.sha256(args.clock_calibration.read_bytes()).hexdigest() if args.clock_calibration else None
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(report, output, ensure_ascii=False, indent=2)
         output.write("\n")
