@@ -2059,9 +2059,11 @@ impl EditorApp {
                 self.modal = None;
             }
         }
-        if (self.point_transform.is_some()
-            || self.point_pick.is_some()
-            || self.point_adapter.is_some())
+        let paused_move_pointer = self.pause_move_place_on_pointer_gone(ctx);
+        if !paused_move_pointer
+            && (self.point_transform.is_some()
+                || self.point_pick.is_some()
+                || self.point_adapter.is_some())
             && ctx.input(|i| {
                 !i.focused
                     || i.events
@@ -2121,6 +2123,12 @@ impl EditorApp {
             .is_some_and(|s| !s.context.valid(&self.view))
         {
             self.trace_move_exit(frame_trace::MoveExitReason::ContextChanged);
+            if self.move_placing() {
+                // Retiring Move must not hand its release batch to selection
+                // or Grip, including a later pass of this same input batch.
+                self.point_input_cancelled = true;
+                self.point_commit_blocked = true;
+            }
             self.point_transform = None;
             self.point_pick = None;
             self.view.point_preview = None;

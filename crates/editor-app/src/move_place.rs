@@ -29,6 +29,7 @@ pub(crate) struct Placement {
     pub frozen_ppm: Option<f64>,
     started_frame: Option<u64>,
     target_pressed: bool,
+    paused_frame: Option<u64>,
 }
 pub(crate) struct Pending {
     task: TaskContext,
@@ -49,6 +50,46 @@ impl Pending {
     }
 }
 impl EditorApp {
+    /// Only an unfrozen, focused placement may survive pointer loss. Both
+    /// cancellation entrances use this guard; a later reply may supply B but
+    /// cannot remove the pause or authorize a target click.
+    pub(crate) fn pause_move_place_on_pointer_gone(&mut self, ctx: &egui::Context) -> bool {
+        let eligible_input = ctx.input(|i| {
+            i.focused
+                && i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::PointerGone))
+                && !i.events.iter().any(|e| {
+                    matches!(
+                        e,
+                        egui::Event::WindowFocused(false)
+                            | egui::Event::Key {
+                                key: egui::Key::Escape,
+                                pressed: true,
+                                ..
+                            }
+                            | egui::Event::PointerButton {
+                                button: egui::PointerButton::Secondary,
+                                ..
+                            }
+                    )
+                })
+        });
+        let Some(placement) = self
+            .point_transform
+            .as_mut()
+            .filter(|s| eligible_input && s.context.valid(&self.view))
+            .and_then(|s| s.placement.as_mut())
+            .filter(|p| matches!(p.phase, Phase::Preparing | Phase::Following))
+        else {
+            return false;
+        };
+        placement.paused_frame = Some(ctx.cumulative_frame_nr());
+        placement.target_pressed = false;
+        self.point_commit_blocked = true;
+        self.object_snap_runtime.reset();
+        true
+    }
     pub(crate) fn move_placing(&self) -> bool {
         self.point_transform
             .as_ref()
@@ -114,6 +155,7 @@ impl EditorApp {
             frozen_ppm: None,
             started_frame: self.point_input_frame,
             target_pressed: false,
+            paused_frame: None,
         });
         self.point_pick = Some(Pick {
             context: session.context.clone(),
@@ -317,6 +359,9 @@ impl EditorApp {
         }
         let action = self.point_transform.as_ref().and_then(|s| {
             let placement = s.placement.as_ref()?;
+            if placement.paused_frame.is_some() {
+                return None;
+            }
             match &placement.phase {
                 Phase::Frozen if placement.baseline.is_some() => Some(
                     s.request(
@@ -368,6 +413,46 @@ impl EditorApp {
             self.cancel_move_place_reason(MoveExitReason::SecondaryClick);
             return;
         }
+        let Some(session) = self.point_transform.as_ref() else {
+            return;
+        };
+        if !session.context.valid(&self.view) {
+            self.cancel_move_place_reason(MoveExitReason::ContextChanged);
+            self.ui_error = Some("工程/选择/权限/精度已改变，请重新开始点击放置".into());
+            return;
+        }
+        if let Some(paused_frame) = session.placement.as_ref().and_then(|p| p.paused_frame) {
+            let frame = ctx.cumulative_frame_nr();
+            // Hover state can survive a missing pointer event. Re-entry needs
+            // a later input batch with an actual valid canvas pointer event.
+            let reentered = frame != paused_frame
+                && ctx.input(|i| {
+                    i.events.iter().any(|e| match e {
+                        egui::Event::PointerMoved(pos) | egui::Event::PointerButton { pos, .. } => {
+                            rect.contains(*pos)
+                        }
+                        _ => false,
+                    })
+                });
+            if reentered {
+                let placement = self
+                    .point_transform
+                    .as_mut()
+                    .unwrap()
+                    .placement
+                    .as_mut()
+                    .unwrap();
+                placement.paused_frame = None;
+                placement.started_frame = Some(frame);
+                placement.target_pressed = false;
+                self.point_commit_blocked = true;
+                self.object_snap_runtime.reset();
+                ctx.request_repaint();
+            }
+            // Even a fresh press/release in the re-entry batch is discarded.
+            // A subsequent batch must supply a new owned target click.
+            return;
+        }
         if self.text_input_at_event
             || ctx.wants_keyboard_input()
             || self.ime_active
@@ -417,11 +502,6 @@ impl EditorApp {
         let Some(session) = self.point_transform.as_ref() else {
             return;
         };
-        if !session.context.valid(&self.view) {
-            self.cancel_move_place_reason(MoveExitReason::ContextChanged);
-            self.ui_error = Some("工程/选择/权限/精度已改变，请重新开始点击放置".into());
-            return;
-        }
         let following = session
             .placement
             .as_ref()
@@ -487,13 +567,17 @@ impl EditorApp {
         let Some(placement) = &session.placement else {
             return false;
         };
-        let label = match placement.phase {
-            Phase::Preparing => "移动 · 正在检查制造边界与容量 · Esc 取消",
-            Phase::Following => {
-                "移动 · 基点 B 为制造边界中心 · 点击目标提交 · Esc / 右键取消 · Alt 暂停吸附"
+        let label = if placement.paused_frame.is_some() {
+            "移动 · 指针已离开，跟踪暂停 · 返回画布后重新点击 · Esc / 右键取消"
+        } else {
+            match placement.phase {
+                Phase::Preparing => "移动 · 正在检查制造边界与容量 · Esc 取消",
+                Phase::Following => {
+                    "移动 · 基点 B 为制造边界中心 · 点击目标提交 · Esc / 右键取消 · Alt 暂停吸附"
+                }
+                Phase::Frozen | Phase::FinalPreview(_) => "移动 · 目标已冻结，正在验证 · Esc 取消",
+                Phase::Ready(_) | Phase::Applying => "移动 · 正在提交一次事务 · 取消以服务终态为准",
             }
-            Phase::Frozen | Phase::FinalPreview(_) => "移动 · 目标已冻结，正在验证 · Esc 取消",
-            Phase::Ready(_) | Phase::Applying => "移动 · 正在提交一次事务 · 取消以服务终态为准",
         };
         let hud_drawn = crate::canvas_hud::paint(
             painter,

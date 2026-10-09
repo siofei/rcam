@@ -1322,6 +1322,14 @@ The independently scoped `docs/S5_SELECTION_INPUT.md` and ADR0059 specify comple
 
 `S5_MOVE_CLICK_PLACE.md` and ADR0060 define a separate shared Move command: complete manufacturing bounding-center B, pointer-resolved T without holding, frozen actual final preview and one service commit. The admitted zero-delta preview is only a display template; existing numeric/drag/Snap/Alt paths and atomic geometry validation remain. Strong project/selection identity and a retired task owner fence replies and defer project transitions until terminal confirmation. Source candidate; ordinary native interaction remains external.
 
+The later `S5_MOVE_POINTER_REENTRY.md`/ADR0060 amendment changes only unfrozen
+click-placement Move pointer loss: a focused, context-valid Preparing/Following
+session pauses on PointerGone, preserves B and admission, and requires a later
+canvas re-entry batch followed by a fresh owned click. Genuine focus loss,
+explicit cancel, stale context and frozen/later phases keep their original
+policy. This does not change drag/Grip/numeric point cancellation or manufacturing
+semantics. Normal native interaction acceptance remains pending.
+
 ### S5 small cross cursor size follow-up
 
 S5-I2-C display-only follow-up, R08/R18 and existing AT-025 local coverage (C-04): SmallCross changes from 12 to 36 physical pixels per axis, centered on the pointer with logical half-length `18 / pixels_per_point`. Existing one-physical-pixel stroke, canvas clipping, cursor ownership, Normal/LargeCross modes and input/world/Snap geometry remain unchanged. Scope is `editor-app` cursor painting and ordinary CPU regressions only; no configuration or dependency change. See ADR0057 addendum. Native visual validation remains external.

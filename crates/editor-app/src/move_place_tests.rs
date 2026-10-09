@@ -56,9 +56,19 @@ mod hud_layout {
         size: egui::Vec2,
         ppp: f32,
     ) -> Vec<(String, egui::Rect, egui::Rect, bool)> {
+        capture_events(run, size, ppp, vec![])
+    }
+
+    fn capture_events(
+        run: &mut Run,
+        size: egui::Vec2,
+        ppp: f32,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, egui::Rect, egui::Rect, bool)> {
         let mut input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
             focused: true,
+            events,
             ..Default::default()
         };
         input
@@ -196,6 +206,28 @@ mod hud_layout {
         assert_eq!(idle.len(), 1);
         assert_eq!(idle[0].0, GENERAL);
     }
+
+    #[test]
+    fn paused_hud_keeps_canvas_slot_and_explains_fresh_click_at_small_high_dpi_sizes() {
+        for size in [egui::vec2(980., 600.), egui::vec2(1280., 832.)] {
+            for ppp in [1., 2., 3.] {
+                let mut run = Run::new();
+                settle_viewport(&mut run, size, ppp);
+                run.ready();
+                let following = capture(&mut run, size, ppp);
+                let canvas = run.app.canvas_rect;
+                let paused = capture_events(&mut run, size, ppp, vec![egui::Event::PointerGone]);
+                assert_eq!(paused.len(), 1);
+                assert!(paused[0].0.contains("跟踪暂停"));
+                assert!(paused[0].0.contains("重新点击"));
+                assert_eq!(run.app.canvas_rect, canvas);
+                assert_eq!(paused[0].1.min, following[0].1.min);
+                assert!(crate::canvas_hud::slot(canvas).contains_rect(paused[0].1));
+                assert!(paused[0].2.contains_rect(paused[0].1));
+                run.no_edit_requests();
+            }
+        }
+    }
 }
 type Work = (u64, rcam_diagnostics::Source, Action, TaskContext);
 struct Run {
@@ -331,7 +363,16 @@ impl Run {
         while let Ok((_, _, action, _)) = self.requests.try_recv() {
             assert!(
                 matches!(action, Action::SelectionCenters(..) | Action::Viewport(..)),
-                "unexpected manufacturing/point request"
+                "unexpected request: {}",
+                match action {
+                    Action::Close(_) => "close",
+                    Action::ProbeDrag(..) => "probe_drag",
+                    Action::CanvasSelect(..) => "canvas_select",
+                    Action::CanvasSelectRect(..) => "canvas_select_rect",
+                    Action::PointPreview(_) => "point_preview",
+                    Action::PointApply(_) => "point_apply",
+                    _ => "other",
+                }
             );
         }
     }
@@ -406,7 +447,7 @@ fn exit_classification_keeps_actual_input_and_cleanup_behavior_with_observer_on_
         "escape",
         "focus_lost",
         "window_focus_lost",
-        "pointer_gone",
+        "pointer_paused",
         "secondary_click",
         "context_changed",
         "modal_replaced",
@@ -467,7 +508,11 @@ fn exit_classification_keeps_actual_input_and_cleanup_behavior_with_observer_on_
                     assert!(run.app.dispatch(ids::TOOL_SELECT));
                 }
             }
-            assert!(!run.app.move_placing(), "case {case} observer {enabled}");
+            assert_eq!(
+                run.app.move_placing(),
+                case == 3,
+                "case {case} observer {enabled}"
+            );
             assert_eq!(run.app.view.info, before);
             run.no_edit_requests();
             outcomes.push((
@@ -481,30 +526,41 @@ fn exit_classification_keeps_actual_input_and_cleanup_behavior_with_observer_on_
             ));
             if enabled {
                 let records = run.app.frame_trace.as_ref().unwrap().take_test_records();
-                let exit = records.iter().find(|r| r["kind"] == "move_exit").unwrap();
-                assert_eq!(exit["reason"], expected, "case {case}");
-                assert_eq!(exit["phase"], "following");
-                assert!(exit["source_ns"].as_str().unwrap().parse::<u64>().is_ok());
-                assert!(exit["binding"]["version_id"].as_u64().unwrap() > 0);
-                if case <= 5 {
-                    assert!(exit["binding"]["update_id"].as_u64().unwrap() > 0);
-                    assert!(exit["binding"]["input_batch_id"].as_u64().unwrap() > 0);
-                } else {
-                    assert_eq!(exit["binding"]["egui_identity_known"], false);
-                }
-                if case == 2 || case == 3 {
-                    let detail = &records
-                        .iter()
-                        .find(|r| r["kind"] == "input_counts")
-                        .unwrap()["detail"];
+                if case == 3 {
+                    assert!(records.iter().all(|r| r["kind"] != "move_exit"));
                     assert_eq!(
-                        detail[if case == 2 {
-                            "window_focus_lost"
-                        } else {
-                            "pointer_gone"
-                        }],
+                        records
+                            .iter()
+                            .find(|r| r["kind"] == "input_counts")
+                            .unwrap()["detail"]["pointer_gone"],
                         1
                     );
+                } else {
+                    let exit = records.iter().find(|r| r["kind"] == "move_exit").unwrap();
+                    assert_eq!(exit["reason"], expected, "case {case}");
+                    assert_eq!(exit["phase"], "following");
+                    assert!(exit["source_ns"].as_str().unwrap().parse::<u64>().is_ok());
+                    assert!(exit["binding"]["version_id"].as_u64().unwrap() > 0);
+                    if case <= 5 {
+                        assert!(exit["binding"]["update_id"].as_u64().unwrap() > 0);
+                        assert!(exit["binding"]["input_batch_id"].as_u64().unwrap() > 0);
+                    } else {
+                        assert_eq!(exit["binding"]["egui_identity_known"], false);
+                    }
+                    if case == 2 || case == 3 {
+                        let detail = &records
+                            .iter()
+                            .find(|r| r["kind"] == "input_counts")
+                            .unwrap()["detail"];
+                        assert_eq!(
+                            detail[if case == 2 {
+                                "window_focus_lost"
+                            } else {
+                                "pointer_gone"
+                            }],
+                            1
+                        );
+                    }
                 }
             }
         }
@@ -842,9 +898,440 @@ fn escape_focus_pointergone_ime_and_secondary_click_cannot_share_target_commit()
         run.update(events, egui::Modifiers::ALT, conflict != 1);
         assert!(run.requests.try_recv().is_err(), "conflict{conflict}");
         assert_eq!(run.model.view.info, before);
-        if conflict != 3 {
+        if conflict != 3 && conflict != 2 {
             assert!(!run.app.move_placing());
+        } else if conflict == 2 {
+            assert!(run.app.move_placing());
         }
+    }
+}
+
+fn primary(pos: egui::Pos2, pressed: bool) -> egui::Event {
+    egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::ALT,
+    }
+}
+
+fn assert_unfrozen(run: &Run, before: &Option<editor_service::DocumentInfo>) {
+    assert!(matches!(
+        run.app
+            .point_transform
+            .as_ref()
+            .unwrap()
+            .placement
+            .as_ref()
+            .unwrap()
+            .phase,
+        Phase::Preparing | Phase::Following
+    ));
+    assert_eq!(&run.app.view.info, before);
+    assert_eq!(&run.model.view.info, before);
+    assert!(run.requests.try_recv().is_err());
+}
+
+#[test]
+fn pointer_gone_batches_reentry_click_and_old_release_cannot_confirm() {
+    for gone_first in [false, true] {
+        let mut run = Run::new();
+        run.ready();
+        let before = run.app.view.info.clone();
+        let point = MmPoint::new(3., 2.);
+        run.pointer(point, true, true);
+        let session = run.app.point_transform.as_ref().unwrap();
+        let base = session.base.value.clone();
+        let target = session.target.value.clone();
+        let baseline = session
+            .placement
+            .as_ref()
+            .unwrap()
+            .baseline
+            .clone()
+            .unwrap();
+        let pos = run
+            .app
+            .camera
+            .screen(MmPoint::new(7., 5.), run.app.canvas_rect);
+        let mut events = vec![
+            egui::Event::PointerMoved(pos),
+            primary(pos, false),
+            primary(pos, true),
+            primary(pos, false),
+        ];
+        events.insert(
+            if gone_first { 0 } else { events.len() },
+            egui::Event::PointerGone,
+        );
+        run.update(events, egui::Modifiers::ALT, true);
+        assert_unfrozen(&run, &before);
+        let session = run.app.point_transform.as_ref().unwrap();
+        assert_eq!(session.base.value, base);
+        assert_eq!(session.target.value, target);
+        assert!(Arc::ptr_eq(
+            session
+                .placement
+                .as_ref()
+                .unwrap()
+                .baseline
+                .as_ref()
+                .unwrap(),
+            &baseline
+        ));
+        assert!(run.app.object_snap_runtime.current.is_none());
+        // Idle/stale hover and an outside pointer event do not resume tracking.
+        run.update(vec![], egui::Modifiers::ALT, true);
+        run.update(
+            vec![egui::Event::PointerMoved(egui::pos2(-1., -1.))],
+            egui::Modifiers::ALT,
+            true,
+        );
+        assert_unfrozen(&run, &before);
+        // The re-entry batch's entire click is discarded, in either event order.
+        run.update(
+            vec![
+                egui::Event::PointerMoved(pos),
+                primary(pos, true),
+                primary(pos, false),
+            ],
+            egui::Modifiers::ALT,
+            true,
+        );
+        assert_unfrozen(&run, &before);
+        run.update(vec![primary(pos, false)], egui::Modifiers::ALT, true);
+        assert_unfrozen(&run, &before);
+        run.final_preview(point);
+        let (id, view, _) = run.work(false);
+        run.reply(id, view);
+        let (id, view, _) = run.work(true);
+        run.reply(id, view);
+        assert_eq!(run.app.view.info.as_ref().unwrap().undo_entries, 1);
+        run.no_edit_requests();
+    }
+}
+
+#[test]
+fn preparing_reply_supplies_base_without_unpausing_or_reusing_old_press() {
+    let mut run = Run::new();
+    run.start();
+    let before = run.app.view.info.clone();
+    let point = MmPoint::new(3., 2.);
+    run.pointer(point, true, true);
+    run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true);
+    let (id, view, task) = run.work(false);
+    assert!(view.error.is_none(), "{:?}", view.error);
+    assert_eq!(task.cancel_token.cancel(), CancelOutcome::TooLate);
+    // The read-only result remains live and installs its exact manufacturing B.
+    let expected_base = view.point_preview.as_ref().unwrap().bounds.center();
+    run.reply(id, view);
+    assert_unfrozen(&run, &before);
+    assert_eq!(
+        run.app
+            .point_transform
+            .as_ref()
+            .unwrap()
+            .base
+            .value
+            .world_mm,
+        expected_base
+    );
+    let saved_target = run
+        .app
+        .point_transform
+        .as_ref()
+        .unwrap()
+        .target
+        .value
+        .clone();
+    let pos = run
+        .app
+        .camera
+        .screen(MmPoint::new(8., 6.), run.app.canvas_rect);
+    run.update(vec![], egui::Modifiers::NONE, true);
+    assert_eq!(
+        run.app.point_transform.as_ref().unwrap().target.value,
+        saved_target
+    );
+    // An old release with a valid position can only re-enter; it cannot freeze.
+    run.update(vec![primary(pos, false)], egui::Modifiers::ALT, true);
+    assert_unfrozen(&run, &before);
+    run.update(vec![primary(pos, false)], egui::Modifiers::ALT, true);
+    assert_unfrozen(&run, &before);
+    run.final_preview(point);
+}
+
+#[test]
+fn repeated_pointer_loss_requires_a_new_owned_click_after_every_reentry() {
+    let mut run = Run::new();
+    run.ready();
+    let before = run.app.view.info.clone();
+    let point = MmPoint::new(3., 2.);
+    let pos = run.app.camera.screen(point, run.app.canvas_rect);
+    for _ in 0..4 {
+        run.pointer(point, true, true);
+        run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true);
+        run.update(
+            vec![egui::Event::PointerGone, egui::Event::PointerMoved(pos)],
+            egui::Modifiers::ALT,
+            true,
+        );
+        run.update(
+            vec![egui::Event::PointerMoved(pos)],
+            egui::Modifiers::ALT,
+            true,
+        );
+        run.update(vec![primary(pos, false)], egui::Modifiers::ALT, true);
+        assert_unfrozen(&run, &before);
+    }
+    run.final_preview(point);
+}
+
+#[test]
+fn pointer_loss_and_reentry_barriers_survive_multiple_egui_passes() {
+    let mut run = Run::new();
+    run.ready();
+    run.ctx
+        .options_mut(|o| o.max_passes = std::num::NonZeroUsize::new(2).unwrap());
+    let before = run.app.view.info.clone();
+    let point = MmPoint::new(3., 2.);
+    let pos = run.app.camera.screen(point, run.app.canvas_rect);
+    run.pointer(point, true, true);
+    for events in [
+        vec![
+            egui::Event::PointerGone,
+            egui::Event::PointerMoved(pos),
+            primary(pos, false),
+        ],
+        vec![
+            egui::Event::PointerMoved(pos),
+            primary(pos, true),
+            primary(pos, false),
+        ],
+    ] {
+        let mut raw = egui::RawInput {
+            focused: true,
+            modifiers: egui::Modifiers::ALT,
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200., 900.),
+            )),
+            events,
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        let mut passes = 0;
+        let _ = run.ctx.run(raw, |ctx| {
+            passes += 1;
+            run.app.update(ctx, &mut run.frame);
+            if ctx.current_pass_index() == 0 {
+                ctx.request_discard("input barrier regression");
+            }
+        });
+        assert_eq!(passes, 2);
+        assert_unfrozen(&run, &before);
+    }
+    run.update(vec![primary(pos, false)], egui::Modifiers::ALT, true);
+    assert_unfrozen(&run, &before);
+    run.final_preview(point);
+}
+
+#[test]
+fn paused_placement_still_cancels_on_focus_escape_secondary_and_context_change() {
+    for cause in 0..7 {
+        let mut run = Run::new();
+        run.ready();
+        let before = run.app.view.info.clone();
+        run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true);
+        let pos = run.app.canvas_rect.center();
+        match cause {
+            0 => run.update(
+                vec![egui::Event::PointerGone, esc()],
+                egui::Modifiers::NONE,
+                true,
+            ),
+            1 => run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, false),
+            2 => run.update(
+                vec![
+                    egui::Event::WindowFocused(false),
+                    egui::Event::PointerMoved(pos),
+                ],
+                egui::Modifiers::NONE,
+                true,
+            ),
+            3 => {
+                for pressed in [true, false] {
+                    run.update(
+                        vec![egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Secondary,
+                            pressed,
+                            modifiers: Default::default(),
+                        }],
+                        egui::Modifiers::NONE,
+                        true,
+                    );
+                }
+            }
+            _ => {
+                match cause {
+                    4 => run.app.view.selection_epoch += 1,
+                    5 => run.app.view.rule_revision += 1,
+                    _ => run.app.view.task_generation += 1,
+                }
+                run.update(
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        primary(pos, true),
+                        primary(pos, false),
+                    ],
+                    egui::Modifiers::ALT,
+                    true,
+                );
+            }
+        }
+        assert!(!run.app.move_placing(), "cause {cause}");
+        assert_eq!(run.app.view.info, before);
+        assert_eq!(run.model.view.info, before);
+        run.no_edit_requests();
+    }
+}
+
+#[test]
+fn paused_clean_and_dirty_project_transitions_retire_session_and_wait_for_task() {
+    for dirty in [false, true] {
+        for preparing in [false, true] {
+            let mut run = Run::new();
+            if !dirty {
+                run.save_current();
+            } else {
+                run.model.run(Action::Move("0.1".into(), "0.2".into()));
+                assert!(run.model.view.error.is_none());
+                run.app.view = run.model.view.clone();
+            }
+            assert_eq!(run.app.view.info.as_ref().unwrap().project_dirty, dirty);
+            if preparing {
+                run.start();
+            } else {
+                run.ready();
+            }
+            let before = run.app.view.info.clone();
+            run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true);
+            assert!(run.app.move_placing());
+            run.app.begin_transition(Transition::Close);
+            assert!(!run.app.move_placing());
+            assert_eq!(run.app.view.info, before);
+            if preparing {
+                let (id, view, _) = run.work(false);
+                run.reply(id, view);
+                assert!(!run.app.move_placing());
+            }
+            assert_eq!(run.app.close_prompt, dirty);
+            if !dirty {
+                let (id, _, action, task) = run.requests.try_recv().unwrap();
+                assert!(matches!(action, Action::Close(false)));
+                run.model.run_task(task, action);
+                run.reply(id, run.model.view.clone());
+                assert!(run.app.view.info.is_none());
+                assert!(!run.app.move_placing());
+            }
+            run.no_edit_requests();
+        }
+    }
+}
+
+#[test]
+fn invalid_context_cannot_pause_or_reenter_another_project() {
+    for invalid_before_gone in [false, true] {
+        let mut run = Run::new();
+        run.ready();
+        if !invalid_before_gone {
+            run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true);
+        }
+        run.app
+            .view
+            .info
+            .as_mut()
+            .unwrap()
+            .project_id
+            .push_str("-different");
+        let pos = run.app.canvas_rect.center();
+        run.update(
+            vec![
+                egui::Event::PointerGone,
+                egui::Event::PointerMoved(pos),
+                primary(pos, true),
+                primary(pos, false),
+            ],
+            egui::Modifiers::ALT,
+            true,
+        );
+        assert!(!run.app.move_placing());
+        assert_eq!(run.model.view.info.as_ref().unwrap().undo_entries, 0);
+        run.no_edit_requests();
+    }
+}
+
+#[test]
+fn stale_paused_move_cannot_transfer_same_batch_to_a_real_grip_or_selection() {
+    let mut run = Run::with_count(1);
+    run.ready();
+    let before = run.app.view.info.clone();
+    let geometry = run.app.view.selected.ordered[0].object.geometry.clone();
+    let features = crate::grip::features(&run.app.view).unwrap();
+    assert!(!features.is_empty());
+    let pos = run
+        .app
+        .camera
+        .screen(features[0].position_mm, run.app.canvas_rect);
+    assert!(run.app.canvas_rect.contains(pos));
+    assert!(crate::grip::hit(&features, pos, run.app.camera, run.app.canvas_rect, 1.).is_some());
+    run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true);
+    run.app.view.selection_epoch += 1;
+    let end = pos + egui::vec2(20., 20.);
+    run.update(
+        vec![
+            egui::Event::PointerMoved(pos),
+            primary(pos, true),
+            egui::Event::PointerMoved(end),
+            primary(end, false),
+        ],
+        egui::Modifiers::ALT,
+        true,
+    );
+    assert!(!run.app.move_placing());
+    assert!(run.app.point_input_cancelled && run.app.point_commit_blocked);
+    assert!(run.app.grip.is_none() && run.app.drag.is_none());
+    assert_eq!(run.app.view.info, before);
+    assert_eq!(run.model.view.info, before);
+    assert_eq!(run.app.view.selected.ordered[0].object.geometry, geometry);
+    run.no_edit_requests();
+}
+
+#[test]
+fn pointer_loss_after_freeze_retires_preview_and_preserves_late_apply_terminal() {
+    for applying in [false, true] {
+        let mut run = Run::new();
+        run.ready();
+        run.final_preview(MmPoint::new(3., 2.));
+        let (id, view, _) = run.work(false);
+        let (id, view) = if applying {
+            run.reply(id, view);
+            let (id, view, task) = run.work(true);
+            assert_eq!(task.cancel_token.cancel(), CancelOutcome::TooLate);
+            (id, view)
+        } else {
+            (id, view)
+        };
+        run.update(vec![egui::Event::PointerGone], egui::Modifiers::NONE, true);
+        assert!(!run.app.move_placing());
+        run.reply(id, view);
+        assert!(!run.app.move_placing());
+        assert_eq!(
+            run.app.view.info.as_ref().unwrap().undo_entries,
+            usize::from(applying)
+        );
+        run.no_edit_requests();
     }
 }
 #[test]

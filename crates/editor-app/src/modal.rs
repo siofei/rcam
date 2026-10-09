@@ -81,6 +81,9 @@ impl EditorApp {
         let active = self.point_pick.is_some()
             || self.point_transform.is_some()
             || self.point_adapter.is_some();
+        if active && lost && self.pause_move_place_on_pointer_gone(ctx) {
+            return false;
+        }
         if active && (lost || (escape && !self.point_commit_blocked)) {
             if self.frame_trace.is_some() {
                 let reason = if lost {
