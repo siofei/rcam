@@ -104,3 +104,51 @@ coordinates or arbitrary key stream is recorded. Existing fixed record, queue,
 writer, metadata and output budgets remain unchanged. Prior native NOT PASS and
 unknown root cause stay historical; fresh source/binary identity, independent
 review and Mac input/IME/tab/save/cancel verification are required.
+
+## Confirmed Gerber picker result correction (2026-10-10)
+
+S5/P3 UE-A follow-up; R02/R09/R12/R18; compatibility AT-005/043/076/078.
+Scope is editor-app import admission/input ownership, opt-in local trace records
+and CPU regressions. The previous picker success branch immediately called
+ordinary import admission after establishing the return-frame barrier, so the
+barrier rejected the confirmed file list before any worker request. A synthetic
+closure through that production branch reproduces the rejection. The reported
+native failure lacked a returned Vec/URL count; the actual native return value
+remains unknown, independently of this source-proven success-path defect.
+
+Picker admission now runs before opening the panel and captures the complete
+document Owner and TaskVersion. Success rechecks that identity, validates the
+existing file-count/path bounds and holds the explicit result in the existing
+document-owned ImportQueue without reading files or sending a worker request.
+Ordinary drops retain ordinary admission. Before first dispatch, a later actual
+raw-input batch, focused window and all original command/selection/transition
+guards are required. Return frame, every egui pass, first backend drain and a
+held-button/modifier release frame remain blocked. Real holds that begin while
+confirmation waits also keep their release frame blocked. Key quarantine does
+not have to become empty, and elapsed time never authorizes dispatch.
+
+The native boundary token is separate from ordinary held-key re-isolation, so
+re-isolating a held key does not discard a confirmed file list. A new native
+panel supersedes an undispatched confirmation with an explicit stopped result.
+Owner or TaskVersion change also stops it. The active queue prevents tab/new
+document intents from retargeting it; cancel and the first deferred close/quit
+are processed before waiting for input. First accepted send consumes the
+confirmation marker exactly once. Subsequent files preserve the original task
+receipts, empty-document Owner migration, cancellation/resource limits and
+single-file transactions, and also pause across a native input barrier.
+No automatic retry follows a refused worker admission. Repaint is requested
+only to leave a transient focused input barrier; unfocused/held waiting does
+not create an unconditional polling repaint.
+
+Opt-in `gerber_import` records distinguish confirmed/cancelled/error panel
+returns, held queue and accepted/refused dispatch. They contain only counts,
+slot, complete Owner/version equality decisions, native token/raw batch and
+task ID; never paths, filenames, input text or error strings. The existing
+256-byte Record, 4096-byte writer staging and queue/output limits stay fixed.
+`queue_finished` describes a stop observed by queue advance, not every terminal;
+the existing task receipt/received records remain authoritative for completion.
+Fresh source identity, independent review and ordinary Mac picker/import,
+resource refusal and read cancellation verification remain required. Previous
+NOT PASS and unrelated portable failures remain historical; no native PASS is
+inferred and the cancelled full12/60Hz tasks are not reinstated. Saving, Snap/Alt,
+shader, manufacturing precision and measurement thresholds are unchanged.

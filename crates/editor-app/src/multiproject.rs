@@ -58,6 +58,9 @@ impl Tabs {
     pub(crate) fn change_pending(&self) -> bool {
         self.pending.is_some() || self.closed
     }
+    pub(crate) fn wait_for_input_release(&mut self) {
+        self.input_barrier = true;
+    }
 }
 
 impl EditorApp {

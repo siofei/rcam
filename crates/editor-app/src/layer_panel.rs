@@ -498,11 +498,7 @@ impl EditorApp {
 
     /// Menu / toolbar entry: sequential single-file imports.
     pub(crate) fn import_gerbers(&mut self) {
-        match self.native_panel(crate::platform::choose_gerbers) {
-            Ok(Some(paths)) => self.start_gerber_import(paths),
-            Ok(None) => {}
-            Err(e) => self.ui_error = Some(e),
-        }
+        self.pick_gerber_import(crate::platform::choose_gerbers);
     }
 
     /// The Layer panel (left side). Compact single-column rows, top layer first.

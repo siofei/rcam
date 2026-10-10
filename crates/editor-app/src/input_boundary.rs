@@ -15,6 +15,8 @@ const BUTTONS: [egui::PointerButton; 5] = [
 pub(crate) struct Boundary {
     ctx: Option<egui::Context>,
     pub(crate) serial: u64,
+    native_serial: u64,
+    raw_batch: u64,
     blocked_frame: Option<u64>,
     drain_return: bool,
     held: HashSet<egui::Key>,
@@ -44,6 +46,8 @@ impl Default for Boundary {
         Self {
             ctx: None,
             serial: 0,
+            native_serial: 0,
+            raw_batch: 0,
             blocked_frame: None,
             drain_return: false,
             held: HashSet::new(),
@@ -68,6 +72,15 @@ impl Boundary {
     }
     pub(crate) fn return_pending(&self) -> bool {
         self.drain_return
+    }
+    pub(crate) fn native_serial(&self) -> u64 {
+        self.native_serial
+    }
+    pub(crate) fn raw_batch(&self) -> u64 {
+        self.raw_batch
+    }
+    pub(crate) fn context(&self) -> Option<&egui::Context> {
+        self.ctx.as_ref()
     }
     pub(crate) fn blocked(&self) -> bool {
         self.ctx
@@ -121,6 +134,7 @@ impl Boundary {
         self.composition = false;
         self.fresh_buttons.fill(false);
         if native {
+            self.native_serial = self.serial;
             // Panel activation/dismissal keys may arrive after runModal returns,
             // even when they were never delivered to the application before entry.
             self.quarantine
@@ -162,6 +176,10 @@ impl Boundary {
         result
     }
     pub(crate) fn raw_input(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.raw_batch = self
+            .raw_batch
+            .checked_add(1)
+            .expect("input batch exhausted");
         self.bind(ctx);
         for key in self.released.drain() {
             self.quarantine.remove(&key);

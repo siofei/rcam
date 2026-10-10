@@ -255,6 +255,17 @@ pub(crate) struct SessionState {
     pub unified_modal_open: bool,
     pub point_commit_blocked: bool,
 }
+#[derive(Clone, Copy, Serialize)]
+pub(crate) struct GerberImportState {
+    pub outcome: &'static str,
+    pub file_count: usize,
+    pub owner_slot: u64,
+    pub owner_matches: bool,
+    pub version_matches: bool,
+    pub native_serial: u64,
+    pub raw_batch: u64,
+    pub task_id: Option<u64>,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum MoveExitReason {
@@ -389,6 +400,9 @@ impl Metadata {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Payload {
+    GerberImport {
+        state: GerberImportState,
+    },
     SessionState {
         binding: Binding,
         state: SessionState,
@@ -1289,6 +1303,12 @@ impl Recorder {
                 state,
             },
         );
+    }
+    pub fn gerber_import(&self, state: GerberImportState) {
+        if self.shared.active() {
+            self.shared
+                .emit(self.shared.clock.now(), Payload::GerberImport { state });
+        }
     }
     pub fn installed(&mut self, id: u64, view: &crate::state::View) {
         if !self.shared.active() {
@@ -2204,6 +2224,27 @@ mod tests {
         assert_eq!(states[0]["state"]["session_slot"], 2);
         assert_eq!(states[0]["state"]["busy"], true);
         assert_eq!(states[1]["state"]["busy"], false);
+        assert!(std::mem::size_of::<Record>() <= 256);
+        assert!(std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>() <= 4096);
+    }
+    #[test]
+    fn gerber_import_diagnostics_are_fixed_counts_and_ownership_decisions() {
+        let recorder = Recorder::for_test();
+        recorder.gerber_import(GerberImportState {
+            outcome: "panel_confirmed",
+            file_count: 2,
+            owner_slot: 1,
+            owner_matches: true,
+            version_matches: true,
+            native_serial: 3,
+            raw_batch: 4,
+            task_id: None,
+        });
+        let rows = recorder.take_test_records();
+        let row = rows.iter().find(|r| r["kind"] == "gerber_import").unwrap();
+        assert_eq!(row["state"]["file_count"], 2);
+        assert_eq!(row["state"]["owner_matches"], true);
+        assert_eq!(row["state"].as_object().unwrap().len(), 8);
         assert!(std::mem::size_of::<Record>() <= 256);
         assert!(std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>() <= 4096);
     }
