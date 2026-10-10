@@ -11,7 +11,9 @@ mod selection_edit;
 pub use selection_edit::{SelectionEdit, SelectionGroup};
 #[path = "unified_editor_draft.rs"]
 mod unified_editor_draft;
-pub use unified_editor_draft::{DraftCandidate, DraftResources, DraftStep, ManufacturingDraft};
+pub use unified_editor_draft::{
+    DraftApertureSizeStep, DraftCandidate, DraftResources, DraftStep, ManufacturingDraft,
+};
 #[path = "move_demand.rs"]
 mod move_demand;
 pub use move_demand::{MAX_MOVE_TARGETS, MAX_MOVE_WORK_BYTES, MoveDemand};
@@ -104,6 +106,11 @@ enum Operation {
         after: Option<std::sync::Arc<crate::pnp::BoardState>>,
     },
     Selection(Vec<Transaction>),
+    /// One global AP insertion set plus all guarded per-layer geometry deltas.
+    DraftApertures {
+        parts: Vec<Transaction>,
+        inserted: Vec<(usize, ApertureDefinition)>,
+    },
     Modify(Vec<Change>),
     Insert(Vec<IndexedObject>),
     Delete(Vec<IndexedObject>),
@@ -2419,6 +2426,31 @@ fn check_transaction(
         }
         return Ok(());
     }
+    if let Operation::DraftApertures { parts, inserted } = &tx.operation {
+        let mut ids: HashSet<_> = document.apertures.iter().map(|a| a.id.as_str()).collect();
+        let mut dcodes: HashSet<_> = document.apertures.iter().map(|a| a.source_dcode).collect();
+        for (n, (index, definition)) in inserted.iter().enumerate() {
+            super::validate_aperture_shape(&definition.shape)
+                .map_err(EditError::InvalidGeometry)?;
+            if forward {
+                if *index != document.apertures.len() + n
+                    || !ids.insert(&definition.id)
+                    || !dcodes.insert(definition.source_dcode)
+                {
+                    return Err(EditError::InvalidArgument);
+                }
+            } else if document.apertures.get(*index) != Some(definition) {
+                return Err(EditError::InvalidArgument);
+            }
+        }
+        for part in parts {
+            if !matches!(part.operation, Operation::Modify(_)) {
+                return Err(EditError::InvalidArgument);
+            }
+            check_transaction(document, part, forward)?;
+        }
+        return Ok(());
+    }
     // Definition-only operations do not reference a layer at all.
     if let Operation::RenameBlockDefinition {
         index,
@@ -2454,7 +2486,9 @@ fn check_transaction(
         .filter(|l| l.id == tx.layer_id)
         .ok_or(EditError::InvalidArgument)?;
     match &tx.operation {
-        Operation::Selection(_) => unreachable!("checked before layer lookup"),
+        Operation::Selection(_) | Operation::DraftApertures { .. } => {
+            unreachable!("checked before layer lookup")
+        }
         Operation::Board { .. } => return Err(EditError::InvalidArgument),
         Operation::Layers(_) => {}
         Operation::RenameBlockDefinition { .. } | Operation::RemoveBlockDefinition { .. } => {
@@ -2623,6 +2657,23 @@ fn apply(document: &mut SemanticDocument, tx: &Transaction, forward: bool) -> Ve
             .iter()
             .flat_map(|part| apply(document, part, forward))
             .collect(),
+        Operation::DraftApertures { parts, inserted } => {
+            if forward {
+                for (index, definition) in inserted {
+                    document.apertures.insert(*index, definition.clone());
+                }
+            }
+            let ids = parts
+                .iter()
+                .flat_map(|part| apply(document, part, forward))
+                .collect();
+            if !forward {
+                for (index, _) in inserted.iter().rev() {
+                    document.apertures.remove(*index);
+                }
+            }
+            ids
+        }
         // Layer moves mutate the transaction itself and never reach this path.
         Operation::Board { .. } | Operation::Layers(_) => Vec::new(),
         Operation::Modify(changes) => {
@@ -2749,6 +2800,9 @@ fn operation_changes_shape(operation: &Operation) -> bool {
         Operation::Selection(parts) => parts
             .iter()
             .any(|part| operation_changes_shape(&part.operation)),
+        Operation::DraftApertures { inserted, parts } => {
+            !inserted.is_empty() || parts.iter().any(|p| operation_changes_shape(&p.operation))
+        }
         Operation::ApertureResize(_) => true,
         Operation::Batch(batch) => !batch.inserted_apertures.is_empty(),
         Operation::ReplaceObjects(op) => op.definition_insert.is_some(),

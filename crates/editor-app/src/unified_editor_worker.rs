@@ -27,6 +27,13 @@ pub enum Command {
     Begin,
     Preview(DraftStep),
     Execute(DraftStep),
+    // Host-only foundation probes; no GUI entry/defaults yet.
+    #[allow(dead_code)]
+    PreviewApertureSize(DraftApertureSizeStep),
+    #[allow(dead_code)]
+    ExecuteApertureSize(DraftApertureSizeStep),
+    #[allow(dead_code)]
+    ApplyApertureSize(DraftApertureSizeStep),
     History(UnifiedEditorHistory),
     Apply(Option<DraftStep>),
     Cancel,
@@ -55,6 +62,8 @@ pub struct Artifacts {
     pub bounds: Option<BoundsMm>,
     pub selected: crate::shared_snapshot::SnapshotVec<ObjectInfo>,
     pub owned_bytes: usize,
+    prepared_apertures:
+        Option<crate::shared_snapshot::SnapshotVec<editor_core::ApertureDefinition>>,
 }
 #[derive(Clone)]
 pub struct Reply {
@@ -156,8 +165,45 @@ fn prepare(
     token: Option<&task::CancellationToken>,
     started: Instant,
 ) -> Result<(Artifacts, usize), ServiceError> {
-    let reserve = budget::candidate_reserve(source, render.ppm, &mut || check(token, started))?;
-    let peak = budget::add(budget::add(live, render.retained_ui_bytes)?, reserve)?;
+    let mut reserve = budget::candidate_reserve(source, render.ppm, &mut || check(token, started))?;
+    if candidate.apertures().len() != 0 {
+        reserve = budget::add(reserve, budget::aperture_table_cost(&source.apertures)?)?;
+    }
+    let mut aperture_reserve = 0;
+    for a in candidate.apertures() {
+        check(token, started)?;
+        // This host foundation accepts rectangle overlays only. Source topology is
+        // unchanged (four corners); dimensions still pass the original scene/LOD guards.
+        if !matches!(a.shape, editor_core::ApertureShape::Rectangle { .. }) {
+            return Err(fail("候选AP类型不支持"));
+        }
+        aperture_reserve = budget::add(
+            aperture_reserve,
+            budget::add(
+                a.id.capacity(),
+                std::mem::size_of::<editor_core::ApertureDefinition>() + 512,
+            )?,
+        )?;
+    }
+    if candidate.apertures().len() != 0 {
+        for (_, _, geometry) in candidate.objects() {
+            check(token, started)?;
+            // Only AP reference copies grow. Empty-overlay rigid operations retain
+            // their original admission, including deep Region geometry.
+            if let SemanticGeometry::Flash { aperture_id, .. } = geometry {
+                aperture_reserve =
+                    budget::add(aperture_reserve, budget::add(aperture_id.capacity(), 64)?)?;
+            }
+        }
+    }
+    // Snapshot clone and resolver maps retain separate IDs/definitions; charge before allocation.
+    let aperture_reserve = aperture_reserve
+        .checked_mul(8)
+        .ok_or_else(|| budget::refuse("候选AP资源溢出"))?;
+    let peak = budget::add(
+        budget::add(budget::add(live, render.retained_ui_bytes)?, reserve)?,
+        aperture_reserve,
+    )?;
     budget::admit(peak)?;
     check(token, started)?;
     let mut overrides = HashMap::new();
@@ -170,6 +216,23 @@ fn prepare(
         }
     }
     let mut snapshot = source.clone();
+    snapshot
+        .apertures
+        .try_reserve_exact(candidate.apertures().len())
+        .map_err(|_| budget::refuse("候选AP分配失败"))?;
+    for a in candidate.apertures() {
+        check(token, started)?;
+        if snapshot
+            .apertures
+            .iter()
+            .any(|old| old.id == a.id || old.source_dcode == a.source_dcode)
+        {
+            return Err(fail("候选AP身份冲突"));
+        }
+        snapshot.apertures.push(a.clone());
+    }
+    let prepared_apertures = (candidate.apertures().len() != 0)
+        .then(|| crate::shared_snapshot::SnapshotVec::from(snapshot.apertures.clone()));
     let mut selected = Vec::new();
     selected
         .try_reserve_exact(overrides.len())
@@ -244,13 +307,16 @@ fn prepare(
         details: serde_json::json!({}),
     })?;
     check(token, started)?;
-    let owned_bytes = budget::add(
+    let mut owned_bytes = budget::add(
         budget::snapshot_cost(&snapshot)?,
         budget::add(
             index.owned_bytes(),
             budget::add(scene.owned_bytes(), budget::selection_cost(&selected)?)?,
         )?,
     )?;
+    if let Some(apertures) = &prepared_apertures {
+        owned_bytes = budget::add(owned_bytes, budget::aperture_table_cost(apertures)?)?;
+    }
     budget::admit(budget::add(
         budget::add(live, render.retained_ui_bytes)?,
         owned_bytes,
@@ -263,6 +329,7 @@ fn prepare(
             bounds,
             selected: selected.into(),
             owned_bytes,
+            prepared_apertures,
         },
         peak,
     ))
@@ -441,6 +508,17 @@ impl Model {
                     step.clone(),
                 )?;
             }
+            if let Command::PreviewApertureSize(step)
+            | Command::ExecuteApertureSize(step)
+            | Command::ApplyApertureSize(step) = &r.command
+            {
+                let generation = session.backend.generation()?;
+                self.service.unified_editor_set_aperture_size_step(
+                    &mut session.backend,
+                    generation,
+                    step.clone(),
+                )?;
+            }
             let live = session.live_bytes(&self.world_index, &self.view)?;
             let serial = self.next_unified_serial()?;
             let mut staged = None;
@@ -464,7 +542,7 @@ impl Model {
             };
             let generation = session.backend.generation()?;
             let terminal = match &r.command {
-                Command::Preview(_) => {
+                Command::Preview(_) | Command::PreviewApertureSize(_) => {
                     self.service.unified_editor_preview_prepared(
                         &mut session.backend,
                         generation,
@@ -473,7 +551,7 @@ impl Model {
                     )?;
                     Terminal::Open
                 }
-                Command::Execute(_) => {
+                Command::Execute(_) | Command::ExecuteApertureSize(_) => {
                     self.service.unified_editor_execute_prepared(
                         &mut session.backend,
                         generation,
@@ -491,7 +569,7 @@ impl Model {
                     )?;
                     Terminal::Open
                 }
-                Command::Apply(_) => {
+                Command::Apply(_) | Command::ApplyApertureSize(_) => {
                     let ticket = self
                         .service
                         .unified_editor_begin_apply(&mut session.backend)?;
@@ -520,7 +598,10 @@ impl Model {
             };
             let a = Arc::new(staged.expect("successful publication prepared exactly once"));
             session.host_peak_bytes = peak;
-            if matches!(r.command, Command::Preview(_)) {
+            if matches!(
+                r.command,
+                Command::Preview(_) | Command::PreviewApertureSize(_)
+            ) {
                 session.preview = Some(a.clone());
                 self.install_unified_artifact(&a, &session.work);
             } else {
@@ -529,6 +610,9 @@ impl Model {
                 self.install_unified_artifact(&a, &a);
             }
             if terminal == Terminal::Changed {
+                if let Some(apertures) = &a.prepared_apertures {
+                    self.view.apertures = apertures.clone();
+                }
                 self.snapshot = Some(a.snapshot.clone());
                 self.world_index = a.index.clone();
                 self.view.selected.ordered = a.selected.clone();

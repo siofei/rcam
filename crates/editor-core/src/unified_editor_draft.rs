@@ -1,12 +1,55 @@
 //! Opaque, bounded manufacturing checkpoints. No main-document trial commits.
 use super::*;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+static NEXT_DRAFT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DraftStep {
     pub groups: Vec<SelectionGroup>,
     pub operation: SelectionEdit,
+}
+
+/// Host-only absolute rectangle dimensions, using the existing grip size semantics.
+/// No inferred edge, area, axis or hole-deformation policy.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DraftApertureSizeStep {
+    pub groups: Vec<SelectionGroup>,
+    pub width_mm: f64,
+    pub height_mm: f64,
+}
+#[derive(Debug, Clone)]
+enum Input {
+    Transform(DraftStep),
+    ApertureSize(DraftApertureSizeStep),
+}
+impl Input {
+    fn groups(&self) -> &Vec<SelectionGroup> {
+        match self {
+            Self::Transform(s) => &s.groups,
+            Self::ApertureSize(s) => &s.groups,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+struct DraftAperture {
+    base_id: String,
+    definition: ApertureDefinition,
+}
+#[derive(Debug, Clone, PartialEq)]
+struct Checkpoint {
+    geometry: Vec<SemanticGeometry>,
+    apertures: Vec<DraftAperture>,
+}
+impl std::ops::Deref for Checkpoint {
+    type Target = Vec<SemanticGeometry>;
+    fn deref(&self) -> &Self::Target {
+        &self.geometry
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +76,13 @@ struct Target {
 pub struct DraftCandidate<'a> {
     targets: &'a [Target],
     geometry: &'a [SemanticGeometry],
+    apertures: &'a [DraftAperture],
 }
 impl<'a> DraftCandidate<'a> {
+    /// Only definitions owned by this exact prospective checkpoint.
+    pub fn apertures(self) -> impl ExactSizeIterator<Item = &'a ApertureDefinition> {
+        self.apertures.iter().map(|a| &a.definition)
+    }
     pub fn objects(
         self,
     ) -> impl ExactSizeIterator<Item = (&'a str, &'a str, &'a SemanticGeometry)> {
@@ -55,16 +103,17 @@ impl<'a> DraftCandidate<'a> {
 #[derive(Debug)]
 pub struct ManufacturingDraft {
     document_id: String,
+    namespace: u64,
     content_generation: u64,
     generation: u64,
     targets: Vec<Target>,
     groups: Vec<SelectionGroup>,
-    entry: Arc<Vec<SemanticGeometry>>,
-    work: Arc<Vec<SemanticGeometry>>,
-    preview: Option<Arc<Vec<SemanticGeometry>>>,
-    undo: Vec<Arc<Vec<SemanticGeometry>>>,
-    redo: Vec<Arc<Vec<SemanticGeometry>>>,
-    latest: Option<DraftStep>,
+    entry: Arc<Checkpoint>,
+    work: Arc<Checkpoint>,
+    preview: Option<Arc<Checkpoint>>,
+    undo: Vec<Arc<Checkpoint>>,
+    redo: Vec<Arc<Checkpoint>>,
+    latest: Option<Input>,
     byte_limit: usize,
     entry_limit: usize,
     scratch_bytes: usize,
@@ -109,12 +158,33 @@ fn geometry_capacity(g: &SemanticGeometry) -> Result<usize, EditError> {
         _ => Ok(0),
     }
 }
-fn snapshot_bytes(snapshot: &Vec<SemanticGeometry>) -> Result<usize, EditError> {
+fn geometry_bytes(snapshot: &Vec<SemanticGeometry>) -> Result<usize, EditError> {
     let mut n = checked_mul(snapshot.capacity(), size_of::<SemanticGeometry>())?;
     for g in snapshot {
         n = checked_add(n, geometry_capacity(g)?)?;
     }
     checked_add(n, size_of::<Vec<SemanticGeometry>>() + 256)
+}
+
+fn aperture_bytes(a: &DraftAperture) -> Result<usize, EditError> {
+    // Overlay definitions are rectangle-only; reject expansion instead of undercharging macros.
+    if !matches!(a.definition.shape, ApertureShape::Rectangle { .. }) {
+        return Err(EditError::UnsupportedTransform);
+    }
+    checked_add(
+        size_of::<DraftAperture>() + 128,
+        checked_add(a.base_id.capacity(), a.definition.id.capacity())?,
+    )
+}
+fn snapshot_bytes(s: &Checkpoint) -> Result<usize, EditError> {
+    let mut n = checked_add(
+        geometry_bytes(&s.geometry)?,
+        checked_mul(s.apertures.capacity(), size_of::<DraftAperture>() + 64)?,
+    )?;
+    for a in &s.apertures {
+        n = checked_add(n, aperture_bytes(a)?)?;
+    }
+    Ok(n)
 }
 
 impl EditHistory {
@@ -173,9 +243,16 @@ impl EditHistory {
                 entry.push(object.geometry.clone());
             }
         }
-        let entry = Arc::new(entry);
+        let entry = Arc::new(Checkpoint {
+            geometry: entry,
+            apertures: vec![],
+        });
+        let namespace = NEXT_DRAFT
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .map_err(|_| EditError::ResourceLimit)?;
         let result = ManufacturingDraft {
             document_id: document.id.clone(),
+            namespace,
             content_generation: self.content_generation,
             generation: 0,
             targets: slots,
@@ -222,6 +299,58 @@ impl EditHistory {
         draft.check_fence(self, document)?;
         let candidate = draft.calculate(document, checkpoint)?;
         let final_work = candidate.as_ref().unwrap_or(&draft.work);
+        let mut next_generated = self.next_generated_aperture_id;
+        let final_work = if final_work.apertures.is_empty() {
+            std::borrow::Cow::Borrowed(&**final_work)
+        } else {
+            let key = checked_add(document.id.len(), 128)?;
+            let mapping_bytes = checked_mul(
+                final_work.apertures.len(),
+                checked_add(checked_mul(key, 6)?, 512)?,
+            )?;
+            let rewritten_geometry = checked_mul(draft.targets.len(), checked_mul(key, 4)?)?;
+            draft.admit(checked_add(
+                checked_mul(snapshot_bytes(final_work)?, 3)?,
+                checked_add(mapping_bytes, rewritten_geometry)?,
+            )?)?;
+            let mut final_work = (**final_work).clone();
+            let mut dcode = document
+                .apertures
+                .iter()
+                .map(|a| a.source_dcode)
+                .max()
+                .unwrap_or(9);
+            let mut ids = HashSet::new();
+            let mut mapping = HashMap::new();
+            ids.try_reserve(final_work.apertures.len())
+                .map_err(|_| EditError::ResourceLimit)?;
+            mapping
+                .try_reserve(final_work.apertures.len())
+                .map_err(|_| EditError::ResourceLimit)?;
+            for a in &mut final_work.apertures {
+                checkpoint()?;
+                let id = format!("{}-generated-aperture-{next_generated}", document.id);
+                next_generated = next_generated
+                    .checked_add(1)
+                    .ok_or(EditError::ResourceLimit)?;
+                dcode = dcode.checked_add(1).ok_or(EditError::ResourceLimit)?;
+                if document.apertures.iter().any(|a| a.id == id) || !ids.insert(id.clone()) {
+                    return Err(EditError::InvalidArgument);
+                }
+                mapping.insert(a.definition.id.clone(), id.clone());
+                a.definition.id = id;
+                a.definition.source_dcode = dcode;
+            }
+            for g in &mut final_work.geometry {
+                checkpoint()?;
+                if let SemanticGeometry::Flash { aperture_id, .. } = g
+                    && let Some(id) = mapping.get(aperture_id)
+                {
+                    *aperture_id = id.clone();
+                }
+            }
+            std::borrow::Cow::Owned(final_work)
+        };
         draft.admit(candidate.as_ref().map_or(Ok(0), |g| snapshot_bytes(g))?)?;
         let mut parts: BTreeMap<usize, Transaction> = BTreeMap::new();
         for (n, target) in draft.targets.iter().enumerate() {
@@ -262,7 +391,7 @@ impl EditHistory {
         }
         checkpoint()?;
         if parts.is_empty() {
-            prepare(draft.candidate(final_work))?;
+            prepare(draft.candidate(&final_work))?;
             checkpoint()?;
             // NoChange is a successful terminal with no main content/history publication.
             begin_commit(false)?;
@@ -272,28 +401,60 @@ impl EditHistory {
         // is used as this transaction's history charge, independently of session resident.
         let demand = self.move_selection_demand_checked(document, &draft.groups, checkpoint)?;
         demand.admit()?;
-        self.budget(demand.history_bytes)?;
+        let bytes = if final_work.apertures.is_empty() {
+            demand.history_bytes
+        } else {
+            checked_add(
+                demand.history_bytes,
+                checked_mul(snapshot_bytes(&final_work)?, 2)?,
+            )?
+        };
+        self.budget(bytes)?;
         let tx = Transaction {
             layer_id: String::new(),
             layer: 0,
-            operation: Operation::Selection(parts.into_values().collect()),
+            operation: if final_work.apertures.is_empty() {
+                Operation::Selection(parts.into_values().collect())
+            } else {
+                Operation::DraftApertures {
+                    parts: parts.into_values().collect(),
+                    inserted: final_work
+                        .apertures
+                        .iter()
+                        .enumerate()
+                        .map(|(n, a)| (document.apertures.len() + n, a.definition.clone()))
+                        .collect(),
+                }
+            },
             before_order: vec![],
             after_order: vec![],
-            bytes: demand.history_bytes,
+            bytes,
         };
         check_transaction(document, &tx, true)?;
-        prepare(draft.candidate(final_work))?;
+        if !final_work.apertures.is_empty() {
+            document
+                .apertures
+                .try_reserve_exact(final_work.apertures.len())
+                .map_err(|_| EditError::ResourceLimit)?;
+            self.undo
+                .try_reserve_exact(1)
+                .map_err(|_| EditError::ResourceLimit)?;
+        }
+        prepare(draft.candidate(&final_work))?;
         checkpoint()?;
         begin_commit(true)?;
-        Ok(self.commit(document, tx))
+        let ids = self.commit(document, tx);
+        self.next_generated_aperture_id = next_generated;
+        Ok(ids)
     }
 }
 
 impl ManufacturingDraft {
-    fn candidate<'a>(&'a self, geometry: &'a [SemanticGeometry]) -> DraftCandidate<'a> {
+    fn candidate<'a>(&'a self, geometry: &'a Checkpoint) -> DraftCandidate<'a> {
         DraftCandidate {
             targets: &self.targets,
-            geometry,
+            geometry: &geometry.geometry,
+            apertures: &geometry.apertures,
         }
     }
     pub fn work_candidate(&self) -> DraftCandidate<'_> {
@@ -312,10 +473,10 @@ impl ManufacturingDraft {
         &self.work
     }
     pub fn preview_geometry(&self) -> Option<&[SemanticGeometry]> {
-        self.preview.as_deref().map(Vec::as_slice)
+        self.preview.as_deref().map(|s| s.geometry.as_slice())
     }
     pub fn latest_groups(&self) -> Option<&[SelectionGroup]> {
-        self.latest.as_ref().map(|s| s.groups.as_slice())
+        self.latest.as_ref().map(|s| s.groups().as_slice())
     }
     pub fn has_work_changes(&self) -> bool {
         self.entry != self.work
@@ -350,7 +511,7 @@ impl ManufacturingDraft {
             n,
             checked_mul(
                 self.undo.capacity() + self.redo.capacity(),
-                size_of::<Arc<Vec<SemanticGeometry>>>() + 64,
+                size_of::<Arc<Checkpoint>>() + 64,
             )?,
         )?;
         let mut seen = HashSet::new();
@@ -365,7 +526,7 @@ impl ManufacturingDraft {
             }
         }
         if let Some(step) = &self.latest {
-            n = checked_add(n, groups_bytes(&step.groups)? + size_of::<DraftStep>())?;
+            n = checked_add(n, groups_bytes(step.groups())? + size_of::<Input>())?;
         }
         Ok(n)
     }
@@ -419,7 +580,36 @@ impl ManufacturingDraft {
             }
             _ => return Err(EditError::InvalidArgument),
         }
-        let selected = history.selection_targets(document, &step.groups, MAX_MOVE_OBJECTS)?;
+        self.set_input(history, document, generation, Input::Transform(step))
+    }
+    pub fn set_aperture_size_step(
+        &mut self,
+        history: &EditHistory,
+        document: &SemanticDocument,
+        generation: u64,
+        step: DraftApertureSizeStep,
+    ) -> Result<u64, EditError> {
+        if !step.width_mm.is_finite()
+            || !step.height_mm.is_finite()
+            || step.width_mm <= 0.
+            || step.height_mm <= 0.
+        {
+            return Err(EditError::InvalidArgument);
+        }
+        self.set_input(history, document, generation, Input::ApertureSize(step))
+    }
+    fn set_input(
+        &mut self,
+        history: &EditHistory,
+        document: &SemanticDocument,
+        generation: u64,
+        step: Input,
+    ) -> Result<u64, EditError> {
+        self.check_fence(history, document)?;
+        if generation != self.generation {
+            return Err(EditError::InvalidArgument);
+        }
+        let selected = history.selection_targets(document, step.groups(), MAX_MOVE_OBJECTS)?;
         let entry: HashSet<_> = self.targets.iter().map(|t| (t.layer, t.index)).collect();
         if selected
             .iter()
@@ -429,7 +619,7 @@ impl ManufacturingDraft {
         }
         let next = self.next_generation()?;
         self.admit(
-            groups_bytes(&step.groups)? + size_of::<DraftStep>() + snapshot_bytes(&self.work)?,
+            groups_bytes(step.groups())? + size_of::<Input>() + snapshot_bytes(&self.work)?,
         )?;
         self.latest = Some(step);
         self.preview = None;
@@ -440,14 +630,14 @@ impl ManufacturingDraft {
         &self,
         document: &SemanticDocument,
         checkpoint: &mut impl FnMut() -> Result<(), EditError>,
-    ) -> Result<Option<Arc<Vec<SemanticGeometry>>>, EditError> {
+    ) -> Result<Option<Arc<Checkpoint>>, EditError> {
         checkpoint()?;
         let Some(step) = &self.latest else {
             return Ok(None);
         };
         self.admit(snapshot_bytes(&self.work)?)?;
         let selected: HashSet<_> = step
-            .groups
+            .groups()
             .iter()
             .flat_map(|g| {
                 g.object_ids
@@ -455,24 +645,134 @@ impl ManufacturingDraft {
                     .map(move |id| (g.layer_id.as_str(), id.as_str()))
             })
             .collect();
-        let apertures = document.apertures.iter().map(|a| a.id.clone()).collect();
-        let definitions = block_definition_ids(document);
-        let mut candidate = Vec::new();
-        candidate
-            .try_reserve_exact(self.work.len())
-            .map_err(|_| EditError::ResourceLimit)?;
-        for (target, geometry) in self.targets.iter().zip(self.work.iter()) {
-            checkpoint()?;
-            let after = if selected.contains(&(target.layer_id.as_str(), target.object_id.as_str()))
-            {
-                step.operation.preview_geometry(geometry)?
+        // Each target can add at most one rectangle definition and one bounded key.
+        let max_key = document
+            .id
+            .len()
+            .max(
+                document
+                    .apertures
+                    .iter()
+                    .map(|a| a.id.len())
+                    .max()
+                    .unwrap_or(0),
+            )
+            .checked_add(128)
+            .ok_or(EditError::ResourceLimit)?;
+        let extra = checked_mul(
+            if matches!(step, Input::ApertureSize(_)) {
+                self.targets.len()
             } else {
-                geometry.clone()
-            };
-            validate_geometry(&after, &apertures, &definitions)
+                0
+            },
+            checked_add(size_of::<DraftAperture>() + 512, checked_mul(max_key, 4)?)?,
+        )?;
+        self.admit(checked_add(snapshot_bytes(&self.work)?, extra)?)?;
+        let mut candidate = (*self.work).clone();
+        if matches!(step, Input::ApertureSize(_)) {
+            candidate
+                .apertures
+                .try_reserve_exact(self.targets.len())
+                .map_err(|_| EditError::ResourceLimit)?;
+        }
+        for (n, target) in self.targets.iter().enumerate() {
+            checkpoint()?;
+            if !selected.contains(&(target.layer_id.as_str(), target.object_id.as_str())) {
+                continue;
+            }
+            let geometry = &mut candidate.geometry[n];
+            match step {
+                Input::Transform(s) => *geometry = s.operation.preview_geometry(geometry)?,
+                Input::ApertureSize(s) => {
+                    let SemanticGeometry::Flash { aperture_id, .. } = geometry else {
+                        return Err(EditError::UnsupportedTransform);
+                    };
+                    let staged = candidate
+                        .apertures
+                        .iter()
+                        .find(|a| a.definition.id == *aperture_id);
+                    let base_id = staged.map_or(aperture_id.as_str(), |a| a.base_id.as_str());
+                    let base = document
+                        .apertures
+                        .iter()
+                        .find(|a| a.id == base_id)
+                        .ok_or(EditError::InvalidArgument)?;
+                    if !matches!(base.shape, ApertureShape::Rectangle { .. }) {
+                        return Err(EditError::UnsupportedTransform);
+                    }
+                    let shape = resized_shape(&base.shape, s.width_mm, Some(s.height_mm))?;
+                    super::validate_aperture_shape(&shape).map_err(EditError::InvalidGeometry)?;
+                    if shape == base.shape {
+                        *aperture_id = base.id.clone();
+                        continue;
+                    }
+                    if let Some(a) = candidate
+                        .apertures
+                        .iter()
+                        .find(|a| a.base_id == base.id && a.definition.shape == shape)
+                    {
+                        *aperture_id = a.definition.id.clone();
+                        continue;
+                    }
+                    let id = format!(
+                        "{}-draft-{}-{}-{}",
+                        document.id, self.namespace, self.generation, n
+                    );
+                    if document.apertures.iter().any(|a| a.id == id)
+                        || candidate.apertures.iter().any(|a| a.definition.id == id)
+                    {
+                        return Err(EditError::InvalidArgument);
+                    }
+                    let source_dcode = 0; // Assigned only to live overlays after pruning.
+                    *aperture_id = id.clone();
+                    candidate.apertures.push(DraftAperture {
+                        base_id: base.id.clone(),
+                        definition: ApertureDefinition {
+                            id,
+                            source_dcode,
+                            shape,
+                        },
+                    });
+                }
+            }
+        }
+        let used: HashSet<_> = candidate
+            .geometry
+            .iter()
+            .filter_map(|g| {
+                if let SemanticGeometry::Flash { aperture_id, .. } = g {
+                    Some(aperture_id.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        candidate
+            .apertures
+            .retain(|a| used.contains(a.definition.id.as_str()));
+        let mut dcode = document
+            .apertures
+            .iter()
+            .map(|a| a.source_dcode)
+            .max()
+            .unwrap_or(9);
+        for a in &mut candidate.apertures {
+            checkpoint()?;
+            dcode = dcode.checked_add(1).ok_or(EditError::ResourceLimit)?;
+            a.definition.source_dcode = dcode;
+        }
+        let apertures = document
+            .apertures
+            .iter()
+            .map(|a| a.id.clone())
+            .chain(candidate.apertures.iter().map(|a| a.definition.id.clone()))
+            .collect();
+        let definitions = block_definition_ids(document);
+        for geometry in &candidate.geometry {
+            checkpoint()?;
+            validate_geometry(geometry, &apertures, &definitions)
                 .map_err(EditError::InvalidGeometry)?;
-            validate_block_resolution(document, &after)?;
-            candidate.push(after);
+            validate_block_resolution(document, geometry)?;
         }
         self.admit(snapshot_bytes(&candidate)?)?;
         checkpoint()?;
@@ -543,7 +843,7 @@ impl ManufacturingDraft {
         let candidate = self
             .calculate(document, checkpoint)?
             .ok_or(EditError::InvalidArgument)?;
-        self.admit(snapshot_bytes(&candidate)? + size_of::<Arc<Vec<SemanticGeometry>>>() + 64)?;
+        self.admit(snapshot_bytes(&candidate)? + size_of::<Arc<Checkpoint>>() + 64)?;
         self.undo
             .try_reserve_exact(1)
             .map_err(|_| EditError::ResourceLimit)?;
@@ -570,7 +870,7 @@ impl ManufacturingDraft {
             return Err(EditError::EmptyHistory);
         }
         let next = self.next_generation()?;
-        self.admit(size_of::<Arc<Vec<SemanticGeometry>>>() + 64)?;
+        self.admit(size_of::<Arc<Checkpoint>>() + 64)?;
         self.redo
             .try_reserve_exact(1)
             .map_err(|_| EditError::ResourceLimit)?;
@@ -595,7 +895,7 @@ impl ManufacturingDraft {
             return Err(EditError::EmptyHistory);
         }
         let next = self.next_generation()?;
-        self.admit(size_of::<Arc<Vec<SemanticGeometry>>>() + 64)?;
+        self.admit(size_of::<Arc<Checkpoint>>() + 64)?;
         self.undo
             .try_reserve_exact(1)
             .map_err(|_| EditError::ResourceLimit)?;

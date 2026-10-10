@@ -1,7 +1,7 @@
 //! Typed host-only draft preparation. No JSON capability.
 use super::*;
 use editor_core::edit::ManufacturingDraft;
-pub use editor_core::edit::{DraftCandidate, DraftResources, DraftStep};
+pub use editor_core::edit::{DraftApertureSizeStep, DraftCandidate, DraftResources, DraftStep};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -234,6 +234,27 @@ impl ApplicationService {
             .as_mut()
             .unwrap()
             .set_step(&record.history, &record.document, generation, step)
+            .map_err(map_edit_error);
+        session.invalid_input = result.is_err();
+        result
+    }
+    /// Typed host foundation only; not a JSON capability or size-dialog policy.
+    pub fn unified_editor_set_aperture_size_step(
+        &self,
+        session: &mut UnifiedEditorSession,
+        generation: u64,
+        step: DraftApertureSizeStep,
+    ) -> Result<u64, ServiceError> {
+        session.idle()?;
+        if session.generation()? != generation {
+            return Err(ServiceError::invalid("编辑输入版本已过期"));
+        }
+        let record = self.unified_editor_record(session, None)?;
+        let result = session
+            .draft
+            .as_mut()
+            .unwrap()
+            .set_aperture_size_step(&record.history, &record.document, generation, step)
             .map_err(map_edit_error);
         session.invalid_input = result.is_err();
         result

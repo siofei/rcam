@@ -81,10 +81,7 @@ pub fn snapshot_cost(s: &RenderSnapshot) -> Result<usize, ServiceError> {
         + 256;
     n = add(
         n,
-        vec_cost(&s.layers)
-            + vec_cost(&s.apertures)
-            + vec_cost(&s.styles)
-            + vec_cost(&s.block_definitions),
+        vec_cost(&s.layers) + vec_cost(&s.styles) + vec_cost(&s.block_definitions),
     )?;
     for l in &s.layers {
         n = add(n, l.id.capacity() + vec_cost(&l.objects))?;
@@ -95,7 +92,18 @@ pub fn snapshot_cost(s: &RenderSnapshot) -> Result<usize, ServiceError> {
             )?;
         }
     }
-    for a in &s.apertures {
+    n = add(n, aperture_table_cost(&s.apertures)?)?;
+    for d in &s.block_definitions {
+        n = add(n, definition_cost(d))?;
+    }
+    for st in &s.styles {
+        n = add(n, st.layer_id.capacity() + vec_cost(&st.classes))?;
+    }
+    Ok(n)
+}
+pub fn aperture_table_cost(apertures: &Vec<ApertureDefinition>) -> Result<usize, ServiceError> {
+    let mut n = vec_cost(apertures);
+    for a in apertures {
         n = add(n, a.id.capacity() + 64)?;
         if let ApertureShape::Macro { primitives } = &a.shape {
             n = add(n, vec_cost(primitives))?;
@@ -105,12 +113,6 @@ pub fn snapshot_cost(s: &RenderSnapshot) -> Result<usize, ServiceError> {
                 }
             }
         }
-    }
-    for d in &s.block_definitions {
-        n = add(n, definition_cost(d))?;
-    }
-    for st in &s.styles {
-        n = add(n, st.layer_id.capacity() + vec_cost(&st.classes))?;
     }
     Ok(n)
 }

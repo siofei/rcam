@@ -1565,3 +1565,239 @@ fn actual_host_large_region_4096_edges_64_steps_has_bounded_history_and_context(
     r.command(worker::Command::Cancel);
     assert_eq!(r.snapshot().layers, snapshot.layers);
 }
+fn ap_fixture() -> Model {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "rcam-ap-worker-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let paths:Vec<_>=(0..2).map(|i|{let p=dir.join(format!("layer{i}.gbr"));std::fs::write(&p,b"%FSLAX26Y26*%%MOMM*%%ADD10R,2X3X0.5*%D10*X0Y0D03*X5000000Y0D03*%LPC*%X10000000Y0D03*M02*").unwrap();p}).collect();
+    let mut m = Model::default();
+    m.import_gerbers(&paths).unwrap();
+    m.run(Action::SelectAll);
+    assert!(m.view.error.is_none());
+    std::fs::remove_dir_all(dir).unwrap();
+    m
+}
+fn ap_step(r: &Run, width: f64) -> editor_service::DraftApertureSizeStep {
+    let mut groups = r.app.view.selected.groups();
+    for g in &mut groups {
+        g.object_ids.truncate(2);
+    }
+    editor_service::DraftApertureSizeStep {
+        groups,
+        width_mm: width,
+        height_mm: 3.,
+    }
+}
+#[test]
+fn ap_checkpoint_real_worker_prepares_matching_scene_index_and_final_commit_ids() {
+    let mut r = Run::with_model(ap_fixture());
+    let entry = r.snapshot();
+    let info = r.app.view.info.clone().unwrap();
+    r.begin();
+    let reference = r
+        .app
+        .view
+        .unified_editor
+        .as_ref()
+        .unwrap()
+        .reference
+        .clone();
+    let preview = r.command(worker::Command::PreviewApertureSize(ap_step(&r, 4.)));
+    assert!(preview.1.error.is_none());
+    assert_eq!(r.snapshot(), entry);
+    let preview_scene = preview.1.scene.clone().unwrap();
+    let executed = r.command(worker::Command::ExecuteApertureSize(ap_step(&r, 4.)));
+    assert!(executed.1.error.is_none());
+    let work = executed
+        .1
+        .unified_editor
+        .as_ref()
+        .unwrap()
+        .work
+        .as_ref()
+        .unwrap();
+    assert_eq!(work.snapshot.apertures.len(), entry.apertures.len() + 2);
+    assert_eq!(work.scene.points, preview_scene.points);
+    assert_eq!(
+        bytemuck::cast_slice::<_, u8>(&work.scene.primitives),
+        bytemuck::cast_slice::<_, u8>(&preview_scene.primitives)
+    );
+    assert_eq!(
+        work.bounds,
+        work.index
+            .visible_bounds(&work.snapshot, &executed.1.layers)
+    );
+    assert!(Arc::ptr_eq(
+        &reference,
+        &executed.1.unified_editor.as_ref().unwrap().reference
+    ));
+    assert_eq!(r.snapshot(), entry);
+    assert_eq!(
+        work.bounds,
+        Some(editor_core::BoundsMm {
+            min_x_mm: -2.,
+            min_y_mm: -1.5,
+            max_x_mm: 11.,
+            max_y_mm: 1.5
+        })
+    );
+    let manufacture = |snapshot: &editor_service::RenderSnapshot| editor_core::SemanticDocument {
+        id: snapshot.document_id.clone(),
+        unit: "mm".into(),
+        format: editor_core::SemanticFormat {
+            integer: 2,
+            decimal: 6,
+            leading_zero_omission: true,
+            absolute: true,
+        },
+        layers: snapshot.layers.clone(),
+        apertures: snapshot.apertures.clone(),
+        block_definitions: snapshot.block_definitions.clone(),
+        source: editor_core::SourceMetadata::default(),
+    };
+    let before_geometry = manufacture(&entry);
+    let after_geometry = manufacture(&work.snapshot);
+    for layer in &entry.layers {
+        assert_eq!(
+            before_geometry.layer_coverage_at(&layer.id, MmPoint::new(1.5, 0.)),
+            Some(false)
+        );
+        assert_eq!(
+            after_geometry.layer_coverage_at(&layer.id, MmPoint::new(1.5, 0.)),
+            Some(true)
+        );
+        assert_eq!(
+            after_geometry.layer_coverage_at(&layer.id, MmPoint::new(0., 0.)),
+            Some(false)
+        ); // local hole
+        assert_eq!(
+            after_geometry.layer_coverage_at(&layer.id, MmPoint::new(10., 0.)),
+            Some(false)
+        ); // standalone Clear
+    }
+    let temp: Vec<_> = work.snapshot.apertures[entry.apertures.len()..]
+        .iter()
+        .map(|a| a.id.clone())
+        .collect();
+    r.command(worker::Command::History(UnifiedEditorHistory::Undo));
+    let undone = r
+        .app
+        .view
+        .unified_editor
+        .as_ref()
+        .unwrap()
+        .work
+        .as_ref()
+        .unwrap();
+    assert_eq!(undone.snapshot.apertures, entry.apertures);
+    r.command(worker::Command::History(UnifiedEditorHistory::Redo));
+    let applied = r.command(worker::Command::Apply(None));
+    assert_eq!(
+        applied.1.unified_editor.as_ref().unwrap().terminal,
+        worker::Terminal::Changed
+    );
+    assert!(applied.1.error.is_none());
+    assert_eq!(
+        applied.1.info.as_ref().unwrap().undo_entries,
+        info.undo_entries + 1
+    );
+    let main = r.snapshot();
+    assert_eq!(**applied.1.snap_snapshot.as_ref().unwrap(), main);
+    assert_eq!(applied.1.apertures, main.apertures);
+    assert!(
+        main.apertures[entry.apertures.len()..]
+            .iter()
+            .all(|a| !temp.contains(&a.id))
+    );
+    r.app.send(Action::History(false));
+    r.deliver();
+    assert_eq!(r.snapshot().layers, entry.layers);
+    assert_eq!(r.snapshot().apertures, entry.apertures);
+    r.app.send(Action::History(true));
+    r.deliver();
+    assert_eq!(r.snapshot().layers, main.layers);
+    assert_eq!(r.snapshot().apertures, main.apertures);
+}
+#[test]
+fn ap_checkpoint_real_worker_refusal_preserves_work_history_and_main() {
+    let mut r = Run::with_model(ap_fixture());
+    let entry = r.snapshot();
+    r.begin();
+    r.command(worker::Command::ExecuteApertureSize(ap_step(&r, 4.)));
+    let work = r.app.view.unified_editor.as_ref().unwrap().work.clone();
+    let resources = r.app.view.unified_editor.as_ref().unwrap().resources;
+    r.app
+        .send_unified_editor(worker::Command::ApplyApertureSize(ap_step(&r, 5.)));
+    let mut request = r.requests.try_recv().unwrap();
+    let Action::UnifiedEditor(input) = &mut request.2 else {
+        panic!("typed worker request")
+    };
+    input.render.retained_ui_bytes = crate::unified_editor_resources::HOST_BYTES;
+    let refused = r.deliver_request(request);
+    assert!(
+        refused
+            .1
+            .error
+            .as_ref()
+            .unwrap()
+            .code
+            .starts_with("RESOURCE_LIMIT")
+    );
+    assert_eq!(r.snapshot(), entry);
+    assert!(r.app.unified_editor.is_some());
+    let current = r.app.view.unified_editor.as_ref().unwrap();
+    assert!(Arc::ptr_eq(
+        work.as_ref().unwrap(),
+        current.work.as_ref().unwrap()
+    ));
+    assert_eq!(
+        resources.unwrap().undo_entries,
+        current.resources.unwrap().undo_entries
+    );
+    r.command(worker::Command::History(UnifiedEditorHistory::Reset));
+    assert_eq!(
+        r.app
+            .view
+            .unified_editor
+            .as_ref()
+            .unwrap()
+            .work
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .apertures,
+        entry.apertures
+    );
+    let nochange = r.command(worker::Command::Apply(None));
+    assert_eq!(
+        nochange.1.unified_editor.as_ref().unwrap().terminal,
+        worker::Terminal::NoChange
+    );
+    assert_eq!(r.snapshot(), entry);
+}
+#[test]
+fn ap_checkpoint_real_worker_fold_nochange_and_cancel_leave_no_orphan_definitions() {
+    for cancel in [false, true] {
+        let mut r = Run::with_model(ap_fixture());
+        let entry = r.snapshot();
+        let info = r.app.view.info.clone();
+        r.begin();
+        r.command(worker::Command::ExecuteApertureSize(ap_step(&r, 4.)));
+        if cancel {
+            r.command(worker::Command::Cancel);
+        } else {
+            let reply = r.command(worker::Command::ApplyApertureSize(ap_step(&r, 2.)));
+            assert_eq!(
+                reply.1.unified_editor.as_ref().unwrap().terminal,
+                worker::Terminal::NoChange
+            );
+        }
+        assert_eq!(r.snapshot(), entry);
+        assert_eq!(r.app.view.info, info);
+        assert!(r.app.unified_editor.is_none());
+    }
+}
