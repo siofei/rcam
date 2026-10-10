@@ -636,6 +636,17 @@ impl EditorApp {
             canvas_layout: "stored_before_layout",
         }
     }
+    fn trace_session_state(&self) -> frame_trace::SessionState {
+        frame_trace::SessionState {
+            session_slot: self.routing.owner().slot(),
+            busy: self.busy,
+            routing_idle: self.routing.idle(),
+            tab_change_pending: self.tabs.change_pending(),
+            tab_input_barrier: self.tab_input_barrier_active(),
+            unified_modal_open: self.modal == Some(modal::ActiveModal::UnifiedEditor),
+            point_commit_blocked: self.point_commit_blocked,
+        }
+    }
     fn send(&mut self, a: Action) {
         if self.unified_editor.is_some()
             && !matches!(&a, Action::UnifiedEditor(..) | Action::RecoveryWrite(..))
@@ -850,6 +861,7 @@ impl EditorApp {
                         trace_attempt
                             .as_ref()
                             .and_then(|attempt| attempt.attempt_id),
+                        self.view.selection_epoch,
                     );
                 }
                 if let Some(attempt) = &mut trace_attempt {
@@ -1757,11 +1769,17 @@ impl eframe::App for EditorApp {
                 trace_snapshot.unwrap(),
             )
         });
+        if trace_update.is_some() {
+            let state = self.trace_session_state();
+            self.frame_trace.as_mut().unwrap().session_state(state);
+        }
         self.observed_update_body(ctx, &trace_update);
         if let Some(trace_update) = trace_update {
             let snapshot = self.trace_snapshot(ctx);
+            let state = self.trace_session_state();
             let trace = self.frame_trace.as_mut().unwrap();
             let version = trace.version(&self.view);
+            trace.session_state(state);
             trace_update.finish(version, snapshot);
             trace.clear_update();
         }
@@ -1805,6 +1823,15 @@ impl EditorApp {
                 .geometry_context
                 .as_deref()
                 .is_some_and(|context| geometry_reply_matches(&task, &self.view, view, context));
+            if let Some(trace) = &self.frame_trace {
+                trace.geometry_reply(
+                    &task,
+                    &self.view,
+                    view,
+                    self.geometry_context.as_deref(),
+                    accepted,
+                );
+            }
             if accepted {
                 self.view.selection_geometry = view.selection_geometry.clone();
                 self.view.selection_geometry_identity = view.selection_geometry_identity.clone();

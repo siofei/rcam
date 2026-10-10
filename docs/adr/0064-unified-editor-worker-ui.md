@@ -36,3 +36,33 @@ above is superseded for this handoff, without changing any numeric threshold.
 2f automatic Mac checks passed per the parent report, but native acceptance
 remains BLOCKED. This follow-up requires a fresh identity and native visual
 verification; it does not inherit 2f's test or native evidence as a new PASS.
+
+## Modal and terminal-read reliability correction (2026-10-10)
+
+S5/P3 UE-A follow-up; R07/R08/R09/R10/R12/R18; AT-021/022/025/030/043/078.
+Scope is editor-app modal painting, worker publication/read cancellation,
+opt-in local trace diagnostics and synthetic regressions. A cancelled input
+frame keeps a surviving unified dialog and its backdrop painted while disabling
+all dialog controls and dismissal. The existing cancellation latch still spans
+all egui passes; point-picker loss still returns to the editor.
+
+Changed Apply establishes the new selection epoch with the existing optional
+metrics refresh before publishing its terminal View. Metrics errors stay in
+metrics_error after the committed edit; no new postcommit refusal or retry is
+introduced. Read cancellation restores the metrics identity together with the
+restored View/epoch, so a subsequent geometry query cannot advance an unpublished
+epoch. NoChange, Cancel, manufacturing history and service mutation boundaries
+retain their existing contracts.
+The postcommit metrics refresh adds real CPU/cache work after the prepared-edit
+deadline; the cooperative two-second preparation limit is not an end-to-end
+Apply wall-clock promise.
+
+Local opt-in traces record UI/worker epochs and equality decisions for geometry
+replies, task publication epochs, session/task/barrier state and sticky metadata
+budget/string failure flags. They record no selection identities, coordinates,
+input text or filesystem paths. Queue, metadata and output limits stay unchanged.
+Session state uses a separate fixed record on change, preserving the existing
+256-byte Record and 4096-byte writer staging limits.
+Native tab-disable and trace-stop causes remain unconfirmed until fresh evidence;
+these diagnostics do not turn those failures into a PASS. Fresh candidate identity,
+independent review and Mac native visual/task/resource verification remain required.

@@ -29,6 +29,205 @@ mod picker_hud {
     const PICK: &str = "拾取工作图形上的点；Alt 暂停吸附；Esc 返回";
     const NAV: &str = "几何多选  ·  中键 / 双指平移  ·  捏合缩放";
 
+    #[test]
+    fn surviving_modal_paints_on_pointer_exit_and_blocks_same_frame_edits() {
+        let size = egui::vec2(1280., 832.);
+        let (mut run, ctx) = settled(size, 2., 1.);
+        ctx.style_mut(|s| s.animation_time = 0.);
+        run.begin();
+        for _ in 0..3 {
+            capture(&mut run, &ctx, size, 2., vec![]);
+        }
+        let entry = run.snapshot();
+        let info = run.app.view.info.clone();
+        ctx.options_mut(|o| o.max_passes = std::num::NonZeroUsize::new(2).unwrap());
+        for picking in [None, Some(ui::Pick::Base), Some(ui::Pick::Target)] {
+            for (focused, loss) in [
+                (true, Some(egui::Event::PointerGone)),
+                (true, Some(egui::Event::WindowFocused(false))),
+                (false, None),
+            ] {
+                run.app.unified_editor.as_mut().unwrap().picking = picking;
+                run.app.modal = picking.is_none().then_some(ActiveModal::UnifiedEditor);
+                let before = run.app.unified_editor.as_ref().unwrap();
+                let draft_fields = (
+                    before.base.x.clone(),
+                    before.base.y.clone(),
+                    before.target.x.clone(),
+                    before.target.y.clone(),
+                    before.dirty,
+                    before.confirm_cancel,
+                    before.targets.iter().map(|t| t.enabled).collect::<Vec<_>>(),
+                );
+                let mut raw = egui::RawInput {
+                    focused,
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    events: vec![
+                        egui::Event::PointerButton {
+                            pos: egui::pos2(700., 400.),
+                            button: egui::PointerButton::Primary,
+                            pressed: false,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                        egui::Event::Key {
+                            key: egui::Key::Enter,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                        egui::Event::Text("123".into()),
+                    ],
+                    ..Default::default()
+                };
+                if let Some(loss) = loss {
+                    raw.events.insert(0, loss);
+                }
+                raw.viewports
+                    .entry(egui::ViewportId::ROOT)
+                    .or_default()
+                    .native_pixels_per_point = Some(2.);
+                run.app.raw_input_hook(&ctx, &mut raw);
+                let mut passes = 0;
+                let output = ctx.run(raw, |ctx| {
+                    run.app.update(ctx, &mut eframe::Frame::_new_kittest());
+                    passes += 1;
+                    if passes == 1 {
+                        ctx.request_discard("synthetic modal reentry");
+                    }
+                });
+                assert_eq!(passes, 2);
+                assert!(run.app.point_commit_blocked);
+                assert_eq!(ctx.pixels_per_point(), 2.);
+                let after = run.app.unified_editor.as_ref().unwrap();
+                assert_eq!(
+                    (
+                        after.base.x.clone(),
+                        after.base.y.clone(),
+                        after.target.x.clone(),
+                        after.target.y.clone(),
+                        after.dirty,
+                        after.confirm_cancel,
+                        after.targets.iter().map(|t| t.enabled).collect::<Vec<_>>()
+                    ),
+                    draft_fields
+                );
+                assert_eq!(run.app.modal, Some(ActiveModal::UnifiedEditor));
+                assert_eq!(run.app.unified_editor.as_ref().unwrap().picking, None);
+                assert!(
+                    output.shapes.iter().any(|s| matches!(
+                        &s.shape, egui::Shape::Text(t) if t.galley.text() == "选区编辑会话"
+                    )),
+                    "surviving modal heading was omitted on PointerGone"
+                );
+                assert!(
+                    output.shapes.iter().any(|s| matches!(
+                        &s.shape, egui::Shape::Rect(r)
+                            if r.rect == ctx.content_rect()
+                                && r.fill == egui::Color32::from_black_alpha(100)
+                    )),
+                    "modal backdrop was omitted on PointerGone"
+                );
+                assert!(run.requests.try_recv().is_err());
+                assert_eq!(run.snapshot(), entry);
+                assert_eq!(run.app.view.info, info);
+            }
+        }
+    }
+
+    #[test]
+    fn changed_apply_publishes_epoch_before_automatic_geometry_queries() {
+        let size = egui::vec2(1280., 832.);
+        let (mut run, ctx) = settled(size, 2., 1.);
+        let entry = run.snapshot();
+        let epoch = run.app.view.selection_epoch;
+        run.begin();
+        let reply = run.command(worker::Command::Apply(Some(run.step(1.))));
+        assert_eq!(
+            reply.1.unified_editor.as_ref().unwrap().terminal,
+            worker::Terminal::Changed
+        );
+        let published_epoch = run.app.view.selection_epoch;
+        let mut queries = 0;
+        let mut results = Vec::new();
+        for _ in 0..8 {
+            capture(&mut run, &ctx, size, 2., vec![]);
+            if let Ok(request) = run.requests.try_recv() {
+                assert!(matches!(
+                    request.2,
+                    Action::SelectionCenters(..) | Action::Viewport(..)
+                ));
+                let reply = run.deliver_request(request);
+                results.push((
+                    reply.0,
+                    reply.1.selection_epoch,
+                    reply.1.error.as_ref().map(|e| e.code.clone()),
+                    run.app.view.selection_geometry.is_some(),
+                ));
+                queries += 1;
+            } else {
+                break;
+            }
+        }
+        assert!(
+            results
+                .iter()
+                .all(|(_, epoch, error, _)| *epoch == published_epoch && error.is_none()),
+            "post-Apply task/epoch/error/installed: {results:?}"
+        );
+        assert_ne!(published_epoch, epoch);
+        assert!(
+            queries > 0 && queries <= 2,
+            "automatic queries did not settle: {queries}"
+        );
+        assert!(run.app.view.selection_geometry.is_some());
+        assert_eq!(
+            run.app.view.selection_geometry_identity,
+            crate::state::selection_geometry_identity(&run.app.view)
+        );
+        assert!(!run.app.busy && run.app.geometry_task.is_none());
+        run.app.send(Action::History(false));
+        run.deliver();
+        assert_eq!(run.snapshot().layers, entry.layers);
+        assert_eq!(run.snapshot().apertures, entry.apertures);
+    }
+
+    #[test]
+    fn cancelled_geometry_read_does_not_invalidate_the_published_epoch() {
+        let size = egui::vec2(1280., 832.);
+        let (mut run, ctx) = settled(size, 2., 1.);
+        let info = run.app.view.info.clone();
+        let epoch = run.app.view.selection_epoch;
+        run.app.view.selection_geometry = None;
+        run.app.view.selection_geometry_identity.clear();
+        capture(&mut run, &ctx, size, 2., vec![]);
+        let request = run.requests.try_recv().unwrap();
+        assert!(matches!(request.2, Action::SelectionCenters(..)));
+        request.3.cancel_token.cancel();
+        run.deliver_request(request);
+        let mut results = Vec::new();
+        for _ in 0..4 {
+            capture(&mut run, &ctx, size, 2., vec![]);
+            if let Ok(request) = run.requests.try_recv() {
+                assert!(matches!(request.2, Action::SelectionCenters(..)));
+                let reply = run.deliver_request(request);
+                results.push((
+                    reply.1.selection_epoch,
+                    reply.1.error.as_ref().map(|e| e.code.clone()),
+                ));
+            }
+        }
+        assert!(
+            results
+                .iter()
+                .all(|(worker_epoch, error)| *worker_epoch == epoch && error.is_none()),
+            "cancel/retry worker epochs and errors: {results:?}"
+        );
+        assert_eq!(run.app.view.info, info);
+        assert!(run.app.view.selection_geometry.is_some());
+        assert!(run.app.geometry_task.is_none() && !run.app.busy);
+    }
+
     fn capture(
         run: &mut Run,
         ctx: &egui::Context,
@@ -368,6 +567,76 @@ impl Run {
         let id = &self.host.model.view.info.as_ref().unwrap().document_id;
         self.host.model.service.render_snapshot(id).unwrap()
     }
+}
+#[test]
+fn changed_apply_keeps_optional_metrics_resource_failure_out_of_the_commit_result() {
+    let dir = std::env::temp_dir().join(format!("rcam-unified-metrics-{}", std::process::id()));
+    std::fs::create_dir(&dir).unwrap();
+    let path = dir.join("synthetic.gbr");
+    // One valid Region fits the editor's object/display admission, while its
+    // 900 edges exceed the unchanged quadratic optional metrics work budget.
+    let mut source = String::from("%FSLAX26Y26*%%MOMM*%%ADD10C,0.2*%D10*G36*");
+    for i in 0..900 {
+        let angle = std::f64::consts::TAU * f64::from(i) / 900.;
+        let x = (1_000_000. + 1_000_000. * angle.cos()).round() as i64;
+        let y = (1_000_000. + 1_000_000. * angle.sin()).round() as i64;
+        source.push_str(&format!("X{x}Y{y}D{:02}*", if i == 0 { 2 } else { 1 }));
+    }
+    source.push_str("X2000000Y1000000D01*G37*M02*");
+    std::fs::write(&path, source).unwrap();
+    let mut model = Model::default();
+    model.import_gerbers(&[path]).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+    model.run(Action::SelectAll);
+    assert!(model.view.error.is_none());
+    assert_eq!(model.view.selected.ordered.len(), 1);
+    let SemanticGeometry::Region { contours } = &model.view.selected.ordered[0].object.geometry
+    else {
+        panic!("synthetic Region selection");
+    };
+    assert_eq!(contours[0].edges.len(), 900);
+    assert!(
+        model
+            .view
+            .metrics_error
+            .as_ref()
+            .unwrap()
+            .starts_with("RESOURCE_LIMIT")
+    );
+    let mut run = Run::with_model(model);
+    let entry = run.snapshot();
+    let before = run.app.view.info.clone().unwrap();
+    let epoch = run.app.view.selection_epoch;
+    run.begin();
+    let reply = run.command(worker::Command::Apply(Some(run.step(1.))));
+    assert_eq!(
+        reply.1.unified_editor.as_ref().unwrap().terminal,
+        worker::Terminal::Changed
+    );
+    assert!(reply.1.error.is_none());
+    assert_eq!(
+        reply.1.task_receipt.as_ref().unwrap().state,
+        TaskState::Completed
+    );
+    assert!(
+        reply
+            .1
+            .metrics_error
+            .as_ref()
+            .unwrap()
+            .starts_with("RESOURCE_LIMIT")
+    );
+    assert_eq!(reply.1.selection_epoch, epoch.wrapping_add(1));
+    assert_eq!(
+        reply.1.info.as_ref().unwrap().undo_entries,
+        before.undo_entries + 1
+    );
+    assert!(run.app.unified_editor.is_none() && !run.app.busy);
+    assert_ne!(run.snapshot().layers, entry.layers);
+    run.app.send(Action::History(false));
+    run.deliver();
+    assert_eq!(run.snapshot().layers, entry.layers);
+    assert_eq!(run.snapshot().apertures, entry.apertures);
 }
 #[test]
 fn accumulating_cross_layer_steps_latest_apply_one_undo_and_primary_order() {

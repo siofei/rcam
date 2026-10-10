@@ -263,7 +263,12 @@ impl EditorApp {
             && ui.input(|i| i.key_pressed(egui::Key::Enter))
     }
     pub(crate) fn parameter_modal(&mut self, ctx: &egui::Context) {
-        if !self.arbitrate_point_input_frame(ctx) {
+        let input_allowed = self.arbitrate_point_input_frame(ctx);
+        // Cancellation fences input for the entire frame, including later
+        // passes. A surviving editor still owns its dialog and backdrop.
+        let surviving_editor =
+            self.unified_editor.is_some() && self.modal == Some(ActiveModal::UnifiedEditor);
+        if !(input_allowed || surviving_editor) {
             return;
         }
         let Some(modal) = self.modal else {
@@ -290,6 +295,9 @@ impl EditorApp {
             egui::Id::new("manufacturing-parameters"),
             preferred,
             |ui| {
+                if !input_allowed {
+                    ui.disable();
+                }
                 ui.heading(modal.title());
                 egui::ScrollArea::vertical()
                     .max_height((ctx.content_rect().height() - 160.).max(100.))
@@ -385,7 +393,8 @@ impl EditorApp {
                 }
             },
         );
-        if self.modal_pending.is_none()
+        if input_allowed
+            && self.modal_pending.is_none()
             && !self.ime_active
             && !self.ime_event
             && response.should_close()

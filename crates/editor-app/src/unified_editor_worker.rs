@@ -535,6 +535,10 @@ impl Model {
                 self.metrics_identity.clear();
                 self.viewport = None;
                 self.ppm = r.render.ppm;
+                // Publish the committed selection epoch before App can enqueue
+                // geometry reads. Optional metrics failures remain metrics_error
+                // and cannot turn the completed manufacturing commit into failure.
+                self.refresh_metrics();
             }
             if terminal == Terminal::NoChange {
                 self.view.scene = Some(session.entry_scene.clone());

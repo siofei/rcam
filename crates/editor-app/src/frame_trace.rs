@@ -244,6 +244,16 @@ pub(crate) struct Snapshot {
     pub viewport_task_id: Option<std::num::NonZeroU64>,
     pub geometry_task_id: Option<std::num::NonZeroU64>,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub(crate) struct SessionState {
+    pub session_slot: u64,
+    pub busy: bool,
+    pub routing_idle: bool,
+    pub tab_change_pending: bool,
+    pub tab_input_barrier: bool,
+    pub unified_modal_open: bool,
+    pub point_commit_blocked: bool,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum MoveExitReason {
@@ -345,6 +355,7 @@ enum Metadata {
         input: editor_service::task::TaskVersion,
         result: Option<editor_service::task::TaskVersion>,
         state: Option<editor_service::task::TaskState>,
+        selection_epoch: u64,
     },
 }
 impl Metadata {
@@ -377,6 +388,22 @@ impl Metadata {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Payload {
+    SessionState {
+        binding: Binding,
+        state: SessionState,
+    },
+    GeometryReply {
+        task_id: u64,
+        ui_selection_epoch: u64,
+        worker_selection_epoch: u64,
+        request_matches_current: bool,
+        result_matches_request: bool,
+        task_receipt_matches: bool,
+        result_version_matches_request: bool,
+        geometry_present: bool,
+        stale_task: bool,
+        accepted: bool,
+    },
     RenderSource {
         source: RenderSource,
     },
@@ -463,6 +490,8 @@ struct Shared {
     first_drop: AtomicU64,
     last_drop: AtomicU64,
     metadata_bytes: AtomicU64,
+    metadata_budget_exhausted: AtomicBool,
+    metadata_string_invalid: AtomicBool,
     cutoff: AtomicU64,
     supervisor_timeout: AtomicBool,
 }
@@ -493,6 +522,8 @@ impl Shared {
                 first_drop: AtomicU64::new(u64::MAX),
                 last_drop: AtomicU64::new(0),
                 metadata_bytes: AtomicU64::new(0),
+                metadata_budget_exhausted: AtomicBool::new(false),
+                metadata_string_invalid: AtomicBool::new(false),
                 cutoff: AtomicU64::new(0),
                 supervisor_timeout: AtomicBool::new(false),
             }),
@@ -655,13 +686,17 @@ impl Shared {
         // Cumulative conservative charge: queued value, transient/cache clone, scratch.
         let cost = (std::mem::size_of::<Metadata>() + capacities) * 2
             + strings.capacity() * std::mem::size_of::<&str>();
-        if strings.iter().any(|v| v.len() > 256)
-            || self
-                .metadata_bytes
-                .fetch_add(cost as u64, Ordering::Relaxed)
-                + cost as u64
-                > META_LIMIT
+        if strings.iter().any(|v| v.len() > 256) {
+            self.metadata_string_invalid.store(true, Ordering::Release);
+            self.failed.store(true, Ordering::Release);
+        } else if self
+            .metadata_bytes
+            .fetch_add(cost as u64, Ordering::Relaxed)
+            + cost as u64
+            > META_LIMIT
         {
+            self.metadata_budget_exhausted
+                .store(true, Ordering::Release);
             self.failed.store(true, Ordering::Release);
         }
         self.emit(
@@ -685,6 +720,7 @@ impl Shared {
             "send_reservations_high_water":self.send_reservations_high_water.load(Ordering::Relaxed),"queue_capacity":CAPACITY,
             "first_drop_source_ns":(self.first_drop.load(Ordering::Relaxed)!=u64::MAX).then(||Ns(self.first_drop.load(Ordering::Relaxed))),"last_drop_source_ns":Ns(self.last_drop.load(Ordering::Relaxed)),
             "metadata_bytes_charged":self.metadata_bytes.load(Ordering::Relaxed),"record_size_bytes":std::mem::size_of::<Record>(),
+            "metadata_budget_exhausted":self.metadata_budget_exhausted.load(Ordering::Acquire),"metadata_string_invalid":self.metadata_string_invalid.load(Ordering::Acquire),
             "producer_inflight":self.inflight.load(Ordering::SeqCst),"late_attempts_at_footer":self.late.load(Ordering::Relaxed),
             "clock_failed":self.clock.failed.load(Ordering::Acquire),"failed":self.failed.load(Ordering::Acquire),"supervisor_timeout":self.supervisor_timeout.load(Ordering::Acquire)})
     }
@@ -868,6 +904,7 @@ pub(crate) struct Recorder {
     open_task: Option<u64>,
     attempt_id: u64,
     current_binding: Option<Binding>,
+    last_session_state: Option<SessionState>,
     #[cfg(test)]
     test_receiver: Option<mpsc::Receiver<Record>>,
 }
@@ -962,6 +999,7 @@ impl Recorder {
             open_task: None,
             attempt_id: 0,
             current_binding: None,
+            last_session_state: None,
             #[cfg(test)]
             test_receiver: None,
         })
@@ -980,6 +1018,9 @@ impl Recorder {
             .iter()
             .any(|v| v.len() > 256)
         }) {
+            self.shared
+                .metadata_string_invalid
+                .store(true, Ordering::Release);
             self.shared.failed.store(true, Ordering::Release);
             return self.version_id;
         }
@@ -1146,6 +1187,9 @@ impl Recorder {
         .flatten()
         .all(|value| value.len() <= 256);
         if !valid {
+            self.shared
+                .metadata_string_invalid
+                .store(true, Ordering::Release);
             self.shared.failed.store(true, Ordering::Release);
         }
         valid
@@ -1155,6 +1199,7 @@ impl Recorder {
         task: &editor_service::task::TaskContext,
         opens_project: bool,
         attempt_id: Option<u64>,
+        selection_epoch: u64,
     ) {
         if !self.shared.active() {
             return;
@@ -1172,6 +1217,7 @@ impl Recorder {
             input: task.input.clone(),
             result: None,
             state: None,
+            selection_epoch,
         });
     }
     pub fn received(&self, id: u64, view: &crate::state::View) {
@@ -1189,8 +1235,59 @@ impl Recorder {
                 input: receipt.input.clone(),
                 result: Some(receipt.result_version.clone()),
                 state: Some(receipt.state),
+                selection_epoch: view.selection_epoch,
             });
         }
+    }
+    pub fn geometry_reply(
+        &self,
+        task: &editor_service::task::TaskContext,
+        current: &crate::state::View,
+        result: &crate::state::View,
+        context: Option<&str>,
+        accepted: bool,
+    ) {
+        if !self.shared.active() {
+            return;
+        }
+        // Record equality decisions, never selection identities or geometry.
+        self.shared.emit(
+            self.shared.clock.now(),
+            Payload::GeometryReply {
+                task_id: task.task_id,
+                ui_selection_epoch: current.selection_epoch,
+                worker_selection_epoch: result.selection_epoch,
+                request_matches_current: context
+                    .is_some_and(|c| c == crate::state::selection_geometry_identity(current)),
+                result_matches_request: context
+                    .is_some_and(|c| c == result.selection_geometry_identity),
+                task_receipt_matches: crate::task_reply_matches(task, current, result),
+                result_version_matches_request: editor_service::task::TaskVersion::capture(
+                    result.info.as_ref(),
+                    result.task_generation,
+                    result.rule_revision,
+                ) == task.input,
+                geometry_present: result.selection_geometry.is_some(),
+                stale_task: result
+                    .error
+                    .as_ref()
+                    .is_some_and(|e| e.code == "STALE_TASK"),
+                accepted,
+            },
+        );
+    }
+    pub fn session_state(&mut self, state: SessionState) {
+        if !self.shared.active() || self.last_session_state == Some(state) {
+            return;
+        }
+        self.last_session_state = Some(state);
+        self.shared.emit(
+            self.shared.clock.now(),
+            Payload::SessionState {
+                binding: self.current_binding.unwrap_or_default(),
+                state,
+            },
+        );
     }
     pub fn installed(&mut self, id: u64, view: &crate::state::View) {
         if !self.shared.active() {
@@ -1250,6 +1347,7 @@ impl Recorder {
             open_task: None,
             attempt_id: 0,
             current_binding: None,
+            last_session_state: None,
             test_receiver: Some(receiver),
         }
     }
@@ -2017,7 +2115,7 @@ mod tests {
         let view = crate::state::View::default();
         let before = recorder.version(&view);
         let task = editor_service::task::TaskContext::new(42, Default::default());
-        recorder.accepted(&task, true, None);
+        recorder.accepted(&task, true, None, view.selection_epoch);
         recorder.installed(42, &view);
         assert_ne!(before, recorder.version(&view));
         assert_eq!(view.task_generation, 0);
@@ -2063,6 +2161,85 @@ mod tests {
         });
         assert!(shared.failed.load(Ordering::Acquire));
         assert_eq!(view.task_generation, 2);
+        assert!(shared.metadata_string_invalid.load(Ordering::Acquire));
+        assert!(!shared.metadata_budget_exhausted.load(Ordering::Acquire));
+    }
+    #[test]
+    fn metadata_budget_failure_remains_identifiable_after_admission_stops() {
+        let (shared, receiver) = shared(4);
+        shared.metadata_bytes.store(META_LIMIT, Ordering::Relaxed);
+        shared.metadata(Metadata::Version {
+            version_id: 1,
+            version: Version::capture(&crate::state::View::default(), 0),
+        });
+        assert!(!shared.active());
+        assert!(receiver.try_recv().is_err());
+        let counters = shared.counters();
+        assert_eq!(counters["metadata_budget_exhausted"], true);
+        assert_eq!(counters["metadata_string_invalid"], false);
+        assert_eq!(counters["failed"], true);
+        assert_eq!(counters["dropped_metadata"], 1);
+    }
+    #[test]
+    fn session_state_records_only_changes_without_enlarging_the_update_snapshot() {
+        let mut recorder = Recorder::for_test();
+        let state = SessionState {
+            session_slot: 2,
+            busy: true,
+            ..Default::default()
+        };
+        recorder.session_state(state);
+        recorder.session_state(state);
+        recorder.session_state(SessionState {
+            busy: false,
+            ..state
+        });
+        let rows = recorder.take_test_records();
+        let states: Vec<_> = rows
+            .iter()
+            .filter(|r| r["kind"] == "session_state")
+            .collect();
+        assert_eq!(states.len(), 2);
+        assert_eq!(states[0]["state"]["session_slot"], 2);
+        assert_eq!(states[0]["state"]["busy"], true);
+        assert_eq!(states[1]["state"]["busy"], false);
+        assert!(std::mem::size_of::<Record>() <= 256);
+        assert!(std::mem::size_of::<[Option<Record>; WRITER_BATCH_CAPACITY]>() <= 4096);
+    }
+    #[test]
+    fn geometry_reply_diagnostics_contain_decisions_and_epochs_without_selection_data() {
+        let recorder = Recorder::for_test();
+        let current = crate::state::View {
+            selection_epoch: 3,
+            ..Default::default()
+        };
+        let result = crate::state::View {
+            selection_epoch: 4,
+            selection_geometry_identity: "private-selection-marker".into(),
+            ..Default::default()
+        };
+        let task = editor_service::task::TaskContext::new(17, Default::default());
+        recorder.geometry_reply(
+            &task,
+            &current,
+            &result,
+            Some("private-request-marker"),
+            false,
+        );
+        let records = recorder.take_test_records();
+        let record = records
+            .iter()
+            .find(|r| r["kind"] == "geometry_reply")
+            .unwrap();
+        assert_eq!(record["task_id"], 17);
+        assert_eq!(record["ui_selection_epoch"], 3);
+        assert_eq!(record["worker_selection_epoch"], 4);
+        assert_eq!(record["request_matches_current"], false);
+        assert_eq!(record["result_matches_request"], false);
+        assert_eq!(record["task_receipt_matches"], false);
+        assert_eq!(record["result_version_matches_request"], true);
+        assert_eq!(record["accepted"], false);
+        assert!(!serde_json::to_string(record).unwrap().contains("private-"));
     }
     #[test]
     fn close_race_never_leaves_accepted_records_outside_drained_queue() {

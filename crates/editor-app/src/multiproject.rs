@@ -60,6 +60,9 @@ impl Tabs {
 }
 
 impl EditorApp {
+    pub(crate) fn tab_input_barrier_active(&self) -> bool {
+        self.tabs.input_barrier
+    }
     pub(crate) fn restore_pending(&self) -> bool {
         self.tabs.restore.is_some()
     }
@@ -1416,6 +1419,101 @@ mod tests {
             run.app.enforce_tab_input_barrier(ctx);
             assert!(!run.app.tabs.block_document_input);
         });
+    }
+    #[test]
+    fn changed_apply_cancelled_geometry_and_tab_reentry_release_task_and_input_fences() {
+        let mut run = Run::new();
+        run.import(10);
+        let a = run.app.routing.owner().slot();
+        run.create();
+        run.import(20);
+        let b = run.app.routing.owner().slot();
+        let b_info = run.app.view.info.clone();
+        run.activate(a);
+        for _ in 0..2 {
+            let _ = run.ctx.run(Default::default(), |ctx| {
+                run.app.arbitrate_point_input_frame(ctx);
+                run.app.enforce_tab_input_barrier(ctx)
+            });
+        }
+        run.app.canvas_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800., 600.));
+        run.app.open_unified_editor();
+        run.settle();
+        let entry = run
+            .host
+            .model
+            .service
+            .render_snapshot(&run.app.view.info.as_ref().unwrap().document_id)
+            .unwrap();
+        let step = editor_service::DraftStep {
+            groups: run.app.view.selected.groups(),
+            operation: editor_service::SelectionEdit::Move {
+                dx_mm: 1.,
+                dy_mm: 0.,
+            },
+        };
+        run.app
+            .send_unified_editor(crate::unified_editor_worker::Command::Apply(Some(step)));
+        run.settle();
+        assert!(run.app.unified_editor.is_none() && !run.app.busy);
+        let a_info = run.app.view.info.clone();
+        run.app.send(Action::SelectionCenters(
+            crate::state::selection_geometry_identity(&run.app.view),
+            editor_service::SelectionCentersParams {
+                groups: run.app.view.selected.groups(),
+                semantics: editor_service::SelectionMaterialSemantics::SelectedLayerComposite,
+            },
+        ));
+        assert!(run.app.geometry_task.is_some());
+        run.app.request_tab(b, false);
+        run.advance();
+        assert_eq!(run.app.routing.owner().slot(), a);
+        assert!(run.app.tabs.change_pending());
+        run.settle();
+        assert!(run.app.geometry_task.is_none() && run.app.routing.idle());
+        run.advance();
+        assert_eq!(run.app.routing.owner().slot(), b);
+        assert_eq!(run.app.view.info, b_info);
+        assert!(!run.app.tabs.change_pending());
+        for _ in 0..2 {
+            let _ = run.ctx.run(Default::default(), |ctx| {
+                run.app.arbitrate_point_input_frame(ctx);
+                run.app.enforce_tab_input_barrier(ctx)
+            });
+        }
+        assert!(!run.app.tabs.input_barrier && !run.app.tabs.block_document_input);
+        assert!(!run.app.busy && run.app.pending_task.is_none());
+        run.activate(a);
+        assert_eq!(run.app.view.info, a_info);
+        for _ in 0..2 {
+            let _ = run.ctx.run(Default::default(), |ctx| {
+                run.app.arbitrate_point_input_frame(ctx);
+                run.app.enforce_tab_input_barrier(ctx)
+            });
+        }
+        run.app.send(Action::SelectionCenters(
+            crate::state::selection_geometry_identity(&run.app.view),
+            editor_service::SelectionCentersParams {
+                groups: run.app.view.selected.groups(),
+                semantics: editor_service::SelectionMaterialSemantics::SelectedLayerComposite,
+            },
+        ));
+        let reply = run.execute();
+        assert!(reply.1.error.is_none());
+        assert_eq!(reply.1.selection_epoch, run.app.view.selection_epoch);
+        run.app.receive_session_reply(reply, Instant::now());
+        assert!(run.app.view.selection_geometry.is_some());
+        run.action(Action::History(false));
+        let undone = run
+            .host
+            .model
+            .service
+            .render_snapshot(&run.app.view.info.as_ref().unwrap().document_id)
+            .unwrap();
+        assert_eq!(undone.layers, entry.layers);
+        assert_eq!(undone.apertures, entry.apertures);
+        run.activate(b);
+        assert_eq!(run.app.view.info, b_info);
     }
     #[test]
     fn waiting_read_keeps_document_and_tabs_painted_and_cancel_keeps_receipt_lane() {

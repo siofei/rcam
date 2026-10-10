@@ -1892,7 +1892,7 @@ impl Model {
             }
         }
     }
-    fn refresh_metrics(&mut self) {
+    pub(crate) fn refresh_metrics(&mut self) {
         let identity = format!(
             "{:?}:{:?}:{:?}",
             editor_service::task::TaskVersion::capture(
@@ -1962,15 +1962,6 @@ impl Model {
         self.view.import_committed_task = None;
         let old_viewport = self.viewport;
         let old_ppm = self.ppm;
-        let old_metrics_identity = matches!(
-            &action,
-            Action::ProbeDrag(..)
-                | Action::CanvasSelect(..)
-                | Action::SelectRect(..)
-                | Action::CanvasSelectRect(..)
-                | Action::SelectAll
-        )
-        .then(|| self.metrics_identity.clone());
         let readonly = matches!(
             &action,
             Action::SelectionCenters(..)
@@ -1997,6 +1988,10 @@ impl Model {
                 | Action::FontCatalog
                 | Action::PnpPreview(..)
         );
+        // Read cancellation restores View, including its published epoch. Its
+        // metrics key must be restored with it, or the next read advances the
+        // worker epoch without a corresponding full View publication to App.
+        let old_metrics_identity = readonly.then(|| self.metrics_identity.clone());
         let cancellable_import = matches!(&action, Action::ImportGerbers(..));
         let cancellable_draft = matches!(&action, Action::UnifiedEditor(..));
         let result = (|| {
