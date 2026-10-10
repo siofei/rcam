@@ -498,7 +498,7 @@ impl EditorApp {
 
     /// Menu / toolbar entry: sequential single-file imports.
     pub(crate) fn import_gerbers(&mut self) {
-        match crate::platform::choose_gerbers() {
+        match self.native_panel(crate::platform::choose_gerbers) {
             Ok(Some(paths)) => self.start_gerber_import(paths),
             Ok(None) => {}
             Err(e) => self.ui_error = Some(e),

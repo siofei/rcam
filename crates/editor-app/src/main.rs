@@ -17,6 +17,7 @@ mod frame_trace;
 mod gerber_import;
 mod gpu;
 mod grip;
+mod input_boundary;
 mod interaction;
 mod layer_panel;
 #[cfg(test)]
@@ -639,6 +640,7 @@ impl EditorApp {
     fn trace_session_state(&self) -> frame_trace::SessionState {
         frame_trace::SessionState {
             session_slot: self.routing.owner().slot(),
+            input: self.tabs.input.diagnostics(self.shortcuts.held_key_count()),
             busy: self.busy,
             routing_idle: self.routing.idle(),
             tab_change_pending: self.tabs.change_pending(),
@@ -716,7 +718,7 @@ impl EditorApp {
                 | Action::SelectAll
         );
         let canvas_probe = matches!(a, Action::ProbeDrag(..));
-        if self.point_commit_blocked
+        if (self.point_commit_blocked || self.tabs.input.blocked())
             && matches!(
                 &a,
                 Action::PointApply(..)
@@ -970,6 +972,7 @@ impl EditorApp {
     }
     fn route_shortcuts(&mut self, ctx: &egui::Context, text_focus: bool, modal_open: bool) {
         let presses = std::mem::take(&mut self.shortcuts.presses);
+        let boundary_serial = self.tabs.input.serial;
         if drag::shortcuts_allowed(
             text_focus || self.ime_event || self.ime_active,
             self.busy,
@@ -985,7 +988,7 @@ impl EditorApp {
             // egui recalculates repeat from keys_down. Retain each original backend press
             // in event order; ownership is checked after this frame's UI takes focus.
             for (key, modifiers) in presses {
-                if self.command_context_blocked() {
+                if self.command_context_blocked() || self.tabs.input.serial != boundary_serial {
                     break;
                 }
                 let failure_serial = self.request_failure_serial;
@@ -1010,6 +1013,7 @@ impl EditorApp {
                     self.dispatch(command);
                     ctx.input_mut(|i| i.events.retain(|event| !matches!(event, egui::Event::Key { key: event_key, pressed: true, modifiers: event_modifiers, .. } if shortcut_settings::key_from_egui(*event_key) == Some(key) && *event_modifiers == modifiers)));
                     if self.command_context_blocked()
+                        || self.tabs.input.serial != boundary_serial
                         || self.request_failure_serial != failure_serial
                         || !ctx.input(|i| i.focused)
                     {
@@ -1020,7 +1024,9 @@ impl EditorApp {
         }
     }
     fn command_context_blocked(&self) -> bool {
-        self.unified_editor.is_some()
+        self.tabs.input.blocked()
+            || self.tabs.block_document_input
+            || self.unified_editor.is_some()
             || self.busy
             || self
                 .gerber_import
@@ -1199,7 +1205,7 @@ impl EditorApp {
                 format!("{}.gbr", stem.trim())
             })
             .unwrap_or_else(|| "layer.gbr".into());
-        match platform::choose_path(true, &name) {
+        match self.native_panel(|| platform::choose_path(true, &name)) {
             Ok(Some(path)) => self.send(Action::Save(path, layer, None)),
             Ok(None) => {}
             Err(e) => self.ui_error = Some(e),
@@ -1730,6 +1736,13 @@ impl eframe::App for EditorApp {
             run.input(self, ctx, raw);
             self.pmix = Some(run);
         }
+        if self.tabs.input.return_pending() {
+            self.ime_active = false;
+            self.ime_event = false;
+        }
+        self.tabs.input.raw_input(ctx, raw);
+        self.tabs.held_buttons = self.tabs.input.held_buttons;
+        self.shortcuts.forget_keys(self.tabs.input.quarantined());
         // egui clears text focus on Escape before update; retain its event-time owner.
         self.text_input_at_event = ctx.wants_keyboard_input() || self.ime_active;
         self.shortcuts.popup_at_event = egui::Popup::is_any_open(ctx);
@@ -2471,6 +2484,7 @@ impl EditorApp {
             ctx,
             self.ime_event || self.ime_active,
             self.text_input_at_event,
+            &mut self.tabs.input,
         );
         self.component_window(ctx);
         if !self.busy
@@ -2740,7 +2754,7 @@ native_i1::widget("menu-interaction",&_interaction_menu.response);
                             ui.close();
                         }
                         if ui.add_enabled(self.diagnostic_export.is_none(), egui::Button::new("导出诊断包…")).clicked() {
-                            match platform::choose_diagnostics() {
+                            match self.native_panel(platform::choose_diagnostics) {
                                 Ok(Some(path)) => {
                                     let runtime = runtime.clone();
                                     let info = self.view.info.clone();

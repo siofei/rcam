@@ -121,7 +121,14 @@ mod tests {
                 events,
                 ..Default::default()
             },
-            |ctx| s.window(ctx, false, false),
+            |ctx| {
+                s.window(
+                    ctx,
+                    false,
+                    false,
+                    &mut crate::input_boundary::Boundary::default(),
+                )
+            },
         )
     }
     fn settle(ctx: &egui::Context, s: &mut Settings, viewport: egui::Vec2) {

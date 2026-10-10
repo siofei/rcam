@@ -66,3 +66,41 @@ Session state uses a separate fixed record on change, preserving the existing
 Native tab-disable and trace-stop causes remain unconfirmed until fresh evidence;
 these diagnostics do not turn those failures into a PASS. Fresh candidate identity,
 independent review and Mac native visual/task/resource verification remain required.
+
+## Native panel and tab input ownership correction (2026-10-10)
+
+S5/P3 UE-A follow-up; R09/R12/R18; AT-043/078. Scope is editor-app
+window input ownership, fixed local trace diagnostics and regressions only.
+A stale logical held key must not keep an otherwise idle tab locked. Window-owned
+key quarantine survives document Memory exchange. All native pickers register
+entry/return boundaries, including Cancel and returned errors. The return frame,
+all its passes and the first backend return batch are consumed; an already
+extracted shortcut queue stops at the boundary. Owned picker-result service
+requests retain their existing route. Genuine modifier/button holds and pending
+worker terminal receipts still prevent document input or exchange.
+
+Every press of an isolated key is rejected regardless of backend repeat flags.
+An observed release rearms that key in the next distinct backend batch, with no
+extra blind drain. Release followed by press in the same batch remains consumed
+and needs another release. Native Enter/Escape are isolated even if the panel
+was their only prior receiver. Until a release is observed, a first new cycle of
+an indistinguishable isolated key serves as rearming rather than an action; mouse
+and unrelated fresh commands remain available once the whole-window guard ends.
+
+Unowned Text/Paste/IME is consumed at the boundary and in batches containing an
+isolated key. A subsequent complete pointer gesture or a key with an observed
+post-boundary release establishes new window input intent in event order; it
+never authorizes earlier payloads retroactively. A new Preedit (Enabled optional)
+establishes composition before Commit. Whole-window barriers discard provisional
+text/composition ownership, and native return ends the old app IME owner.
+The backend supplies no timestamp/panel/composition provenance: this is a finite
+ownership guarantee, not proof that arbitrarily delayed unowned native payloads
+can be distinguished from fresh payloads after rearming. That ambiguity and the
+release-rearm interaction cost remain explicit native acceptance limitations.
+
+Opt-in SessionState diagnostics add bounded key counts, fixed control-key and
+modifier/button bits, boundary serial and ownership state. No text, paths,
+coordinates or arbitrary key stream is recorded. Existing fixed record, queue,
+writer, metadata and output budgets remain unchanged. Prior native NOT PASS and
+unknown root cause stay historical; fresh source/binary identity, independent
+review and Mac input/IME/tab/save/cancel verification are required.

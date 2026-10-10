@@ -247,6 +247,7 @@ pub(crate) struct Snapshot {
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub(crate) struct SessionState {
     pub session_slot: u64,
+    pub input: crate::input_boundary::Diagnostics,
     pub busy: bool,
     pub routing_idle: bool,
     pub tab_change_pending: bool,

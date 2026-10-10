@@ -48,11 +48,16 @@ impl EditorApp {
     /// Decide cancellation before any widget can enqueue a manufacturing edit.
     /// The latch survives child Back and all later handlers in this egui frame.
     pub(crate) fn arbitrate_point_input_frame(&mut self, ctx: &egui::Context) -> bool {
+        self.tabs.input.bind(ctx);
         let frame = ctx.cumulative_frame_nr();
         if self.point_input_frame != Some(frame) {
             self.point_input_frame = Some(frame);
             self.point_input_cancelled = false;
             self.point_commit_blocked = false;
+        }
+        if self.tabs.input.blocked() {
+            self.point_input_cancelled = true;
+            self.point_commit_blocked = true;
         }
         if self.point_input_cancelled {
             return false;

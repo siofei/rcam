@@ -367,7 +367,7 @@ impl EditorApp {
                 ui.label(error);
             }
             if ui.button("选择字体文件… TTF / OTF / TTC").clicked() {
-                match crate::platform::choose_path(false, "font") {
+                match self.native_panel(|| crate::platform::choose_path(false, "font")) {
                     Ok(Some(path)) => {
                         self.text.face = 0;
                         self.text.queue_font(path);

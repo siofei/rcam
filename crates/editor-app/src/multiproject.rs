@@ -25,7 +25,8 @@ pub(crate) struct Tabs {
     pub(crate) closed: bool,
     pub(crate) retired_close: bool,
     input_barrier: bool,
-    held_buttons: [bool; 5],
+    pub(crate) input: crate::input_boundary::Boundary,
+    pub(crate) held_buttons: [bool; 5],
     pub(crate) block_document_input: bool,
     recovery_cursor: usize,
     disconnected: bool,
@@ -60,6 +61,21 @@ impl Tabs {
 }
 
 impl EditorApp {
+    pub(crate) fn native_panel<T>(&mut self, choose: impl FnOnce() -> T) -> T {
+        let result = self.tabs.input.native(choose);
+        for (index, down) in self.tabs.input.held_buttons.iter().enumerate() {
+            self.tabs.held_buttons[index] |= *down;
+        }
+        self.tabs.input_barrier = true;
+        self.shortcuts.forget_keys(self.tabs.input.quarantined());
+        self.shortcuts.presses.clear();
+        self.point_input_cancelled = true;
+        self.point_commit_blocked = true;
+        self.ime_active = false;
+        self.ime_event = false;
+        result
+    }
+
     pub(crate) fn tab_input_barrier_active(&self) -> bool {
         self.tabs.input_barrier
     }
@@ -258,6 +274,9 @@ impl EditorApp {
         self.exchange_tab_memory(ctx);
         ctx.memory_mut(|m| m.options = options);
         ctx.set_fonts(fonts);
+        self.tabs.input.bind(ctx);
+        self.tabs.input.begin(false);
+        self.shortcuts.forget_keys(self.tabs.input.quarantined());
         self.tabs.input_barrier = true;
         self.text_input_at_event = false;
         self.ime_active = false;
@@ -466,10 +485,19 @@ impl EditorApp {
         self.tabs.pending.is_some()
     }
     pub(crate) fn enforce_tab_input_barrier(&mut self, ctx: &egui::Context) {
-        let blocked = self.tabs.input_barrier || self.tabs.change_pending();
+        self.tabs.input.bind(ctx);
+        if self.tabs.input.blocked() {
+            self.tabs.input_barrier = true;
+        }
+        let blocked =
+            self.tabs.input_barrier || self.tabs.change_pending() || self.tabs.input.blocked();
         self.tabs.block_document_input = blocked;
         if !blocked {
             return;
+        }
+        if ctx.input(|i| !i.keys_down.is_empty()) {
+            self.tabs.input.begin(false);
+            self.shortcuts.forget_keys(self.tabs.input.quarantined());
         }
         let held = ctx.input(|i| {
             for (index, button) in [
@@ -495,10 +523,13 @@ impl EditorApp {
                     }
                 }
             }
-            !i.keys_down.is_empty()
-                || i.modifiers != egui::Modifiers::NONE
-                || self.tabs.held_buttons.iter().any(|down| *down)
+            i.modifiers != egui::Modifiers::NONE || self.tabs.held_buttons.iter().any(|down| *down)
         });
+        // These events never reached a document widget: their provisional
+        // text/composition ownership cannot survive the whole-frame barrier.
+        self.tabs.input.discard_owner();
+        self.ime_active = false;
+        self.ime_event = false;
         ctx.input_mut(|i| {
             i.events.clear();
             i.raw.events.clear();
@@ -1351,6 +1382,310 @@ mod tests {
         }
     }
 
+    #[test]
+    fn native_boundary_stale_key_cannot_lock_an_idle_tab() {
+        let mut run = Run::new();
+        run.import(10);
+        let a = run.app.routing.owner().slot();
+        run.create();
+        let b = run.app.routing.owner().slot();
+        let info_b = run.app.view.info.clone();
+        let key = egui::Event::Key {
+            key: egui::Key::O,
+            physical_key: Some(egui::Key::O),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let _ = run.ctx.run(
+            egui::RawInput {
+                events: vec![key],
+                ..Default::default()
+            },
+            |_| {},
+        );
+        run.activate(a);
+        for _ in 0..3 {
+            let _ = run.ctx.run(Default::default(), |ctx| {
+                run.app.arbitrate_point_input_frame(ctx);
+                run.app.enforce_tab_input_barrier(ctx);
+            });
+        }
+        assert!(
+            !run.app.tabs.input_barrier,
+            "old logical O must be isolated, not lock the whole window"
+        );
+        assert!(!run.app.tabs.block_document_input);
+        assert!(run.app.routing.idle() && run.app.pending_task.is_none());
+        run.activate(b);
+        assert_eq!(run.app.view.info, info_b);
+    }
+
+    #[test]
+    fn native_boundary_picker_error_fences_the_return_frame() {
+        let mut run = Run::new();
+        let info = run.app.view.info.clone();
+        let _ = run.ctx.run(Default::default(), |ctx| {
+            run.app.arbitrate_point_input_frame(ctx);
+            // The auxiliary host rejects native picker access: return/error is still a boundary.
+            run.app.choose_open_project();
+            assert!(
+                !run.app.arbitrate_point_input_frame(ctx),
+                "native return must fence later handlers and passes"
+            );
+        });
+        assert_eq!(run.app.view.info, info);
+        assert!(run.requests.try_recv().is_err());
+    }
+
+    #[test]
+    fn native_boundary_all_returns_block_old_edits_but_admit_owned_save() {
+        for outcome in [
+            Ok(Some(PathBuf::from("synthetic.rcam"))),
+            Ok(None),
+            Err("synthetic rejection".to_owned()),
+        ] {
+            let mut run = Run::new();
+            run.import(10);
+            let info = run.app.view.info.clone();
+            let mut pass = 0;
+            let _ = run.ctx.run(Default::default(), |ctx| {
+                pass += 1;
+                run.app.arbitrate_point_input_frame(ctx);
+                if pass == 1 {
+                    assert_eq!(run.app.native_panel(|| outcome.clone()), outcome);
+                    ctx.request_discard("native boundary regression");
+                }
+                assert!(!run.app.arbitrate_point_input_frame(ctx));
+                run.app.send(Action::Move("1".into(), "0".into()));
+                assert!(
+                    run.requests.try_recv().is_err(),
+                    "old point edit crossed native boundary"
+                );
+            });
+            assert!(pass > 1);
+            assert_eq!(run.app.view.info, info);
+            // The authorized picker result still uses the existing owned service route.
+            let path = run.dir.join("owned.rcam");
+            run.app.send(Action::SaveProject(Some(path), false, None));
+            assert!(run.app.busy && run.app.pending_task.is_some());
+            let (_, _, action, _, _) = run.requests.try_recv().unwrap();
+            assert!(matches!(action, Action::SaveProject(..)));
+        }
+    }
+
+    #[test]
+    fn native_boundary_stops_the_already_extracted_shortcut_queue() {
+        let mut run = Run::new();
+        run.import(10);
+        run.import(20);
+        let info = run.app.view.info.clone();
+        let selected = run.app.view.selected.clone();
+        let primary =
+            if editor_core::command::Platform::current() == editor_core::command::Platform::MacOs {
+                egui::Modifiers {
+                    mac_cmd: true,
+                    command: true,
+                    ..egui::Modifiers::NONE
+                }
+            } else {
+                egui::Modifiers {
+                    ctrl: true,
+                    command: true,
+                    ..egui::Modifiers::NONE
+                }
+            };
+        let _ = run.ctx.run(Default::default(), |ctx| {
+            run.app.arbitrate_point_input_frame(ctx);
+            run.app.shortcuts.presses = vec![(egui::Key::O, primary), (egui::Key::A, primary)];
+            run.app.route_shortcuts(ctx, false, false);
+        });
+        assert_eq!(
+            run.app.tabs.input.serial, 1,
+            "Open dispatch must enter the native boundary"
+        );
+        assert!(
+            run.requests.try_recv().is_err(),
+            "old SelectAll remained in the local shortcut queue"
+        );
+        assert_eq!(run.app.view.info, info);
+        assert_eq!(run.app.view.selected, selected);
+    }
+
+    #[test]
+    fn native_boundary_actual_raw_hook_preserves_mouse_modifier_and_task_fences() {
+        use eframe::App as _;
+        let mut run = Run::new();
+        run.import(10);
+        let pos = egui::pos2(20., 20.);
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut down = egui::RawInput {
+            events: vec![button(true)],
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut down);
+        let _ = run.ctx.run(down, |ctx| {
+            run.app.arbitrate_point_input_frame(ctx);
+            run.app.native_panel(|| ());
+        });
+        let mut returning = egui::RawInput {
+            modifiers: egui::Modifiers::SHIFT,
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut returning);
+        let _ = run
+            .ctx
+            .run(returning, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        assert!(run.app.tabs.input_barrier && run.app.tabs.held_buttons[0]);
+        let mut released = egui::RawInput {
+            events: vec![button(false)],
+            modifiers: egui::Modifiers::SHIFT,
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut released);
+        let _ = run
+            .ctx
+            .run(released, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        assert!(run.app.tabs.input_barrier && !run.app.tabs.held_buttons[0]);
+        let mut clear = egui::RawInput::default();
+        run.app.raw_input_hook(&run.ctx, &mut clear);
+        let _ = run
+            .ctx
+            .run(clear, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        assert!(!run.app.tabs.input_barrier);
+        run.app.send(Action::History(false));
+        assert!(run.app.busy);
+        let current = run.app.routing.owner().slot();
+        run.app.request_new_session(Action::NewWorkspace);
+        run.advance();
+        assert_eq!(
+            run.app.routing.owner().slot(),
+            current,
+            "native rearm must not bypass unfinished task receipts"
+        );
+        run.settle();
+        assert!(!run.app.tabs.change_pending());
+        run.app.request_new_session(Action::NewWorkspace);
+        run.advance();
+        run.settle();
+        assert_ne!(run.app.routing.owner().slot(), current);
+    }
+
+    #[test]
+    fn native_boundary_shortcut_picker_return_keeps_holds_and_ends_old_ime() {
+        use eframe::App as _;
+        let mut run = Run::new();
+        run.app.ime_active = true;
+        run.app.ime_event = true;
+        let mut initial = egui::RawInput {
+            modifiers: egui::Modifiers::SHIFT,
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut initial);
+        let _ = run.ctx.run(initial, |ctx| {
+            run.app.arbitrate_point_input_frame(ctx);
+            run.app.tabs.input.native(|| ());
+        });
+        for _ in 0..3 {
+            let mut raw = egui::RawInput {
+                modifiers: egui::Modifiers::SHIFT,
+                ..Default::default()
+            };
+            run.app.raw_input_hook(&run.ctx, &mut raw);
+            let _ = run
+                .ctx
+                .run(raw, |ctx| run.app.enforce_tab_input_barrier(ctx));
+            assert!(
+                run.app.tabs.input_barrier,
+                "shortcut picker path must retain genuine modifier holds beyond return frame"
+            );
+            assert!(
+                !run.app.ime_active && !run.app.ime_event,
+                "old composition owner must not remain latched"
+            );
+        }
+        let mut raw = egui::RawInput::default();
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        let _ = run
+            .ctx
+            .run(raw, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        assert!(!run.app.tabs.input_barrier);
+    }
+    #[test]
+    fn native_boundary_barrier_discarded_composition_cannot_commit_after_rearm() {
+        use eframe::App as _;
+        let mut run = Run::new();
+        let mut raw = egui::RawInput::default();
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        let _ = run.ctx.run(raw, |ctx| {
+            run.app.arbitrate_point_input_frame(ctx);
+            run.app.native_panel(|| ());
+        });
+        let mut raw = egui::RawInput {
+            modifiers: egui::Modifiers::SHIFT,
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        let _ = run
+            .ctx
+            .run(raw, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        let button = |pressed| egui::Event::PointerButton {
+            pos: egui::pos2(20., 20.),
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::SHIFT,
+        };
+        let mut raw = egui::RawInput {
+            modifiers: egui::Modifiers::SHIFT,
+            events: vec![
+                button(true),
+                button(false),
+                egui::Event::Ime(egui::ImeEvent::Preedit("old".into())),
+            ],
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        let _ = run
+            .ctx
+            .run(raw, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        assert!(!run.app.ime_active);
+        let mut raw = egui::RawInput::default();
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        let _ = run
+            .ctx
+            .run(raw, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        let mut raw = egui::RawInput {
+            events: vec![egui::Event::Ime(egui::ImeEvent::Commit("old".into()))],
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        assert!(raw.events.is_empty());
+        let _ = run
+            .ctx
+            .run(raw, |ctx| run.app.enforce_tab_input_barrier(ctx));
+        let mut raw = egui::RawInput {
+            events: vec![
+                button(true),
+                button(false),
+                egui::Event::Ime(egui::ImeEvent::Preedit("fresh".into())),
+                egui::Event::Ime(egui::ImeEvent::Commit("fresh".into())),
+            ],
+            ..Default::default()
+        };
+        run.app.raw_input_hook(&run.ctx, &mut raw);
+        assert_eq!(
+            raw.events
+                .iter()
+                .filter(|e| matches!(e, egui::Event::Ime(_)))
+                .count(),
+            2
+        );
+    }
     #[test]
     fn held_release_scroll_zoom_and_shortcuts_cannot_cross_document_boundary() {
         let mut run = Run::new();

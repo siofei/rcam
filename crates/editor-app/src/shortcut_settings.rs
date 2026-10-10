@@ -7,7 +7,7 @@ use crate::{
 use editor_core::command::{CommandId, Key, Modifiers, PhysicalModifiers, Platform, Shortcut};
 use eframe::egui;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashSet},
     path::PathBuf,
     sync::mpsc::{self, Receiver},
 };
@@ -247,6 +247,13 @@ impl Settings {
         self.reset_confirm = false;
         self.barrier = !self.held.is_empty() || self.modifiers_down;
     }
+    pub(crate) fn forget_keys(&mut self, keys: &HashSet<egui::Key>) {
+        self.held.retain(|key| !keys.contains(key));
+        self.presses.retain(|(key, _)| !keys.contains(key));
+    }
+    pub(crate) fn held_key_count(&self) -> usize {
+        self.held.len()
+    }
     pub fn raw_input(&mut self, raw: &mut egui::RawInput, ime: bool) {
         self.modifiers_down = !raw.modifiers.is_none();
         self.presses.clear();
@@ -357,7 +364,14 @@ impl Settings {
             self.barrier = !self.held.is_empty() || self.modifiers_down;
         }
     }
-    pub fn window(&mut self, ctx: &egui::Context, ime: bool, event_text_focus: bool) {
+    pub fn window(
+        &mut self,
+        ctx: &egui::Context,
+        ime: bool,
+        event_text_focus: bool,
+        boundary: &mut crate::input_boundary::Boundary,
+    ) {
+        boundary.bind(ctx);
         if !self.open {
             return;
         }
@@ -379,7 +393,7 @@ impl Settings {
                 ui.add_enabled_ui(self.pending.is_none() && !self.recording && !ime, |ui| {
                     ui.horizontal(|ui| {
                         if ui.button("导入快捷键文件…").clicked() {
-                            match crate::platform::choose_shortcuts(false) {
+                            match boundary.native(|| crate::platform::choose_shortcuts(false)) {
                                 Ok(Some(path)) => self.start(ctx, move || {
                                     ResultMessage::Import(shortcut_store::import(&path, platform))
                                 }),
@@ -388,7 +402,7 @@ impl Settings {
                             }
                         }
                         if ui.button("导出快捷键文件…").clicked() {
-                            match crate::platform::choose_shortcuts(true) {
+                            match boundary.native(|| crate::platform::choose_shortcuts(true)) {
                                 Ok(Some(path)) => {
                                     let config = self.current.config.clone();
                                     let current = self.path.clone();

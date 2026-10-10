@@ -758,7 +758,7 @@ impl EditorApp {
         egui::Window::new("PCB / PnP / RefDes").open(&mut open).fixed_size(size).show(ctx,|ui|{
           crate::ui::modal_widgets::fixed_content(ui, size, |ui| {
             ui.add_enabled_ui(!self.busy&&self.modal.is_none(),|ui|{
-                if ui.button("Import PnP XLSX / TXT / CSV…").clicked(){match crate::platform::choose_path(false,"pnp"){Ok(Some(p))=>self.open_pnp(p),Ok(None)=>{},Err(e)=>self.ui_error=Some(e)}}
+                if ui.button("Import PnP XLSX / TXT / CSV…").clicked(){match self.native_panel(|| crate::platform::choose_path(false,"pnp")){Ok(Some(p))=>self.open_pnp(p),Ok(None)=>{},Err(e)=>self.ui_error=Some(e)}}
                 ui.checkbox(&mut self.components.overlay,"显示组件 Overlay");
                 let Some(board)=self.view.board.clone() else {ui.label("未导入 PnP");return;};
                 ui.label(format!("{} 个组件 · {}",board.components.len(),if board.registration.is_some(){"已校准"}else{"未校准；不提供绝对定位"}));

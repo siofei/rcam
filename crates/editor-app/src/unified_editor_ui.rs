@@ -339,7 +339,9 @@ impl EditorApp {
         self.send_unified_editor(worker::Command::Begin);
     }
     pub(crate) fn send_unified_editor(&mut self, command: worker::Command) {
-        if self.point_commit_blocked && !matches!(command, worker::Command::Cancel) {
+        if (self.point_commit_blocked || self.tabs.input.blocked())
+            && !matches!(command, worker::Command::Cancel)
+        {
             return;
         }
         let Some(d) = &self.unified_editor else {

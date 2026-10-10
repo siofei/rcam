@@ -161,7 +161,7 @@ impl EditorApp {
     }
 
     pub(crate) fn choose_open_project(&mut self) {
-        match crate::platform::choose_project(false) {
+        match self.native_panel(|| crate::platform::choose_project(false)) {
             Ok(Some(path)) => self.request_new_session(Action::OpenProject(path, false)),
             Ok(None) => {}
             Err(error) => self.ui_error = Some(error),
@@ -203,16 +203,12 @@ impl EditorApp {
             center_mm: self.camera.center,
             scale: self.camera.scale,
         });
-        let existing = self
-            .view
-            .info
-            .as_ref()
-            .and_then(|d| d.project_path.as_ref());
+        let existing = self.view.info.as_ref().and_then(|d| d.project_path.clone());
         if !as_new && existing.is_some() {
             self.send(Action::SaveProject(None, false, camera));
             return self.save_admitted();
         }
-        let mut path = match crate::platform::choose_project(true) {
+        let mut path = match self.native_panel(|| crate::platform::choose_project(true)) {
             Ok(Some(path)) => path,
             Ok(None) => {
                 if self.transition.is_none() {
