@@ -1,8 +1,0 @@
-[
-  {
-    "command": "cargo check --workspace --all-targets --locked",
-    "exit_code": 0,
-    "seconds": 5.200207875,
-    "log": "01.log"
-  }
-]
